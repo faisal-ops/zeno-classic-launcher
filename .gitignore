@@ -1,0 +1,44 @@
+# Gradle
+.gradle/
+build/
+**/build/
+
+# Kotlin / IDE diagnostics (local error logs)
+.kotlin/
+
+# Android NDK / CMake
+.cxx/
+.externalNativeBuild/
+
+# Profiling / captures
+captures/
+*.hprof
+
+# Logs
+*.log
+
+# Local / machine-specific
+local.properties
+
+# Signing (never commit secrets)
+key.properties
+*.jks
+*.keystore
+keystore/
+
+# IDE
+.idea/
+*.iml
+
+# Cursor — local agent rules (not versioned)
+.cursor/rules/
+
+# OS
+.DS_Store
+
+# Local / contributor docs (keep on disk; not versioned)
+AGENTS.md
+PARITY_CHECKLIST.md
+
+# Wallpapers — large binaries; generated exports (see scripts/export_wallpapers_for_phone.py)
+wallpapers/

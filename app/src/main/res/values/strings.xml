@@ -1,0 +1,8 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- Shown in launcher list, recents, app info, etc. -->
+    <string name="app_name">Zeno Classic</string>
+    <!-- Synthetic app drawer row that opens in-app settings -->
+    <string name="home_menu_settings_title">Zeno Classic settings</string>
+    <string name="device_admin_explanation">Zeno Classic needs this permission to lock the screen when you double-tap the home screen.</string>
+</resources>

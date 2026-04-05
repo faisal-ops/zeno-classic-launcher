@@ -1,0 +1,202 @@
+package com.zeno.classiclauncher.nlauncher.ui
+
+import android.widget.Toast
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.navigationBarsPadding
+import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.statusBarsPadding
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.verticalScroll
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.rounded.ArrowBack
+import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
+import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.Surface
+import androidx.compose.material3.Switch
+import androidx.compose.material3.SwitchDefaults
+import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
+import androidx.compose.runtime.Composable
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
+import androidx.compose.ui.Alignment
+import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
+import androidx.compose.ui.zIndex
+import com.zeno.classiclauncher.nlauncher.power.SleepManager
+import com.zeno.classiclauncher.nlauncher.theme.LauncherThemePalette
+
+@Composable
+fun LockWakeSettingsOverlay(
+    doubleTapEnabled: Boolean,
+    themePalette: LauncherThemePalette,
+    onDismiss: () -> Unit,
+    onDoubleTapChange: (Boolean) -> Unit,
+) {
+    val context = LocalContext.current
+    var adminActive by remember { mutableStateOf(SleepManager.isAdminActive(context)) }
+    val adminLauncher = rememberLauncherForActivityResult(
+        ActivityResultContracts.StartActivityForResult(),
+    ) {
+        adminActive = SleepManager.isAdminActive(context)
+        if (doubleTapEnabled && !adminActive) {
+            onDoubleTapChange(false)
+            Toast.makeText(
+                context,
+                "Device admin was not enabled — double tap to lock stays off until you grant it",
+                Toast.LENGTH_LONG,
+            ).show()
+        }
+    }
+
+    val subtitleColor = Color(0xFF8E95A3)
+
+    Surface(
+        modifier = Modifier
+            .fillMaxSize()
+            .zIndex(405f),
+        color = themePalette.settingsBg,
+    ) {
+        Column(
+            modifier = Modifier
+                .fillMaxSize()
+                .statusBarsPadding()
+                .navigationBarsPadding(),
+        ) {
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(start = 4.dp, end = 16.dp, top = 8.dp, bottom = 4.dp),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                IconButton(onClick = onDismiss) {
+                    Icon(
+                        Icons.AutoMirrored.Rounded.ArrowBack,
+                        contentDescription = "Back",
+                        tint = themePalette.settingsMenuTitle,
+                    )
+                }
+                Text(
+                    "Lock & wake",
+                    style = MaterialTheme.typography.headlineMedium.copy(
+                        color = themePalette.settingsMenuTitle,
+                        fontWeight = FontWeight.Normal,
+                    ),
+                )
+            }
+            Column(
+                modifier = Modifier
+                    .weight(1f)
+                    .verticalScroll(rememberScrollState())
+                    .padding(horizontal = 16.dp, vertical = 8.dp),
+                verticalArrangement = Arrangement.spacedBy(16.dp),
+            ) {
+                Text(
+                    "Double tap locks the screen using device admin (same as the power key lock).",
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = subtitleColor,
+                )
+
+                SettingsSwitchRow(
+                    title = "Double tap to lock",
+                    subtitle = when {
+                        !doubleTapEnabled -> "Off"
+                        adminActive -> "On — double-tap home workspace"
+                        else -> "Enable, then grant device admin"
+                    },
+                    checked = doubleTapEnabled,
+                    themePalette = themePalette,
+                    onCheckedChange = { want ->
+                        if (want) {
+                            onDoubleTapChange(true)
+                            if (!SleepManager.isAdminActive(context)) {
+                                adminLauncher.launch(SleepManager.createEnableAdminIntent(context))
+                            }
+                            adminActive = SleepManager.isAdminActive(context)
+                        } else {
+                            onDoubleTapChange(false)
+                            adminActive = SleepManager.isAdminActive(context)
+                        }
+                    },
+                )
+
+                if (doubleTapEnabled && !adminActive) {
+                    TextButton(
+                        onClick = { adminLauncher.launch(SleepManager.createEnableAdminIntent(context)) },
+                    ) {
+                        Text("Grant device admin", color = themePalette.settingsMenuBody)
+                    }
+                }
+
+                Spacer(Modifier.height(24.dp))
+            }
+        }
+    }
+}
+
+@Composable
+private fun SettingsSwitchRow(
+    title: String,
+    subtitle: String,
+    checked: Boolean,
+    themePalette: LauncherThemePalette,
+    enabled: Boolean = true,
+    onCheckedChange: (Boolean) -> Unit,
+) {
+    Surface(
+        shape = RoundedCornerShape(16.dp),
+        color = Color(0xFF1E2430),
+        modifier = Modifier.fillMaxWidth(),
+    ) {
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(horizontal = 16.dp, vertical = 12.dp),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Column(Modifier.weight(1f)) {
+                Text(
+                    title,
+                    style = MaterialTheme.typography.bodyLarge.copy(
+                        color = themePalette.settingsMenuTitle,
+                        fontWeight = FontWeight.Medium,
+                    ),
+                )
+                Text(
+                    subtitle,
+                    style = MaterialTheme.typography.bodySmall.copy(
+                        color = Color(0xFF8E95A3),
+                        fontSize = 13.sp,
+                    ),
+                )
+            }
+            Switch(
+                checked = checked,
+                onCheckedChange = if (enabled) onCheckedChange else null,
+                enabled = enabled,
+                colors = SwitchDefaults.colors(
+                    checkedThumbColor = Color.White,
+                    checkedTrackColor = Color(0xFF4A90D9),
+                    uncheckedThumbColor = Color(0xFF9AA0A8),
+                    uncheckedTrackColor = Color(0xFF3A3F4A),
+                ),
+            )
+        }
+    }
+}

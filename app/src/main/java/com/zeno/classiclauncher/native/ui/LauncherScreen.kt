@@ -1,0 +1,4999 @@
+@file:OptIn(
+    androidx.compose.ui.ExperimentalComposeUiApi::class,
+    androidx.compose.foundation.ExperimentalFoundationApi::class,
+)
+
+package com.zeno.classiclauncher.nlauncher.ui
+
+import android.Manifest
+import android.content.ComponentName
+import android.content.Intent
+import android.content.pm.PackageManager
+import android.net.Uri
+import android.os.Build
+import android.os.SystemClock
+import android.provider.Settings
+import android.view.HapticFeedbackConstants
+import android.view.KeyEvent as AndroidKeyEvent
+import android.view.MotionEvent
+import android.widget.Toast
+import androidx.compose.foundation.BorderStroke
+import androidx.compose.foundation.background
+import androidx.compose.foundation.border
+import androidx.compose.foundation.clickable
+import androidx.compose.foundation.interaction.MutableInteractionSource
+import androidx.compose.foundation.focusable
+import androidx.compose.foundation.gestures.awaitEachGesture
+import androidx.compose.foundation.gestures.awaitFirstDown
+import androidx.compose.foundation.gestures.detectDragGestures
+import androidx.compose.foundation.gestures.detectTapGestures
+import androidx.compose.foundation.Image
+import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.animateContentSize
+import androidx.compose.animation.expandVertically
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
+import androidx.compose.animation.shrinkVertically
+import androidx.compose.animation.core.FastOutSlowInEasing
+import androidx.compose.animation.core.RepeatMode
+import androidx.compose.animation.core.animateFloat
+import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.animation.core.infiniteRepeatable
+import androidx.compose.animation.core.rememberInfiniteTransition
+import androidx.compose.animation.core.tween
+import androidx.compose.foundation.layout.BoxWithConstraints
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.absoluteOffset
+import androidx.compose.foundation.layout.fillMaxHeight
+import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
+import androidx.compose.foundation.layout.navigationBarsPadding
+import androidx.compose.foundation.layout.offset
+import androidx.compose.foundation.layout.PaddingValues
+import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.statusBarsPadding
+import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.horizontalScroll
+import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.layout.widthIn
+import androidx.compose.foundation.layout.wrapContentHeight
+import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.text.KeyboardOptions
+import androidx.compose.foundation.lazy.rememberLazyListState
+import androidx.compose.foundation.lazy.grid.GridCells
+import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
+import androidx.compose.foundation.lazy.grid.items
+import androidx.compose.foundation.relocation.BringIntoViewRequester
+import androidx.compose.foundation.relocation.bringIntoViewRequester
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
+import androidx.compose.foundation.pager.HorizontalPager
+import androidx.compose.foundation.pager.rememberPagerState
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.rounded.ArrowBack
+import androidx.compose.material.icons.automirrored.rounded.ArrowForward
+import androidx.compose.material.icons.automirrored.rounded.OpenInNew
+import androidx.compose.material.icons.automirrored.rounded.PlaylistAdd
+import androidx.compose.material.icons.outlined.BookmarkRemove
+import androidx.compose.material.icons.outlined.Close
+import androidx.compose.material.icons.outlined.QueryStats
+import androidx.compose.material.icons.outlined.Search
+import androidx.compose.material.icons.outlined.Menu
+import androidx.compose.material.icons.outlined.MailOutline
+import androidx.compose.material.icons.rounded.PhotoCamera
+import androidx.compose.material.icons.rounded.Home
+import androidx.compose.material.icons.rounded.TouchApp
+import androidx.compose.material.icons.rounded.Image
+import androidx.compose.material.icons.rounded.GridView
+import androidx.compose.material.icons.rounded.Apps
+import androidx.compose.material.icons.rounded.Wallpaper
+import androidx.compose.material.icons.rounded.WbSunny
+import androidx.compose.material.icons.rounded.SettingsBackupRestore
+import androidx.compose.material.icons.rounded.Palette
+import androidx.compose.material.icons.rounded.MailOutline
+import androidx.compose.material.icons.outlined.Vibration
+import androidx.compose.material.icons.rounded.TouchApp
+import androidx.compose.material.icons.rounded.Info
+import androidx.compose.material.icons.rounded.SwapVert
+import androidx.compose.material.icons.rounded.Visibility
+import androidx.compose.material.icons.rounded.VisibilityOff
+import androidx.compose.material.icons.rounded.BookmarkAdd
+import androidx.compose.material.icons.rounded.AddAlarm
+import androidx.compose.material.icons.rounded.EventBusy
+import androidx.compose.material.icons.rounded.Lock
+import androidx.compose.material.icons.rounded.Security
+import androidx.compose.material.icons.rounded.Settings
+import androidx.compose.material.icons.rounded.Tune
+import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
+import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.ModalBottomSheet
+import androidx.compose.material3.Text
+import androidx.compose.material3.OutlinedTextField
+import androidx.compose.material3.TextButton
+import androidx.compose.material3.Slider
+import androidx.compose.material3.Switch
+import androidx.compose.material3.SwitchDefaults
+import androidx.compose.material3.TextFieldDefaults
+import androidx.compose.material3.Surface
+import androidx.compose.material3.AlertDialog
+import androidx.compose.material3.HorizontalDivider
+import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.rememberModalBottomSheetState
+import androidx.activity.compose.BackHandler
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
+import com.zeno.classiclauncher.nlauncher.backup.SettingsDownloads
+import androidx.compose.runtime.Composable
+import androidx.compose.runtime.collectAsState
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableFloatStateOf
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.derivedStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberUpdatedState
+import androidx.compose.runtime.setValue
+import androidx.compose.runtime.mutableStateMapOf
+import androidx.compose.runtime.DisposableEffect
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.ui.graphics.Brush
+import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.ColorFilter
+import androidx.compose.ui.Alignment
+import androidx.compose.ui.Modifier
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.input.pointer.pointerInteropFilter
+import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.layout.LayoutCoordinates
+import androidx.compose.ui.layout.boundsInRoot
+import androidx.compose.ui.layout.onGloballyPositioned
+import androidx.compose.ui.zIndex
+import androidx.compose.ui.draw.alpha
+import androidx.compose.ui.draw.shadow
+import androidx.compose.ui.draw.clip
+import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.ui.layout.onSizeChanged
+import androidx.compose.ui.focus.FocusRequester
+import androidx.compose.ui.focus.focusRequester
+import androidx.compose.ui.input.key.Key
+import androidx.compose.ui.input.key.KeyEvent
+import androidx.compose.ui.input.key.KeyEventType
+import androidx.compose.ui.input.key.onPreviewKeyEvent
+import androidx.compose.ui.input.key.type
+import androidx.compose.ui.input.key.key
+import androidx.compose.ui.input.pointer.PointerEventPass
+import androidx.compose.ui.input.pointer.changedToUp
+import androidx.compose.ui.input.pointer.positionChanged
+import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.platform.LocalFocusManager
+import androidx.compose.ui.platform.LocalView
+import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.viewinterop.AndroidView
+import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.text.PlatformTextStyle
+import androidx.compose.ui.text.style.LineHeightStyle
+import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.text.TextStyle
+import androidx.compose.ui.unit.sp
+import androidx.compose.ui.unit.dp
+import androidx.compose.ui.window.DialogProperties
+import androidx.core.content.ContextCompat
+import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.text.input.ImeAction
+import androidx.compose.ui.text.input.KeyboardCapitalization
+import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.LifecycleEventObserver
+import androidx.lifecycle.compose.LocalLifecycleOwner
+import androidx.lifecycle.viewmodel.compose.viewModel
+import coil.compose.AsyncImage
+import com.zeno.classiclauncher.nlauncher.glance.GlanceDateWeatherEventsView
+import com.zeno.classiclauncher.nlauncher.glance.GlanceStripPreferences
+import com.zeno.classiclauncher.nlauncher.apps.AppEntry
+import com.zeno.classiclauncher.nlauncher.apps.AppsRepository
+import com.zeno.classiclauncher.nlauncher.apps.parseHomeShortcutToken
+import com.zeno.classiclauncher.native.ui.WallpaperSourceOverlay
+import com.zeno.classiclauncher.native.ui.WallpaperSourceSub
+import com.zeno.classiclauncher.nlauncher.badges.AppIconWithBadge
+import com.zeno.classiclauncher.nlauncher.badges.BadgeNotificationListener
+import com.zeno.classiclauncher.nlauncher.power.SleepManager
+import com.zeno.classiclauncher.nlauncher.folders.DrawerGridCell
+import com.zeno.classiclauncher.nlauncher.theme.LauncherThemePalette
+import com.zeno.classiclauncher.nlauncher.prefs.GridPreset
+import com.zeno.classiclauncher.nlauncher.prefs.HomeGroup
+import com.zeno.classiclauncher.nlauncher.prefs.HomeGroupSide
+import com.zeno.classiclauncher.nlauncher.prefs.LauncherPrefs
+import com.zeno.classiclauncher.nlauncher.prefs.AppIconShape
+import com.zeno.classiclauncher.nlauncher.prefs.SecondShortcutTarget
+import com.zeno.classiclauncher.nlauncher.R
+import kotlinx.coroutines.Job
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.withTimeoutOrNull
+import java.text.SimpleDateFormat
+import java.util.Date
+import java.util.Locale
+import kotlin.math.hypot
+import androidx.compose.ui.graphics.Shape
+
+/**
+ * Max ms between consecutive DPAD/trackpad steps to treat the later step as "hard"
+ * (page change, dock, home). Must not swallow moves — only edge/zone logic; see AppDrawer key handler.
+ */
+/**
+ * Q20 trackpad events at ≤120ms apart are treated as "hard" (fast intentional swipe).
+ * Wider than 72ms so moderate-speed swipes still trigger page changes reliably.
+ */
+private const val NAV_FRAME_MS = 120L
+/**
+ * Minimum ms between accepted DPAD cursor steps — limits runaway cursor on fast swipes.
+ * Zone/page transitions bypass this. 40ms ≈ 25 steps/sec max.
+ */
+private const val NAV_MOVE_MIN_MS = 40L
+private const val HOME_SHORTCUT_SLOTS = 3
+private val HOME_SHORTCUT_ICON_DP = 52.dp
+private val HOME_SHORTCUT_FALLBACK_ICON_DP = 48.dp
+private val HOME_STRIP_LABEL_COLOR = Color(0xFFE8EEF7)
+/** Strip captions under shortcuts and home groups (was 11sp; +10%). */
+private val HOME_STRIP_LABEL_FONT_SP = 12.5.sp
+private val HOME_STRIP_LABEL_LINE_SP = 16.sp
+/** Space between the 48dp icon tile and the caption (was 4.dp; more readable). */
+private val HOME_STRIP_ICON_LABEL_GAP = 8.dp
+/** Centre shortcuts: gap between tiles (matches last shipped commit). */
+private val HOME_STRIP_SHORTCUT_GAP = 8.dp
+
+private val OUTLINE_OFFSETS = arrayOf(
+    Offset(-0.8f, -0.8f),
+    Offset(0.8f, -0.8f),
+    Offset(0.8f, 0.8f),
+    Offset(-0.8f, 0.8f),
+)
+private val MAIN_SHADOW_OFFSET = Offset(0f, 1.5f)
+
+private fun iconMaskShape(shape: AppIconShape): Shape = when (shape) {
+    AppIconShape.ROUNDED -> RoundedCornerShape(14.dp)
+    AppIconShape.SQUIRCLE -> RoundedCornerShape(20.dp)
+    AppIconShape.CIRCLE -> CircleShape
+    AppIconShape.SOFT_SQUARE -> RoundedCornerShape(9.dp)
+}
+
+private fun appIconShapeLabel(shape: AppIconShape): String = when (shape) {
+    AppIconShape.ROUNDED -> "Rounded"
+    AppIconShape.SQUIRCLE -> "Squircle"
+    AppIconShape.CIRCLE -> "Circle"
+    AppIconShape.SOFT_SQUARE -> "Soft square"
+}
+
+internal fun isNotificationListenerEnabled(context: android.content.Context): Boolean {
+    val flat = android.provider.Settings.Secure.getString(
+        context.contentResolver,
+        "enabled_notification_listeners",
+    ) ?: return false
+    val component = ComponentName(context, BadgeNotificationListener::class.java)
+    val full = component.flattenToString()
+    val short = component.flattenToShortString()
+    return flat.split(':').any { segment ->
+        segment == full || segment == short
+    }
+}
+
+private data class PermRuntime(
+    val notificationAccess: Boolean,
+    val deviceAdmin: Boolean,
+    val location: Boolean,
+    val calendar: Boolean,
+)
+
+private fun computePermRuntime(context: android.content.Context): PermRuntime =
+    PermRuntime(
+        notificationAccess = isNotificationListenerEnabled(context),
+        deviceAdmin = SleepManager.isAdminActive(context),
+        location = ContextCompat.checkSelfPermission(
+            context,
+            Manifest.permission.ACCESS_COARSE_LOCATION,
+        ) == PackageManager.PERMISSION_GRANTED,
+        calendar = ContextCompat.checkSelfPermission(
+            context,
+            Manifest.permission.READ_CALENDAR,
+        ) == PackageManager.PERMISSION_GRANTED,
+    )
+
+private fun missingPermissionCount(prefs: LauncherPrefs, r: PermRuntime): Int {
+    var n = 0
+    if (prefs.notificationBadgesEnabled && !r.notificationAccess) n++
+    if (prefs.doubleTapToSleepEnabled && !r.deviceAdmin) n++
+    if (prefs.glanceEnabled && !r.location) n++
+    if (prefs.glanceEnabled && prefs.glanceShowCalendar && !r.calendar) n++
+    return n
+}
+
+private data class OpenFolderState(
+    val id: String,
+    val members: List<AppEntry>,
+    val title: String,
+)
+
+@Composable
+fun LauncherScreen(
+    vm: LauncherViewModel = viewModel(),
+) {
+    val context = LocalContext.current
+    val rootView = LocalView.current
+    val prefs by vm.prefs.collectAsState()
+    val allApps by vm.apps.collectAsState()
+    val gridCells by vm.filteredGridCells.collectAsState()
+    val searchQuery by vm.searchQuery.collectAsState()
+    val reorderMode by vm.isReorderMode.collectAsState()
+    val moving by vm.moving.collectAsState()
+    val hasUnreadMail by vm.hasUnreadMail.collectAsState()
+    val hasUnreadSms by vm.hasUnreadSms.collectAsState()
+    val hasUnreadWhatsApp by vm.hasUnreadWhatsApp.collectAsState()
+    val unreadPackages by vm.packagesWithUnread.collectAsState()
+    val sortByUsage by vm.sortByUsage.collectAsState()
+    val themePalette = remember(prefs.themeJson) { LauncherThemePalette.fromJson(prefs.themeJson) }
+    val dockEndIconModel = remember(prefs.dockCameraPackage, allApps) {
+        val pkg = prefs.dockCameraPackage.trim()
+        if (pkg.isEmpty()) null
+        else allApps.find { it.packageName == pkg }?.icon
+    }
+    val classicMode = prefs.classicMode
+    val pagerState = rememberPagerState(initialPage = 0, pageCount = { if (classicMode) 1 else 2 })
+    var showSettings by remember { mutableStateOf(false) }
+    var showPermissionsSettings by remember { mutableStateOf(false) }
+    var showDockEndAppPicker by remember { mutableStateOf(false) }
+    var showGlanceSettings by remember { mutableStateOf(false) }
+    var showHomeGroupsSettings by remember { mutableStateOf(false) }
+    var showGestureSettings by remember { mutableStateOf(false) }
+    var showAppDrawerBadges by remember { mutableStateOf(false) }
+    var showHomeActions by remember { mutableStateOf(false) }
+    /** In-app wallpaper source list (replaces jumping straight to system [Intent.ACTION_SET_WALLPAPER]). */
+    var showWallpaperSourceOverlay by remember { mutableStateOf(false) }
+    var wallpaperSourceSub by remember { mutableStateOf(WallpaperSourceSub.List) }
+    var homeClockEnabled by remember { mutableStateOf(false) }
+    var showAppMenu by remember { mutableStateOf<AppEntry?>(null) }
+    /** Storage token (`pkg` or `pkg#id`) when the app menu was opened from the home shortcut strip. */
+    var homeShortcutMenuToken by remember { mutableStateOf<String?>(null) }
+    var openFolder by remember { mutableStateOf<OpenFolderState?>(null) }
+    var openHomeGroup by remember { mutableStateOf<OpenFolderState?>(null) }
+    val scope = rememberCoroutineScope()
+    val homeFocusRequester = remember { FocusRequester() }
+    var drawerPageIndex by remember { mutableStateOf(0) }
+    var requestedDrawerPage by remember { mutableStateOf(-1) }
+    var appMenuFromHomeShortcut by remember { mutableStateOf(false) }
+    var dockFocused by remember { mutableStateOf(false) }
+    var dockFocusIndex by remember { mutableStateOf(0) }
+
+    var permRuntime by remember { mutableStateOf(computePermRuntime(context)) }
+    val lifecycleOwner = LocalLifecycleOwner.current
+    DisposableEffect(lifecycleOwner) {
+        val observer = LifecycleEventObserver { _, event ->
+            if (event == Lifecycle.Event.ON_RESUME) {
+                permRuntime = computePermRuntime(context)
+            }
+        }
+        lifecycleOwner.lifecycle.addObserver(observer)
+        onDispose { lifecycleOwner.lifecycle.removeObserver(observer) }
+    }
+
+    // Consume back for overlays / drawer / search; on home (page 0) with nothing open, do nothing — system volume
+    // and recents are handled elsewhere; no moveTaskToBack (avoids feeling like “recent apps”).
+    BackHandler(enabled = true) {
+        when {
+            showWallpaperSourceOverlay -> {
+                when (wallpaperSourceSub) {
+                    WallpaperSourceSub.ZenoGrid -> wallpaperSourceSub = WallpaperSourceSub.List
+                    WallpaperSourceSub.List -> {
+                        showWallpaperSourceOverlay = false
+                        wallpaperSourceSub = WallpaperSourceSub.List
+                    }
+                }
+            }
+            showAppMenu != null -> {
+                showAppMenu = null
+                appMenuFromHomeShortcut = false
+                homeShortcutMenuToken = null
+            }
+            showDockEndAppPicker -> showDockEndAppPicker = false
+            showPermissionsSettings -> showPermissionsSettings = false
+            showGestureSettings -> showGestureSettings = false
+            showAppDrawerBadges -> showAppDrawerBadges = false
+            showHomeGroupsSettings -> showHomeGroupsSettings = false
+            showGlanceSettings -> showGlanceSettings = false
+            showSettings -> showSettings = false
+            openHomeGroup != null -> openHomeGroup = null
+            openFolder != null -> openFolder = null
+            showHomeActions -> showHomeActions = false
+            reorderMode -> vm.toggleReorderMode()
+            searchQuery.isNotEmpty() -> vm.setSearchQuery("")
+            !classicMode && pagerState.currentPage != 0 -> scope.launch { pagerState.animateScrollToPage(0) }
+            else -> Unit
+        }
+    }
+
+    androidx.compose.runtime.LaunchedEffect(pagerState.currentPage, classicMode) {
+        if (!classicMode && pagerState.currentPage == 0) {
+            homeFocusRequester.requestFocus()
+            // Avoid stale drawer page scrub requests when coming back to home.
+            requestedDrawerPage = -1
+        }
+    }
+
+    // End-call / red button: navigated via Activity dispatchKeyEvent → ViewModel → here.
+    val navigateHomeEvent by vm.navigateHomeEvent.collectAsState()
+    androidx.compose.runtime.LaunchedEffect(navigateHomeEvent) {
+        if (navigateHomeEvent > 0) pagerState.animateScrollToPage(0)
+    }
+
+    // Dock shows which app-drawer page is active; trackpad flings can move the outer home/drawer pager
+    // in one motion without intermediate inner pager steps, so drawerPageIndex may still be the last
+    // drawer page while we're on home — show page 0 in the indicator whenever home is visible.
+    val drawerPageCountForDock by remember {
+        derivedStateOf {
+            val n = prefs.gridPreset.rows * prefs.gridPreset.cols
+            ((gridCells.size + n - 1) / n).coerceAtLeast(1)
+        }
+    }
+    val dockPageIndexForDisplay by remember(classicMode) {
+        derivedStateOf {
+            if (!classicMode && pagerState.currentPage == 0) 0
+            else drawerPageIndex.coerceIn(0, (drawerPageCountForDock - 1).coerceAtLeast(0))
+        }
+    }
+
+    // Wallpaper: Theme.ClassicLauncher + FLAG_SHOW_WALLPAPER (same idea as Flutter transparent MaterialApp).
+    Box(modifier = Modifier.fillMaxSize()) {
+        Column(modifier = Modifier.fillMaxSize()) {
+            // Do not add top Spacer here: HomePage uses statusBarsPadding(); an extra inset stacked a large gap under the status bar.
+            HorizontalPager(
+                state = pagerState,
+                modifier = Modifier.weight(1f),
+                // Keep the drawer composed when on home so inner pager state & nested scroll behave better
+                // with trackpad (BlackBerry) — default 0 can drop the drawer subtree entirely.
+                beyondViewportPageCount = 1,
+            ) { page ->
+                when {
+                    !classicMode && page == 0 -> HomePage(
+                        focusRequester = homeFocusRequester,
+                        homeActive = pagerState.currentPage == 0,
+                        onOpenAppDrawer = {
+                            if (searchQuery.isNotEmpty()) vm.setSearchQuery("")
+                            scope.launch { pagerState.animateScrollToPage(1) }
+                        },
+                        allApps = allApps,
+                        hiddenPackages = prefs.hiddenPackages,
+                        onLaunchApp = { pkg -> vm.launchApp(pkg) },
+                        swipeUpPackage = prefs.swipeUpPackage,
+                        doubleTapPackage = prefs.doubleTapPackage,
+                        hasClock = homeClockEnabled,
+                        onLongPress = { showHomeActions = true },
+                        doubleTapToSleepEnabled = prefs.doubleTapToSleepEnabled,
+                        searchQuery = searchQuery,
+                        onSearchQueryChange = vm::setSearchQuery,
+                        appIconShape = prefs.appIconShape,
+                        themePalette = themePalette,
+                        glanceEnabled = prefs.glanceEnabled && !prefs.classicMode,
+                        glanceStripPreferences = remember(
+                            prefs.glanceShowFlashlight,
+                            prefs.glanceShowBattery,
+                            prefs.glanceShowCalendar,
+                            prefs.glanceShowAlarm,
+                        ) {
+                            GlanceStripPreferences(
+                                // Flashlight on-glance item is disabled (it was unreliable on devices / can be confusing to users).
+                                showFlashlight = false,
+                                showBattery = prefs.glanceShowBattery,
+                                showCalendar = prefs.glanceShowCalendar,
+                                showAlarm = prefs.glanceShowAlarm,
+                            )
+                        },
+                    )
+                    (classicMode && page == 0) || page == 1 -> AppDrawer(
+                        isActive = if (classicMode) pagerState.currentPage == 0 else pagerState.currentPage == 1,
+                        classicDock = classicMode,
+                        hapticsEnabled = prefs.hapticsEnabled,
+                        hapticIntensity = prefs.hapticIntensity,
+                        gridPreset = prefs.gridPreset,
+                        gridCells = gridCells,
+                        unreadPackages = if (prefs.notificationBadgesEnabled) unreadPackages else emptySet(),
+                        usageStats = emptyMap(),
+                        sortByUsage = sortByUsage,
+                        showIconNotifBadge = prefs.showIconNotifBadge,
+                        onToggleSortByUsage = {
+                            if (vm.hasUsagePermission()) {
+                                vm.toggleSortByUsage()
+                            } else {
+                                Toast.makeText(
+                                    context,
+                                    "Enable Usage Access for Zeno Classic in Settings",
+                                    Toast.LENGTH_LONG,
+                                ).show()
+                                context.startActivity(
+                                    android.content.Intent(android.provider.Settings.ACTION_USAGE_ACCESS_SETTINGS)
+                                        .addFlags(android.content.Intent.FLAG_ACTIVITY_NEW_TASK)
+                                )
+                            }
+                        },
+                        requestedPage = requestedDrawerPage,
+                        searchQuery = searchQuery,
+                        onSearchQueryChange = vm::setSearchQuery,
+                        appIconShape = prefs.appIconShape,
+                        reorderMode = reorderMode,
+                        movingSlotId = moving,
+                        onToggleReorder = vm::toggleReorderMode,
+                        onPageChange = { drawerPageIndex = it },
+                        onDockFocusChanged = { focused, idx ->
+                            dockFocused = focused
+                            dockFocusIndex = idx
+                        },
+                        onDockActivate = { idx ->
+                            if (classicMode) {
+                                when (idx) {
+                                    0 -> vm.launchFromDock(DockSlot.Mail)
+                                    1 -> vm.launchFromDock(DockSlot.Camera)
+                                }
+                            } else {
+                                when (idx) {
+                                    0 -> vm.launchFromDock(DockSlot.Mail)
+                                    1 -> scope.launch { pagerState.animateScrollToPage(0) }
+                                    2 -> vm.launchFromDock(DockSlot.Shortcut)
+                                    3 -> vm.launchFromDock(DockSlot.Camera)
+                                }
+                            }
+                        },
+                        onCellTap = { cell ->
+                            when (cell) {
+                                is DrawerGridCell.App -> {
+                                    val app = cell.entry
+                            if (app.packageName == AppsRepository.INTERNAL_SETTINGS_PACKAGE) {
+                                showSettings = true
+                                return@AppDrawer
+                            }
+                            if (reorderMode) {
+                                val m = moving
+                                if (m == null) vm.startMove(app.packageName)
+                                else {
+                                    vm.moveTo(app.packageName)
+                                    vm.clearMove()
+                                }
+                            } else {
+                                if (searchQuery.isNotEmpty()) vm.setSearchQuery("")
+                                vm.launchApp(app.packageName)
+                                    }
+                                }
+                                is DrawerGridCell.Folder -> {
+                                    if (reorderMode) {
+                                        val m = moving
+                                        if (m == null) vm.startMove(cell.id)
+                                        else {
+                                            vm.moveTo(cell.id)
+                                            vm.clearMove()
+                                        }
+                                    } else {
+                                        openFolder = OpenFolderState(cell.id, cell.members, cell.displayTitle)
+                                    }
+                                }
+                            }
+                        },
+                        onCellLongPress = { cell ->
+                            when (cell) {
+                                is DrawerGridCell.App -> {
+                                    if (cell.entry.packageName == AppsRepository.INTERNAL_SETTINGS_PACKAGE) {
+                                showSettings = true
+                            } else {
+                                        appMenuFromHomeShortcut = false
+                                        homeShortcutMenuToken = null
+                                        showAppMenu = cell.entry
+                                    }
+                                }
+                                is DrawerGridCell.Folder -> openFolder = OpenFolderState(cell.id, cell.members, cell.displayTitle)
+                            }
+                        },
+                        onReorderDrop = vm::finishReorderDrop,
+                        onExitToHome = {
+                            if (searchQuery.isNotEmpty()) vm.setSearchQuery("")
+                            if (!classicMode) scope.launch { pagerState.animateScrollToPage(0) }
+                        },
+                        themePalette = themePalette,
+                    )
+                }
+            }
+
+            // Flutter main.dart: search replaces the nav bar when typing (drawer page only; home page has its own overlay).
+            if (searchQuery.isNotEmpty() && (classicMode || pagerState.currentPage != 0)) {
+                DrawerSearchBar(
+                    query = searchQuery,
+                    onClear = { vm.setSearchQuery("") },
+                )
+            } else {
+                val visibleShortcuts = if (prefs.showShortcutApps) prefs.homeShortcutPackages else emptyList()
+                val visibleGroups = if (prefs.showHomeGroups) prefs.homeGroups else emptyList()
+                if (!classicMode && pagerState.currentPage == 0 &&
+                    (visibleShortcuts.isNotEmpty() || visibleGroups.isNotEmpty())
+                ) {
+                    HomeShortcutStrip(
+                        shortcutPackages = visibleShortcuts,
+                        homeGroups = visibleGroups,
+                        allApps = allApps,
+                        unreadPackages = if (prefs.notificationBadgesEnabled) unreadPackages else emptySet(),
+                        appIconShape = prefs.appIconShape,
+                        themePalette = themePalette,
+                        onLaunch = { vm.launchHomeShortcutFromToken(it) },
+                        onLongPressShortcut = { token ->
+                            val (pkg, _) = parseHomeShortcutToken(token)
+                            val entry = allApps.find { it.packageName == pkg }
+                                ?: AppEntry(packageName = pkg, label = pkg, icon = null)
+                            showAppMenu = entry
+                            appMenuFromHomeShortcut = true
+                            homeShortcutMenuToken = token
+                        },
+                        onOpenHomeGroup = { g ->
+                            val members = g.packageNames.mapNotNull { pkg -> allApps.find { it.packageName == pkg } }
+                            openHomeGroup = OpenFolderState(g.id, members, g.title)
+                        },
+                    )
+                    HorizontalDivider(
+                        modifier = Modifier.padding(horizontal = 16.dp),
+                        thickness = 1.dp,
+                        color = Color(0x553D4B60),
+                    )
+                }
+                Dock(
+                    pageIndex = dockPageIndexForDisplay,
+                    onMail = { vm.launchFromDock(DockSlot.Mail) },
+                    onShortcut = { vm.launchFromDock(DockSlot.Shortcut) },
+                    onCamera = { vm.launchFromDock(DockSlot.Camera) },
+                    onHome = {
+                        if (!classicMode) scope.launch { pagerState.animateScrollToPage(0) }
+                    },
+                    onScrubPage = { targetPage ->
+                        requestedDrawerPage = targetPage
+                        scope.launch {
+                            if (classicMode) pagerState.animateScrollToPage(0)
+                            else pagerState.animateScrollToPage(1)
+                        }
+                    },
+                    drawerPageCount = drawerPageCountForDock,
+                    mailHasUnread = hasUnreadMail && prefs.notificationBadgesEnabled,
+                    shortcutHasUnread = !classicMode && prefs.notificationBadgesEnabled && if (prefs.secondShortcutTarget == SecondShortcutTarget.WHATSAPP) {
+                        hasUnreadWhatsApp
+                    } else {
+                        hasUnreadSms
+                    },
+                    showHomeButton = !classicMode,
+                    showMessagesShortcut = !classicMode,
+                    selectedTint = themePalette.dockSelected,
+                    themePalette = themePalette,
+                    dockEndIconModel = dockEndIconModel,
+                    appIconShape = prefs.appIconShape,
+                    focused = dockFocused && (classicMode || pagerState.currentPage == 1),
+                    focusedIndex = dockFocusIndex,
+                )
+            }
+        }
+
+        val selectedApp = showAppMenu
+        if (selectedApp != null) {
+            val canAddHomeShortcut =
+                !appMenuFromHomeShortcut &&
+                    selectedApp.packageName != AppsRepository.INTERNAL_SETTINGS_PACKAGE &&
+                    prefs.homeShortcutPackages.size < HOME_SHORTCUT_SLOTS &&
+                    selectedApp.packageName !in prefs.homeShortcutPackages
+            AppContextMenu(
+                app = selectedApp,
+                themePalette = themePalette,
+                isHidden = prefs.hiddenPackages.contains(selectedApp.packageName),
+                homeGroups = prefs.homeGroups,
+                addHomeShortcutEnabled = canAddHomeShortcut,
+                removeHomeShortcutEnabled = appMenuFromHomeShortcut,
+                onDismiss = {
+                    showAppMenu = null
+                    appMenuFromHomeShortcut = false
+                    homeShortcutMenuToken = null
+                },
+                onLaunch = {
+                    val t = homeShortcutMenuToken
+                    if (t != null) vm.launchHomeShortcutFromToken(t) else vm.launchApp(selectedApp.packageName)
+                    showAppMenu = null
+                    appMenuFromHomeShortcut = false
+                    homeShortcutMenuToken = null
+                },
+                onInfo = {
+                    vm.openAppInfo(selectedApp.packageName)
+                    showAppMenu = null
+                    appMenuFromHomeShortcut = false
+                    homeShortcutMenuToken = null
+                },
+                onHideToggle = {
+                    vm.setHidden(selectedApp.packageName, !prefs.hiddenPackages.contains(selectedApp.packageName))
+                    showAppMenu = null
+                    appMenuFromHomeShortcut = false
+                    homeShortcutMenuToken = null
+                },
+                onReorder = {
+                    vm.toggleReorderMode()
+                    showAppMenu = null
+                    appMenuFromHomeShortcut = false
+                    homeShortcutMenuToken = null
+                },
+                onAddHomeShortcut = {
+                    vm.addHomeShortcut(selectedApp.packageName)
+                    showAppMenu = null
+                    appMenuFromHomeShortcut = false
+                    homeShortcutMenuToken = null
+                },
+                onRemoveHomeShortcut = {
+                    val t = homeShortcutMenuToken
+                    if (t != null) vm.removeHomeShortcutToken(t)
+                    showAppMenu = null
+                    appMenuFromHomeShortcut = false
+                    homeShortcutMenuToken = null
+                },
+                onAddToHomeGroup = { groupId ->
+                    vm.addPackageToHomeGroup(selectedApp.packageName, groupId)
+                    showAppMenu = null
+                    appMenuFromHomeShortcut = false
+                    homeShortcutMenuToken = null
+                },
+                onRemoveFromHomeGroup = { groupId ->
+                    vm.removePackageFromHomeGroup(selectedApp.packageName, groupId)
+                    showAppMenu = null
+                    appMenuFromHomeShortcut = false
+                    homeShortcutMenuToken = null
+                },
+            )
+        }
+
+        val folderOpen = openFolder
+        if (folderOpen != null) {
+            FolderContentsSheet(
+                folderTitle = folderOpen.title,
+                members = folderOpen.members,
+                onDismiss = { openFolder = null },
+                onLaunchApp = { pkg ->
+                    vm.launchApp(pkg)
+                    openFolder = null
+                },
+                onRemoveFromFolder = { pkg ->
+                    vm.removeAppFromFolder(pkg, folderOpen.id)
+                    val updated = folderOpen.members.filter { it.packageName != pkg }
+                    openFolder = if (updated.isEmpty()) null else folderOpen.copy(members = updated)
+                },
+                onDissolveFolder = {
+                    vm.dissolveFolder(folderOpen.id)
+                    openFolder = null
+                },
+                onRenameFolder = { newTitle ->
+                    vm.renameFolder(folderOpen.id, newTitle)
+                    openFolder = folderOpen.copy(title = newTitle.trim().ifBlank { "Folder" })
+                },
+                appIconShape = prefs.appIconShape,
+                themePalette = themePalette,
+            )
+        }
+
+        val homeGroupOpen = openHomeGroup
+        if (homeGroupOpen != null) {
+            HomeGroupFolderOverlay(
+                groupTitle = homeGroupOpen.title,
+                members = homeGroupOpen.members,
+                onDismiss = { openHomeGroup = null },
+                onLaunchApp = { pkg ->
+                    vm.launchApp(pkg)
+                    openHomeGroup = null
+                },
+                onRemoveFromGroup = { pkg ->
+                    vm.removePackageFromHomeGroup(pkg, homeGroupOpen.id)
+                    val updated = homeGroupOpen.members.filter { it.packageName != pkg }
+                    openHomeGroup = if (updated.isEmpty()) null else homeGroupOpen.copy(members = updated)
+                },
+                onDeleteGroup = {
+                    vm.deleteHomeGroup(homeGroupOpen.id)
+                    openHomeGroup = null
+                },
+                onRenameGroup = { newTitle ->
+                    vm.renameHomeGroup(homeGroupOpen.id, newTitle)
+                    openHomeGroup = homeGroupOpen.copy(title = newTitle.trim().ifBlank { "Group" })
+                },
+                appIconShape = prefs.appIconShape,
+                themePalette = themePalette,
+            )
+        }
+
+        // Settings keeps keyboard/trackpad focus; Key.Back on that node dismisses settings. When a sub-screen
+        // is composed on top (permissions, glance, etc.), do not consume Back there — let BackHandler close the top overlay.
+        val settingsStackedOverlayOpen =
+            showPermissionsSettings || showGlanceSettings ||
+                showHomeGroupsSettings || showDockEndAppPicker || showWallpaperSourceOverlay ||
+                showGestureSettings || showAppDrawerBadges
+
+        AnimatedVisibility(
+            visible = showSettings,
+            enter = fadeIn(animationSpec = tween(200)),
+            exit = fadeOut(animationSpec = tween(160)),
+        ) {
+            SettingsScreenOverlay(
+                stackedChildOverlayOpen = settingsStackedOverlayOpen,
+                gridPreset = prefs.gridPreset,
+                shortcut = prefs.secondShortcutTarget,
+                hapticsEnabled = prefs.hapticsEnabled,
+                dockCameraBody = remember(prefs.dockCameraPackage, allApps) {
+                    if (prefs.dockCameraPackage.isEmpty()) {
+                        "Default: camera app. Open to choose any installed app."
+                    } else {
+                        val label = allApps.find { it.packageName == prefs.dockCameraPackage }?.label
+                        label ?: prefs.dockCameraPackage
+                    }
+                },
+                mailBadgeBody = remember(prefs.mailBadgePackage, allApps) {
+                    if (prefs.mailBadgePackage.isEmpty()) {
+                        "Automatic: best match among mail apps"
+                    } else {
+                        val label = allApps.find { it.packageName == prefs.mailBadgePackage }?.label
+                        "Fixed: ${label ?: prefs.mailBadgePackage}"
+                    }
+                },
+                onGridPreset = vm::setGridPreset,
+                onShortcut = vm::setSecondShortcutTarget,
+                onCycleMailBadge = vm::cycleMailBadgePackage,
+                onOpenDockEndAppPicker = { showDockEndAppPicker = true },
+                glanceSubtitle = remember(
+                    prefs.glanceEnabled,
+                    prefs.glanceShowCalendar,
+                    prefs.glanceShowFlashlight,
+                    prefs.glanceShowBattery,
+                    prefs.glanceShowAlarm,
+                ) {
+                    if (!prefs.glanceEnabled) {
+                        "Off"
+                    } else {
+                        buildList {
+                            add("Date & weather")
+                            if (prefs.glanceShowCalendar) add("calendar")
+                            if (prefs.glanceShowFlashlight) add("flashlight")
+                            if (prefs.glanceShowBattery) add("battery")
+                            if (prefs.glanceShowAlarm) add("alarm")
+                        }.joinToString(prefix = "On · ", separator = ", ")
+                    }
+                },
+                onOpenGlanceSettings = { showGlanceSettings = true },
+                homeGroupsSubtitle = remember(prefs.homeGroups) {
+                    when {
+                        prefs.homeGroups.isEmpty() -> "None — up to 2 (far left / far right of centre shortcuts)"
+                        else -> prefs.homeGroups.joinToString(" · ") { "${it.title} (${it.side.name.lowercase()})" }
+                    }
+                },
+                onOpenHomeGroupsSettings = { showHomeGroupsSettings = true },
+                permissionsSubtitle = remember(prefs, permRuntime) {
+                    val missing = missingPermissionCount(prefs, permRuntime)
+                    when {
+                        missing == 0 -> "All set for enabled features"
+                        missing == 1 -> "1 missing — open to grant or turn off features"
+                        else -> "$missing missing — open to grant or turn off features"
+                    }
+                },
+                onOpenPermissionsSettings = { showPermissionsSettings = true },
+                onSetWallpaper = {
+                    wallpaperSourceSub = WallpaperSourceSub.List
+                    showWallpaperSourceOverlay = true
+                },
+                onToggleHaptics = { vm.setHapticsEnabled(!prefs.hapticsEnabled) },
+                hapticIntensity = prefs.hapticIntensity,
+                onSetHapticIntensity = vm::setHapticIntensity,
+                onExportBackup = vm::exportBackupJson,
+                onImportBackup = vm::importBackupJson,
+                onResetTheme = vm::resetTheme,
+                themePalette = themePalette,
+                onDismiss = { showSettings = false },
+                gestureSubtitle = remember(prefs.swipeUpPackage, prefs.doubleTapPackage, prefs.doubleTapToSleepEnabled, allApps) {
+                    val parts = buildList {
+                        if (prefs.swipeUpPackage.isNotEmpty())
+                            add("Swipe up: " + (allApps.find { it.packageName == prefs.swipeUpPackage }?.label ?: prefs.swipeUpPackage))
+                        when {
+                            prefs.doubleTapToSleepEnabled -> add("Double tap: Sleep")
+                            prefs.doubleTapPackage.isNotEmpty() -> add("Double tap: " + (allApps.find { it.packageName == prefs.doubleTapPackage }?.label ?: prefs.doubleTapPackage))
+                        }
+                    }
+                    if (parts.isEmpty()) "Not configured" else parts.joinToString(" · ")
+                },
+                onOpenGestureSettings = { showGestureSettings = true },
+                drawerBadgesSubtitle = remember(prefs.showIconNotifBadge) {
+                    buildList {
+                        if (prefs.showIconNotifBadge) add("Notifications")
+                    }.let { if (it.isEmpty()) "All off" else it.joinToString(", ") }
+                },
+                appIconShape = prefs.appIconShape,
+                onSetAppIconShape = vm::setAppIconShape,
+                onOpenDrawerBadges = { showAppDrawerBadges = true },
+                classicMode = prefs.classicMode,
+                onToggleClassicMode = { vm.setClassicMode(!prefs.classicMode) },
+            )
+        }
+
+        if (showAppDrawerBadges) {
+            AppDrawerBadgesOverlay(
+                showUsageStatsBadge = false,
+                showIconNotifBadge = prefs.showIconNotifBadge,
+                notificationAccessReady = prefs.notificationBadgesEnabled && permRuntime.notificationAccess,
+                themePalette = themePalette,
+                onDismiss = { showAppDrawerBadges = false },
+                onShowUsageStatsBadgeChange = {},
+                onShowIconNotifBadgeChange = vm::setShowIconNotifBadge,
+            )
+        }
+
+        if (showGestureSettings) {
+            GestureShortcutsOverlay(
+                allApps = allApps,
+                swipeUpPackage = prefs.swipeUpPackage,
+                doubleTapPackage = prefs.doubleTapPackage,
+                doubleTapToSleepEnabled = prefs.doubleTapToSleepEnabled,
+                themePalette = themePalette,
+                onDismiss = { showGestureSettings = false },
+                onSetSwipeUp = vm::setSwipeUpPackage,
+                onSetDoubleTap = vm::setDoubleTapPackage,
+                onDoubleTapSleepChange = vm::setDoubleTapToSleepEnabled,
+            )
+        }
+
+        if (showPermissionsSettings) {
+            PermissionsSettingsOverlay(
+                prefs = prefs,
+                themePalette = themePalette,
+                onDismiss = {
+                    showPermissionsSettings = false
+                    permRuntime = computePermRuntime(context)
+                },
+                onNotificationBadgesEnabled = vm::setNotificationBadgesEnabled,
+                onDoubleTapSleepEnabled = vm::setDoubleTapToSleepEnabled,
+                onGlanceEnabled = vm::setGlanceEnabled,
+                onGlanceShowCalendar = vm::setGlanceShowCalendar,
+            )
+        }
+
+        if (showGlanceSettings) {
+            GlanceSettingsOverlay(
+                glanceEnabled = prefs.glanceEnabled,
+                glanceShowFlashlight = prefs.glanceShowFlashlight,
+                glanceShowBattery = prefs.glanceShowBattery,
+                glanceShowCalendar = prefs.glanceShowCalendar,
+                glanceShowAlarm = prefs.glanceShowAlarm,
+                themePalette = themePalette,
+                onGlanceEnabled = vm::setGlanceEnabled,
+                onGlanceShowFlashlight = vm::setGlanceShowFlashlight,
+                onGlanceShowBattery = vm::setGlanceShowBattery,
+                onGlanceShowCalendar = vm::setGlanceShowCalendar,
+                onGlanceShowAlarm = vm::setGlanceShowAlarm,
+                onDismiss = { showGlanceSettings = false },
+            )
+        }
+
+        if (showHomeGroupsSettings) {
+            HomeGroupsSettingsOverlay(
+                groups = prefs.homeGroups,
+                shortcuts = prefs.homeShortcutPackages,
+                allApps = allApps,
+                showShortcutApps = prefs.showShortcutApps,
+                showHomeGroups = prefs.showHomeGroups,
+                themePalette = themePalette,
+                onCreateGroup = { name -> vm.createHomeGroup(name) },
+                onDeleteGroup = { id -> vm.deleteHomeGroup(id) },
+                onSetGroupSide = { id, side -> vm.setHomeGroupSide(id, side) },
+                onMoveShortcut = { from, to -> vm.moveHomeShortcut(from, to) },
+                onShowShortcutAppsChange = vm::setShowShortcutApps,
+                onShowHomeGroupsChange = vm::setShowHomeGroups,
+                onDismiss = { showHomeGroupsSettings = false },
+            )
+        }
+
+        if (showDockEndAppPicker) {
+            DockEndAppPickerOverlay(
+                apps = allApps,
+                themePalette = themePalette,
+                onSelect = { pkg ->
+                    vm.setDockCameraPackage(pkg)
+                    showDockEndAppPicker = false
+                },
+                onUseDefault = {
+                    vm.setDockCameraPackage("")
+                    showDockEndAppPicker = false
+                },
+                onDismiss = { showDockEndAppPicker = false },
+            )
+        }
+
+        if (showWallpaperSourceOverlay) {
+            WallpaperSourceOverlay(
+                themePalette = themePalette,
+                subView = wallpaperSourceSub,
+                onSubViewChange = { wallpaperSourceSub = it },
+                onDismiss = {
+                    showWallpaperSourceOverlay = false
+                    wallpaperSourceSub = WallpaperSourceSub.List
+                },
+            )
+        }
+
+        if (showHomeActions) {
+            HomeActionsSheet(
+                themePalette = themePalette,
+                hasClock = homeClockEnabled,
+                onAddClock = {
+                    homeClockEnabled = true
+                    showHomeActions = false
+                },
+                onRemoveClock = {
+                    homeClockEnabled = false
+                    showHomeActions = false
+                },
+                onOpenSettings = {
+                    showHomeActions = false
+                    showSettings = true
+                },
+                onOpenWallpaperChooser = {
+                    showHomeActions = false
+                    wallpaperSourceSub = WallpaperSourceSub.List
+                    showWallpaperSourceOverlay = true
+                },
+                onOpenSystemSettings = {
+                    showHomeActions = false
+                    runCatching {
+                        context.startActivity(
+                            Intent(Settings.ACTION_SETTINGS).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK),
+                        )
+                    }
+                },
+                onDismiss = { showHomeActions = false },
+            )
+        }
+
+    }
+}
+
+/**
+ * Long-press opens the home actions sheet. Double-tap to lock runs when [doubleTapToSleepEnabled] is on
+ * ([SleepManager.lockNow]); child views (glance strip) consume their own taps first.
+ */
+@Composable
+private fun HomePage(
+    focusRequester: FocusRequester,
+    homeActive: Boolean,
+    onOpenAppDrawer: () -> Unit,
+    allApps: List<AppEntry>,
+    hiddenPackages: Set<String>,
+    onLaunchApp: (String) -> Unit,
+    swipeUpPackage: String,
+    doubleTapPackage: String,
+    hasClock: Boolean,
+    onLongPress: () -> Unit,
+    doubleTapToSleepEnabled: Boolean,
+    searchQuery: String,
+    onSearchQueryChange: (String) -> Unit,
+    appIconShape: AppIconShape,
+    themePalette: LauncherThemePalette,
+    glanceEnabled: Boolean,
+    glanceStripPreferences: GlanceStripPreferences,
+) {
+    val context = LocalContext.current
+    var clockText by remember { mutableStateOf(java.time.LocalTime.now().withSecond(0).withNano(0).toString()) }
+    // Battery optimization: only keep the "minute clock" loop running when Home is actually visible.
+    LaunchedEffect(homeActive, hasClock) {
+        if (!homeActive || !hasClock) return@LaunchedEffect
+        while (true) {
+            val now = System.currentTimeMillis()
+            val msToNextMinute = 60_000L - (now % 60_000L)
+            kotlinx.coroutines.delay(msToNextMinute)
+            clockText = java.time.LocalTime.now().withSecond(0).withNano(0).toString()
+        }
+    }
+    val glanceRef = remember { mutableStateOf<GlanceDateWeatherEventsView?>(null) }
+    DisposableEffect(Unit) {
+        onDispose { glanceRef.value?.dispose() }
+    }
+    // Battery optimization: don't run the glance strip when the page isn't visible (it may still be kept
+    // in composition due to `beyondViewportPageCount`).
+    LaunchedEffect(glanceEnabled, homeActive) {
+        if (!glanceEnabled || !homeActive) {
+            glanceRef.value?.dispose()
+            glanceRef.value = null
+        }
+    }
+    val currentOnLongPress = rememberUpdatedState(onLongPress)
+    Box(
+        modifier = Modifier
+            .fillMaxSize()
+            .focusRequester(focusRequester)
+            .focusable()
+            .onPreviewKeyEvent { ev ->
+                if (ev.type != KeyEventType.KeyDown) return@onPreviewKeyEvent false
+                val newQuery = tryConsumeSearchKey(ev, searchQuery)
+                if (newQuery != null) {
+                    onSearchQueryChange(newQuery)
+                    // show search overlay on home instead of navigating to drawer
+                    return@onPreviewKeyEvent true
+                }
+                // Any directional swipe on home opens the drawer — nothing falls through to AppDrawer.
+                when (ev.key) {
+                    Key.DirectionDown, Key.DirectionLeft, Key.DirectionRight, Key.DirectionUp -> {
+                        onOpenAppDrawer()
+                        true
+                    }
+                    else -> false
+                }
+            }
+            .pointerInput(doubleTapToSleepEnabled, doubleTapPackage) {
+                detectTapGestures(
+                    onLongPress = { currentOnLongPress.value() },
+                    onDoubleTap = {
+                        when {
+                            doubleTapToSleepEnabled -> SleepManager.lockNow(context)
+                            doubleTapPackage.isNotEmpty() -> onLaunchApp(doubleTapPackage)
+                        }
+                    },
+                )
+            }
+            .pointerInput(swipeUpPackage) {
+                val threshold = 80.dp.toPx()
+                awaitPointerEventScope {
+                    while (true) {
+                        val down = awaitFirstDown(requireUnconsumed = false)
+                        val startY = down.position.y
+                        var triggered = false
+                        while (!triggered) {
+                            val event = awaitPointerEvent(PointerEventPass.Initial)
+                            val change = event.changes.firstOrNull() ?: break
+                            if (!change.pressed) break
+                            val dy = change.position.y - startY
+                            if (dy < -threshold && swipeUpPackage.isNotEmpty()) {
+                                triggered = true
+                                onLaunchApp(swipeUpPackage)
+                            }
+                        }
+                    }
+                }
+            },
+    ) {
+        Column(
+            modifier = Modifier
+                .fillMaxSize()
+                .statusBarsPadding()
+                .padding(start = 8.dp, end = 8.dp, top = 8.dp),
+        ) {
+            if (glanceEnabled && homeActive) {
+                AndroidView(
+                    factory = { GlanceDateWeatherEventsView(it) },
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .wrapContentHeight(align = Alignment.Top)
+                        .heightIn(max = 200.dp),
+                    update = { v ->
+                        glanceRef.value = v
+                        v.applyStripPreferences(glanceStripPreferences)
+                    },
+                )
+            }
+            Spacer(Modifier.weight(1f))
+        if (hasClock) {
+            Box(
+                modifier = Modifier
+                        .align(Alignment.CenterHorizontally)
+                    .clip(androidx.compose.foundation.shape.RoundedCornerShape(10.dp))
+                    .background(Color(0x332B313A))
+                    .border(1.dp, Color(0x665F6A78), androidx.compose.foundation.shape.RoundedCornerShape(10.dp))
+                        .padding(horizontal = 22.dp, vertical = 12.dp),
+            ) {
+                Text(
+                    text = clockText,
+                    style = MaterialTheme.typography.titleLarge.copy(color = Color(0xFFE8EEF7)),
+                    fontWeight = FontWeight.Bold,
+                )
+            }
+            }
+            Spacer(Modifier.weight(1f))
+        }
+
+        // Home search overlay — compact top card, wallpaper visible below
+        if (searchQuery.isNotEmpty()) {
+            val filtered = remember(searchQuery, allApps, hiddenPackages) {
+                allApps.filter { it.label.contains(searchQuery, ignoreCase = true) && it.packageName !in hiddenPackages }
+            }
+            val top5 = remember(filtered) { filtered.take(5) }
+            val extra = filtered.size - top5.size
+            BackHandler { onSearchQueryChange("") }
+            Column(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .statusBarsPadding()
+                    .padding(horizontal = 12.dp)
+                    .clip(RoundedCornerShape(bottomStart = 18.dp, bottomEnd = 18.dp))
+                    .background(Color(0xF01A1F28)),
+            ) {
+                // Search bar row
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(horizontal = 14.dp, vertical = 12.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    Icon(
+                        Icons.Outlined.Search,
+                        contentDescription = null,
+                        tint = Color(0xFF8E95A3),
+                        modifier = Modifier.size(18.dp),
+                    )
+                    Spacer(Modifier.width(10.dp))
+                    Text(
+                        text = searchQuery,
+                        color = Color.White,
+                        fontSize = 16.sp,
+                        modifier = Modifier.weight(1f),
+                    )
+                    Box(
+                        modifier = Modifier
+                            .size(24.dp)
+                            .clip(CircleShape)
+                            .background(Color(0xFF3A3F4A))
+                            .clickable { onSearchQueryChange("") },
+                        contentAlignment = Alignment.Center,
+                    ) {
+                        Icon(
+                            Icons.Outlined.Close,
+                            contentDescription = "Clear",
+                            tint = Color.White,
+                            modifier = Modifier.size(13.dp),
+                        )
+                    }
+                }
+                // Divider
+                if (top5.isNotEmpty()) {
+                    Box(modifier = Modifier.fillMaxWidth().height(0.5.dp).background(Color(0x33FFFFFF)))
+                }
+                // Results list — top 5 only
+                top5.forEach { app ->
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .clickable {
+                                onSearchQueryChange("")
+                                onLaunchApp(app.packageName)
+                            }
+                            .padding(horizontal = 14.dp, vertical = 10.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                    ) {
+                        AsyncImage(
+                            model = app.icon,
+                            contentDescription = app.label,
+                            contentScale = ContentScale.Fit,
+                            modifier = Modifier.size(40.dp).clip(iconMaskShape(appIconShape)),
+                        )
+                        Spacer(Modifier.width(14.dp))
+                        Text(
+                            text = app.label,
+                            color = HOME_STRIP_LABEL_COLOR,
+                            fontSize = 15.sp,
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis,
+                        )
+                    }
+                }
+                // "and X more" footer
+                if (extra > 0) {
+                    Box(modifier = Modifier.fillMaxWidth().height(0.5.dp).background(Color(0x22FFFFFF)))
+                    Text(
+                        text = "and $extra more — open drawer to see all",
+                        color = Color(0xFF8E95A3),
+                        fontSize = 12.sp,
+                        modifier = Modifier.padding(horizontal = 14.dp, vertical = 8.dp),
+                    )
+                }
+                // empty state
+                if (top5.isEmpty()) {
+                    Column(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(horizontal = 14.dp, vertical = 8.dp),
+                    ) {
+                        Text(
+                            text = "No apps found",
+                            color = Color(0xFF8E95A3),
+                            fontSize = 14.sp,
+                        )
+                        TextButton(
+                            onClick = { openPlayStoreSearch(context, searchQuery) },
+                            contentPadding = PaddingValues(0.dp),
+                        ) {
+                            Text(
+                                text = "Search \"$searchQuery\" on Play Store",
+                                color = Color(0xFF84D5F6),
+                                maxLines = 1,
+                                overflow = TextOverflow.Ellipsis,
+                            )
+                        }
+                    }
+                }
+                Spacer(Modifier.height(4.dp))
+            }
+        }
+    }
+}
+
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+private fun HomeActionsSheet(
+    themePalette: LauncherThemePalette,
+    hasClock: Boolean,
+    onAddClock: () -> Unit,
+    onRemoveClock: () -> Unit,
+    onOpenSettings: () -> Unit,
+    onOpenWallpaperChooser: () -> Unit,
+    onOpenSystemSettings: () -> Unit,
+    onDismiss: () -> Unit,
+) {
+    val state = rememberModalBottomSheetState(skipPartiallyExpanded = true)
+    val iconTint = themePalette.settingsMenuBody
+    val labelColor = themePalette.settingsMenuTitle
+    ModalBottomSheet(
+        onDismissRequest = onDismiss,
+        sheetState = state,
+        containerColor = themePalette.settingsBg,
+        contentColor = labelColor,
+    ) {
+        Column(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(horizontal = 16.dp, vertical = 8.dp),
+        ) {
+            Text(
+                "Home",
+                style = MaterialTheme.typography.titleLarge.copy(fontWeight = FontWeight.SemiBold),
+                color = labelColor,
+                modifier = Modifier.fillMaxWidth(),
+            )
+            Spacer(Modifier.height(8.dp))
+            HorizontalDivider(color = Color(0xFF2C3340))
+            Spacer(Modifier.height(4.dp))
+
+            @Composable
+            fun MenuRow(icon: ImageVector, label: String, onClick: () -> Unit) {
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .clip(RoundedCornerShape(10.dp))
+                        .clickable(onClick = onClick)
+                        .padding(horizontal = 12.dp, vertical = 14.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    Icon(icon, contentDescription = null, tint = iconTint, modifier = Modifier.size(22.dp))
+                    Spacer(Modifier.width(16.dp))
+                    Text(
+                        label,
+                        style = MaterialTheme.typography.bodyLarge,
+                        color = labelColor,
+                    )
+                }
+            }
+
+            if (hasClock) {
+                MenuRow(Icons.Rounded.EventBusy, "Remove clock", onRemoveClock)
+            } else {
+                MenuRow(Icons.Rounded.AddAlarm, "Add clock", onAddClock)
+            }
+            MenuRow(
+                Icons.Rounded.Settings,
+                LocalContext.current.getString(R.string.home_menu_settings_title),
+                onOpenSettings,
+            )
+            MenuRow(Icons.Rounded.Image, "Set wallpaper", onOpenWallpaperChooser)
+            MenuRow(Icons.Rounded.Tune, "System settings", onOpenSystemSettings)
+            Spacer(Modifier.height(12.dp))
+        }
+    }
+}
+
+@Composable
+private fun AppDrawer(
+    isActive: Boolean,
+    /** When true, dock has only mail + camera (2 focus slots); matches [LauncherPrefs.classicMode]. */
+    classicDock: Boolean,
+    hapticsEnabled: Boolean,
+    hapticIntensity: Int,
+    gridPreset: GridPreset,
+    gridCells: List<DrawerGridCell>,
+    unreadPackages: Set<String>,
+    usageStats: Map<String, Long>,
+    sortByUsage: Boolean,
+    showIconNotifBadge: Boolean,
+    onToggleSortByUsage: () -> Unit,
+    requestedPage: Int,
+    searchQuery: String,
+    onSearchQueryChange: (String) -> Unit,
+    appIconShape: AppIconShape,
+    reorderMode: Boolean,
+    movingSlotId: String?,
+    onToggleReorder: () -> Unit,
+    onPageChange: (Int) -> Unit,
+    onDockFocusChanged: (Boolean, Int) -> Unit,
+    onDockActivate: (Int) -> Unit,
+    onCellTap: (DrawerGridCell) -> Unit,
+    onCellLongPress: (DrawerGridCell) -> Unit,
+    onReorderDrop: (String?) -> Unit,
+    onExitToHome: () -> Unit,
+    themePalette: LauncherThemePalette,
+) {
+    val view = LocalView.current
+    val outerPadH = 22.dp
+    val outerPadV = 11.dp
+    val colSpacing = themePalette.appGridColumnSpacingDp.dp
+    val rowSpacing = themePalette.appGridRowSpacingDp.dp
+    val iconSize = themePalette.appGridIconSizeDp.dp
+    val labelSizeSp = themePalette.appCardFontSp.toInt()
+
+    val appsPerPage = gridPreset.rows * gridPreset.cols
+    val pages = (gridCells.size + appsPerPage - 1) / appsPerPage
+    val drawerPager = rememberPagerState(initialPage = 0, pageCount = { pages.coerceAtLeast(1) })
+    var nav by remember { mutableStateOf(NavState()) }
+    /** Uptime of last processed directional key (plain ref — no recomposition). Used for quick-pair "hard" detection. */
+    val lastDirectionalRef = remember { longArrayOf(0L) }
+    /** Uptime of last accepted cursor move; enforces NAV_MOVE_MIN_MS pacing for Q20 trackpad (plain ref). */
+    val lastMoveRef = remember { longArrayOf(0L) }
+    val focusRequester = remember { FocusRequester() }
+    val scope = rememberCoroutineScope()
+    val density = LocalDensity.current
+    val cellLayouts = remember { mutableMapOf<String, LayoutCoordinates>() }
+    var reorderDragOffset by remember { mutableStateOf(Offset.Zero) }
+    var reorderFingerDragging by remember { mutableStateOf(false) }
+    var dragFingerRoot by remember { mutableStateOf(Offset.Zero) }
+    var dragOverlayDims by remember {
+        mutableStateOf<Triple<androidx.compose.ui.unit.Dp, androidx.compose.ui.unit.Dp, androidx.compose.ui.unit.Dp>?>(null)
+    }
+    val edgeHoverJobRef = remember { mutableListOf<Job?>(null) }
+    var pagerContainerCoords by remember { mutableStateOf<LayoutCoordinates?>(null) }
+    val pagerCoordsRef = remember { mutableListOf<LayoutCoordinates?>(null) }
+    val dragFingerRootRef = remember { mutableListOf(Offset.Zero) }
+    val pagesRef = remember { mutableListOf(pages) }
+    pagesRef[0] = pages
+    val drawerContext = LocalContext.current
+    val dockKeyNavSize = if (classicDock) 2 else 4
+
+    DisposableEffect(Unit) {
+        onDispose {
+            edgeHoverJobRef[0]?.cancel()
+            edgeHoverJobRef[0] = null
+        }
+    }
+
+    LaunchedEffect(isActive) {
+        if (isActive) focusRequester.requestFocus()
+    }
+    LaunchedEffect(classicDock) {
+        if (nav.area == FocusArea.Dock) {
+            nav = NavState(area = FocusArea.Dock, dockIndex = 0)
+            onDockFocusChanged(true, 0)
+        }
+    }
+    LaunchedEffect(searchQuery) {
+        if (pages > 0) drawerPager.animateScrollToPage(0)
+    }
+    LaunchedEffect(pages) {
+        val last = (pages - 1).coerceAtLeast(0)
+        if (drawerPager.currentPage > last) {
+            drawerPager.scrollToPage(last)
+        }
+    }
+    androidx.compose.runtime.LaunchedEffect(drawerPager.currentPage) {
+        onPageChange(drawerPager.currentPage)
+        cellLayouts.clear()
+        if (!reorderFingerDragging) {
+        reorderDragOffset = Offset.Zero
+        }
+    }
+    androidx.compose.runtime.LaunchedEffect(requestedPage, pages) {
+        val target = requestedPage.coerceIn(0, (pages - 1).coerceAtLeast(0))
+        if (requestedPage >= 0 && target != drawerPager.currentPage) {
+            drawerPager.animateScrollToPage(target)
+        }
+    }
+    Column(
+        modifier = Modifier
+            .fillMaxSize()
+            // Flutter `app_grid_theme.dart`: appGridOutterPadding top = 0, bottom = 12 (not 4dp top).
+            .padding(start = outerPadH, end = outerPadH, top = 0.dp, bottom = outerPadV)
+            .focusRequester(focusRequester)
+            .focusable()
+            .onPreviewKeyEvent { ev ->
+                if (ev.type != KeyEventType.KeyDown) return@onPreviewKeyEvent false
+                if (ev.isVolumePanelKey()) return@onPreviewKeyEvent false
+                // BB Classic red button: always go home from anywhere in the drawer.
+                if (ev.isEndCallKey()) { onExitToHome(); return@onPreviewKeyEvent true }
+                val searchUpdate = tryConsumeSearchKey(ev, searchQuery)
+                if (searchUpdate != null) {
+                    onSearchQueryChange(searchUpdate)
+                    nav = nav.copy(area = FocusArea.DrawerGrid)
+                        return@onPreviewKeyEvent true
+                }
+                val directional = ev.key == Key.DirectionLeft || ev.key == Key.DirectionRight || ev.key == Key.DirectionUp || ev.key == Key.DirectionDown
+                if (!directional) {
+                    lastDirectionalRef[0] = 0L
+                }
+                // Hard = second+ step in quick succession or OS key-repeat — used only for page/dock/home escapes.
+                val now = SystemClock.uptimeMillis()
+                val repeatHeavy = (ev.nativeKeyEvent?.repeatCount ?: 0) > 0
+                val isHard = if (directional) {
+                    val quickPair = lastDirectionalRef[0] != 0L && (now - lastDirectionalRef[0]) < NAV_FRAME_MS
+                    lastDirectionalRef[0] = now
+                    repeatHeavy || quickPair
+                } else {
+                    false
+                }
+                val cols = gridPreset.cols
+                val appsPerPageLocal = appsPerPage
+                val page = drawerPager.currentPage
+                val start = page * appsPerPageLocal
+                val end = (start + appsPerPageLocal).coerceAtMost(gridCells.size)
+                val sliceCount = (end - start).coerceAtLeast(0)
+
+                // Back key always handled the same regardless of focus area.
+                if (ev.key == Key.Back) {
+                    return@onPreviewKeyEvent when {
+                        reorderMode -> { onToggleReorder(); true }
+                        searchQuery.isNotEmpty() -> true
+                        else -> { onExitToHome(); true }
+                    }
+                }
+
+                when (nav.area) {
+                    FocusArea.Dock -> {
+                        // Enter activates the focused dock item.
+                        if (ev.key == Key.Enter || ev.key == Key.NumPadEnter) {
+                            onDockActivate(nav.dockIndex)
+                            return@onPreviewKeyEvent true
+                        }
+                        if (!directional) return@onPreviewKeyEvent false
+                        // Pace left/right dock moves; UP (exit to grid) is not paced.
+                        val before = nav
+                        val afterDock = nav.onDockKey(ev.key, dockSize = dockKeyNavSize)
+                        if (afterDock.area == FocusArea.DrawerGrid) {
+                            // Exiting dock upward — no pacing needed.
+                            nav = afterDock
+                            onDockFocusChanged(false, -1)
+                            doNavFeedback(view, hapticsEnabled, hapticIntensity)
+                            return@onPreviewKeyEvent true
+                        }
+                        if (directional && (now - lastMoveRef[0]) < NAV_MOVE_MIN_MS) {
+                            return@onPreviewKeyEvent true
+                        }
+                        lastMoveRef[0] = now
+                        nav = afterDock
+                        if (nav != before) {
+                            onDockFocusChanged(true, nav.dockIndex)
+                            doNavFeedback(view, hapticsEnabled, hapticIntensity)
+                        }
+                        true
+                    }
+
+                    FocusArea.DrawerGrid -> {
+                        when (ev.key) {
+                            Key.Enter, Key.NumPadEnter -> {
+                                val idx = nav.gridIndex.coerceIn(0, (sliceCount - 1).coerceAtLeast(0))
+                                val cell = if (sliceCount > 0) gridCells[start + idx] else null
+                                if (cell != null) onCellTap(cell)
+                                true
+                            }
+                            else -> {
+                                val before = nav
+                                val currentIndex = nav.gridIndex.coerceIn(0, (sliceCount - 1).coerceAtLeast(0))
+                                val currentRow = if (cols <= 0) 0 else currentIndex / cols
+                                val currentCol = if (cols <= 0) 0 else currentIndex % cols
+                                // Page change at column edges: RIGHT at last col → next page (same row),
+                                // LEFT at first col → previous page (same row).
+                                val isFirstCol = currentCol == 0
+                                val isLastCol = currentCol == cols - 1 || currentIndex == sliceCount - 1
+
+                                // Page switching at column edges — land on same row of target page so
+                                // vertical position is preserved across page changes.
+                                // nav.gridIndex updated immediately to prevent cascade page changes.
+                                if (ev.key == Key.DirectionLeft && isFirstCol && page > 0 && isHard &&
+                                    !drawerPager.isScrollInProgress
+                                ) {
+                                    val prevStart = (page - 1) * appsPerPageLocal
+                                    val prevEnd = (prevStart + appsPerPageLocal).coerceAtMost(gridCells.size)
+                                    val prevCount = (prevEnd - prevStart).coerceAtLeast(0)
+                                    // Same row, last column (or last available item if row is partial).
+                                    val rowStart = currentRow * cols
+                                    val target = (rowStart + cols - 1).coerceAtMost(prevCount - 1).coerceAtLeast(0)
+                                    nav = nav.copy(gridIndex = target)
+                                    scope.launch {
+                                        drawerPager.animateScrollToPage(page - 1)
+                                        doNavFeedback(view, hapticsEnabled, hapticIntensity)
+                                    }
+                                    return@onPreviewKeyEvent true
+                                }
+
+                                if (ev.key == Key.DirectionRight && isLastCol && page < pages - 1 && isHard &&
+                                    !drawerPager.isScrollInProgress
+                                ) {
+                                    val nextStart = (page + 1) * appsPerPageLocal
+                                    val nextEnd = (nextStart + appsPerPageLocal).coerceAtMost(gridCells.size)
+                                    val nextCount = (nextEnd - nextStart).coerceAtLeast(0)
+                                    // Same row, first column (coerced if next page is short).
+                                    val target = (currentRow * cols).coerceAtMost(nextCount - 1).coerceAtLeast(0)
+                                    nav = nav.copy(gridIndex = target)
+                                    scope.launch {
+                                        drawerPager.animateScrollToPage(page + 1)
+                                        doNavFeedback(view, hapticsEnabled, hapticIntensity)
+                                    }
+                                    return@onPreviewKeyEvent true
+                                }
+
+                                // Q20 trackpad pacing: limit cursor steps to NAV_MOVE_MIN_MS intervals.
+                                // Page/home transitions (checked above) bypass this so edge escapes still fire.
+                                if (directional && (now - lastMoveRef[0]) < NAV_MOVE_MIN_MS) {
+                                    return@onPreviewKeyEvent true
+                                }
+                                lastMoveRef[0] = now
+
+                                val afterGrid = nav.onGridKey(ev.key, cols = cols, itemCount = sliceCount)
+                                if (afterGrid.area == FocusArea.Dock) {
+                                    // Entering dock from bottom of grid.
+                                    nav = afterGrid
+                                    onDockFocusChanged(true, nav.dockIndex)
+                                    doNavFeedback(view, hapticsEnabled, hapticIntensity)
+                                    return@onPreviewKeyEvent true
+                                }
+                                nav = afterGrid
+                                if (nav != before) doNavFeedback(view, hapticsEnabled, hapticIntensity)
+                                // Always consume directional keys — even when cursor doesn't move (edge).
+                                // Without this, the unconsumed event bubbles to the outer HorizontalPager
+                                // (home↔drawer) and causes a phantom swipe-to-home glitch.
+                                directional || nav != before
+                            }
+                        }
+                    }
+                }
+            }
+    ) {
+        if (searchQuery.isNotEmpty()) {
+            val extras = remember(searchQuery) {
+                buildSearchExtras(drawerContext, searchQuery) {
+                    Toast.makeText(drawerContext, "Could not open that screen", Toast.LENGTH_SHORT).show()
+                }
+            }
+            if (extras.isNotEmpty()) {
+                Column(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .heightIn(max = 132.dp)
+                        .verticalScroll(rememberScrollState()),
+                ) {
+                    extras.forEach { ex ->
+                        TextButton(
+                            onClick = ex.onOpen,
+                            modifier = Modifier.fillMaxWidth(),
+                        ) {
+                            Column(Modifier.fillMaxWidth()) {
+                                Text(ex.title, color = themePalette.settingsMenuTitle)
+                                Text(
+                                    ex.subtitle,
+                                    style = MaterialTheme.typography.bodySmall,
+                                    color = themePalette.settingsMenuBody,
+                                )
+                            }
+                        }
+                    }
+                }
+            }
+            val pq = searchQuery.trim().lowercase()
+            if (pq == "private" || pq.startsWith("private ")) {
+                Text(
+                    text = "Hidden apps: keep typing to filter the list, or use Hide in an app’s menu to manage hidden apps.",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = privateSearchHintColor(themePalette),
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(bottom = 6.dp),
+                )
+            }
+            if (gridCells.isEmpty()) {
+                Text(
+                    text = "No apps found",
+                    color = themePalette.settingsMenuBody,
+                    style = MaterialTheme.typography.bodyLarge,
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(horizontal = 8.dp, vertical = 4.dp),
+                )
+                TextButton(
+                    onClick = { openPlayStoreSearch(drawerContext, searchQuery) },
+                    modifier = Modifier.fillMaxWidth(),
+                    contentPadding = PaddingValues(horizontal = 8.dp, vertical = 0.dp),
+                ) {
+                    Text(
+                        text = "Search \"$searchQuery\" on Play Store",
+                        color = Color(0xFF84D5F6),
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis,
+                        modifier = Modifier.fillMaxWidth(),
+                    )
+                }
+            }
+        }
+        // Sort toggle — only shown when not searching
+        if (searchQuery.isEmpty()) {
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(horizontal = 16.dp, vertical = 2.dp),
+                horizontalArrangement = androidx.compose.foundation.layout.Arrangement.End,
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                if (sortByUsage) {
+                    Text(
+                        text = "Most used",
+                        fontSize = 11.sp,
+                        color = themePalette.settingsMenuBody,
+                        modifier = Modifier.padding(end = 4.dp),
+                    )
+                }
+                IconButton(
+                    onClick = onToggleSortByUsage,
+                    modifier = Modifier.size(28.dp),
+                ) {
+                    Icon(
+                        imageVector = Icons.Outlined.QueryStats,
+                        contentDescription = "Sort by usage",
+                        tint = if (sortByUsage) themePalette.settingsMenuTitle else themePalette.settingsMenuBody.copy(alpha = 0.5f),
+                        modifier = Modifier.size(18.dp),
+                    )
+                }
+            }
+        }
+        Box(
+            modifier = Modifier
+                .weight(1f)
+                .fillMaxWidth()
+                .onGloballyPositioned {
+                    pagerContainerCoords = it
+                    pagerCoordsRef[0] = it
+                },
+        ) {
+            HorizontalPager(
+                state = drawerPager,
+                modifier = Modifier.fillMaxSize(),
+                beyondViewportPageCount = 1,
+            ) { page ->
+            val start = page * appsPerPage
+                val end = (start + appsPerPage).coerceAtMost(gridCells.size)
+                val slice = if (start < end) gridCells.subList(start, end) else emptyList()
+                val sliceSlotIds = remember(slice) { slice.mapTo(HashSet(slice.size)) { it.slotId } }
+
+            BoxWithConstraints(modifier = Modifier.fillMaxSize()) {
+                val cardW =
+                    (maxWidth - colSpacing * (gridPreset.cols - 1)) / gridPreset.cols
+                val cardH =
+                    (maxHeight - rowSpacing * (gridPreset.rows - 1)) / gridPreset.rows
+
+                LazyVerticalGrid(
+                    columns = GridCells.Fixed(gridPreset.cols),
+                    modifier = Modifier.fillMaxSize(),
+                    horizontalArrangement = androidx.compose.foundation.layout.Arrangement.spacedBy(colSpacing),
+                    verticalArrangement = androidx.compose.foundation.layout.Arrangement.spacedBy(rowSpacing),
+                ) {
+                        items(slice, key = { it.slotId }) { cell ->
+                            val slot = cell.slotId
+                        val reorderDragModifier =
+                                if (reorderMode && movingSlotId == slot) {
+                                    Modifier.pointerInput(
+                                        movingSlotId,
+                                        reorderMode,
+                                        slot,
+                                        page,
+                                        pages,
+                                        themePalette.appGridEdgeHoverZoneWidthDp,
+                                        themePalette.appGridEdgeHoverDurationMs,
+                                    ) {
+                                    detectDragGestures(
+                                            onDragStart = { startOffset ->
+                                                reorderFingerDragging = true
+                                                dragOverlayDims = Triple(cardW, cardH, iconSize)
+                                                val mp = movingSlotId!!
+                                                val src = cellLayouts[mp]
+                                                if (src != null) {
+                                                    dragFingerRoot = src.localToRoot(startOffset)
+                                                    dragFingerRootRef[0] = dragFingerRoot
+                                                }
+                                            },
+                                        onDrag = { change, dragAmount ->
+                                            reorderDragOffset += dragAmount
+                                            change.consume()
+                                                val mp = movingSlotId ?: return@detectDragGestures
+                                                val src = cellLayouts[mp]
+                                                if (src != null) {
+                                                    dragFingerRoot = src.localToRoot(change.position)
+                                                } else {
+                                                    dragFingerRoot = Offset(
+                                                        dragFingerRoot.x + dragAmount.x,
+                                                        dragFingerRoot.y + dragAmount.y,
+                                                    )
+                                                }
+                                                dragFingerRootRef[0] = dragFingerRoot
+                                                val pc = pagerCoordsRef[0] ?: return@detectDragGestures
+                                                val bb = pc.boundsInRoot()
+                                                val localX = dragFingerRoot.x - bb.left
+                                                val zonePx = with(density) {
+                                                    themePalette.appGridEdgeHoverZoneWidthDp.dp.toPx()
+                                                }
+                                                val inEdge = localX < zonePx || localX > bb.width - zonePx
+                                                if (reorderFingerDragging && pages > 1 && inEdge) {
+                                                    if (edgeHoverJobRef[0]?.isActive != true) {
+                                                        edgeHoverJobRef[0] = scope.launch {
+                                                            delay(themePalette.appGridEdgeHoverDurationMs)
+                                                            edgeHoverJobRef[0] = null
+                                                            val b2 = pagerCoordsRef[0]?.boundsInRoot()
+                                                                ?: return@launch
+                                                            val lx = dragFingerRootRef[0].x - b2.left
+                                                            val z = with(density) {
+                                                                themePalette.appGridEdgeHoverZoneWidthDp.dp.toPx()
+                                                            }
+                                                            val cp = drawerPager.currentPage
+                                                            val pageCount = pagesRef[0].coerceAtLeast(1)
+                                                            if (lx < z && cp > 0) {
+                                                                drawerPager.animateScrollToPage(cp - 1)
+                                                            } else if (lx > b2.width - z && cp < pageCount - 1) {
+                                                                drawerPager.animateScrollToPage(cp + 1)
+                                                            }
+                                                        }
+                                                    }
+                                                } else {
+                                                    edgeHoverJobRef[0]?.cancel()
+                                                    edgeHoverJobRef[0] = null
+                                                }
+                                        },
+                                        onDragEnd = {
+                                                edgeHoverJobRef[0]?.cancel()
+                                                edgeHoverJobRef[0] = null
+                                            reorderFingerDragging = false
+                                                dragOverlayDims = null
+                                                val mp = movingSlotId!!
+                                            val src = cellLayouts[mp]
+                                            if (src != null) {
+                                                val releaseCenter = src.boundsInRoot().center + reorderDragOffset
+                                                val target = cellLayouts.entries
+                                                        .filter { it.key != mp && it.key in sliceSlotIds }
+                                                    .minByOrNull { (_, lc) ->
+                                                        val c = lc.boundsInRoot().center
+                                                        hypot(
+                                                            (c.x - releaseCenter.x).toDouble(),
+                                                            (c.y - releaseCenter.y).toDouble(),
+                                                        )
+                                                    }?.key
+                                                onReorderDrop(target)
+                                            } else {
+                                                onReorderDrop(null)
+                                            }
+                                            reorderDragOffset = Offset.Zero
+                                        },
+                                        onDragCancel = {
+                                                edgeHoverJobRef[0]?.cancel()
+                                                edgeHoverJobRef[0] = null
+                                            reorderFingerDragging = false
+                                                dragOverlayDims = null
+                                            reorderDragOffset = Offset.Zero
+                                        },
+                                    )
+                                }
+                            } else {
+                                Modifier
+                            }
+                            val focusedHere =
+                                nav.area == FocusArea.DrawerGrid && slice.getOrNull(nav.gridIndex)?.slotId == slot
+                            when (cell) {
+                                is DrawerGridCell.App -> {
+                                    val app = cell.entry
+                        AppTile(
+                            app = app,
+                            reorderMode = reorderMode,
+                            appIconShape = appIconShape,
+                                        selected = movingSlotId == slot || focusedHere,
+                            width = cardW,
+                            height = cardH,
+                            iconSize = iconSize,
+                            labelSizeSp = labelSizeSp,
+                            cardTop = themePalette.appCardTop,
+                            cardBottom = themePalette.appCardBottom,
+                            themePalette = themePalette,
+                            reorderDragModifier = reorderDragModifier,
+                                        isFingerDraggingThisTile = reorderFingerDragging && movingSlotId == slot,
+                            reorderDragOffset = reorderDragOffset,
+                                        hideSourceWhileFingerDragging = reorderFingerDragging && movingSlotId == slot,
+                                        usageTimeMs = usageStats[app.packageName] ?: 0L,
+                                        hasNotifBadge = showIconNotifBadge && app.packageName in unreadPackages,
+                            onGloballyPositioned = { coords ->
+                                cellLayouts[app.packageName] = coords
+                            },
+                                        onClick = { onCellTap(cell) },
+                                        onLongPress = { onCellLongPress(cell) },
+                                    )
+                                }
+                                is DrawerGridCell.Folder -> {
+                                    FolderTile(
+                                        displayLabel = cell.displayTitle,
+                                        members = cell.members,
+                                        appIconShape = appIconShape,
+                                        hasUnreadBadge = cell.members.any { it.packageName in unreadPackages },
+                                        reorderMode = reorderMode,
+                                        selected = movingSlotId == slot || focusedHere,
+                                        width = cardW,
+                                        height = cardH,
+                                        iconSize = iconSize,
+                                        labelSizeSp = labelSizeSp,
+                                        cardTop = themePalette.appCardTop,
+                                        cardBottom = themePalette.appCardBottom,
+                                        themePalette = themePalette,
+                                        reorderDragModifier = reorderDragModifier,
+                                        isFingerDraggingThisTile = reorderFingerDragging && movingSlotId == slot,
+                                        reorderDragOffset = reorderDragOffset,
+                                        hideSourceWhileFingerDragging = reorderFingerDragging && movingSlotId == slot,
+                                        onGloballyPositioned = { coords ->
+                                            cellLayouts[cell.id] = coords
+                                        },
+                                        onClick = { onCellTap(cell) },
+                                        onLongPress = { onCellLongPress(cell) },
+                                    )
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+
+            val dragCell = movingSlotId?.let { id -> gridCells.find { it.slotId == id } }
+            val dims = dragOverlayDims
+            if (reorderFingerDragging && dragCell != null && dims != null && pagerContainerCoords != null) {
+                val b = pagerContainerCoords!!.boundsInRoot()
+                val (cw, ch, isz) = dims
+                val xDp = with(density) { (dragFingerRoot.x - b.left).toDp() } - cw / 2
+                val yDp = with(density) { (dragFingerRoot.y - b.top).toDp() } - ch / 2
+                Box(
+                    Modifier
+                        .offset(xDp, yDp)
+                        .zIndex(4f),
+                ) {
+                    when (dragCell) {
+                        is DrawerGridCell.App -> AppTile(
+                            app = dragCell.entry,
+                            reorderMode = false,
+                            appIconShape = appIconShape,
+                            selected = false,
+                            width = cw,
+                            height = ch,
+                            iconSize = isz,
+                            labelSizeSp = labelSizeSp,
+                            cardTop = themePalette.appCardTop,
+                            cardBottom = themePalette.appCardBottom,
+                            themePalette = themePalette,
+                            reorderDragModifier = Modifier,
+                            isFingerDraggingThisTile = true,
+                            reorderDragOffset = Offset.Zero,
+                            hideSourceWhileFingerDragging = false,
+                            onGloballyPositioned = {},
+                            onClick = {},
+                            onLongPress = {},
+                        )
+                        is DrawerGridCell.Folder -> FolderTile(
+                            displayLabel = dragCell.displayTitle,
+                            members = dragCell.members,
+                            appIconShape = appIconShape,
+                            hasUnreadBadge = dragCell.members.any { it.packageName in unreadPackages },
+                            reorderMode = false,
+                            selected = false,
+                            width = cw,
+                            height = ch,
+                            iconSize = isz,
+                            labelSizeSp = labelSizeSp,
+                            cardTop = themePalette.appCardTop,
+                            cardBottom = themePalette.appCardBottom,
+                            themePalette = themePalette,
+                            reorderDragModifier = Modifier,
+                            isFingerDraggingThisTile = true,
+                            reorderDragOffset = Offset.Zero,
+                            hideSourceWhileFingerDragging = false,
+                            onGloballyPositioned = {},
+                            onClick = {},
+                            onLongPress = {},
+                        )
+                    }
+                }
+            }
+        }
+    }
+}
+
+/** @return new query if key updates search; null if not a text/search key. */
+private fun tryConsumeSearchKey(ev: KeyEvent, searchQuery: String): String? {
+    if (ev.type != KeyEventType.KeyDown) return null
+    if (ev.key == Key.Backspace && searchQuery.isNotEmpty()) return searchQuery.dropLast(1)
+    if (ev.key == Key.Back && searchQuery.isNotEmpty()) return ""
+    val native = ev.nativeKeyEvent
+    val uc = native?.getUnicodeChar(native.metaState) ?: 0
+    if (uc != 0 && Character.isValidCodePoint(uc)) {
+        runCatching { String(Character.toChars(uc)) }.getOrNull()?.let { str ->
+            if (str.isNotEmpty() && !str.first().isISOControl()) return searchQuery + str
+        }
+    }
+    val typed = keyToTypedChar(ev.key)
+    if (typed != null) return searchQuery + typed
+    return null
+}
+
+private fun openPlayStoreSearch(context: android.content.Context, query: String) {
+    val trimmed = query.trim()
+    if (trimmed.isEmpty()) return
+    val encoded = Uri.encode(trimmed)
+    val marketIntent = Intent(Intent.ACTION_VIEW, Uri.parse("market://search?q=$encoded"))
+    val webIntent = Intent(
+        Intent.ACTION_VIEW,
+        Uri.parse("https://play.google.com/store/search?q=$encoded&c=apps"),
+    )
+    runCatching { context.startActivity(marketIntent) }
+        .onFailure {
+            runCatching { context.startActivity(webIntent) }
+                .onFailure {
+                    Toast.makeText(context, "Could not open Play Store", Toast.LENGTH_SHORT).show()
+                }
+        }
+}
+
+private fun keyToTypedChar(key: Key): Char? = when (key) {
+    Key.A -> 'a'
+    Key.B -> 'b'
+    Key.C -> 'c'
+    Key.D -> 'd'
+    Key.E -> 'e'
+    Key.F -> 'f'
+    Key.G -> 'g'
+    Key.H -> 'h'
+    Key.I -> 'i'
+    Key.J -> 'j'
+    Key.K -> 'k'
+    Key.L -> 'l'
+    Key.M -> 'm'
+    Key.N -> 'n'
+    Key.O -> 'o'
+    Key.P -> 'p'
+    Key.Q -> 'q'
+    Key.R -> 'r'
+    Key.S -> 's'
+    Key.T -> 't'
+    Key.U -> 'u'
+    Key.V -> 'v'
+    Key.W -> 'w'
+    Key.X -> 'x'
+    Key.Y -> 'y'
+    Key.Z -> 'z'
+    Key.Zero -> '0'
+    Key.One -> '1'
+    Key.Two -> '2'
+    Key.Three -> '3'
+    Key.Four -> '4'
+    Key.Five -> '5'
+    Key.Six -> '6'
+    Key.Seven -> '7'
+    Key.Eight -> '8'
+    Key.Nine -> '9'
+    Key.Spacebar -> ' '
+    else -> null
+}
+
+private fun doNavFeedback(view: android.view.View, hapticsEnabled: Boolean, intensity: Int = 3) {
+    if (!hapticsEnabled) return
+    // Map intensity 1–5 to vibration amplitude 30–255. Use VibrationEffect for fine-grained control.
+    // Falls back to VIRTUAL_KEY if amplitude control is unavailable (older devices/ROMs).
+    val vibrator = if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.S) {
+        view.context.getSystemService(android.os.VibratorManager::class.java)?.defaultVibrator
+    } else {
+        @Suppress("DEPRECATION")
+        view.context.getSystemService(android.os.Vibrator::class.java)
+    }
+    if (vibrator != null && vibrator.hasAmplitudeControl()) {
+        val amplitude = when (intensity.coerceIn(1, 5)) {
+            1 -> 30
+            2 -> 70
+            3 -> 120
+            4 -> 180
+            else -> 255
+        }
+        vibrator.vibrate(android.os.VibrationEffect.createOneShot(15, amplitude))
+    } else {
+        view.performHapticFeedback(HapticFeedbackConstants.VIRTUAL_KEY)
+    }
+}
+
+@Composable
+private fun FolderTile(
+    displayLabel: String,
+    members: List<AppEntry>,
+    appIconShape: AppIconShape,
+    reorderMode: Boolean,
+    selected: Boolean,
+    hasUnreadBadge: Boolean,
+    width: androidx.compose.ui.unit.Dp,
+    height: androidx.compose.ui.unit.Dp,
+    iconSize: androidx.compose.ui.unit.Dp,
+    labelSizeSp: Int,
+    cardTop: Color,
+    cardBottom: Color,
+    themePalette: LauncherThemePalette,
+    reorderDragModifier: Modifier = Modifier,
+    isFingerDraggingThisTile: Boolean = false,
+    reorderDragOffset: Offset = Offset.Zero,
+    hideSourceWhileFingerDragging: Boolean = false,
+    onGloballyPositioned: (LayoutCoordinates) -> Unit = {},
+    onClick: () -> Unit,
+    onLongPress: () -> Unit,
+) {
+    /** BlackBerry 10–style folder: square tile, slightly rounded, semi-transparent dark glass. */
+    val folderShape = RoundedCornerShape(8.dp)
+    val folderBg = Color(0xD9181C24)
+    val folderBorderIdle = Color(0x38FFFFFF)
+    val wiggle = rememberInfiniteTransition(label = "folderWiggle")
+    val wiggleRotation by wiggle.animateFloat(
+        initialValue = -2.5f,
+        targetValue = 2.5f,
+        animationSpec = infiniteRepeatable(
+            animation = tween(durationMillis = 320, easing = FastOutSlowInEasing),
+            repeatMode = RepeatMode.Reverse,
+        ),
+        label = "wiggleRotation",
+    )
+    val wiggleScale by wiggle.animateFloat(
+        initialValue = 0.985f,
+        targetValue = 1.0f,
+        animationSpec = infiniteRepeatable(
+            animation = tween(durationMillis = 320, easing = FastOutSlowInEasing),
+            repeatMode = RepeatMode.Reverse,
+        ),
+        label = "wiggleScale",
+    )
+    val showLiftInPlace = isFingerDraggingThisTile && !hideSourceWhileFingerDragging
+    val appliedRotation by animateFloatAsState(
+        targetValue = if (reorderMode && !showLiftInPlace) wiggleRotation else 0f,
+        animationSpec = tween(220),
+        label = "folderAppliedRotation",
+    )
+    val appliedScale by animateFloatAsState(
+        targetValue = if (reorderMode && !showLiftInPlace) wiggleScale else 1f,
+        animationSpec = tween(220),
+        label = "folderAppliedScale",
+    )
+    val preview = members.take(4)
+    val inset = 5.dp
+    val gap = 2.dp
+    val half = (iconSize - inset * 2 - gap) / 2
+    Box(
+        modifier = Modifier
+            .zIndex(if (isFingerDraggingThisTile) 1f else 0f)
+            .onGloballyPositioned(onGloballyPositioned)
+            .size(width, height)
+            .then(reorderDragModifier)
+            .graphicsLayer {
+                if (showLiftInPlace) {
+                    translationX = reorderDragOffset.x
+                    translationY = reorderDragOffset.y
+                    alpha = 0.92f
+                    shadowElevation = 12f
+                } else {
+                    rotationZ = appliedRotation
+                    scaleX = appliedScale
+                    scaleY = appliedScale
+                }
+            }
+            .alpha(animateFloatAsState(if (hideSourceWhileFingerDragging && isFingerDraggingThisTile) 0f else 1f, label = "folderTileAlpha").value)
+            .pointerInput(Unit) {
+                detectTapGestures(onTap = { onClick() }, onLongPress = { onLongPress() })
+            },
+        contentAlignment = Alignment.TopCenter,
+    ) {
+        val iconPadTop = 3.dp
+        val textPadBottom = 2.dp
+        Column(
+            horizontalAlignment = Alignment.CenterHorizontally,
+            modifier = Modifier.fillMaxSize(),
+        ) {
+            Box(
+                modifier = Modifier
+                    .padding(top = iconPadTop, bottom = 4.dp, start = 6.dp, end = 6.dp)
+                    .size(iconSize),
+            ) {
+                if (selected) {
+                    Box(
+                        modifier = Modifier
+                            .fillMaxSize()
+                            .clip(folderShape)
+                            .background(themePalette.selectorBackgroundColour)
+                            .border(
+                                width = 1.5.dp,
+                                color = themePalette.selectorBorderColour,
+                                shape = folderShape,
+                            ),
+                    )
+                } else {
+                    Box(
+                        modifier = Modifier
+                            .fillMaxSize()
+                            .clip(folderShape)
+                            .background(folderBg)
+                            .border(
+                                width = 0.5.dp,
+                                color = folderBorderIdle,
+                                shape = folderShape,
+                            ),
+                    )
+                }
+                Column(
+                    modifier = Modifier
+                        .fillMaxSize()
+                        .padding(inset),
+                    verticalArrangement = androidx.compose.foundation.layout.Arrangement.spacedBy(gap),
+                    horizontalAlignment = Alignment.CenterHorizontally,
+                ) {
+                    preview.chunked(2).forEach { rowApps ->
+                        Row(
+                            horizontalArrangement = androidx.compose.foundation.layout.Arrangement.spacedBy(gap),
+                    ) {
+                            rowApps.forEach { app ->
+                                AsyncImage(
+                                    model = app.icon,
+                                    contentDescription = app.label,
+                                    modifier = Modifier.size(half).clip(iconMaskShape(appIconShape)),
+                                )
+                            }
+                            if (rowApps.size == 1) {
+                                Spacer(Modifier.size(half))
+                            }
+                        }
+                    }
+                }
+                if (hasUnreadBadge) {
+                    Box(
+                        modifier = Modifier
+                            .align(Alignment.TopEnd)
+                            .offset(x = 3.dp, y = (-3).dp)
+                            .size(16.dp)
+                            .clip(CircleShape)
+                            .background(Color(0xFFD32F2F)),
+                        contentAlignment = Alignment.Center,
+                    ) {
+                        Text(
+                            text = "\u2731",
+                            style = MaterialTheme.typography.labelSmall.copy(
+                                color = Color.White,
+                                fontSize = 9.sp,
+                                lineHeight = 9.sp,
+                                fontWeight = FontWeight.Bold,
+                            ),
+                        )
+                    }
+                }
+            }
+            Box(
+                modifier = Modifier
+                    .weight(1f)
+                    .fillMaxWidth()
+                    .padding(bottom = textPadBottom, start = 3.dp, end = 3.dp),
+                contentAlignment = Alignment.TopCenter,
+            ) {
+                OutlinedLabel(
+                    text = displayLabel,
+                    fontSizeSp = labelSizeSp,
+                    textColor = Color(0xFFF5F5F5),
+                    outlineColor = Color(0x66000000),
+                )
+            }
+        }
+    }
+}
+
+@Composable
+private fun AppTile(
+    app: AppEntry,
+    reorderMode: Boolean,
+    appIconShape: AppIconShape,
+    selected: Boolean,
+    width: androidx.compose.ui.unit.Dp,
+    height: androidx.compose.ui.unit.Dp,
+    iconSize: androidx.compose.ui.unit.Dp,
+    labelSizeSp: Int,
+    cardTop: Color,
+    cardBottom: Color,
+    themePalette: LauncherThemePalette,
+    reorderDragModifier: Modifier = Modifier,
+    isFingerDraggingThisTile: Boolean = false,
+    reorderDragOffset: Offset = Offset.Zero,
+    /** When true, the tile stays hit-testable but the lifted drag preview is drawn in a drawer-level overlay. */
+    hideSourceWhileFingerDragging: Boolean = false,
+    usageTimeMs: Long = 0L,
+    hasNotifBadge: Boolean = false,
+    onGloballyPositioned: (LayoutCoordinates) -> Unit = {},
+    onClick: () -> Unit,
+    onLongPress: () -> Unit,
+) {
+    // Flutter `app_card.dart` uses the raw title; no artificial line breaks.
+    val displayLabel = app.label
+    val cardRadius = themePalette.appCardCornerRadiusDp.dp
+    val selRadius = themePalette.selectorBorderRadiusDp.dp
+    val wiggle = rememberInfiniteTransition(label = "wiggle")
+    val wiggleRotation by wiggle.animateFloat(
+        initialValue = -2.5f,
+        targetValue = 2.5f,
+        animationSpec = infiniteRepeatable(
+            animation = tween(durationMillis = 320, easing = FastOutSlowInEasing),
+            repeatMode = RepeatMode.Reverse,
+        ),
+        label = "wiggleRotation",
+    )
+    val wiggleScale by wiggle.animateFloat(
+        initialValue = 0.985f,
+        targetValue = 1.0f,
+        animationSpec = infiniteRepeatable(
+            animation = tween(durationMillis = 320, easing = FastOutSlowInEasing),
+            repeatMode = RepeatMode.Reverse,
+        ),
+        label = "wiggleScale",
+    )
+
+    val showLiftInPlace = isFingerDraggingThisTile && !hideSourceWhileFingerDragging
+    val appliedRotation by animateFloatAsState(
+        targetValue = if (reorderMode && !showLiftInPlace) wiggleRotation else 0f,
+        animationSpec = tween(220),
+        label = "appAppliedRotation",
+    )
+    val appliedScale by animateFloatAsState(
+        targetValue = if (reorderMode && !showLiftInPlace) wiggleScale else 1f,
+        animationSpec = tween(220),
+        label = "appAppliedScale",
+    )
+    Box(
+        modifier = Modifier
+            .zIndex(if (isFingerDraggingThisTile) 1f else 0f)
+            .onGloballyPositioned(onGloballyPositioned)
+            .size(width, height)
+            .then(reorderDragModifier)
+            .graphicsLayer {
+                if (showLiftInPlace) {
+                    translationX = reorderDragOffset.x
+                    translationY = reorderDragOffset.y
+                    alpha = 0.92f
+                    shadowElevation = 12f
+                } else {
+                    rotationZ = appliedRotation
+                    scaleX = appliedScale
+                    scaleY = appliedScale
+                }
+            }
+            .alpha(animateFloatAsState(if (hideSourceWhileFingerDragging && isFingerDraggingThisTile) 0f else 1f, label = "appTileAlpha").value)
+            .pointerInput(app.packageName) {
+                detectTapGestures(onTap = { onClick() }, onLongPress = { onLongPress() })
+            },
+        // Top-align so the column fills from the top; Center would vertically center a short column (not our case with fillMaxSize).
+        contentAlignment = Alignment.TopCenter,
+    ) {
+        val density = LocalDensity.current
+        // Reserve extra height for two lines (descenders + outline); shrink icon/padding when the cell is short.
+        val iconPadTop = 3.dp
+        val textPadBottom = 2.dp
+        val (iconSizeUsed, iconPadBottom) = remember(height, iconSize, labelSizeSp, density) {
+            val minLabel = with(density) { (labelSizeSp * 2.55f).sp.toDp() }
+            var sz = iconSize
+            var pad = (height - iconPadTop - sz - textPadBottom - minLabel).coerceIn(3.dp, 14.dp)
+            repeat(10) {
+                val labelSpace = height - iconPadTop - sz - pad - textPadBottom
+                if (labelSpace >= minLabel) return@remember Pair(sz, pad)
+                if (sz <= 40.dp) return@remember Pair(sz, pad)
+                sz -= 3.dp
+                pad = (height - iconPadTop - sz - textPadBottom - minLabel).coerceIn(3.dp, 14.dp)
+            }
+            Pair(sz.coerceAtLeast(40.dp), pad)
+        }
+
+        if (selected) {
+            Box(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .clip(androidx.compose.foundation.shape.RoundedCornerShape(selRadius))
+                    .background(themePalette.selectorBackgroundColour)
+                    .border(
+                        width = 1.dp,
+                        color = themePalette.selectorBorderColour,
+                        shape = androidx.compose.foundation.shape.RoundedCornerShape(selRadius),
+                    )
+            )
+        } else {
+            Box(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .clip(androidx.compose.foundation.shape.RoundedCornerShape(cardRadius))
+                    .background(brush = Brush.verticalGradient(listOf(cardTop, cardBottom)))
+                    .border(
+                        width = 0.8.dp,
+                        color = Color(0x332F3B4F),
+                        shape = androidx.compose.foundation.shape.RoundedCornerShape(cardRadius)
+                    )
+            )
+        }
+
+        // Mirrors Flutter `app_card.dart`: `appCardIconPadding` + Expanded + `appCardTextPadding`.
+        Column(
+            horizontalAlignment = Alignment.CenterHorizontally,
+            modifier = Modifier.fillMaxSize(),
+        ) {
+            Box(
+                modifier = Modifier
+                    .padding(top = iconPadTop, bottom = iconPadBottom, start = 7.dp, end = 7.dp)
+                    .size(iconSizeUsed),
+            ) {
+                AsyncImage(
+                    model = app.icon,
+                    contentDescription = app.label,
+                    modifier = Modifier
+                        .size(iconSizeUsed)
+                        .clip(iconMaskShape(appIconShape))
+                        .align(Alignment.Center),
+                )
+                if (hasNotifBadge) {
+                    Box(
+                        modifier = Modifier
+                            .align(Alignment.TopEnd)
+                            .offset(x = 3.dp, y = (-3).dp)
+                            .size(16.dp)
+                            .clip(CircleShape)
+                            .background(Color(0xFFD32F2F)),
+                        contentAlignment = Alignment.Center,
+                    ) {
+                        Text(
+                            text = "\u2731",
+                            style = MaterialTheme.typography.labelSmall.copy(
+                                color = Color.White,
+                                fontSize = 9.sp,
+                                lineHeight = 9.sp,
+                                fontWeight = FontWeight.Bold,
+                            ),
+                        )
+                    }
+                }
+                if (usageTimeMs >= 60_000L) {
+                    val usageLabel = remember(usageTimeMs) {
+                        val m = (usageTimeMs / 60_000).toInt()
+                        if (m >= 60) "${m / 60}h" else "${m}m"
+                    }
+                    Text(
+                        text = usageLabel,
+                        modifier = Modifier
+                            .align(Alignment.BottomEnd)
+                            .background(Color(0xCC111111), RoundedCornerShape(3.dp))
+                            .padding(horizontal = 2.dp, vertical = 0.5.dp),
+                        fontSize = 7.sp,
+                        color = Color.White,
+                        fontWeight = androidx.compose.ui.text.font.FontWeight.SemiBold,
+                        lineHeight = 9.sp,
+                    )
+                }
+            }
+            Box(
+                modifier = Modifier
+                    .weight(1f)
+                    .fillMaxWidth()
+                    .fillMaxHeight()
+                    .padding(bottom = 2.dp, start = 3.dp, end = 3.dp),
+                contentAlignment = Alignment.TopCenter,
+            ) {
+                OutlinedLabel(
+                    text = displayLabel,
+                    fontSizeSp = labelSizeSp,
+                    textColor = themePalette.appCardTextColour,
+                    outlineColor = themePalette.appCardTextOutlineColour,
+                )
+            }
+        }
+    }
+}
+
+@Composable
+private fun OutlinedLabel(
+    text: String,
+    fontSizeSp: Int,
+    textColor: Color = Color(0xFFE6E6E6),
+    outlineColor: Color = Color.Black,
+) {
+    val lineHeightStyle = remember {
+        LineHeightStyle(
+        alignment = LineHeightStyle.Alignment.Proportional,
+        trim = LineHeightStyle.Trim.None,
+    )
+    }
+    val base = remember(fontSizeSp, textColor, lineHeightStyle) {
+        TextStyle(
+        fontSize = fontSizeSp.sp,
+        fontWeight = FontWeight.W500,
+        color = textColor,
+        lineHeight = fontSizeSp.sp,
+        lineHeightStyle = lineHeightStyle,
+        platformStyle = PlatformTextStyle(includeFontPadding = false),
+    )
+    }
+    val outlineShadowStyles = remember(base, outlineColor) {
+        OUTLINE_OFFSETS.map { o ->
+            base.copy(
+                color = textColor,
+                shadow = androidx.compose.ui.graphics.Shadow(color = outlineColor, offset = o, blurRadius = 0f),
+            )
+        }
+    }
+    val mainShadowStyle = remember(base) {
+        base.copy(
+            shadow = androidx.compose.ui.graphics.Shadow(color = Color.Black, offset = MAIN_SHADOW_OFFSET, blurRadius = 3f),
+        )
+    }
+
+    Box(
+        modifier = Modifier
+            .fillMaxWidth()
+            .fillMaxHeight(),
+        contentAlignment = Alignment.TopCenter,
+    ) {
+        for (style in outlineShadowStyles) {
+            Text(
+                text,
+                modifier = Modifier.fillMaxWidth(),
+                overflow = TextOverflow.Clip,
+                textAlign = TextAlign.Center,
+                softWrap = true,
+                style = style,
+            )
+        }
+        Text(
+            text,
+            modifier = Modifier.fillMaxWidth(),
+            overflow = TextOverflow.Clip,
+            textAlign = TextAlign.Center,
+            softWrap = true,
+            style = mainShadowStyle,
+        )
+    }
+}
+
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+private fun FolderContentsSheet(
+    folderTitle: String,
+    members: List<AppEntry>,
+    onDismiss: () -> Unit,
+    onLaunchApp: (String) -> Unit,
+    onRemoveFromFolder: (String) -> Unit,
+    onDissolveFolder: () -> Unit,
+    onRenameFolder: (String) -> Unit,
+    appIconShape: AppIconShape,
+    themePalette: LauncherThemePalette,
+) {
+    val state = rememberModalBottomSheetState(skipPartiallyExpanded = true)
+    var renameOpen by remember { mutableStateOf(false) }
+    var renameText by remember(folderTitle) { mutableStateOf(folderTitle) }
+    androidx.compose.runtime.LaunchedEffect(folderTitle) {
+        renameText = folderTitle
+    }
+    ModalBottomSheet(
+        onDismissRequest = onDismiss,
+        sheetState = state,
+        containerColor = themePalette.settingsBg,
+        contentColor = themePalette.settingsMenuTitle,
+    ) {
+        Column(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(16.dp),
+        ) {
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                Text(
+                    folderTitle,
+                    style = MaterialTheme.typography.titleLarge,
+                    color = themePalette.settingsMenuTitle,
+                    modifier = Modifier.weight(1f),
+                    maxLines = 2,
+                )
+                TextButton(onClick = { renameOpen = true }) {
+                    Text("Rename", color = themePalette.settingsMenuBody)
+                }
+                TextButton(onClick = onDissolveFolder) {
+                    Text("Remove", color = Color(0xFFFF6B6B))
+                }
+            }
+            Text(
+                "${members.size} apps",
+                style = MaterialTheme.typography.bodySmall,
+                color = themePalette.settingsMenuBody,
+            )
+            Spacer(Modifier.height(12.dp))
+            LazyColumn(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .heightIn(max = 420.dp),
+            ) {
+                items(members, key = { it.packageName }) { app ->
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .clickable { onLaunchApp(app.packageName) }
+                            .padding(vertical = 8.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = androidx.compose.foundation.layout.Arrangement.SpaceBetween,
+                    ) {
+                        Row(
+                            verticalAlignment = Alignment.CenterVertically,
+                            modifier = Modifier.weight(1f),
+                        ) {
+                            AsyncImage(
+                                model = app.icon,
+                                contentDescription = app.label,
+                                modifier = Modifier.size(40.dp).clip(iconMaskShape(appIconShape)),
+                            )
+                            Text(
+                                app.label,
+                                modifier = Modifier.padding(start = 10.dp),
+                                color = themePalette.settingsMenuTitle,
+                                maxLines = 2,
+                            )
+                        }
+                        TextButton(onClick = { onRemoveFromFolder(app.packageName) }) {
+                            Text("Remove", color = themePalette.settingsMenuBody)
+                        }
+                    }
+                }
+            }
+            Spacer(Modifier.height(8.dp))
+        }
+    }
+    if (renameOpen) {
+        val renameFocusRequester = remember { FocusRequester() }
+        LaunchedEffect(Unit) { renameFocusRequester.requestFocus() }
+        AlertDialog(
+            onDismissRequest = { renameOpen = false },
+            shape = RoundedCornerShape(16.dp),
+            title = { Text("Rename folder") },
+            text = {
+                OutlinedTextField(
+                    value = renameText,
+                    onValueChange = { renameText = it },
+                    singleLine = true,
+                    label = { Text("Name", color = themePalette.settingsMenuBody) },
+                    colors = TextFieldDefaults.colors(
+                        focusedTextColor = Color(0xFFE8EEF7),
+                        unfocusedTextColor = Color(0xFFE8EEF7),
+                        focusedLabelColor = themePalette.settingsMenuBody,
+                        unfocusedLabelColor = themePalette.settingsMenuBody,
+                        focusedIndicatorColor = Color(0xFF5B9BD5),
+                        unfocusedIndicatorColor = Color(0xFF5F6A78),
+                        focusedContainerColor = Color(0xFF1E2430),
+                        unfocusedContainerColor = Color(0xFF1E2430),
+                        disabledContainerColor = Color(0xFF1E2430),
+                        cursorColor = Color(0xFF84D5F6),
+                        focusedPlaceholderColor = themePalette.settingsMenuBody.copy(alpha = 0.7f),
+                        unfocusedPlaceholderColor = themePalette.settingsMenuBody.copy(alpha = 0.7f),
+                    ),
+                    modifier = Modifier.fillMaxWidth().focusRequester(renameFocusRequester),
+                )
+            },
+            confirmButton = {
+                TextButton(
+                    onClick = {
+                        onRenameFolder(renameText)
+                        renameOpen = false
+                    },
+                ) { Text("Save") }
+            },
+            dismissButton = {
+                TextButton(onClick = { renameOpen = false }) { Text("Cancel") }
+            },
+        )
+    }
+}
+
+/**
+ * Bottom sheet: slides up from the strip, auto-sizes to the app count, swipe-to-dismiss.
+ */
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+private fun HomeGroupFolderOverlay(
+    groupTitle: String,
+    members: List<AppEntry>,
+    onDismiss: () -> Unit,
+    onLaunchApp: (String) -> Unit,
+    onRemoveFromGroup: (String) -> Unit,
+    onDeleteGroup: () -> Unit,
+    onRenameGroup: (String) -> Unit,
+    appIconShape: AppIconShape,
+    themePalette: LauncherThemePalette,
+) {
+    var renameOpen by remember { mutableStateOf(false) }
+    var renameText by remember(groupTitle) { mutableStateOf(groupTitle) }
+    androidx.compose.runtime.LaunchedEffect(groupTitle) {
+        renameText = groupTitle
+    }
+    val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
+    ModalBottomSheet(
+        onDismissRequest = onDismiss,
+        sheetState = sheetState,
+        containerColor = Color(0xFF1A1F28),
+        contentColor = HOME_STRIP_LABEL_COLOR,
+        tonalElevation = 0.dp,
+    ) {
+        Column(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(start = 20.dp, end = 20.dp, bottom = 32.dp),
+        ) {
+            // Title + action icons row
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                Text(
+                    text = groupTitle,
+                    style = MaterialTheme.typography.titleMedium.copy(
+                        color = HOME_STRIP_LABEL_COLOR,
+                        fontWeight = FontWeight.SemiBold,
+                        fontSize = 18.sp,
+                    ),
+                    modifier = Modifier.weight(1f),
+                )
+                IconButton(onClick = { renameOpen = true }) {
+                    Icon(
+                        imageVector = Icons.Rounded.Tune,
+                        contentDescription = "Rename",
+                        tint = themePalette.settingsMenuBody,
+                        modifier = Modifier.size(20.dp),
+                    )
+                }
+                Spacer(Modifier.width(4.dp))
+                IconButton(onClick = onDeleteGroup) {
+                    Icon(
+                        imageVector = Icons.Outlined.Close,
+                        contentDescription = "Delete group",
+                        tint = Color(0xFFFF8A80),
+                        modifier = Modifier.size(20.dp),
+                    )
+                }
+            }
+            if (members.isEmpty()) {
+                Spacer(Modifier.height(8.dp))
+                Text(
+                    "No apps yet — long-press an app in the drawer to add it here.",
+                    color = themePalette.settingsMenuBody,
+                    fontSize = 14.sp,
+                    textAlign = TextAlign.Center,
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(vertical = 24.dp),
+                )
+            } else {
+                Spacer(Modifier.height(16.dp))
+                LazyVerticalGrid(
+                    columns = GridCells.Fixed(4),
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .heightIn(max = 400.dp),
+                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                    verticalArrangement = Arrangement.spacedBy(16.dp),
+                    contentPadding = PaddingValues(vertical = 4.dp),
+                ) {
+                    items(members, key = { it.packageName }) { app ->
+                        val cardRadius = themePalette.appCardCornerRadiusDp.dp
+                        val cardShape = RoundedCornerShape(cardRadius)
+                        Column(
+                            horizontalAlignment = Alignment.CenterHorizontally,
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .clip(cardShape)
+                                .background(brush = Brush.verticalGradient(listOf(themePalette.appCardTop, themePalette.appCardBottom)))
+                                .border(
+                                    width = 0.8.dp,
+                                    color = Color(0x332F3B4F),
+                                    shape = cardShape,
+                                )
+                                .padding(top = 8.dp, start = 4.dp, end = 4.dp, bottom = 6.dp)
+                                .pointerInput(app.packageName) {
+                                    detectTapGestures(
+                                        onTap = { onLaunchApp(app.packageName) },
+                                        onLongPress = { onRemoveFromGroup(app.packageName) },
+                                    )
+                                },
+                        ) {
+                            AsyncImage(
+                                model = app.icon,
+                                contentDescription = app.label,
+                                contentScale = ContentScale.Fit,
+                                modifier = Modifier
+                                    .size(56.dp)
+                                    .clip(iconMaskShape(appIconShape)),
+                            )
+                            Spacer(Modifier.height(6.dp))
+                            Text(
+                                text = app.label,
+                                color = HOME_STRIP_LABEL_COLOR,
+                                fontSize = HOME_STRIP_LABEL_FONT_SP,
+                                lineHeight = HOME_STRIP_LABEL_LINE_SP,
+                                maxLines = 2,
+                                overflow = TextOverflow.Ellipsis,
+                                textAlign = TextAlign.Center,
+                                modifier = Modifier.fillMaxWidth(),
+                            )
+                        }
+                    }
+                }
+            }
+        }
+    }
+    if (renameOpen) {
+        val renameFocusRequester = remember { FocusRequester() }
+        LaunchedEffect(Unit) { renameFocusRequester.requestFocus() }
+        AlertDialog(
+            onDismissRequest = { renameOpen = false },
+            shape = RoundedCornerShape(16.dp),
+            containerColor = themePalette.settingsBg,
+            titleContentColor = themePalette.settingsMenuTitle,
+            textContentColor = themePalette.settingsMenuBody,
+            title = { Text("Rename group", color = themePalette.settingsMenuTitle) },
+            text = {
+                OutlinedTextField(
+                    value = renameText,
+                    onValueChange = { renameText = it },
+                    singleLine = true,
+                    label = { Text("Name", color = themePalette.settingsMenuBody) },
+                    colors = TextFieldDefaults.colors(
+                        focusedTextColor = Color(0xFFE8EEF7),
+                        unfocusedTextColor = Color(0xFFE8EEF7),
+                        focusedLabelColor = themePalette.settingsMenuBody,
+                        unfocusedLabelColor = themePalette.settingsMenuBody,
+                        focusedIndicatorColor = Color(0xFF5B9BD5),
+                        unfocusedIndicatorColor = Color(0xFF5F6A78),
+                        focusedContainerColor = Color(0xFF1E2430),
+                        unfocusedContainerColor = Color(0xFF1E2430),
+                        disabledContainerColor = Color(0xFF1E2430),
+                        cursorColor = Color(0xFF84D5F6),
+                        focusedPlaceholderColor = themePalette.settingsMenuBody.copy(alpha = 0.7f),
+                        unfocusedPlaceholderColor = themePalette.settingsMenuBody.copy(alpha = 0.7f),
+                    ),
+                    modifier = Modifier.fillMaxWidth().focusRequester(renameFocusRequester),
+                )
+            },
+            confirmButton = {
+                TextButton(
+                    onClick = {
+                        onRenameGroup(renameText)
+                        renameOpen = false
+                    },
+                ) { Text("Save", color = themePalette.settingsMenuBody) }
+            },
+            dismissButton = {
+                TextButton(onClick = { renameOpen = false }) {
+                    Text("Cancel", color = themePalette.settingsMenuBody)
+                }
+            },
+        )
+    }
+}
+
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+private fun AppContextMenu(
+    app: AppEntry,
+    themePalette: LauncherThemePalette,
+    isHidden: Boolean,
+    homeGroups: List<HomeGroup>,
+    addHomeShortcutEnabled: Boolean,
+    removeHomeShortcutEnabled: Boolean,
+    onDismiss: () -> Unit,
+    onLaunch: () -> Unit,
+    onInfo: () -> Unit,
+    onHideToggle: () -> Unit,
+    onReorder: () -> Unit,
+    onAddHomeShortcut: () -> Unit,
+    onRemoveHomeShortcut: () -> Unit,
+    onAddToHomeGroup: (String) -> Unit,
+    onRemoveFromHomeGroup: (String) -> Unit,
+) {
+    val state = rememberModalBottomSheetState(skipPartiallyExpanded = true)
+    val iconTint = themePalette.settingsMenuBody
+    val labelColor = themePalette.settingsMenuTitle
+    ModalBottomSheet(
+        onDismissRequest = onDismiss,
+        sheetState = state,
+        containerColor = themePalette.settingsBg,
+        contentColor = labelColor,
+    ) {
+        Column(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(horizontal = 16.dp, vertical = 8.dp),
+        ) {
+            Text(
+                app.label,
+                style = MaterialTheme.typography.titleLarge.copy(fontWeight = FontWeight.SemiBold),
+                color = labelColor,
+                modifier = Modifier.fillMaxWidth(),
+            )
+            Spacer(Modifier.height(8.dp))
+            HorizontalDivider(color = Color(0xFF2C3340))
+            Spacer(Modifier.height(4.dp))
+
+            @Composable
+            fun MenuRow(
+                icon: ImageVector,
+                label: String,
+                onClick: () -> Unit,
+            ) {
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .clip(androidx.compose.foundation.shape.RoundedCornerShape(10.dp))
+                        .clickable(onClick = onClick)
+                        .padding(horizontal = 12.dp, vertical = 14.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    Icon(icon, contentDescription = null, tint = iconTint, modifier = Modifier.size(22.dp))
+                    Spacer(Modifier.width(16.dp))
+                    Text(
+                        label,
+                        style = MaterialTheme.typography.bodyLarge,
+                        color = labelColor,
+                    )
+                }
+            }
+
+            MenuRow(Icons.AutoMirrored.Rounded.OpenInNew, "Open", onLaunch)
+            MenuRow(Icons.Rounded.Info, "App info", onInfo)
+            MenuRow(
+                if (isHidden) Icons.Rounded.Visibility else Icons.Rounded.VisibilityOff,
+                if (isHidden) "Unhide" else "Hide",
+                onHideToggle,
+            )
+            MenuRow(Icons.Rounded.SwapVert, "Reorder apps", onReorder)
+            if (addHomeShortcutEnabled) {
+                MenuRow(Icons.AutoMirrored.Rounded.PlaylistAdd, "Add to home shortcuts", onAddHomeShortcut)
+            }
+            if (removeHomeShortcutEnabled) {
+                MenuRow(Icons.Outlined.Close, "Remove shortcut", onRemoveHomeShortcut)
+            }
+            if (app.packageName != AppsRepository.INTERNAL_SETTINGS_PACKAGE && homeGroups.isNotEmpty()) {
+                for (g in homeGroups) {
+                    val inGroup = app.packageName in g.packageNames
+                    if (inGroup) {
+                        MenuRow(
+                            Icons.Outlined.BookmarkRemove,
+                            "Remove from ${g.title}",
+                            { onRemoveFromHomeGroup(g.id) },
+                        )
+                    } else {
+                        MenuRow(
+                            Icons.Rounded.BookmarkAdd,
+                            "Add to ${g.title}",
+                            { onAddToHomeGroup(g.id) },
+                        )
+                    }
+                }
+            }
+            Spacer(Modifier.height(12.dp))
+        }
+    }
+}
+
+@Composable
+private fun HomeStripItemLabel(text: String) {
+    Text(
+        text = text,
+        color = HOME_STRIP_LABEL_COLOR,
+        fontSize = HOME_STRIP_LABEL_FONT_SP,
+        lineHeight = HOME_STRIP_LABEL_LINE_SP,
+        maxLines = 1,
+        overflow = TextOverflow.Ellipsis,
+        textAlign = TextAlign.Center,
+        modifier = Modifier
+            .widthIn(max = 88.dp)
+            .padding(top = 1.dp),
+    )
+}
+
+/**
+ * Home group tile in [HomeShortcutStrip]: exact same outer 52dp × 12dp-rounded bounds as pinned app tiles (full-bleed folder panel).
+ */
+@Composable
+private fun HomeGroupStripIcon(
+    title: String,
+    members: List<AppEntry>,
+    appIconShape: AppIconShape,
+    hasUnreadBadge: Boolean,
+    onClick: () -> Unit,
+    onLongPress: () -> Unit,
+) {
+    val tile = HOME_SHORTCUT_ICON_DP
+    val stripCorner = RoundedCornerShape(12.dp)
+    val folderBg = Color(0xD9181C24)
+    val folderBorderIdle = Color(0x38FFFFFF)
+    // Tighter outer inset + gap → larger mini-icons without changing the 48dp tile.
+    val gridInset = 2.5.dp
+    val gap = 1.5.dp
+    val preview = members.take(4)
+    val gridSide = tile - gridInset * 2
+    val half = (gridSide - gap) / 2
+    Box(
+        modifier = Modifier
+            .size(tile)
+            .semantics { contentDescription = title }
+            .clip(stripCorner)
+            .background(folderBg)
+            .border(0.5.dp, folderBorderIdle, stripCorner)
+            .pointerInput(Unit) {
+                detectTapGestures(
+                    onTap = { onClick() },
+                    onLongPress = { onLongPress() },
+                )
+            },
+        contentAlignment = Alignment.Center,
+    ) {
+        Column(
+            modifier = Modifier
+                .fillMaxSize()
+                .padding(gridInset),
+            verticalArrangement = Arrangement.spacedBy(gap),
+            horizontalAlignment = Alignment.CenterHorizontally,
+        ) {
+            when (preview.size) {
+                0 -> {
+                    Icon(
+                        imageVector = Icons.Rounded.Apps,
+                        contentDescription = null,
+                        tint = Color(0x55FFFFFF),
+                        modifier = Modifier.size(gridSide * 0.6f),
+                    )
+                }
+                1 -> {
+                    val app = preview[0]
+                    Box(
+                        modifier = Modifier.size(gridSide),
+                        contentAlignment = Alignment.Center,
+                    ) {
+                        AsyncImage(
+                            model = app.icon,
+                            contentDescription = app.label,
+                            contentScale = ContentScale.Crop,
+                            modifier = Modifier.size(gridSide - 2.dp).clip(iconMaskShape(appIconShape)),
+                        )
+                    }
+                }
+                2 -> {
+                    Row(horizontalArrangement = Arrangement.spacedBy(gap)) {
+                        preview.forEach { app ->
+                            AsyncImage(
+                                model = app.icon,
+                                contentDescription = app.label,
+                                contentScale = ContentScale.Crop,
+                                modifier = Modifier.size(half).clip(iconMaskShape(appIconShape)),
+                            )
+                        }
+                    }
+                }
+                3 -> {
+                    Row(horizontalArrangement = Arrangement.spacedBy(gap)) {
+                        AsyncImage(
+                            model = preview[0].icon,
+                            contentDescription = preview[0].label,
+                            contentScale = ContentScale.Crop,
+                            modifier = Modifier.size(half).clip(iconMaskShape(appIconShape)),
+                        )
+                        AsyncImage(
+                            model = preview[1].icon,
+                            contentDescription = preview[1].label,
+                            contentScale = ContentScale.Crop,
+                            modifier = Modifier.size(half).clip(iconMaskShape(appIconShape)),
+                        )
+                    }
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.Center,
+                    ) {
+                        AsyncImage(
+                            model = preview[2].icon,
+                            contentDescription = preview[2].label,
+                            contentScale = ContentScale.Crop,
+                            modifier = Modifier.size(half).clip(iconMaskShape(appIconShape)),
+                        )
+                    }
+                }
+                else -> {
+                    preview.chunked(2).forEach { rowApps ->
+                        Row(horizontalArrangement = Arrangement.spacedBy(gap)) {
+                            rowApps.forEach { app ->
+                                AsyncImage(
+                                    model = app.icon,
+                                    contentDescription = app.label,
+                                    contentScale = ContentScale.Crop,
+                                    modifier = Modifier.size(half).clip(iconMaskShape(appIconShape)),
+                                )
+                            }
+                        }
+                    }
+                }
+            }
+        }
+        if (hasUnreadBadge) {
+            Box(
+                modifier = Modifier
+                    .align(Alignment.TopEnd)
+                    .offset(x = 2.dp, y = (-2).dp)
+                    .size(14.dp)
+                    .clip(CircleShape)
+                    .background(Color(0xFFD32F2F)),
+                contentAlignment = Alignment.Center,
+            ) {
+                Text(
+                    text = "\u2731",
+                    style = MaterialTheme.typography.labelSmall.copy(
+                        color = Color.White,
+                        fontSize = 8.sp,
+                        lineHeight = 8.sp,
+                        fontWeight = FontWeight.Bold,
+                    ),
+                )
+            }
+        }
+    }
+}
+
+@Composable
+private fun HomeShortcutStrip(
+    shortcutPackages: List<String>,
+    homeGroups: List<HomeGroup>,
+    allApps: List<AppEntry>,
+    unreadPackages: Set<String>,
+    appIconShape: AppIconShape,
+    themePalette: LauncherThemePalette,
+    onLaunch: (String) -> Unit,
+    onLongPressShortcut: (String) -> Unit,
+    onOpenHomeGroup: (HomeGroup) -> Unit,
+) {
+    val pkgs = shortcutPackages.take(HOME_SHORTCUT_SLOTS)
+    if (pkgs.isEmpty() && homeGroups.isEmpty()) return
+    val leftGroup = homeGroups.firstOrNull { it.side == HomeGroupSide.LEFT }
+    val rightGroup = homeGroups.firstOrNull { it.side == HomeGroupSide.RIGHT }
+
+    @Composable
+    fun ShortcutTile(token: String) {
+        val (pkg, _) = parseHomeShortcutToken(token)
+        val entry = allApps.find { it.packageName == pkg }
+        val label =
+            entry?.label?.takeIf { it.isNotBlank() } ?: pkg.substringAfterLast('.').ifBlank { pkg }
+        Column(horizontalAlignment = Alignment.CenterHorizontally) {
+            Box(
+                modifier = Modifier
+                    .size(HOME_SHORTCUT_ICON_DP)
+                    .pointerInput(token, entry?.packageName) {
+                        detectTapGestures(
+                            onTap = { onLaunch(token) },
+                            onLongPress = { onLongPressShortcut(token) },
+                        )
+                    },
+                contentAlignment = Alignment.Center,
+            ) {
+                when {
+                    entry?.icon != null -> {
+                        AsyncImage(
+                            model = entry.icon,
+                            contentDescription = entry.label,
+                            contentScale = ContentScale.Crop,
+                            modifier = Modifier.fillMaxSize().clip(iconMaskShape(appIconShape)),
+                        )
+                    }
+                    else -> {
+                        Icon(
+                            Icons.Rounded.Apps,
+                            contentDescription = null,
+                            tint = themePalette.dockIconTint,
+                            modifier = Modifier.size(HOME_SHORTCUT_FALLBACK_ICON_DP),
+                        )
+                    }
+                }
+            }
+            Spacer(Modifier.height(HOME_STRIP_ICON_LABEL_GAP))
+            HomeStripItemLabel(label)
+        }
+    }
+
+    @Composable
+    fun GroupTile(g: HomeGroup) {
+        val members = g.packageNames.mapNotNull { pkg -> allApps.find { it.packageName == pkg } }
+        Column(horizontalAlignment = Alignment.CenterHorizontally) {
+            HomeGroupStripIcon(
+                title = g.title,
+                members = members,
+                appIconShape = appIconShape,
+                hasUnreadBadge = g.packageNames.any { it in unreadPackages },
+                onClick = { onOpenHomeGroup(g) },
+                onLongPress = { onOpenHomeGroup(g) },
+            )
+            Spacer(Modifier.height(HOME_STRIP_ICON_LABEL_GAP))
+            HomeStripItemLabel(g.title)
+        }
+    }
+
+    // Left group at screen-left, right group at screen-right, three shortcuts centered between them.
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(horizontal = 12.dp, vertical = 6.dp),
+        verticalAlignment = Alignment.Bottom,
+    ) {
+        Box(
+            modifier = Modifier.weight(1f),
+            contentAlignment = Alignment.CenterStart,
+        ) {
+            leftGroup?.let { GroupTile(it) }
+        }
+        Row(
+            modifier = Modifier.padding(horizontal = 8.dp),
+            horizontalArrangement = Arrangement.spacedBy(HOME_STRIP_SHORTCUT_GAP),
+            verticalAlignment = Alignment.Bottom,
+        ) {
+            pkgs.forEach { token -> ShortcutTile(token) }
+        }
+        Box(
+            modifier = Modifier.weight(1f),
+            contentAlignment = Alignment.CenterEnd,
+        ) {
+            rightGroup?.let { GroupTile(it) }
+        }
+    }
+}
+
+/** Flutter `TextFieldTheme`: solid #202020. LOCKED baseline — height ~45dp, 16sp query; do not widen without UX ask. */
+@Composable
+private fun DrawerSearchBar(
+    query: String,
+    onClear: () -> Unit,
+) {
+    val scroll = rememberScrollState()
+    LaunchedEffect(query) {
+        scroll.scrollTo(scroll.maxValue)
+    }
+    // Flutter textFieldHeight 44 + small vertical insets; shorter than dock/navBarHeight (82).
+    val searchBarHeight = 45.dp
+    val fieldBg = Color(0xFF202020)
+    val horizontalInset = 7.dp
+    val clearIcon = 22.dp
+    val clearPad = 5.dp
+    Box(
+        modifier = Modifier
+            .fillMaxWidth()
+            .height(searchBarHeight)
+            .background(fieldBg),
+    ) {
+        Row(
+            modifier = Modifier
+                .fillMaxSize()
+                .padding(horizontal = horizontalInset, vertical = 3.dp),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Text(
+                text = query,
+                color = Color.White,
+                fontSize = 16.sp,
+                maxLines = 1,
+                style = MaterialTheme.typography.bodyLarge,
+                modifier = Modifier
+                    .weight(1f)
+                    .horizontalScroll(scroll),
+            )
+            Box(
+                modifier = Modifier
+                    .padding(clearPad)
+                    .size(clearIcon)
+                    .clip(CircleShape)
+                    .border(1.2.dp, Color.White, CircleShape)
+                    .clickable(onClick = onClear),
+                contentAlignment = Alignment.Center,
+            ) {
+                Icon(
+                    Icons.Outlined.Close,
+                    contentDescription = "Clear search",
+                    tint = Color.White,
+                    modifier = Modifier.size(14.dp),
+                )
+            }
+        }
+    }
+}
+
+@Composable
+private fun Dock(
+    pageIndex: Int,
+    onMail: () -> Unit,
+    onShortcut: () -> Unit,
+    onHome: () -> Unit,
+    onCamera: () -> Unit,
+    onScrubPage: (Int) -> Unit,
+    drawerPageCount: Int,
+    mailHasUnread: Boolean,
+    shortcutHasUnread: Boolean,
+    /** When false, the centre home icon is omitted (drawer-only launcher). */
+    showHomeButton: Boolean = true,
+    /** When false, the Messages/WhatsApp dock icon is omitted (drawer-only launcher). */
+    showMessagesShortcut: Boolean = true,
+    /** When non-null, show this drawable in the dock end slot (same as app grid). Null = default camera asset. */
+    dockEndIconModel: Any?,
+    appIconShape: AppIconShape,
+    selectedTint: Color = Color(0x664FC3F7),
+    themePalette: LauncherThemePalette,
+    /** True when DPAD focus is inside the dock (from AppDrawer key handler). */
+    focused: Boolean = false,
+    /** Which dock slot is focused: 0=Mail, 1=Home, 2=Shortcut, 3=Camera (or 0=Mail, 1=Camera when compact). */
+    focusedIndex: Int = 0,
+) {
+    val homeFocusIdx = if (showHomeButton) 1 else -1
+    val shortcutFocusIdx = when {
+        showHomeButton && showMessagesShortcut -> 2
+        !showHomeButton && showMessagesShortcut -> 1
+        else -> -1
+    }
+    val cameraFocusIdx = when {
+        showHomeButton && showMessagesShortcut -> 3
+        showHomeButton && !showMessagesShortcut -> 2
+        !showHomeButton && showMessagesShortcut -> 2
+        else -> 1
+    }
+    val density = LocalDensity.current
+    val navBarHeight = themePalette.navBarHeight()
+    val navBarSpacing = themePalette.navBarSpacing()
+    val navIconSize = themePalette.navIconSize()
+    val dockIconTint = themePalette.dockIconTint
+    var scrubbing by remember { mutableStateOf(false) }
+    var hoveredPage by remember { mutableStateOf(0) }
+    val scrubOverlayAlpha by animateFloatAsState(
+        targetValue = if (scrubbing) 1f else 0f,
+        animationSpec = tween(100),
+        label = "scrubOverlayAlpha",
+    )
+    var dotsWidthPx by remember { mutableStateOf(1f) }
+    var fingerXpx by remember { mutableStateOf(0f) }
+
+    fun xToPage(x: Float): Int {
+        if (drawerPageCount <= 1) return 0
+        val width = dotsWidthPx.coerceAtLeast(1f)
+        val clamped = x.coerceIn(0f, width - 1f)
+        val ratio = clamped / width
+        val raw = (ratio * drawerPageCount).toInt()
+        return raw.coerceIn(0, drawerPageCount - 1)
+    }
+
+    Box(
+        modifier = Modifier
+            .height(navBarHeight)
+            .fillMaxWidth()
+            .background(
+                Brush.verticalGradient(listOf(Color.Transparent, Color(0x77000000)))
+            )
+            .padding(horizontal = 0.dp, vertical = 8.dp)
+    ) {
+        Row(
+            modifier = Modifier
+                .fillMaxSize()
+                .padding(horizontal = 0.dp)
+                .zIndex(1f),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            DockPng(
+                resId = R.drawable.ic_dock_mail,
+                onClick = onMail,
+                hasUnread = mailHasUnread,
+                buttonSize = 68.dp,
+                iconSize = 52.dp,
+                selected = focused && focusedIndex == 0,
+                selectedTint = selectedTint,
+                iconTint = dockIconTint,
+            )
+            Spacer(Modifier.weight(1f))
+
+            if (showHomeButton) {
+                DockIcon(
+                    icon = Icons.Rounded.Home,
+                    onClick = onHome,
+                    buttonSize = 56.dp,
+                    iconSize = navIconSize,
+                    selected = focused && focusedIndex == homeFocusIdx,
+                    selectedTint = selectedTint,
+                    iconTint = dockIconTint,
+                )
+                Spacer(Modifier.width(navBarSpacing))
+            }
+            Box(
+                modifier = Modifier
+                    .onSizeChanged { dotsWidthPx = it.width.toFloat() }
+                    .pointerInput(drawerPageCount) {
+                        awaitEachGesture {
+                            val down = awaitFirstDown(pass = PointerEventPass.Main)
+                            fingerXpx = down.position.x
+
+                            val startMs = SystemClock.uptimeMillis()
+                            var activated = false
+
+                            while (true) {
+                                val remaining = (250L - (SystemClock.uptimeMillis() - startMs)).coerceAtLeast(0L)
+                                val event = if (!activated && remaining > 0L) {
+                                    withTimeoutOrNull(remaining) { awaitPointerEvent(pass = PointerEventPass.Main) }
+                                } else {
+                                    awaitPointerEvent(pass = PointerEventPass.Main)
+                                }
+
+                                if (event == null) {
+                                    activated = true
+                                    scrubbing = true
+                                    val page = xToPage(fingerXpx)
+                                    hoveredPage = page
+                                    onScrubPage(page)
+                                    continue
+                                }
+
+                                val change = event.changes.firstOrNull() ?: break
+                                if (change.changedToUp()) {
+                                    scrubbing = false
+                                    break
+                                }
+
+                                if (change.positionChanged()) {
+                                    fingerXpx = change.position.x
+                                    if (activated) {
+                                        val page = xToPage(fingerXpx)
+                                        if (page != hoveredPage) {
+                                            hoveredPage = page
+                                            onScrubPage(page)
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+            ) {
+                Box(modifier = Modifier.padding(horizontal = 6.dp, vertical = 5.dp)) {
+                    Dots(
+                        current = if (scrubbing) hoveredPage else pageIndex.coerceIn(0, drawerPageCount - 1),
+                        count = drawerPageCount,
+                        themePalette = themePalette,
+                        emphasize = false,
+                    )
+                }
+            }
+            if (showMessagesShortcut) {
+                Spacer(Modifier.width(navBarSpacing))
+                DockIcon(
+                    icon = Icons.Outlined.MailOutline,
+                    onClick = onShortcut,
+                    hasUnread = shortcutHasUnread,
+                    buttonSize = 56.dp,
+                    iconSize = navIconSize,
+                    selected = focused && focusedIndex == shortcutFocusIdx,
+                    selectedTint = selectedTint,
+                    iconTint = dockIconTint,
+                )
+            }
+
+            Spacer(Modifier.weight(1f))
+            // Third shortcut: same 68×52.dp icon box as mail dock; padding/scale so app icons match the envelope.
+            DockEndSlot(
+                iconModel = dockEndIconModel,
+                appIconShape = appIconShape,
+                onClick = onCamera,
+                buttonSize = 68.dp,
+                iconSize = 52.dp,
+                selected = focused && focusedIndex == cameraFocusIdx,
+                selectedTint = selectedTint,
+                iconTint = dockIconTint,
+            )
+        }
+
+        // Flutter `SwipablePageIndicators`: FadeTransition 100ms, full-width bar height = navBarHeight,
+        // `pageIndicatorSwipeBackgroundColour` (black), finger dot uses `pageIndicatorSwipeDotColour`.
+        if (scrubbing || scrubOverlayAlpha > 0.01f) {
+            Box(
+                modifier = Modifier
+                    .align(Alignment.BottomCenter)
+                    .zIndex(0f)
+                    .fillMaxWidth()
+                    .height(navBarHeight)
+                    .alpha(scrubOverlayAlpha)
+                    .background(Color.Black),
+                contentAlignment = Alignment.Center
+            ) {
+                Dots(
+                    current = hoveredPage,
+                    count = drawerPageCount,
+                    themePalette = themePalette,
+                    emphasize = true,
+                )
+            }
+
+            val xDp = with(density) { fingerXpx.toDp() }
+            val swipeDotSize = 48.dp
+            val swipeDotBottomLift = navBarHeight + 28.dp
+            Box(
+                modifier = Modifier
+                    .align(Alignment.BottomStart)
+                    .zIndex(0f)
+                    .absoluteOffset(x = xDp - 20.dp, y = -swipeDotBottomLift)
+                    .size(swipeDotSize)
+                    .shadow(
+                        elevation = 10.dp,
+                        shape = androidx.compose.foundation.shape.CircleShape,
+                        ambientColor = Color(0x42000000),
+                        spotColor = Color(0x42000000),
+                    )
+                    .clip(androidx.compose.foundation.shape.CircleShape)
+                    .background(Color(0xBF000000))
+                    .alpha(scrubOverlayAlpha),
+                contentAlignment = Alignment.Center
+            ) {
+                Text(
+                    text = (hoveredPage + 1).toString(),
+                    modifier = Modifier.padding(top = 5.dp),
+                    style = MaterialTheme.typography.bodyLarge.copy(
+                        color = Color.White,
+                        fontSize = 32.sp,
+                        lineHeight = 32.sp,
+                    ),
+                )
+            }
+        }
+    }
+}
+
+@Composable
+private fun DockIcon(
+    icon: androidx.compose.ui.graphics.vector.ImageVector,
+    onClick: () -> Unit,
+    hasUnread: Boolean = false,
+    buttonSize: androidx.compose.ui.unit.Dp = 52.dp,
+    iconSize: androidx.compose.ui.unit.Dp = 34.dp,
+    selected: Boolean = false,
+    selectedTint: Color = Color(0x664FC3F7),
+    iconTint: Color = Color(0xFFE6E6E6),
+) {
+        TextButton(
+            onClick = onClick,
+            modifier = Modifier
+                .size(buttonSize)
+                .clip(androidx.compose.foundation.shape.RoundedCornerShape(8.dp))
+                .background(if (selected) selectedTint else Color.Transparent)
+        ) {
+        AppIconWithBadge(hasUnread = hasUnread) {
+            Icon(icon, contentDescription = null, tint = iconTint, modifier = Modifier.size(iconSize))
+        }
+    }
+}
+
+@Composable
+private fun DockPng(
+    resId: Int,
+    onClick: () -> Unit,
+    hasUnread: Boolean = false,
+    buttonSize: androidx.compose.ui.unit.Dp = 62.dp,
+    iconSize: androidx.compose.ui.unit.Dp = 44.dp,
+    modifier: Modifier = Modifier,
+    selected: Boolean = false,
+    selectedTint: Color = Color(0x664FC3F7),
+    iconTint: Color = Color(0xFFE6E6E6),
+) {
+        TextButton(
+            onClick = onClick,
+        modifier = modifier
+                .size(buttonSize)
+                .clip(androidx.compose.foundation.shape.RoundedCornerShape(8.dp))
+                .background(if (selected) selectedTint else Color.Transparent)
+        ) {
+        AppIconWithBadge(hasUnread = hasUnread) {
+            Image(
+                painter = androidx.compose.ui.res.painterResource(resId),
+                contentDescription = null,
+                colorFilter = ColorFilter.tint(iconTint),
+                modifier = Modifier.size(iconSize),
+            )
+        }
+    }
+}
+
+@Composable
+private fun Dots(
+    current: Int,
+    count: Int,
+    themePalette: LauncherThemePalette,
+    emphasize: Boolean = false,
+) {
+    val maxDots = 5
+    val dotCount = count.coerceIn(0, maxDots)
+    // Do not wrap with modulo: once we reach the last visible dot, keep it there
+    // so page numbers progress 5, 6, 7... without jumping back to dot position 1.
+    val activeDot = if (dotCount == 0) 0 else current.coerceIn(0, dotCount - 1)
+    // Flutter `page_indicator.dart`: black border + black38 shadow (blur ~5, offset y ~2).
+    val spotShadow = Color(0x61000000)
+    val activeDp = themePalette.pageIndicatorActiveDp.dp
+    val inactiveDp = themePalette.pageIndicatorInactiveDp.dp
+    val spacingDp = themePalette.pageIndicatorSpacingDp.dp
+    val pageColor = themePalette.pageIndicatorColour
+    val inactiveAlpha = if (emphasize) 0.92f else 0.69f
+    // Flutter `page_indicator.dart`: squircle uses ContinuousRectangleBorder with radius 10.
+    val squircleShape = RoundedCornerShape(10.dp)
+    Row(verticalAlignment = Alignment.CenterVertically) {
+        repeat(dotCount) { i ->
+            if (i == activeDot) {
+                val activeShape =
+                    if (themePalette.pageIndicatorShapeSquircle) squircleShape else CircleShape
+                Box(
+                    modifier = Modifier
+                        .size(activeDp)
+                        .shadow(5.dp, activeShape, ambientColor = spotShadow, spotColor = spotShadow)
+                        .clip(activeShape)
+                        .background(pageColor)
+                        .border(width = 1.dp, color = Color.Black, shape = activeShape)
+                        .padding(top = 2.dp),
+                    contentAlignment = Alignment.Center,
+                ) {
+                    Text(
+                        text = (current + 1).toString(),
+                        style = MaterialTheme.typography.labelMedium.copy(
+                            color = Color.Black,
+                            fontSize = themePalette.pageIndicatorFontSp.sp,
+                            lineHeight = themePalette.pageIndicatorFontSp.sp,
+                        ),
+                        fontWeight = FontWeight.Bold,
+                    )
+                }
+            } else {
+                val inactiveShape =
+                    if (themePalette.pageIndicatorShapeSquircle) squircleShape else CircleShape
+                Box(
+                    modifier = Modifier
+                        .size(inactiveDp)
+                        .shadow(5.dp, inactiveShape, ambientColor = spotShadow, spotColor = spotShadow)
+                        .clip(inactiveShape)
+                        .background(color = pageColor.copy(alpha = inactiveAlpha))
+                        .border(1.dp, Color.Black, inactiveShape)
+                )
+            }
+            if (i != dotCount - 1) Spacer(Modifier.width(spacingDp))
+        }
+    }
+}
+
+@Composable
+private fun DockEndSlot(
+    iconModel: Any?,
+    appIconShape: AppIconShape,
+    onClick: () -> Unit,
+    buttonSize: androidx.compose.ui.unit.Dp = 62.dp,
+    iconSize: androidx.compose.ui.unit.Dp = 44.dp,
+    modifier: Modifier = Modifier,
+    selected: Boolean = false,
+    selectedTint: Color = Color(0x664FC3F7),
+    iconTint: Color = Color(0xFFE6E6E6),
+) {
+    Box(modifier = modifier) {
+        TextButton(
+            onClick = onClick,
+            contentPadding = PaddingValues(0.dp),
+            modifier = Modifier
+                .size(buttonSize)
+                .clip(androidx.compose.foundation.shape.RoundedCornerShape(8.dp))
+                .background(if (selected) selectedTint else Color.Transparent)
+        ) {
+            if (iconModel != null) {
+                AsyncImage(
+                    model = iconModel,
+                    contentDescription = null,
+                    contentScale = ContentScale.Fit,
+                    modifier = Modifier.size(iconSize).clip(iconMaskShape(appIconShape)),
+                )
+            } else {
+                // Monochrome outline (same idea as DockIcon / Home): tint only, no bitmap artwork.
+                Icon(
+                    Icons.Rounded.PhotoCamera,
+                    contentDescription = null,
+                    tint = iconTint,
+                    modifier = Modifier.size(iconSize),
+                )
+            }
+        }
+    }
+}
+
+@Composable
+private fun DockEndAppPickerOverlay(
+    apps: List<AppEntry>,
+    themePalette: LauncherThemePalette,
+    onSelect: (String) -> Unit,
+    onUseDefault: () -> Unit,
+    onDismiss: () -> Unit,
+) {
+    var query by remember { mutableStateOf("") }
+    val filtered = remember(apps, query) {
+        val q = query.trim().lowercase()
+        apps.filter {
+            if (it.internal) return@filter false
+            if (q.isEmpty()) return@filter true
+            it.label.lowercase().contains(q) || it.packageName.lowercase().contains(q)
+        }
+    }
+    Surface(
+        modifier = Modifier
+            .fillMaxSize()
+            .zIndex(420f),
+        color = themePalette.settingsBg,
+    ) {
+        Column(
+            modifier = Modifier
+                .fillMaxSize()
+                .statusBarsPadding(),
+        ) {
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(start = 4.dp, end = 8.dp, top = 8.dp),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                IconButton(onClick = onDismiss) {
+                    Icon(
+                        Icons.AutoMirrored.Rounded.ArrowBack,
+                        contentDescription = "Back",
+                        tint = themePalette.settingsMenuTitle,
+                        modifier = Modifier.size(26.dp),
+                    )
+                }
+                Text(
+                    "Third shortcut",
+                    style = MaterialTheme.typography.titleLarge.copy(
+                        color = themePalette.settingsMenuTitle,
+                        fontWeight = FontWeight.Medium,
+                    ),
+                )
+            }
+            TextButton(
+                onClick = onUseDefault,
+                modifier = Modifier.padding(horizontal = 16.dp),
+            ) {
+                Text("Use default (camera)", color = Color(0xFF84D5F6))
+            }
+            OutlinedTextField(
+                value = query,
+                onValueChange = { query = it },
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(horizontal = 16.dp),
+                placeholder = { Text("Search apps", color = themePalette.settingsMenuBody) },
+                singleLine = true,
+                colors = TextFieldDefaults.colors(
+                    focusedTextColor = themePalette.settingsMenuTitle,
+                    unfocusedTextColor = themePalette.settingsMenuTitle,
+                    focusedLabelColor = themePalette.settingsMenuBody,
+                    unfocusedLabelColor = themePalette.settingsMenuBody,
+                    focusedContainerColor = Color(0xFF1E2430),
+                    unfocusedContainerColor = Color(0xFF1E2430),
+                ),
+                keyboardOptions = KeyboardOptions(
+                    capitalization = KeyboardCapitalization.None,
+                    imeAction = ImeAction.Search,
+                ),
+            )
+            Spacer(Modifier.height(8.dp))
+            LazyColumn(
+                modifier = Modifier
+                    .weight(1f)
+                    .fillMaxWidth(),
+            ) {
+                items(filtered, key = { it.packageName }) { app ->
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .clickable { onSelect(app.packageName) }
+                            .padding(horizontal = 16.dp, vertical = 12.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                    ) {
+                        AsyncImage(
+                            model = app.icon,
+                            contentDescription = null,
+                            modifier = Modifier.size(40.dp),
+                        )
+                        Spacer(Modifier.width(14.dp))
+                        Column(modifier = Modifier.weight(1f)) {
+                            Text(
+                                app.label,
+                                style = MaterialTheme.typography.bodyLarge.copy(
+                                    color = themePalette.settingsMenuTitle,
+                                    fontWeight = FontWeight.Medium,
+                                ),
+                            )
+                            Text(
+                                app.packageName,
+                                style = MaterialTheme.typography.bodySmall.copy(
+                                    color = themePalette.settingsMenuBody,
+                                    fontSize = 12.sp,
+                                ),
+                                maxLines = 1,
+                                overflow = TextOverflow.Ellipsis,
+                            )
+                        }
+                    }
+                    Box(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(start = 70.dp)
+                            .height(0.5.dp)
+                            .background(Color(0xFF2C3340)),
+                    )
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun HomeGroupsSettingsOverlay(
+    groups: List<HomeGroup>,
+    shortcuts: List<String>,
+    allApps: List<AppEntry>,
+    showShortcutApps: Boolean,
+    showHomeGroups: Boolean,
+    themePalette: LauncherThemePalette,
+    onCreateGroup: (String) -> Unit,
+    onDeleteGroup: (String) -> Unit,
+    onSetGroupSide: (String, HomeGroupSide) -> Unit,
+    onMoveShortcut: (fromIndex: Int, toIndex: Int) -> Unit,
+    onShowShortcutAppsChange: (Boolean) -> Unit,
+    onShowHomeGroupsChange: (Boolean) -> Unit,
+    onDismiss: () -> Unit,
+) {
+    val subtitleColor = Color(0xFF8E95A3)
+    var newName by remember { mutableStateOf("") }
+    Surface(
+        modifier = Modifier
+            .fillMaxSize()
+            .zIndex(404f),
+        color = themePalette.settingsBg,
+    ) {
+        Column(
+            modifier = Modifier
+                .fillMaxSize()
+                .statusBarsPadding()
+                .navigationBarsPadding(),
+        ) {
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(start = 4.dp, end = 16.dp, top = 8.dp, bottom = 4.dp),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                IconButton(onClick = onDismiss) {
+                    Icon(
+                        Icons.AutoMirrored.Rounded.ArrowBack,
+                        contentDescription = "Back",
+                        tint = themePalette.settingsMenuTitle,
+                        modifier = Modifier.size(26.dp),
+                    )
+                }
+                Text(
+                    "Home strip",
+                    style = MaterialTheme.typography.headlineMedium.copy(
+                        color = themePalette.settingsMenuTitle,
+                        fontWeight = FontWeight.Normal,
+                    ),
+                )
+            }
+            Column(
+                modifier = Modifier
+                    .weight(1f)
+                    .fillMaxWidth()
+                    .verticalScroll(rememberScrollState())
+                    .padding(horizontal = 16.dp)
+                    .padding(bottom = 24.dp),
+                verticalArrangement = Arrangement.spacedBy(12.dp),
+            ) {
+                Text(
+                    "Up to two groups: one at the far left and one at the far right; three shortcuts stay centred (max 3). " +
+                        "Long-press an app in the drawer and use Add to…",
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = subtitleColor,
+                )
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    modifier = Modifier.fillMaxWidth(),
+                ) {
+                    OutlinedTextField(
+                        value = newName,
+                        onValueChange = { newName = it },
+                        singleLine = true,
+                        label = { Text("New group name", color = themePalette.settingsMenuBody) },
+                        modifier = Modifier.weight(1f),
+                        enabled = groups.size < 2,
+                        colors = TextFieldDefaults.colors(
+                            focusedTextColor = Color(0xFFE8EEF7),
+                            unfocusedTextColor = Color(0xFFE8EEF7),
+                            focusedLabelColor = themePalette.settingsMenuBody,
+                            unfocusedLabelColor = themePalette.settingsMenuBody,
+                            focusedIndicatorColor = Color(0xFF5B9BD5),
+                            unfocusedIndicatorColor = Color(0xFF5F6A78),
+                            focusedContainerColor = Color(0xFF1E2430),
+                            unfocusedContainerColor = Color(0xFF1E2430),
+                            disabledContainerColor = Color(0xFF1E2430),
+                            cursorColor = Color(0xFF84D5F6),
+                            focusedPlaceholderColor = themePalette.settingsMenuBody.copy(alpha = 0.7f),
+                            unfocusedPlaceholderColor = themePalette.settingsMenuBody.copy(alpha = 0.7f),
+                            disabledTextColor = Color(0xFF8E95A3),
+                            disabledLabelColor = themePalette.settingsMenuBody.copy(alpha = 0.5f),
+                        ),
+                    )
+                    Spacer(Modifier.width(8.dp))
+                    TextButton(
+                        onClick = {
+                            onCreateGroup(newName)
+                            newName = ""
+                        },
+                        enabled = groups.size < 2,
+                    ) {
+                        Text(
+                            "Add",
+                            color = if (groups.size < 2) themePalette.settingsMenuBody else subtitleColor,
+                        )
+                    }
+                }
+                if (groups.isNotEmpty()) {
+                    Text(
+                        "Groups",
+                        style = MaterialTheme.typography.titleSmall,
+                        color = themePalette.settingsMenuTitle,
+                    )
+                }
+                groups.forEach { g ->
+                    Surface(
+                        shape = RoundedCornerShape(12.dp),
+                        color = Color(0xFF1E2430),
+                        modifier = Modifier.fillMaxWidth(),
+                    ) {
+                        Column(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(horizontal = 16.dp, vertical = 12.dp),
+                        ) {
+                            Row(
+                                modifier = Modifier.fillMaxWidth(),
+                                verticalAlignment = Alignment.CenterVertically,
+                            ) {
+                                Column(Modifier.weight(1f)) {
+                                    Text(
+                                        g.title,
+                                        style = MaterialTheme.typography.bodyLarge,
+                                        color = themePalette.settingsMenuTitle,
+                                        fontWeight = FontWeight.Medium,
+                                    )
+                                    Text(
+                                        "${g.packageNames.size} apps",
+                                        style = MaterialTheme.typography.bodySmall,
+                                        color = subtitleColor,
+                                    )
+                                }
+                                TextButton(onClick = { onDeleteGroup(g.id) }) {
+                                    Text("Delete", color = Color(0xFFFF6B6B))
+                                }
+                            }
+                            Spacer(Modifier.height(8.dp))
+                            Row(
+                                modifier = Modifier.fillMaxWidth(),
+                                horizontalArrangement = Arrangement.spacedBy(8.dp),
+                                verticalAlignment = Alignment.CenterVertically,
+                            ) {
+                                Text(
+                                    "Position",
+                                    style = MaterialTheme.typography.bodySmall,
+                                    color = subtitleColor,
+                                    modifier = Modifier.padding(end = 4.dp),
+                                )
+                                TextButton(
+                                    onClick = { onSetGroupSide(g.id, HomeGroupSide.LEFT) },
+                                    modifier = Modifier
+                                        .border(
+                                            1.dp,
+                                            if (g.side == HomeGroupSide.LEFT) Color(0xFF84D5F6) else Color(0xFF3A3F4A),
+                                            RoundedCornerShape(8.dp),
+                                        )
+                                        .background(
+                                            if (g.side == HomeGroupSide.LEFT) Color(0x332A5A78) else Color.Transparent,
+                                            RoundedCornerShape(8.dp),
+                                        ),
+                                ) {
+                                    Text(
+                                        "Left",
+                                        color = if (g.side == HomeGroupSide.LEFT) {
+                                            Color(0xFF84D5F6)
+                                        } else {
+                                            themePalette.settingsMenuBody
+                                        },
+                                    )
+                                }
+                                TextButton(
+                                    onClick = { onSetGroupSide(g.id, HomeGroupSide.RIGHT) },
+                                    modifier = Modifier
+                                        .border(
+                                            1.dp,
+                                            if (g.side == HomeGroupSide.RIGHT) Color(0xFF84D5F6) else Color(0xFF3A3F4A),
+                                            RoundedCornerShape(8.dp),
+                                        )
+                                        .background(
+                                            if (g.side == HomeGroupSide.RIGHT) Color(0x332A5A78) else Color.Transparent,
+                                            RoundedCornerShape(8.dp),
+                                        ),
+                                ) {
+                                    Text(
+                                        "Right",
+                                        color = if (g.side == HomeGroupSide.RIGHT) {
+                                            Color(0xFF84D5F6)
+                                        } else {
+                                            themePalette.settingsMenuBody
+                                        },
+                                    )
+                                }
+                            }
+                        }
+                    }
+                }
+
+                if (shortcuts.isNotEmpty()) {
+                    Text(
+                        "Shortcut order",
+                        style = MaterialTheme.typography.titleSmall,
+                        color = themePalette.settingsMenuTitle,
+                    )
+                    Text(
+                        "Tap arrows to reorder shortcuts on the home strip.",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = subtitleColor,
+                    )
+                    shortcuts.forEachIndexed { index, token ->
+                        val (pkg, _) = parseHomeShortcutToken(token)
+                        val entry = allApps.find { it.packageName == pkg }
+                        val label = entry?.label ?: pkg.substringAfterLast('.').ifBlank { pkg }
+                        Surface(
+                            shape = RoundedCornerShape(10.dp),
+                            color = Color(0xFF1E2430),
+                            modifier = Modifier.fillMaxWidth(),
+                        ) {
+                            Row(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .padding(horizontal = 12.dp, vertical = 8.dp),
+                                verticalAlignment = Alignment.CenterVertically,
+                            ) {
+                                Box(
+                                    modifier = Modifier
+                                        .size(24.dp)
+                                        .background(Color(0xFF2A3345), CircleShape),
+                                    contentAlignment = Alignment.Center,
+                                ) {
+                                    Text(
+                                        text = "${index + 1}",
+                                        color = Color(0xFF84D5F6),
+                                        fontSize = 11.sp,
+                                        fontWeight = FontWeight.Bold,
+                                    )
+                                }
+                                Spacer(Modifier.width(10.dp))
+                                if (entry?.icon != null) {
+                                    AsyncImage(
+                                        model = entry.icon,
+                                        contentDescription = null,
+                                        modifier = Modifier
+                                            .size(32.dp)
+                                            .clip(RoundedCornerShape(8.dp)),
+                                    )
+                                } else {
+                                    Icon(
+                                        Icons.Rounded.Apps,
+                                        contentDescription = null,
+                                        tint = subtitleColor,
+                                        modifier = Modifier.size(32.dp),
+                                    )
+                                }
+                                Spacer(Modifier.width(10.dp))
+                                Text(
+                                    label,
+                                    color = themePalette.settingsMenuTitle,
+                                    fontSize = 14.sp,
+                                    modifier = Modifier.weight(1f),
+                                )
+                                IconButton(
+                                    onClick = { onMoveShortcut(index, index - 1) },
+                                    enabled = index > 0,
+                                    modifier = Modifier.size(32.dp),
+                                ) {
+                                    Icon(
+                                        Icons.AutoMirrored.Rounded.ArrowBack,
+                                        contentDescription = "Move left",
+                                        tint = if (index > 0) Color(0xFF84D5F6) else subtitleColor.copy(alpha = 0.3f),
+                                        modifier = Modifier.size(18.dp),
+                                    )
+                                }
+                                IconButton(
+                                    onClick = { onMoveShortcut(index, index + 1) },
+                                    enabled = index < shortcuts.lastIndex,
+                                    modifier = Modifier.size(32.dp),
+                                ) {
+                                    Icon(
+                                        Icons.AutoMirrored.Rounded.ArrowForward,
+                                        contentDescription = "Move right",
+                                        tint = if (index < shortcuts.lastIndex) Color(0xFF84D5F6) else subtitleColor.copy(alpha = 0.3f),
+                                        modifier = Modifier.size(18.dp),
+                                    )
+                                }
+                            }
+                        }
+                    }
+                }
+
+                // Visibility toggles — below group cards (each card has Delete above this block)
+                Surface(
+                    shape = RoundedCornerShape(16.dp),
+                    color = Color(0xFF1E2430),
+                    modifier = Modifier.fillMaxWidth(),
+                ) {
+                    Column(modifier = Modifier.fillMaxWidth()) {
+                        Row(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(horizontal = 16.dp, vertical = 12.dp),
+                            verticalAlignment = Alignment.CenterVertically,
+                        ) {
+                            Column(Modifier.weight(1f)) {
+                                Text(
+                                    "Show shortcut apps",
+                                    style = MaterialTheme.typography.bodyLarge.copy(
+                                        color = themePalette.settingsMenuTitle,
+                                        fontWeight = FontWeight.Medium,
+                                    ),
+                                )
+                                Text(
+                                    if (showShortcutApps) "Shortcut apps visible on home strip" else "Shortcut apps hidden (apps are kept)",
+                                    style = MaterialTheme.typography.bodySmall.copy(color = subtitleColor),
+                                )
+                            }
+                            Switch(
+                                checked = showShortcutApps,
+                                onCheckedChange = onShowShortcutAppsChange,
+                                colors = SwitchDefaults.colors(
+                                    checkedThumbColor = Color.White,
+                                    checkedTrackColor = Color(0xFF4A90D9),
+                                    uncheckedThumbColor = Color(0xFF9AA0A8),
+                                    uncheckedTrackColor = Color(0xFF3A3F4A),
+                                ),
+                            )
+                        }
+                        HorizontalDivider(
+                            modifier = Modifier.padding(horizontal = 16.dp),
+                            thickness = 1.dp,
+                            color = Color(0x333D4B60),
+                        )
+                        Row(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(horizontal = 16.dp, vertical = 12.dp),
+                            verticalAlignment = Alignment.CenterVertically,
+                        ) {
+                            Column(Modifier.weight(1f)) {
+                                Text(
+                                    "Show groups",
+                                    style = MaterialTheme.typography.bodyLarge.copy(
+                                        color = themePalette.settingsMenuTitle,
+                                        fontWeight = FontWeight.Medium,
+                                    ),
+                                )
+                                Text(
+                                    if (showHomeGroups) "Groups visible on home strip" else "Groups hidden (groups are kept)",
+                                    style = MaterialTheme.typography.bodySmall.copy(color = subtitleColor),
+                                )
+                            }
+                            Switch(
+                                checked = showHomeGroups,
+                                onCheckedChange = onShowHomeGroupsChange,
+                                colors = SwitchDefaults.colors(
+                                    checkedThumbColor = Color.White,
+                                    checkedTrackColor = Color(0xFF4A90D9),
+                                    uncheckedThumbColor = Color(0xFF9AA0A8),
+                                    uncheckedTrackColor = Color(0xFF3A3F4A),
+                                ),
+                            )
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun GlanceSettingsOverlay(
+    glanceEnabled: Boolean,
+    glanceShowFlashlight: Boolean,
+    glanceShowBattery: Boolean,
+    glanceShowCalendar: Boolean,
+    glanceShowAlarm: Boolean,
+    themePalette: LauncherThemePalette,
+    onGlanceEnabled: (Boolean) -> Unit,
+    onGlanceShowFlashlight: (Boolean) -> Unit,
+    onGlanceShowBattery: (Boolean) -> Unit,
+    onGlanceShowCalendar: (Boolean) -> Unit,
+    onGlanceShowAlarm: (Boolean) -> Unit,
+    onDismiss: () -> Unit,
+) {
+    val subtitleColor = Color(0xFF8E95A3)
+    val cardBg = Color(0xFF1E2430)
+    val cardShape = RoundedCornerShape(12.dp)
+
+    @Composable
+    fun ToggleCard(
+        title: String,
+        subtitle: String,
+        checked: Boolean,
+        enabled: Boolean = true,
+        onCheckedChange: (Boolean) -> Unit,
+    ) {
+        Surface(
+            shape = cardShape,
+            color = cardBg,
+            modifier = Modifier.fillMaxWidth(),
+        ) {
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(horizontal = 16.dp, vertical = 12.dp),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                Column(modifier = Modifier.weight(1f)) {
+                    Text(
+                        title,
+                        style = MaterialTheme.typography.bodyLarge.copy(
+                            color = themePalette.settingsMenuTitle,
+                            fontWeight = FontWeight.Medium,
+                        ),
+                    )
+                    Text(
+                        subtitle,
+                        style = MaterialTheme.typography.bodySmall.copy(color = subtitleColor),
+                    )
+                }
+                Switch(
+                    checked = checked,
+                    onCheckedChange = if (enabled) onCheckedChange else null,
+                    enabled = enabled,
+                    colors = SwitchDefaults.colors(
+                        checkedThumbColor = Color.White,
+                        checkedTrackColor = Color(0xFF4A90D9),
+                        uncheckedThumbColor = Color(0xFF9AA0A8),
+                        uncheckedTrackColor = Color(0xFF3A3F4A),
+                    ),
+                )
+            }
+        }
+    }
+
+    Surface(
+        modifier = Modifier
+            .fillMaxSize()
+            .zIndex(403f),
+        color = themePalette.settingsBg,
+    ) {
+        Column(
+            modifier = Modifier
+                .fillMaxSize()
+                .statusBarsPadding()
+                .navigationBarsPadding(),
+        ) {
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(start = 4.dp, end = 16.dp, top = 8.dp, bottom = 4.dp),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                IconButton(onClick = onDismiss) {
+                    Icon(
+                        Icons.AutoMirrored.Rounded.ArrowBack,
+                        contentDescription = "Back",
+                        tint = themePalette.settingsMenuTitle,
+                        modifier = Modifier.size(26.dp),
+                    )
+                }
+                Text(
+                    "Glance",
+                    style = MaterialTheme.typography.headlineMedium.copy(
+                        color = themePalette.settingsMenuTitle,
+                        fontWeight = FontWeight.Normal,
+                    ),
+                )
+            }
+            Column(
+                modifier = Modifier
+                    .weight(1f)
+                    .fillMaxWidth()
+                    .verticalScroll(rememberScrollState())
+                    .padding(horizontal = 16.dp)
+                    .padding(bottom = 24.dp),
+                verticalArrangement = androidx.compose.foundation.layout.Arrangement.spacedBy(12.dp),
+            ) {
+                Text(
+                    "Home strip: date, weather, and optional alerts. Turn the strip off to hide it completely.",
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = subtitleColor,
+                )
+                ToggleCard(
+                    title = "Show glance strip",
+                    subtitle = "Master switch for the top-of-home strip",
+                    checked = glanceEnabled,
+                    onCheckedChange = onGlanceEnabled,
+                )
+                ToggleCard(
+                    title = "Calendar on glance",
+                    subtitle = "Upcoming events when permission is granted",
+                    checked = glanceShowCalendar,
+                    enabled = glanceEnabled,
+                    onCheckedChange = onGlanceShowCalendar,
+                )
+                ToggleCard(
+                    title = "Battery on glance",
+                    subtitle = "Charging or low-battery hint (when supported)",
+                    checked = glanceShowBattery,
+                    enabled = glanceEnabled,
+                    onCheckedChange = onGlanceShowBattery,
+                )
+                ToggleCard(
+                    title = "Next alarm on glance",
+                    subtitle = "Next alarm within 12 hours (when supported)",
+                    checked = glanceShowAlarm,
+                    enabled = glanceEnabled,
+                    onCheckedChange = onGlanceShowAlarm,
+                )
+            }
+        }
+    }
+}
+
+@Composable
+private fun SettingsScreenOverlay(
+    /** When true, a full-screen settings sub-overlay is shown above this list — Back must not dismiss settings. */
+    stackedChildOverlayOpen: Boolean,
+    gridPreset: GridPreset,
+    shortcut: SecondShortcutTarget,
+    dockCameraBody: String,
+    mailBadgeBody: String,
+    glanceSubtitle: String,
+    homeGroupsSubtitle: String,
+    hapticsEnabled: Boolean,
+    hapticIntensity: Int,
+    onSetHapticIntensity: (Int) -> Unit,
+    onGridPreset: (GridPreset) -> Unit,
+    onShortcut: (SecondShortcutTarget) -> Unit,
+    onCycleMailBadge: () -> Unit,
+    onOpenDockEndAppPicker: () -> Unit,
+    onOpenGlanceSettings: () -> Unit,
+    onOpenHomeGroupsSettings: () -> Unit,
+    permissionsSubtitle: String,
+    onOpenPermissionsSettings: () -> Unit,
+    onSetWallpaper: () -> Unit,
+    onToggleHaptics: () -> Unit,
+    onExportBackup: () -> String,
+    /** @return true if backup was accepted and will be applied. */
+    onImportBackup: (String) -> Boolean,
+    onResetTheme: () -> Unit,
+    gestureSubtitle: String,
+    onOpenGestureSettings: () -> Unit,
+    drawerBadgesSubtitle: String,
+    onOpenDrawerBadges: () -> Unit,
+    classicMode: Boolean,
+    onToggleClassicMode: () -> Unit,
+    appIconShape: AppIconShape,
+    onSetAppIconShape: (AppIconShape) -> Unit,
+    themePalette: LauncherThemePalette,
+    onDismiss: () -> Unit,
+) {
+    val context = LocalContext.current
+    val view = LocalView.current
+    val focusRequester = remember { FocusRequester() }
+    var selectedIndex by remember { mutableStateOf(0) }
+    val itemCount = 16
+
+    val createBackupDocument = rememberLauncherForActivityResult(
+        ActivityResultContracts.CreateDocument("application/json")
+    ) { uri ->
+        if (uri == null) return@rememberLauncherForActivityResult
+        runCatching {
+            val json = onExportBackup()
+            val out = context.contentResolver.openOutputStream(uri)
+                ?: error("Could not open file for writing")
+            out.use { it.write(json.toByteArray(Charsets.UTF_8)) }
+            Toast.makeText(context, "Backup saved", Toast.LENGTH_SHORT).show()
+        }.onFailure {
+            Toast.makeText(context, "Backup failed: ${it.message ?: "unknown error"}", Toast.LENGTH_SHORT).show()
+        }
+    }
+
+    val openBackupFromDownloads = rememberLauncherForActivityResult(
+        ActivityResultContracts.StartActivityForResult()
+    ) { result ->
+        if (!SettingsDownloads.isPickerOk(result.resultCode)) return@rememberLauncherForActivityResult
+        val uri = result.data?.data ?: return@rememberLauncherForActivityResult
+        runCatching {
+            val text = context.contentResolver.openInputStream(uri)?.use { ins ->
+                ins.readBytes().toString(Charsets.UTF_8)
+            } ?: return@runCatching
+            if (onImportBackup(text)) {
+                Toast.makeText(context, "Settings restored from backup", Toast.LENGTH_SHORT).show()
+            } else {
+                Toast.makeText(context, "Invalid or unsupported backup file", Toast.LENGTH_SHORT).show()
+            }
+        }
+    }
+
+    fun activate(index: Int) {
+        when (index) {
+            // HOME SCREEN
+            0 -> {
+                val all = GridPreset.entries
+                val next = all[(all.indexOf(gridPreset) + 1) % all.size]
+                onGridPreset(next)
+            }
+            1 -> onToggleClassicMode()
+            2 -> onOpenHomeGroupsSettings()
+            3 -> onOpenGestureSettings()
+            4 -> onOpenDrawerBadges()
+            // DISPLAY
+            5 -> onOpenGlanceSettings()
+            6 -> onSetWallpaper()
+            7 -> onResetTheme()
+            8 -> {
+                val all = AppIconShape.entries
+                val next = all[(all.indexOf(appIconShape) + 1) % all.size]
+                onSetAppIconShape(next)
+            }
+            // DOCK
+            9 -> onCycleMailBadge()
+            10 -> {
+                val next = if (shortcut == SecondShortcutTarget.MESSAGES) {
+                    SecondShortcutTarget.WHATSAPP
+                } else {
+                    SecondShortcutTarget.MESSAGES
+                }
+                onShortcut(next)
+            }
+            11 -> onOpenDockEndAppPicker()
+            // SYSTEM
+            12 -> onToggleHaptics()
+            13 -> onOpenPermissionsSettings()
+            // BACKUP
+            14 -> {
+                val name = "classiclauncher_backup_" + SimpleDateFormat("yyyyMMdd_HHmmss", Locale.US).format(Date()) + ".json"
+                createBackupDocument.launch(name)
+            }
+            15 -> openBackupFromDownloads.launch(SettingsDownloads.openBackupJsonPickerIntent())
+        }
+        doNavFeedback(view, hapticsEnabled, hapticIntensity)
+    }
+
+    val cardBg = Color(0xFF1E2430)
+    val cardShape = RoundedCornerShape(16.dp)
+    val subtitleColor = Color(0xFF8E95A3)
+
+    Surface(
+        modifier = Modifier
+            .fillMaxSize()
+            .zIndex(400f),
+        color = themePalette.settingsBg,
+    ) {
+        val focusManager = LocalFocusManager.current
+        val settingsScrollState = rememberScrollState()
+        val rowBringers = remember { List(itemCount) { BringIntoViewRequester() } }
+        // Steal focus from drawer/pager (still composed under us) so trackpad/DPAD events hit settings.
+        LaunchedEffect(Unit) {
+            focusManager.clearFocus(force = true)
+            focusRequester.requestFocus()
+        }
+        // BB Classic / Q20 trackpad sends DPAD up/down: we move selection but must scroll the viewport too.
+        LaunchedEffect(selectedIndex) {
+            rowBringers[selectedIndex].bringIntoView()
+        }
+
+        Column(
+            modifier = Modifier
+                .fillMaxSize()
+                .statusBarsPadding(),
+        ) {
+            // Header
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(start = 4.dp, end = 16.dp, top = 8.dp, bottom = 4.dp),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                IconButton(onClick = onDismiss) {
+                    Icon(
+                        Icons.AutoMirrored.Rounded.ArrowBack,
+                        contentDescription = "Back",
+                        tint = themePalette.settingsMenuTitle,
+                        modifier = Modifier.size(26.dp),
+                    )
+                }
+                Text(
+                    "Settings",
+                    style = MaterialTheme.typography.headlineMedium.copy(
+                        color = themePalette.settingsMenuTitle,
+                        fontWeight = FontWeight.Normal,
+                    ),
+                )
+            }
+
+            Spacer(Modifier.height(8.dp))
+
+            // verticalScroll + DPAD: Q20-style trackpad emits KEYCODE_DPAD_UP/DOWN, not mouse wheel — selection
+            // must drive bringIntoView so the highlighted row stays on screen.
+            Column(
+                modifier = Modifier
+                    .weight(1f)
+                    .fillMaxWidth()
+                    .navigationBarsPadding()
+                    .padding(horizontal = 16.dp)
+                .focusRequester(focusRequester)
+                .focusable()
+                .onPreviewKeyEvent { ev ->
+                    if (ev.type != KeyEventType.KeyDown) return@onPreviewKeyEvent false
+                        val nk = ev.nativeKeyEvent
+                        when {
+                            ev.isEndCallKey() -> {
+                                if (stackedChildOverlayOpen) return@onPreviewKeyEvent false
+                                onDismiss()
+                                true
+                            }
+                            nk?.keyCode == AndroidKeyEvent.KEYCODE_DPAD_CENTER -> {
+                                activate(selectedIndex)
+                                true
+                            }
+                            ev.key == Key.DirectionUp || nk?.keyCode == AndroidKeyEvent.KEYCODE_DPAD_UP -> {
+                            val next = (selectedIndex - 1).coerceAtLeast(0)
+                            if (next != selectedIndex) {
+                                selectedIndex = next
+                                    doNavFeedback(view, hapticsEnabled, hapticIntensity)
+                            }
+                            true
+                        }
+                            ev.key == Key.DirectionDown || nk?.keyCode == AndroidKeyEvent.KEYCODE_DPAD_DOWN -> {
+                                val next = (selectedIndex + 1).coerceAtMost(itemCount - 1)
+                            if (next != selectedIndex) {
+                                selectedIndex = next
+                                    doNavFeedback(view, hapticsEnabled, hapticIntensity)
+                            }
+                            true
+                        }
+                            ev.key == Key.Enter ||
+                                ev.key == Key.NumPadEnter ||
+                                nk?.keyCode == AndroidKeyEvent.KEYCODE_ENTER -> {
+                            activate(selectedIndex)
+                            true
+                        }
+                            ev.key == Key.Back || nk?.keyCode == AndroidKeyEvent.KEYCODE_BACK -> {
+                            if (stackedChildOverlayOpen) return@onPreviewKeyEvent false
+                            onDismiss()
+                            true
+                        }
+                        else -> false
+                    }
+                }
+                    .verticalScroll(settingsScrollState),
+            ) {
+                // ── HOME SCREEN ──────────────────────────────────────────
+                Text(
+                    "HOME SCREEN",
+                    style = MaterialTheme.typography.labelSmall,
+                    color = subtitleColor,
+                    modifier = Modifier.padding(start = 4.dp, bottom = 6.dp),
+                )
+                Column(Modifier.bringIntoViewRequester(rowBringers[0])) {
+                    SettingsCategoryCard(cardBg = cardBg, cardShape = cardShape, selected = selectedIndex == 0) {
+                        SettingsRow(
+                            icon = Icons.Rounded.GridView,
+                            title = "App grid size",
+                            subtitle = "${gridPreset.rows} \u00D7 ${gridPreset.cols}",
+                            selected = selectedIndex == 0,
+                            themePalette = themePalette,
+                            subtitleColor = subtitleColor,
+                            onClick = { activate(0) },
+                        )
+                    }
+                }
+                Spacer(Modifier.height(8.dp))
+                Column(Modifier.bringIntoViewRequester(rowBringers[1])) {
+                    SettingsCategoryCard(cardBg = cardBg, cardShape = cardShape, selected = selectedIndex == 1) {
+                        SettingsRow(
+                            icon = Icons.Outlined.Menu,
+                            title = "Classic mode",
+                            subtitle = if (classicMode) {
+                                "On — app grid only; compact dock (no home / Messages shortcut); glance off"
+                            } else {
+                                "Off — home page, full dock, and glance strip when enabled"
+                            },
+                            selected = selectedIndex == 1,
+                            themePalette = themePalette,
+                            subtitleColor = subtitleColor,
+                            onClick = { activate(1) },
+                        )
+                    }
+                }
+                Spacer(Modifier.height(8.dp))
+                Column(Modifier.bringIntoViewRequester(rowBringers[2])) {
+                    SettingsCategoryCard(cardBg = cardBg, cardShape = cardShape, selected = selectedIndex == 2) {
+                        SettingsRow(
+                            icon = Icons.Rounded.BookmarkAdd,
+                            title = "Home strip",
+                            subtitle = homeGroupsSubtitle,
+                            selected = selectedIndex == 2,
+                            themePalette = themePalette,
+                            subtitleColor = subtitleColor,
+                            onClick = { activate(2) },
+                        )
+                    }
+                }
+                Spacer(Modifier.height(8.dp))
+                Column(Modifier.bringIntoViewRequester(rowBringers[3])) {
+                    SettingsCategoryCard(cardBg = cardBg, cardShape = cardShape, selected = selectedIndex == 3) {
+                        SettingsRow(
+                            icon = Icons.Rounded.TouchApp,
+                            title = "Gesture shortcuts",
+                            subtitle = gestureSubtitle,
+                            selected = selectedIndex == 3,
+                            themePalette = themePalette,
+                            subtitleColor = subtitleColor,
+                            onClick = { activate(3) },
+                        )
+                    }
+                }
+                Spacer(Modifier.height(8.dp))
+                Column(Modifier.bringIntoViewRequester(rowBringers[4])) {
+                    SettingsCategoryCard(cardBg = cardBg, cardShape = cardShape, selected = selectedIndex == 4) {
+                        SettingsRow(
+                            icon = Icons.Outlined.QueryStats,
+                            title = "App icon badges",
+                            subtitle = drawerBadgesSubtitle,
+                            selected = selectedIndex == 4,
+                            themePalette = themePalette,
+                            subtitleColor = subtitleColor,
+                            onClick = { activate(4) },
+                        )
+                    }
+                }
+
+                Spacer(Modifier.height(12.dp))
+                HorizontalDivider(color = Color(0xFF2A3040), thickness = 0.5.dp)
+                Spacer(Modifier.height(12.dp))
+
+                // ── DISPLAY ──────────────────────────────────────────────
+                Text(
+                    "DISPLAY",
+                    style = MaterialTheme.typography.labelSmall,
+                    color = subtitleColor,
+                    modifier = Modifier.padding(start = 4.dp, bottom = 6.dp),
+                )
+                Column(Modifier.bringIntoViewRequester(rowBringers[5])) {
+                    SettingsCategoryCard(cardBg = cardBg, cardShape = cardShape, selected = selectedIndex == 5) {
+                        SettingsRow(
+                            icon = Icons.Rounded.WbSunny,
+                            title = "Glance",
+                            subtitle = glanceSubtitle,
+                            selected = selectedIndex == 5,
+                            themePalette = themePalette,
+                            subtitleColor = subtitleColor,
+                            onClick = { activate(5) },
+                        )
+                    }
+                }
+                Spacer(Modifier.height(8.dp))
+                Column(Modifier.bringIntoViewRequester(rowBringers[6])) {
+                    SettingsCategoryCard(cardBg = cardBg, cardShape = cardShape, selected = selectedIndex == 6) {
+                        SettingsRow(
+                            icon = Icons.Rounded.Wallpaper,
+                            title = "Set wallpaper",
+                            subtitle = "Zeno, Gallery, Photos, or system sources",
+                            selected = selectedIndex == 6,
+                            themePalette = themePalette,
+                            subtitleColor = subtitleColor,
+                            onClick = { activate(6) },
+                        )
+                    }
+                }
+                Spacer(Modifier.height(8.dp))
+                Column(Modifier.bringIntoViewRequester(rowBringers[7])) {
+                    SettingsCategoryCard(cardBg = cardBg, cardShape = cardShape, selected = selectedIndex == 7) {
+                        SettingsRow(
+                            icon = Icons.Rounded.Palette,
+                            title = "Reset theme",
+                            subtitle = "Restore default launcher colours",
+                            selected = selectedIndex == 7,
+                            themePalette = themePalette,
+                            subtitleColor = subtitleColor,
+                            onClick = { activate(7) },
+                        )
+                    }
+                }
+                Spacer(Modifier.height(8.dp))
+                Column(Modifier.bringIntoViewRequester(rowBringers[8])) {
+                    SettingsCategoryCard(cardBg = cardBg, cardShape = cardShape, selected = selectedIndex == 8) {
+                        SettingsRow(
+                            icon = Icons.Rounded.Apps,
+                            title = "App icon shape",
+                            subtitle = appIconShapeLabel(appIconShape),
+                            selected = selectedIndex == 8,
+                            themePalette = themePalette,
+                            subtitleColor = subtitleColor,
+                            onClick = { activate(8) },
+                        )
+                    }
+                }
+
+                Spacer(Modifier.height(12.dp))
+                HorizontalDivider(color = Color(0xFF2A3040), thickness = 0.5.dp)
+                Spacer(Modifier.height(12.dp))
+
+                // ── DOCK ─────────────────────────────────────────────────
+                Text(
+                    "DOCK",
+                    style = MaterialTheme.typography.labelSmall,
+                    color = subtitleColor,
+                    modifier = Modifier.padding(start = 4.dp, bottom = 6.dp),
+                )
+                Column(Modifier.bringIntoViewRequester(rowBringers[9])) {
+                    SettingsCategoryCard(cardBg = cardBg, cardShape = cardShape, selected = selectedIndex == 9) {
+                        SettingsRow(
+                            icon = Icons.Rounded.MailOutline,
+                            title = "Mail dock",
+                            subtitle = mailBadgeBody,
+                            selected = selectedIndex == 9,
+                            themePalette = themePalette,
+                            subtitleColor = subtitleColor,
+                            onClick = { activate(9) },
+                        )
+                    }
+                }
+                Spacer(Modifier.height(8.dp))
+                Column(Modifier.bringIntoViewRequester(rowBringers[10])) {
+                    SettingsCategoryCard(cardBg = cardBg, cardShape = cardShape, selected = selectedIndex == 10) {
+                        SettingsRow(
+                            icon = Icons.Rounded.TouchApp,
+                            title = "Second shortcut",
+                            subtitle = buildString {
+                                append(if (shortcut == SecondShortcutTarget.MESSAGES) "Messages" else "WhatsApp")
+                                if (classicMode) append(" · hidden on dock in Classic mode")
+                            },
+                            selected = selectedIndex == 10,
+                            themePalette = themePalette,
+                            subtitleColor = subtitleColor,
+                            onClick = { activate(10) },
+                        )
+                    }
+                }
+                Spacer(Modifier.height(8.dp))
+                Column(Modifier.bringIntoViewRequester(rowBringers[11])) {
+                    SettingsCategoryCard(cardBg = cardBg, cardShape = cardShape, selected = selectedIndex == 11) {
+                        SettingsRow(
+                            icon = Icons.Rounded.Apps,
+                            title = "Third shortcut",
+                            subtitle = dockCameraBody,
+                            selected = selectedIndex == 11,
+                            themePalette = themePalette,
+                            subtitleColor = subtitleColor,
+                            onClick = { activate(11) },
+                        )
+                    }
+                }
+
+                Spacer(Modifier.height(12.dp))
+                HorizontalDivider(color = Color(0xFF2A3040), thickness = 0.5.dp)
+                Spacer(Modifier.height(12.dp))
+
+                // ── SYSTEM ───────────────────────────────────────────────
+                Text(
+                    "SYSTEM",
+                    style = MaterialTheme.typography.labelSmall,
+                    color = subtitleColor,
+                    modifier = Modifier.padding(start = 4.dp, bottom = 6.dp),
+                )
+                Column(Modifier.bringIntoViewRequester(rowBringers[12])) {
+                    SettingsCategoryCard(cardBg = cardBg, cardShape = cardShape, selected = selectedIndex == 12) {
+                        SettingsRow(
+                            icon = Icons.Outlined.Vibration,
+                            title = "Haptic feedback",
+                            subtitle = if (hapticsEnabled) "On (trackpad and keyboard navigation)" else "Off",
+                            selected = selectedIndex == 12,
+                            themePalette = themePalette,
+                            subtitleColor = subtitleColor,
+                            onClick = { activate(12) },
+                        )
+                        AnimatedVisibility(
+                            visible = hapticsEnabled,
+                            enter = expandVertically() + fadeIn(),
+                            exit = shrinkVertically() + fadeOut(),
+                        ) {
+                            Column(modifier = Modifier.padding(start = 52.dp, end = 16.dp, bottom = 12.dp)) {
+                                Row(
+                                    modifier = Modifier.fillMaxWidth(),
+                                    horizontalArrangement = Arrangement.SpaceBetween,
+                                ) {
+                                    Text("Light", style = MaterialTheme.typography.labelSmall, color = subtitleColor)
+                                    Text(
+                                        "Intensity: $hapticIntensity",
+                                        style = MaterialTheme.typography.labelSmall,
+                                        color = themePalette.settingsMenuTitle,
+                                    )
+                                    Text("Strong", style = MaterialTheme.typography.labelSmall, color = subtitleColor)
+                                }
+                                Slider(
+                                    value = hapticIntensity.toFloat(),
+                                    onValueChange = { onSetHapticIntensity(it.toInt()) },
+                                    valueRange = 1f..5f,
+                                    steps = 3,
+                                    modifier = Modifier.fillMaxWidth(),
+                                )
+                            }
+                        }
+                    }
+                }
+                Spacer(Modifier.height(8.dp))
+                Column(Modifier.bringIntoViewRequester(rowBringers[13])) {
+                    SettingsCategoryCard(cardBg = cardBg, cardShape = cardShape, selected = selectedIndex == 13) {
+                        SettingsRow(
+                            icon = Icons.Rounded.Security,
+                            title = "Permissions",
+                            subtitle = permissionsSubtitle,
+                            selected = selectedIndex == 13,
+                            themePalette = themePalette,
+                            subtitleColor = subtitleColor,
+                            onClick = { activate(13) },
+                        )
+                    }
+                }
+
+                Spacer(Modifier.height(12.dp))
+                HorizontalDivider(color = Color(0xFF2A3040), thickness = 0.5.dp)
+                Spacer(Modifier.height(12.dp))
+
+                // ── BACKUP ───────────────────────────────────────────────
+                Text(
+                    "BACKUP",
+                    style = MaterialTheme.typography.labelSmall,
+                    color = subtitleColor,
+                    modifier = Modifier.padding(start = 4.dp, bottom = 6.dp),
+                )
+                Column(Modifier.bringIntoViewRequester(rowBringers[14])) {
+                    SettingsCategoryCard(cardBg = cardBg, cardShape = cardShape, selected = selectedIndex == 14) {
+                        SettingsRow(
+                            icon = Icons.Rounded.SettingsBackupRestore,
+                            title = "Export backup",
+                            subtitle = "Save settings as JSON file",
+                            selected = selectedIndex == 14,
+                            themePalette = themePalette,
+                            subtitleColor = subtitleColor,
+                            onClick = { activate(14) },
+                        )
+                    }
+                }
+                Spacer(Modifier.height(8.dp))
+                Column(Modifier.bringIntoViewRequester(rowBringers[15])) {
+                    SettingsCategoryCard(cardBg = cardBg, cardShape = cardShape, selected = selectedIndex == 15) {
+                        SettingsRow(
+                            icon = Icons.Rounded.SettingsBackupRestore,
+                            title = "Restore from backup",
+                            subtitle = "Pick a backup file from Downloads",
+                            selected = selectedIndex == 15,
+                            themePalette = themePalette,
+                            subtitleColor = subtitleColor,
+                            onClick = { activate(15) },
+                        )
+                    }
+                }
+                Spacer(Modifier.height(24.dp))
+            }
+        }
+    }
+}
+
+@Composable
+private fun SettingsCategoryCard(
+    cardBg: Color,
+    cardShape: RoundedCornerShape,
+    selected: Boolean,
+    content: @Composable () -> Unit,
+) {
+    Surface(
+        shape = cardShape,
+        color = if (selected) Color(0xFF252D3E) else cardBg,
+        border = if (selected) BorderStroke(1.dp, Color(0x6684D5F6)) else null,
+        tonalElevation = 0.dp,
+    ) {
+        Column(modifier = Modifier.padding(vertical = 4.dp)) {
+            content()
+        }
+    }
+}
+
+@Composable
+private fun SettingsRow(
+    icon: androidx.compose.ui.graphics.vector.ImageVector,
+    title: String,
+    subtitle: String,
+    selected: Boolean,
+    themePalette: LauncherThemePalette,
+    subtitleColor: Color,
+    onClick: () -> Unit,
+) {
+    val bgColor = if (selected) themePalette.settingsSelected else Color.Transparent
+    val titleColor = if (selected) themePalette.settingsMenuTitleSelected else themePalette.settingsMenuTitle
+    val subColor = if (selected) themePalette.settingsMenuBodySelected else subtitleColor
+
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .background(bgColor)
+            .clickable(onClick = onClick)
+            .padding(horizontal = 16.dp, vertical = 14.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Icon(
+            imageVector = icon,
+            contentDescription = null,
+            tint = if (selected) Color(0xFF84D5F6) else Color(0xFF7A8290),
+            modifier = Modifier.size(26.dp),
+        )
+        Spacer(Modifier.width(16.dp))
+        Column(modifier = Modifier.weight(1f)) {
+            Text(
+                text = title,
+                style = MaterialTheme.typography.bodyLarge.copy(
+                    color = titleColor,
+                    fontWeight = FontWeight.Medium,
+                    fontSize = 16.sp,
+                    lineHeight = 20.sp,
+                ),
+            )
+            Spacer(Modifier.height(2.dp))
+            Text(
+                text = subtitle,
+                style = MaterialTheme.typography.bodySmall.copy(
+                    color = subColor,
+                    fontSize = 13.sp,
+                    lineHeight = 16.sp,
+                ),
+                maxLines = 2,
+                overflow = TextOverflow.Ellipsis,
+            )
+        }
+    }
+}
+

@@ -1,0 +1,76 @@
+package com.zeno.classiclauncher.nlauncher
+
+import android.content.Context
+import android.content.Intent
+import android.content.pm.LauncherApps
+import android.os.Bundle
+import android.view.WindowManager
+import android.widget.Toast
+import androidx.activity.ComponentActivity
+import androidx.activity.compose.setContent
+import androidx.activity.viewModels
+import androidx.lifecycle.lifecycleScope
+import com.zeno.classiclauncher.nlauncher.ui.BbTheme
+import com.zeno.classiclauncher.nlauncher.ui.LauncherScreen
+import com.zeno.classiclauncher.nlauncher.ui.LauncherViewModel
+import kotlinx.coroutines.launch
+
+class MainActivity : ComponentActivity() {
+
+    private val viewModel: LauncherViewModel by viewModels()
+
+    override fun onCreate(savedInstanceState: Bundle?) {
+        super.onCreate(savedInstanceState)
+        handlePinShortcutIntent(intent)
+        window.addFlags(WindowManager.LayoutParams.FLAG_SHOW_WALLPAPER)
+        window.setBackgroundDrawableResource(android.R.color.transparent)
+        setContent {
+            BbTheme {
+                LauncherScreen()
+            }
+        }
+    }
+
+    /** Catch KEYCODE_ENDCALL at the Activity level — Compose onPreviewKeyEvent may not receive it
+     *  if the system (PhoneWindowManager) intercepts or delivers it only on ACTION_UP. */
+    override fun dispatchKeyEvent(event: android.view.KeyEvent): Boolean {
+        if (event.keyCode == android.view.KeyEvent.KEYCODE_ENDCALL &&
+            event.action == android.view.KeyEvent.ACTION_UP
+        ) {
+            viewModel.requestNavigateHome()
+            return true
+        }
+        return super.dispatchKeyEvent(event)
+    }
+
+    override fun onNewIntent(intent: Intent) {
+        super.onNewIntent(intent)
+        setIntent(intent)
+        handlePinShortcutIntent(intent)
+        // End-call / home button press while launcher is already foregrounded → go to home page.
+        // System re-delivers the HOME intent via onNewIntent (singleTask), giving us the signal.
+        if (intent.action == Intent.ACTION_MAIN &&
+            intent.hasCategory(Intent.CATEGORY_HOME)
+        ) {
+            viewModel.requestNavigateHome()
+        }
+    }
+
+    private fun handlePinShortcutIntent(intent: Intent) {
+        val req = getSystemService(LauncherApps::class.java)?.getPinItemRequest(intent) ?: return
+        if (req.requestType != LauncherApps.PinItemRequest.REQUEST_TYPE_SHORTCUT) return
+        if (req.shortcutInfo == null) return
+        lifecycleScope.launch {
+            val ok = viewModel.consumePinShortcutRequest(req)
+            if (ok) {
+                req.accept()
+            } else {
+                Toast.makeText(
+                    this@MainActivity,
+                    "Home shortcuts full (max 3)",
+                    Toast.LENGTH_SHORT,
+                ).show()
+            }
+        }
+    }
+}

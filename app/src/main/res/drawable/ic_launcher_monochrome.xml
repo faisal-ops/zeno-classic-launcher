@@ -1,0 +1,14 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  Android 13+ themed monochrome layer: single-color silhouette (white on transparent).
+  Launcher tints this to match wallpaper / Material You.
+-->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="108dp"
+    android:height="108dp"
+    android:viewportWidth="108"
+    android:viewportHeight="108">
+    <path
+        android:fillColor="#FFFFFFFF"
+        android:pathData="M22,22 L86,22 L86,34 L38,34 L86,86 L86,98 L22,98 L22,86 L68,86 L22,38 Z" />
+</vector>
