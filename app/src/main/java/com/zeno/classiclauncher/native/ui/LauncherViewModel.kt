@@ -16,10 +16,14 @@ import com.zeno.classiclauncher.nlauncher.folders.FolderIds
 import com.zeno.classiclauncher.nlauncher.folders.buildDrawerGridCells
 import com.zeno.classiclauncher.nlauncher.badges.NotificationRepository
 import com.zeno.classiclauncher.nlauncher.prefs.GridPreset
+import com.zeno.classiclauncher.nlauncher.prefs.GlanceCalendarRange
+import com.zeno.classiclauncher.nlauncher.prefs.GlanceWeatherLocationMode
+import com.zeno.classiclauncher.nlauncher.prefs.GlanceWeatherUnit
 import com.zeno.classiclauncher.nlauncher.prefs.HomeGroup
 import com.zeno.classiclauncher.nlauncher.prefs.HomeGroupIds
 import com.zeno.classiclauncher.nlauncher.prefs.HomeGroupSide
 import com.zeno.classiclauncher.nlauncher.prefs.AppIconShape
+import com.zeno.classiclauncher.nlauncher.prefs.DockIconStyle
 import com.zeno.classiclauncher.nlauncher.prefs.LauncherPrefs
 import com.zeno.classiclauncher.nlauncher.prefs.LauncherPrefsRepository
 import com.zeno.classiclauncher.nlauncher.prefs.MailBadgeCandidates
@@ -130,6 +134,7 @@ class LauncherViewModel(app: Application) : AndroidViewModel(app) {
     val hasUnreadSms: StateFlow<Boolean> = NotificationRepository.hasUnreadSms
     val hasUnreadWhatsApp: StateFlow<Boolean> = NotificationRepository.hasUnreadWhatsApp
     val packagesWithUnread: StateFlow<Set<String>> = NotificationRepository.packagesWithUnread
+    private var lastPrunePackageSnapshot: Set<String>? = null
 
     init {
         viewModelScope.launch {
@@ -138,8 +143,17 @@ class LauncherViewModel(app: Application) : AndroidViewModel(app) {
                 .collect { (list, p) ->
                     // [apps] starts as emptyList() until AppsRepository emits; pruning with an empty set
                     // would wipe all folder members and home-group apps (persisted empty).
-                    if (list.isEmpty()) return@collect
+                    if (list.isEmpty()) {
+                        lastPrunePackageSnapshot = null
+                        return@collect
+                    }
                     val pkgs = list.mapTo(HashSet(list.size)) { it.packageName }
+                    // Guard against transient package snapshots (PackageManager churn) that can otherwise wipe
+                    // whole folders/groups. Only prune after the same non-empty snapshot repeats.
+                    if (lastPrunePackageSnapshot != pkgs) {
+                        lastPrunePackageSnapshot = pkgs
+                        return@collect
+                    }
                     val newFolders = HashMap<String, List<String>>(p.folderContents.size)
                     for ((id, members) in p.folderContents) {
                         val filtered = members.filter { it in pkgs }
@@ -435,13 +449,25 @@ class LauncherViewModel(app: Application) : AndroidViewModel(app) {
 
     fun launchFromDock(slot: DockSlot) {
         when (slot) {
-            DockSlot.Mail -> actions.launchMail()
-            DockSlot.Shortcut -> {
-                val target = prefs.value.secondShortcutTarget
-                if (target == SecondShortcutTarget.WHATSAPP) {
-                    if (!actions.launchApp("com.whatsapp")) actions.launchMessages()
+            DockSlot.Mail -> {
+                val pkg = prefs.value.dockMailPackage.trim()
+                if (pkg.isEmpty()) {
+                    actions.launchMail()
                 } else {
-                    actions.launchMessages()
+                    if (!actions.launchApp(pkg)) actions.launchMail()
+                }
+            }
+            DockSlot.Shortcut -> {
+                val pkg = prefs.value.dockSecondPackage.trim()
+                if (pkg.isEmpty()) {
+                    val target = prefs.value.secondShortcutTarget
+                    if (target == SecondShortcutTarget.WHATSAPP) {
+                        if (!actions.launchApp("com.whatsapp")) actions.launchMessages()
+                    } else {
+                        actions.launchMessages()
+                    }
+                } else {
+                    if (!actions.launchApp(pkg)) actions.launchMessages()
                 }
             }
             DockSlot.Camera -> {
@@ -457,6 +483,28 @@ class LauncherViewModel(app: Application) : AndroidViewModel(app) {
 
     fun setDockCameraPackage(packageName: String) {
         viewModelScope.launch { prefsRepo.setDockCameraPackage(packageName.trim()) }
+    }
+
+    fun setDockMailPackage(packageName: String) {
+        viewModelScope.launch { prefsRepo.setDockMailPackage(packageName.trim()) }
+    }
+
+    fun setDockSecondPackage(packageName: String) {
+        viewModelScope.launch { prefsRepo.setDockSecondPackage(packageName.trim()) }
+    }
+
+    fun setDockSlotTitle(slot: DockSlot, title: String) {
+        viewModelScope.launch {
+            when (slot) {
+                DockSlot.Mail -> prefsRepo.setDockMailTitle(title)
+                DockSlot.Shortcut -> prefsRepo.setDockSecondTitle(title)
+                DockSlot.Camera -> prefsRepo.setDockThirdTitle(title)
+            }
+        }
+    }
+
+    fun setDockIconStyle(style: DockIconStyle) {
+        viewModelScope.launch { prefsRepo.setDockIconStyle(style) }
     }
 
     fun addHomeShortcut(packageName: String) {
@@ -536,6 +584,26 @@ class LauncherViewModel(app: Application) : AndroidViewModel(app) {
 
     fun setGlanceShowAlarm(show: Boolean) {
         viewModelScope.launch { prefsRepo.setGlanceShowAlarm(show) }
+    }
+
+    fun setGlanceCalendarRange(range: GlanceCalendarRange) {
+        viewModelScope.launch { prefsRepo.setGlanceCalendarRange(range) }
+    }
+
+    fun setGlanceWeatherUnit(unit: GlanceWeatherUnit) {
+        viewModelScope.launch { prefsRepo.setGlanceWeatherUnit(unit) }
+    }
+
+    fun setGlanceWeatherLocationMode(mode: GlanceWeatherLocationMode) {
+        viewModelScope.launch { prefsRepo.setGlanceWeatherLocationMode(mode) }
+    }
+
+    fun setGlanceWeatherManualLatitude(latitude: String) {
+        viewModelScope.launch { prefsRepo.setGlanceWeatherManualLatitude(latitude) }
+    }
+
+    fun setGlanceWeatherManualLongitude(longitude: String) {
+        viewModelScope.launch { prefsRepo.setGlanceWeatherManualLongitude(longitude) }
     }
 
     fun launchApp(packageName: String) {

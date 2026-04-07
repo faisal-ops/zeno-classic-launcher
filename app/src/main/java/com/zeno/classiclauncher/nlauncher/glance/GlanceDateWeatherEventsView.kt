@@ -178,9 +178,23 @@ class GlanceDateWeatherEventsView @JvmOverloads constructor(
     fun applyStripPreferences(p: GlanceStripPreferences) {
         stripPrefs = p
         glanceForceRebuild = true
+        // Preference changes (especially weather unit) should be visible immediately, not after
+        // heavy-IO debounce windows.
+        lastHeavyIoAtMs = 0L
         post {
             if (isAttachedToWindow) {
                 glanceBuiltAt = 0L
+                // Weather loop can be sleeping up to 35 min, so unit changes
+                // (C/F) must force an immediate rerun.
+                weatherFetchedAt = 0L
+                cachedWeather?.let { cached ->
+                    val useF = stripPrefs.weatherUseFahrenheit
+                    val t = if (useF) "%.0f\u00B0F".format(cToF(cached.tempC)) else "%.0f\u00B0C".format(cached.tempC)
+                    weatherView.text = "$t ${cached.condition}"
+                    weatherView.isVisible = true
+                }
+                attachedJob?.cancel()
+                restartLoops()
             }
         }
         if (isAttachedToWindow) {
@@ -307,7 +321,9 @@ class GlanceDateWeatherEventsView @JvmOverloads constructor(
 
     private suspend fun runWeatherLoop() {
         while (coroutineContext.isActive) {
-            val granted = ContextCompat.checkSelfPermission(
+            val prefs = stripPrefs
+            val usingDeviceLocation = prefs.weatherUseDeviceLocation
+            val granted = !usingDeviceLocation || ContextCompat.checkSelfPermission(
                 context,
                 Manifest.permission.ACCESS_COARSE_LOCATION,
             ) == PackageManager.PERMISSION_GRANTED
@@ -326,9 +342,14 @@ class GlanceDateWeatherEventsView @JvmOverloads constructor(
             if (weather != null) {
                 cachedWeather = weather
                 weatherFetchedAt = System.currentTimeMillis()
-                val t = "%.0f\u00B0".format(weather.tempC)
-                val lo = "%.0f".format(weather.tempMinC)
-                val hi = "%.0f".format(weather.tempMaxC)
+                val useF = prefs.weatherUseFahrenheit
+                val tVal = if (useF) cToF(weather.tempC) else weather.tempC
+                val loVal = if (useF) cToF(weather.tempMinC) else weather.tempMinC
+                val hiVal = if (useF) cToF(weather.tempMaxC) else weather.tempMaxC
+                val unit = if (useF) "F" else "C"
+                val t = "%.0f\u00B0$unit".format(tVal)
+                val lo = "%.0f".format(loVal)
+                val hi = "%.0f".format(hiVal)
                 val weatherLine = "$t ${weather.condition}  ($lo\u2013$hi\u00B0)"
                 weatherView.text = weatherLine
                 weatherView.isVisible = true
@@ -337,7 +358,11 @@ class GlanceDateWeatherEventsView @JvmOverloads constructor(
                 if (cached != null &&
                     System.currentTimeMillis() - weatherFetchedAt < weatherCacheMs
                 ) {
-                    val t = "%.0f\u00B0".format(cached.tempC)
+                    val t = if (prefs.weatherUseFahrenheit) {
+                        "%.0f\u00B0F".format(cToF(cached.tempC))
+                    } else {
+                        "%.0f\u00B0C".format(cached.tempC)
+                    }
                     weatherView.text = "$t ${cached.condition}"
                     weatherView.isVisible = true
                 } else {
@@ -458,7 +483,7 @@ class GlanceDateWeatherEventsView @JvmOverloads constructor(
                     ),
                 )
             } else {
-                getNextCalendarEvent()?.let { event ->
+                getNextCalendarEvent(prefs.calendarLookAheadDays.coerceIn(1, 7))?.let { event ->
                     val timeStr = formatEventTime(event.startTime)
                     items.add(
                         GlanceItem(
@@ -537,12 +562,12 @@ class GlanceDateWeatherEventsView @JvmOverloads constructor(
         }
     }
 
-    private fun getNextCalendarEvent(): CalendarEvent? {
+    private fun getNextCalendarEvent(lookAheadDays: Int): CalendarEvent? {
         val now = System.currentTimeMillis()
         if (cachedCalendarEvent != null && now - calendarFetchedAt < calendarCacheMs) {
             return cachedCalendarEvent
         }
-        val end = now + 24L * 60 * 60 * 1000
+        val end = now + lookAheadDays.toLong() * 24L * 60 * 60 * 1000
         val uri = CalendarContract.Instances.CONTENT_URI.buildUpon().let {
             ContentUris.appendId(it, now)
             ContentUris.appendId(it, end)
@@ -599,14 +624,26 @@ class GlanceDateWeatherEventsView @JvmOverloads constructor(
     }
 
     private fun fetchWeather(): WeatherData? {
-        if (ContextCompat.checkSelfPermission(
+        val prefs = stripPrefs
+        if (prefs.weatherUseDeviceLocation &&
+            ContextCompat.checkSelfPermission(
                 context,
                 Manifest.permission.ACCESS_COARSE_LOCATION,
             ) != PackageManager.PERMISSION_GRANTED
         ) {
             return null
         }
-        val loc = getLastLocation() ?: return null
+        val loc = if (prefs.weatherUseDeviceLocation) {
+            getLastLocation()
+        } else {
+            val lat = prefs.weatherLatitude
+            val lon = prefs.weatherLongitude
+            if (lat == null || lon == null) null else Location("manual").apply {
+                latitude = lat
+                longitude = lon
+                time = System.currentTimeMillis()
+            }
+        } ?: return null
         var conn: HttpURLConnection? = null
         return try {
             val url = URL(
@@ -669,6 +706,8 @@ class GlanceDateWeatherEventsView @JvmOverloads constructor(
         96, 99 -> "Storm"
         else -> "\u2014"
     }
+
+    private fun cToF(celsius: Float): Float = (celsius * 9f / 5f) + 32f
 
     private fun hostActivity(): Activity? =
         generateSequence(context) { (it as? android.content.ContextWrapper)?.baseContext }

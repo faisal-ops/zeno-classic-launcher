@@ -13,7 +13,7 @@ object LauncherBackup {
     const val FORMAT_KEY = "format"
     const val FORMAT_VALUE = "classiclauncher_backup"
     const val VERSION_KEY = "version"
-    const val CURRENT_VERSION = 15
+    const val CURRENT_VERSION = 18
 
     fun toJson(prefs: LauncherPrefs): String {
         val root = JSONObject()
@@ -24,7 +24,13 @@ object LauncherBackup {
         p.put("gridPreset", prefs.gridPreset.name)
         p.put("secondShortcut", prefs.secondShortcutTarget.name)
         p.put("mailBadgePackage", prefs.mailBadgePackage)
+        p.put("dockMailPackage", prefs.dockMailPackage)
+        p.put("dockSecondPackage", prefs.dockSecondPackage)
         p.put("dockCameraPackage", prefs.dockCameraPackage)
+        p.put("dockMailTitle", prefs.dockMailTitle)
+        p.put("dockSecondTitle", prefs.dockSecondTitle)
+        p.put("dockThirdTitle", prefs.dockThirdTitle)
+        p.put("dockIconStyle", prefs.dockIconStyle.name)
         p.put("orderedPackages", JSONArray(prefs.orderedPackages))
         val folders = JSONObject()
         prefs.folderContents.forEach { (id, pkgs) ->
@@ -47,6 +53,11 @@ object LauncherBackup {
         p.put("glanceShowBattery", prefs.glanceShowBattery)
         p.put("glanceShowCalendar", prefs.glanceShowCalendar)
         p.put("glanceShowAlarm", prefs.glanceShowAlarm)
+        p.put("glanceCalendarRange", prefs.glanceCalendarRange.name)
+        p.put("glanceWeatherUnit", prefs.glanceWeatherUnit.name)
+        p.put("glanceWeatherLocationMode", prefs.glanceWeatherLocationMode.name)
+        p.put("glanceWeatherManualLatitude", prefs.glanceWeatherManualLatitude)
+        p.put("glanceWeatherManualLongitude", prefs.glanceWeatherManualLongitude)
         val homeGroupsArr = JSONArray()
         prefs.homeGroups.normalizedAtMostTwo().forEach { g ->
             val o = JSONObject()
@@ -88,7 +99,15 @@ object LauncherBackup {
                 ?: throw IllegalArgumentException("Invalid secondShortcut: $name")
         }
         val mail = p.optString("mailBadgePackage", "").trim()
+        val dockMail = p.optString("dockMailPackage", "").trim()
+        val dockSecond = p.optString("dockSecondPackage", "").trim()
         val dockCam = p.optString("dockCameraPackage", "").trim()
+        val dockMailTitle = p.optString("dockMailTitle", "Mail").trim().ifEmpty { "Mail" }
+        val dockSecondTitle = p.optString("dockSecondTitle", "Messages").trim().ifEmpty { "Messages" }
+        val dockThirdTitle = p.optString("dockThirdTitle", "Camera").trim().ifEmpty { "Camera" }
+        val dockIconStyle = p.optString("dockIconStyle", "MONOCHROME").let { name ->
+            DockIconStyle.entries.firstOrNull { it.name == name } ?: DockIconStyle.MONOCHROME
+        }
         val orderArr = p.getJSONArray("orderedPackages")
         val ordered = buildList {
             for (i in 0 until orderArr.length()) add(orderArr.getString(i).trim())
@@ -137,6 +156,17 @@ object LauncherBackup {
         val glanceBat = p.optBoolean("glanceShowBattery", true)
         val glanceCal = p.optBoolean("glanceShowCalendar", true)
         val glanceAlm = p.optBoolean("glanceShowAlarm", true)
+        val glanceCalendarRange = p.optString("glanceCalendarRange", "DAY").let { name ->
+            GlanceCalendarRange.entries.firstOrNull { it.name == name } ?: GlanceCalendarRange.DAY
+        }
+        val glanceWeatherUnit = p.optString("glanceWeatherUnit", "CELSIUS").let { name ->
+            GlanceWeatherUnit.entries.firstOrNull { it.name == name } ?: GlanceWeatherUnit.CELSIUS
+        }
+        val glanceWeatherLocationMode = p.optString("glanceWeatherLocationMode", "DEVICE").let { name ->
+            GlanceWeatherLocationMode.entries.firstOrNull { it.name == name } ?: GlanceWeatherLocationMode.DEVICE
+        }
+        val glanceWeatherManualLatitude = p.optString("glanceWeatherManualLatitude", "").trim()
+        val glanceWeatherManualLongitude = p.optString("glanceWeatherManualLongitude", "").trim()
         val doubleTapSleep = p.optBoolean("doubleTapToSleepEnabled", true)
         val swipeUpPackage = p.optString("swipeUpPackage", "").trim()
         val doubleTapPackage = p.optString("doubleTapPackage", "").trim()
@@ -176,7 +206,13 @@ object LauncherBackup {
             gridPreset = grid,
             secondShortcutTarget = shortcut,
             mailBadgePackage = mail,
+            dockMailPackage = dockMail,
+            dockSecondPackage = dockSecond,
             dockCameraPackage = dockCam,
+            dockMailTitle = dockMailTitle,
+            dockSecondTitle = dockSecondTitle,
+            dockThirdTitle = dockThirdTitle,
+            dockIconStyle = dockIconStyle,
             orderedPackages = ordered,
             folderContents = folderContents,
             folderNames = folderNames.filterKeys { folderContents.containsKey(it) },
@@ -191,6 +227,11 @@ object LauncherBackup {
             glanceShowBattery = glanceBat,
             glanceShowCalendar = glanceCal,
             glanceShowAlarm = glanceAlm,
+            glanceCalendarRange = glanceCalendarRange,
+            glanceWeatherUnit = glanceWeatherUnit,
+            glanceWeatherLocationMode = glanceWeatherLocationMode,
+            glanceWeatherManualLatitude = glanceWeatherManualLatitude,
+            glanceWeatherManualLongitude = glanceWeatherManualLongitude,
             homeGroups = homeGroups,
             doubleTapToSleepEnabled = doubleTapSleep,
             swipeUpPackage = swipeUpPackage,

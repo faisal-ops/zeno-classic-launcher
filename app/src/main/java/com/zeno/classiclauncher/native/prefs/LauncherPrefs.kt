@@ -35,13 +35,42 @@ enum class AppIconShape {
     SOFT_SQUARE,
 }
 
+enum class DockIconStyle {
+    MONOCHROME,
+    APP,
+}
+
+enum class GlanceCalendarRange {
+    DAY,
+    WEEK,
+}
+
+enum class GlanceWeatherUnit {
+    CELSIUS,
+    FAHRENHEIT,
+}
+
+enum class GlanceWeatherLocationMode {
+    DEVICE,
+    MANUAL,
+}
+
 data class LauncherPrefs(
     val gridPreset: GridPreset = GridPreset.R3C5,
     val secondShortcutTarget: SecondShortcutTarget = SecondShortcutTarget.MESSAGES,
     /** Empty = auto (heuristic). Otherwise badge count for this package only. */
     val mailBadgePackage: String = "",
+    /** Empty = launch default mail app resolution; else launch this package. */
+    val dockMailPackage: String = "",
+    /** Empty = launch default messaging app resolution; else launch this package. */
+    val dockSecondPackage: String = "",
     /** Empty = default [android.provider.MediaStore.ACTION_IMAGE_CAPTURE] resolution; else launch this package. */
     val dockCameraPackage: String = "",
+    /** Custom labels for dock shortcuts shown in settings/accessibility. */
+    val dockMailTitle: String = "Mail",
+    val dockSecondTitle: String = "Messages",
+    val dockThirdTitle: String = "Camera",
+    val dockIconStyle: DockIconStyle = DockIconStyle.MONOCHROME,
     val orderedPackages: List<String> = emptyList(),
     /** Folder slot id → member package names (order preserved). */
     val folderContents: Map<String, List<String>> = emptyMap(),
@@ -67,6 +96,11 @@ data class LauncherPrefs(
     val glanceShowBattery: Boolean = true,
     val glanceShowCalendar: Boolean = true,
     val glanceShowAlarm: Boolean = true,
+    val glanceCalendarRange: GlanceCalendarRange = GlanceCalendarRange.DAY,
+    val glanceWeatherUnit: GlanceWeatherUnit = GlanceWeatherUnit.CELSIUS,
+    val glanceWeatherLocationMode: GlanceWeatherLocationMode = GlanceWeatherLocationMode.DEVICE,
+    val glanceWeatherManualLatitude: String = "",
+    val glanceWeatherManualLongitude: String = "",
     /** At most two home groups (left / right of centre shortcuts). */
     val homeGroups: List<HomeGroup> = emptyList(),
     /** Double-tap home workspace to lock (requires device admin). Default on. */
@@ -104,7 +138,13 @@ class LauncherPrefsRepository(private val context: Context) {
         val GRID = stringPreferencesKey("gridPreset")
         val SHORTCUT = stringPreferencesKey("secondShortcut")
         val MAIL_BADGE = stringPreferencesKey("mailBadgePackage")
+        val DOCK_MAIL = stringPreferencesKey("dockMailPackage")
+        val DOCK_SECOND = stringPreferencesKey("dockSecondPackage")
         val DOCK_CAMERA = stringPreferencesKey("dockCameraPackage")
+        val DOCK_MAIL_TITLE = stringPreferencesKey("dockMailTitle")
+        val DOCK_SECOND_TITLE = stringPreferencesKey("dockSecondTitle")
+        val DOCK_THIRD_TITLE = stringPreferencesKey("dockThirdTitle")
+        val DOCK_ICON_STYLE = stringPreferencesKey("dockIconStyle")
         val ORDER = stringPreferencesKey("orderedPackagesCsv")
         val FOLDERS = stringPreferencesKey("folderContentsJson")
         val FOLDER_NAMES = stringPreferencesKey("folderNamesJson")
@@ -119,6 +159,11 @@ class LauncherPrefsRepository(private val context: Context) {
         val GLANCE_BATTERY = booleanPreferencesKey("glanceShowBattery")
         val GLANCE_CALENDAR = booleanPreferencesKey("glanceShowCalendar")
         val GLANCE_ALARM = booleanPreferencesKey("glanceShowAlarm")
+        val GLANCE_CALENDAR_RANGE = stringPreferencesKey("glanceCalendarRange")
+        val GLANCE_WEATHER_UNIT = stringPreferencesKey("glanceWeatherUnit")
+        val GLANCE_WEATHER_LOCATION_MODE = stringPreferencesKey("glanceWeatherLocationMode")
+        val GLANCE_WEATHER_MANUAL_LAT = stringPreferencesKey("glanceWeatherManualLatitude")
+        val GLANCE_WEATHER_MANUAL_LON = stringPreferencesKey("glanceWeatherManualLongitude")
         val HOME_GROUPS = stringPreferencesKey("homeGroupsJson")
         val DOUBLE_TAP_SLEEP = booleanPreferencesKey("doubleTapToSleepEnabled")
         val SWIPE_UP_PKG = stringPreferencesKey("swipeUpPackage")
@@ -138,7 +183,17 @@ class LauncherPrefsRepository(private val context: Context) {
         val shortcut =
             p[Keys.SHORTCUT]?.let { v -> SecondShortcutTarget.entries.firstOrNull { it.name == v } } ?: DEFAULT_PREFS.secondShortcutTarget
         val mailBadge = p[Keys.MAIL_BADGE]?.trim() ?: ""
+        val dockMail = p[Keys.DOCK_MAIL]?.trim() ?: ""
+        val dockSecond = (p[Keys.DOCK_SECOND]?.trim() ?: "").ifEmpty {
+            if (shortcut == SecondShortcutTarget.WHATSAPP) "com.whatsapp" else ""
+        }
         val dockCamera = p[Keys.DOCK_CAMERA]?.trim() ?: ""
+        val dockMailTitle = p[Keys.DOCK_MAIL_TITLE]?.trim().orEmpty().ifEmpty { DEFAULT_PREFS.dockMailTitle }
+        val dockSecondTitle = p[Keys.DOCK_SECOND_TITLE]?.trim().orEmpty().ifEmpty { DEFAULT_PREFS.dockSecondTitle }
+        val dockThirdTitle = p[Keys.DOCK_THIRD_TITLE]?.trim().orEmpty().ifEmpty { DEFAULT_PREFS.dockThirdTitle }
+        val dockIconStyle =
+            p[Keys.DOCK_ICON_STYLE]?.let { v -> DockIconStyle.entries.firstOrNull { it.name == v } }
+                ?: DEFAULT_PREFS.dockIconStyle
         val order = parseCsvList(p[Keys.ORDER])
         val folders = parseFolderContentsJson(p[Keys.FOLDERS])
         val folderNames = parseFolderNamesJson(p[Keys.FOLDER_NAMES])
@@ -153,6 +208,17 @@ class LauncherPrefsRepository(private val context: Context) {
         val glanceBat = p[Keys.GLANCE_BATTERY] ?: DEFAULT_PREFS.glanceShowBattery
         val glanceCal = p[Keys.GLANCE_CALENDAR] ?: DEFAULT_PREFS.glanceShowCalendar
         val glanceAlm = p[Keys.GLANCE_ALARM] ?: DEFAULT_PREFS.glanceShowAlarm
+        val glanceCalendarRange =
+            p[Keys.GLANCE_CALENDAR_RANGE]?.let { v -> GlanceCalendarRange.entries.firstOrNull { it.name == v } }
+                ?: DEFAULT_PREFS.glanceCalendarRange
+        val glanceWeatherUnit =
+            p[Keys.GLANCE_WEATHER_UNIT]?.let { v -> GlanceWeatherUnit.entries.firstOrNull { it.name == v } }
+                ?: DEFAULT_PREFS.glanceWeatherUnit
+        val glanceWeatherLocationMode =
+            p[Keys.GLANCE_WEATHER_LOCATION_MODE]?.let { v -> GlanceWeatherLocationMode.entries.firstOrNull { it.name == v } }
+                ?: DEFAULT_PREFS.glanceWeatherLocationMode
+        val glanceWeatherManualLat = p[Keys.GLANCE_WEATHER_MANUAL_LAT]?.trim() ?: ""
+        val glanceWeatherManualLon = p[Keys.GLANCE_WEATHER_MANUAL_LON]?.trim() ?: ""
         val homeGroups = parseHomeGroupsJson(p[Keys.HOME_GROUPS]).normalizedAtMostTwo()
         val doubleTapSleep = p[Keys.DOUBLE_TAP_SLEEP] ?: DEFAULT_PREFS.doubleTapToSleepEnabled
         val swipeUpPkg = p[Keys.SWIPE_UP_PKG]?.trim() ?: ""
@@ -169,7 +235,13 @@ class LauncherPrefsRepository(private val context: Context) {
             gridPreset = grid,
             secondShortcutTarget = shortcut,
             mailBadgePackage = mailBadge,
+            dockMailPackage = dockMail,
+            dockSecondPackage = dockSecond,
             dockCameraPackage = dockCamera,
+            dockMailTitle = dockMailTitle,
+            dockSecondTitle = dockSecondTitle,
+            dockThirdTitle = dockThirdTitle,
+            dockIconStyle = dockIconStyle,
             orderedPackages = order,
             folderContents = folders,
             folderNames = folderNames,
@@ -184,6 +256,11 @@ class LauncherPrefsRepository(private val context: Context) {
             glanceShowBattery = glanceBat,
             glanceShowCalendar = glanceCal,
             glanceShowAlarm = glanceAlm,
+            glanceCalendarRange = glanceCalendarRange,
+            glanceWeatherUnit = glanceWeatherUnit,
+            glanceWeatherLocationMode = glanceWeatherLocationMode,
+            glanceWeatherManualLatitude = glanceWeatherManualLat,
+            glanceWeatherManualLongitude = glanceWeatherManualLon,
             homeGroups = homeGroups,
             doubleTapToSleepEnabled = doubleTapSleep,
             swipeUpPackage = swipeUpPkg,
@@ -209,8 +286,32 @@ class LauncherPrefsRepository(private val context: Context) {
         context.dataStore.edit { it[Keys.MAIL_BADGE] = packageName.trim() }
     }
 
+    suspend fun setDockMailPackage(packageName: String) {
+        context.dataStore.edit { it[Keys.DOCK_MAIL] = packageName.trim() }
+    }
+
+    suspend fun setDockSecondPackage(packageName: String) {
+        context.dataStore.edit { it[Keys.DOCK_SECOND] = packageName.trim() }
+    }
+
     suspend fun setDockCameraPackage(packageName: String) {
         context.dataStore.edit { it[Keys.DOCK_CAMERA] = packageName.trim() }
+    }
+
+    suspend fun setDockMailTitle(title: String) {
+        context.dataStore.edit { it[Keys.DOCK_MAIL_TITLE] = title.trim().ifEmpty { DEFAULT_PREFS.dockMailTitle } }
+    }
+
+    suspend fun setDockSecondTitle(title: String) {
+        context.dataStore.edit { it[Keys.DOCK_SECOND_TITLE] = title.trim().ifEmpty { DEFAULT_PREFS.dockSecondTitle } }
+    }
+
+    suspend fun setDockThirdTitle(title: String) {
+        context.dataStore.edit { it[Keys.DOCK_THIRD_TITLE] = title.trim().ifEmpty { DEFAULT_PREFS.dockThirdTitle } }
+    }
+
+    suspend fun setDockIconStyle(style: DockIconStyle) {
+        context.dataStore.edit { it[Keys.DOCK_ICON_STYLE] = style.name }
     }
 
     suspend fun setHomeShortcutPackages(packages: List<String>) {
@@ -312,6 +413,26 @@ class LauncherPrefsRepository(private val context: Context) {
         context.dataStore.edit { it[Keys.GLANCE_ALARM] = show }
     }
 
+    suspend fun setGlanceCalendarRange(range: GlanceCalendarRange) {
+        context.dataStore.edit { it[Keys.GLANCE_CALENDAR_RANGE] = range.name }
+    }
+
+    suspend fun setGlanceWeatherUnit(unit: GlanceWeatherUnit) {
+        context.dataStore.edit { it[Keys.GLANCE_WEATHER_UNIT] = unit.name }
+    }
+
+    suspend fun setGlanceWeatherLocationMode(mode: GlanceWeatherLocationMode) {
+        context.dataStore.edit { it[Keys.GLANCE_WEATHER_LOCATION_MODE] = mode.name }
+    }
+
+    suspend fun setGlanceWeatherManualLatitude(latitude: String) {
+        context.dataStore.edit { it[Keys.GLANCE_WEATHER_MANUAL_LAT] = latitude.trim() }
+    }
+
+    suspend fun setGlanceWeatherManualLongitude(longitude: String) {
+        context.dataStore.edit { it[Keys.GLANCE_WEATHER_MANUAL_LON] = longitude.trim() }
+    }
+
     suspend fun resetThemeJson() {
         context.dataStore.edit { it[Keys.THEME] = DEFAULT_THEME_JSON }
     }
@@ -367,7 +488,13 @@ class LauncherPrefsRepository(private val context: Context) {
             s[Keys.GRID] = prefs.gridPreset.name
             s[Keys.SHORTCUT] = prefs.secondShortcutTarget.name
             s[Keys.MAIL_BADGE] = prefs.mailBadgePackage.trim()
+            s[Keys.DOCK_MAIL] = prefs.dockMailPackage.trim()
+            s[Keys.DOCK_SECOND] = prefs.dockSecondPackage.trim()
             s[Keys.DOCK_CAMERA] = prefs.dockCameraPackage.trim()
+            s[Keys.DOCK_MAIL_TITLE] = prefs.dockMailTitle.trim().ifEmpty { DEFAULT_PREFS.dockMailTitle }
+            s[Keys.DOCK_SECOND_TITLE] = prefs.dockSecondTitle.trim().ifEmpty { DEFAULT_PREFS.dockSecondTitle }
+            s[Keys.DOCK_THIRD_TITLE] = prefs.dockThirdTitle.trim().ifEmpty { DEFAULT_PREFS.dockThirdTitle }
+            s[Keys.DOCK_ICON_STYLE] = prefs.dockIconStyle.name
             s[Keys.ORDER] = prefs.orderedPackages.joinToString(",")
             s[Keys.FOLDERS] = folderContentsToJson(prefs.folderContents)
             s[Keys.FOLDER_NAMES] = folderNamesToJson(prefs.folderNames.filterKeys { prefs.folderContents.containsKey(it) })
@@ -382,6 +509,11 @@ class LauncherPrefsRepository(private val context: Context) {
             s[Keys.GLANCE_BATTERY] = prefs.glanceShowBattery
             s[Keys.GLANCE_CALENDAR] = prefs.glanceShowCalendar
             s[Keys.GLANCE_ALARM] = prefs.glanceShowAlarm
+            s[Keys.GLANCE_CALENDAR_RANGE] = prefs.glanceCalendarRange.name
+            s[Keys.GLANCE_WEATHER_UNIT] = prefs.glanceWeatherUnit.name
+            s[Keys.GLANCE_WEATHER_LOCATION_MODE] = prefs.glanceWeatherLocationMode.name
+            s[Keys.GLANCE_WEATHER_MANUAL_LAT] = prefs.glanceWeatherManualLatitude.trim()
+            s[Keys.GLANCE_WEATHER_MANUAL_LON] = prefs.glanceWeatherManualLongitude.trim()
             s[Keys.HOME_GROUPS] = homeGroupsToJson(prefs.homeGroups)
             s[Keys.DOUBLE_TAP_SLEEP] = prefs.doubleTapToSleepEnabled
             s[Keys.SWIPE_UP_PKG] = prefs.swipeUpPackage

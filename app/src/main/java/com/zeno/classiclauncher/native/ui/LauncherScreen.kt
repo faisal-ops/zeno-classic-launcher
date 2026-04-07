@@ -17,6 +17,7 @@ import android.view.HapticFeedbackConstants
 import android.view.KeyEvent as AndroidKeyEvent
 import android.view.MotionEvent
 import android.widget.Toast
+import android.graphics.drawable.Drawable
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
@@ -70,6 +71,7 @@ import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.lazy.grid.GridCells
 import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
 import androidx.compose.foundation.lazy.grid.items
+import androidx.compose.foundation.lazy.grid.itemsIndexed
 import androidx.compose.foundation.relocation.BringIntoViewRequester
 import androidx.compose.foundation.relocation.bringIntoViewRequester
 import androidx.compose.foundation.rememberScrollState
@@ -148,6 +150,7 @@ import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.ColorFilter
+import androidx.compose.ui.graphics.toArgb
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.semantics.contentDescription
@@ -213,10 +216,12 @@ import com.zeno.classiclauncher.nlauncher.power.SleepManager
 import com.zeno.classiclauncher.nlauncher.folders.DrawerGridCell
 import com.zeno.classiclauncher.nlauncher.theme.LauncherThemePalette
 import com.zeno.classiclauncher.nlauncher.prefs.GridPreset
+import com.zeno.classiclauncher.nlauncher.prefs.GlanceWeatherUnit
 import com.zeno.classiclauncher.nlauncher.prefs.HomeGroup
 import com.zeno.classiclauncher.nlauncher.prefs.HomeGroupSide
 import com.zeno.classiclauncher.nlauncher.prefs.LauncherPrefs
 import com.zeno.classiclauncher.nlauncher.prefs.AppIconShape
+import com.zeno.classiclauncher.nlauncher.prefs.DockIconStyle
 import com.zeno.classiclauncher.nlauncher.prefs.SecondShortcutTarget
 import com.zeno.classiclauncher.nlauncher.R
 import kotlinx.coroutines.Job
@@ -227,6 +232,7 @@ import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
 import kotlin.math.hypot
+import kotlin.math.roundToInt
 import androidx.compose.ui.graphics.Shape
 
 /**
@@ -275,6 +281,18 @@ private fun appIconShapeLabel(shape: AppIconShape): String = when (shape) {
     AppIconShape.SQUIRCLE -> "Squircle"
     AppIconShape.CIRCLE -> "Circle"
     AppIconShape.SOFT_SQUARE -> "Soft square"
+}
+
+private fun dockIconStyleLabel(style: DockIconStyle): String = when (style) {
+    DockIconStyle.MONOCHROME -> "Monochrome dock style"
+    DockIconStyle.APP -> "Original app icon"
+}
+
+private fun dockMonochromeModel(iconModel: Any?, tint: Color): Any? {
+    if (iconModel !is Drawable) return iconModel
+    val copy = iconModel.constantState?.newDrawable()?.mutate() ?: iconModel.mutate()
+    copy.setTint(tint.toArgb())
+    return copy
 }
 
 internal fun isNotificationListenerEnabled(context: android.content.Context): Boolean {
@@ -326,6 +344,8 @@ private data class OpenFolderState(
     val title: String,
 )
 
+private enum class HomeNavArea { Strip, Dock }
+
 @Composable
 fun LauncherScreen(
     vm: LauncherViewModel = viewModel(),
@@ -344,20 +364,60 @@ fun LauncherScreen(
     val unreadPackages by vm.packagesWithUnread.collectAsState()
     val sortByUsage by vm.sortByUsage.collectAsState()
     val themePalette = remember(prefs.themeJson) { LauncherThemePalette.fromJson(prefs.themeJson) }
+    val visibleShortcuts = if (prefs.showShortcutApps) prefs.homeShortcutPackages else emptyList()
+    val visibleGroups = if (prefs.showHomeGroups) prefs.homeGroups else emptyList()
+    fun appIconFor(pkg: String): Any? = allApps.find { it.packageName == pkg }?.icon
+    fun keepEnvelopeForMail(pkg: String): Boolean {
+        if (pkg.isBlank()) return true
+        val p = pkg.lowercase()
+        val knownMailPkgs = setOf(
+            "com.google.android.gm",
+            "com.microsoft.office.outlook",
+            "com.blackberry.hub",
+            "com.android.email",
+            "com.yahoo.mobile.client.android.mail",
+            "com.samsung.android.email.provider",
+        )
+        return p in knownMailPkgs || p.contains("mail") || p.contains("email") || p.contains("hub")
+    }
+    fun keepEnvelopeForSecondShortcut(pkg: String): Boolean {
+        if (pkg.isBlank()) return true
+        val p = pkg.lowercase()
+        return p == "com.whatsapp" ||
+            p.contains("message") ||
+            p.contains("messaging") ||
+            p.contains("sms") ||
+            p.contains("mms")
+    }
+    val dockStartIconModel = remember(prefs.dockMailPackage, allApps) {
+        val pkg = prefs.dockMailPackage.trim()
+        if (keepEnvelopeForMail(pkg)) null else appIconFor(pkg)
+    }
+    val dockMiddleIconModel = remember(prefs.dockSecondPackage, allApps) {
+        val pkg = prefs.dockSecondPackage.trim()
+        if (keepEnvelopeForSecondShortcut(pkg)) null else appIconFor(pkg)
+    }
+    val secondDockUseWhatsappFallback = remember(prefs.dockSecondPackage, prefs.secondShortcutTarget) {
+        val pkg = prefs.dockSecondPackage.trim()
+        pkg == "com.whatsapp" || (pkg.isEmpty() && prefs.secondShortcutTarget == SecondShortcutTarget.WHATSAPP)
+    }
+    val thirdDockUseSpotifyFallback = remember(prefs.dockCameraPackage) {
+        prefs.dockCameraPackage.trim() == "com.spotify.music"
+    }
     val dockEndIconModel = remember(prefs.dockCameraPackage, allApps) {
         val pkg = prefs.dockCameraPackage.trim()
-        if (pkg.isEmpty()) null
-        else allApps.find { it.packageName == pkg }?.icon
+        if (pkg.isEmpty() || pkg == "com.spotify.music") null else appIconFor(pkg)
     }
     val classicMode = prefs.classicMode
     val pagerState = rememberPagerState(initialPage = 0, pageCount = { if (classicMode) 1 else 2 })
     var showSettings by remember { mutableStateOf(false) }
     var showPermissionsSettings by remember { mutableStateOf(false) }
-    var showDockEndAppPicker by remember { mutableStateOf(false) }
+    var showDockSlotPicker by remember { mutableStateOf<DockSlot?>(null) }
     var showGlanceSettings by remember { mutableStateOf(false) }
     var showHomeGroupsSettings by remember { mutableStateOf(false) }
     var showGestureSettings by remember { mutableStateOf(false) }
     var showAppDrawerBadges by remember { mutableStateOf(false) }
+    var showIconAppearanceSettings by remember { mutableStateOf(false) }
     var showHomeActions by remember { mutableStateOf(false) }
     /** In-app wallpaper source list (replaces jumping straight to system [Intent.ACTION_SET_WALLPAPER]). */
     var showWallpaperSourceOverlay by remember { mutableStateOf(false) }
@@ -375,6 +435,8 @@ fun LauncherScreen(
     var appMenuFromHomeShortcut by remember { mutableStateOf(false) }
     var dockFocused by remember { mutableStateOf(false) }
     var dockFocusIndex by remember { mutableStateOf(0) }
+    var homeStripFocused by remember { mutableStateOf(false) }
+    var homeStripFocusIndex by remember { mutableStateOf(0) }
 
     var permRuntime by remember { mutableStateOf(computePermRuntime(context)) }
     val lifecycleOwner = LocalLifecycleOwner.current
@@ -406,10 +468,11 @@ fun LauncherScreen(
                 appMenuFromHomeShortcut = false
                 homeShortcutMenuToken = null
             }
-            showDockEndAppPicker -> showDockEndAppPicker = false
+            showDockSlotPicker != null -> showDockSlotPicker = null
             showPermissionsSettings -> showPermissionsSettings = false
             showGestureSettings -> showGestureSettings = false
             showAppDrawerBadges -> showAppDrawerBadges = false
+            showIconAppearanceSettings -> showIconAppearanceSettings = false
             showHomeGroupsSettings -> showHomeGroupsSettings = false
             showGlanceSettings -> showGlanceSettings = false
             showSettings -> showSettings = false
@@ -472,11 +535,70 @@ fun LauncherScreen(
                             if (searchQuery.isNotEmpty()) vm.setSearchQuery("")
                             scope.launch { pagerState.animateScrollToPage(1) }
                         },
+                        homeStripCount = visibleShortcuts.size.coerceAtMost(HOME_SHORTCUT_SLOTS) + visibleGroups.size.coerceAtMost(2),
+                        onActivateHomeStripIndex = { idx ->
+                            val leftGroup = visibleGroups.firstOrNull { it.side == HomeGroupSide.LEFT }
+                            val rightGroup = visibleGroups.firstOrNull { it.side == HomeGroupSide.RIGHT }
+                            var cursor = 0
+                            var handled = false
+                            if (leftGroup != null) {
+                                if (idx == cursor) {
+                                    val members = leftGroup.packageNames.mapNotNull { pkg -> allApps.find { it.packageName == pkg } }
+                                    openHomeGroup = OpenFolderState(leftGroup.id, members, leftGroup.title)
+                                    handled = true
+                                }
+                                cursor++
+                            }
+                            val centered = visibleShortcuts.take(HOME_SHORTCUT_SLOTS)
+                            if (!handled && idx in cursor until (cursor + centered.size)) {
+                                vm.launchHomeShortcutFromToken(centered[idx - cursor])
+                                handled = true
+                            }
+                            cursor += centered.size
+                            if (!handled && rightGroup != null && idx == cursor) {
+                                val members = rightGroup.packageNames.mapNotNull { pkg -> allApps.find { it.packageName == pkg } }
+                                openHomeGroup = OpenFolderState(rightGroup.id, members, rightGroup.title)
+                            }
+                        },
+                        onHomeDockFocusChanged = { focused, idx ->
+                            dockFocused = focused
+                            dockFocusIndex = idx
+                            if (focused) {
+                                homeStripFocused = false
+                                homeStripFocusIndex = -1
+                            }
+                        },
+                        onHomeStripFocusChanged = { focused, idx ->
+                            homeStripFocused = focused
+                            homeStripFocusIndex = idx
+                            if (focused) {
+                                dockFocused = false
+                                dockFocusIndex = -1
+                            }
+                        },
+                        onHomeDockActivate = { idx ->
+                            if (classicMode) {
+                                when (idx) {
+                                    0 -> vm.launchFromDock(DockSlot.Mail)
+                                    1 -> vm.launchFromDock(DockSlot.Camera)
+                                }
+                            } else {
+                                when (idx) {
+                                    0 -> vm.launchFromDock(DockSlot.Mail)
+                                    1 -> scope.launch { pagerState.animateScrollToPage(0) }
+                                    2 -> vm.launchFromDock(DockSlot.Shortcut)
+                                    3 -> vm.launchFromDock(DockSlot.Camera)
+                                }
+                            }
+                        },
+                        classicMode = classicMode,
                         allApps = allApps,
                         hiddenPackages = prefs.hiddenPackages,
                         onLaunchApp = { pkg -> vm.launchApp(pkg) },
                         swipeUpPackage = prefs.swipeUpPackage,
                         doubleTapPackage = prefs.doubleTapPackage,
+                        hapticsEnabled = prefs.hapticsEnabled,
+                        hapticIntensity = prefs.hapticIntensity,
                         hasClock = homeClockEnabled,
                         onLongPress = { showHomeActions = true },
                         doubleTapToSleepEnabled = prefs.doubleTapToSleepEnabled,
@@ -490,6 +612,7 @@ fun LauncherScreen(
                             prefs.glanceShowBattery,
                             prefs.glanceShowCalendar,
                             prefs.glanceShowAlarm,
+                            prefs.glanceWeatherUnit,
                         ) {
                             GlanceStripPreferences(
                                 // Flashlight on-glance item is disabled (it was unreliable on devices / can be confusing to users).
@@ -497,6 +620,11 @@ fun LauncherScreen(
                                 showBattery = prefs.glanceShowBattery,
                                 showCalendar = prefs.glanceShowCalendar,
                                 showAlarm = prefs.glanceShowAlarm,
+                                calendarLookAheadDays = 1,
+                                weatherUseDeviceLocation = true,
+                                weatherLatitude = null,
+                                weatherLongitude = null,
+                                weatherUseFahrenheit = prefs.glanceWeatherUnit == GlanceWeatherUnit.FAHRENHEIT,
                             )
                         },
                     )
@@ -618,8 +746,6 @@ fun LauncherScreen(
                     onClear = { vm.setSearchQuery("") },
                 )
             } else {
-                val visibleShortcuts = if (prefs.showShortcutApps) prefs.homeShortcutPackages else emptyList()
-                val visibleGroups = if (prefs.showHomeGroups) prefs.homeGroups else emptyList()
                 if (!classicMode && pagerState.currentPage == 0 &&
                     (visibleShortcuts.isNotEmpty() || visibleGroups.isNotEmpty())
                 ) {
@@ -630,6 +756,7 @@ fun LauncherScreen(
                         unreadPackages = if (prefs.notificationBadgesEnabled) unreadPackages else emptySet(),
                         appIconShape = prefs.appIconShape,
                         themePalette = themePalette,
+                        focusedIndex = if (homeStripFocused) homeStripFocusIndex else null,
                         onLaunch = { vm.launchHomeShortcutFromToken(it) },
                         onLongPressShortcut = { token ->
                             val (pkg, _) = parseHomeShortcutToken(token)
@@ -667,18 +794,24 @@ fun LauncherScreen(
                     },
                     drawerPageCount = drawerPageCountForDock,
                     mailHasUnread = hasUnreadMail && prefs.notificationBadgesEnabled,
-                    shortcutHasUnread = !classicMode && prefs.notificationBadgesEnabled && if (prefs.secondShortcutTarget == SecondShortcutTarget.WHATSAPP) {
-                        hasUnreadWhatsApp
-                    } else {
-                        hasUnreadSms
+                    shortcutHasUnread = !classicMode && prefs.notificationBadgesEnabled && when {
+                        prefs.dockSecondPackage == "com.whatsapp" -> hasUnreadWhatsApp
+                        prefs.dockSecondPackage.isNotEmpty() -> prefs.dockSecondPackage in unreadPackages
+                        prefs.secondShortcutTarget == SecondShortcutTarget.WHATSAPP -> hasUnreadWhatsApp
+                        else -> hasUnreadSms
                     },
                     showHomeButton = !classicMode,
                     showMessagesShortcut = !classicMode,
                     selectedTint = themePalette.dockSelected,
                     themePalette = themePalette,
+                    dockStartIconModel = dockStartIconModel,
+                    dockMiddleIconModel = dockMiddleIconModel,
+                    secondDockUseWhatsappFallback = secondDockUseWhatsappFallback,
+                    thirdDockUseSpotifyFallback = thirdDockUseSpotifyFallback,
                     dockEndIconModel = dockEndIconModel,
                     appIconShape = prefs.appIconShape,
-                    focused = dockFocused && (classicMode || pagerState.currentPage == 1),
+                    dockIconStyle = prefs.dockIconStyle,
+                    focused = dockFocused && (classicMode || pagerState.currentPage == 1 || pagerState.currentPage == 0),
                     focusedIndex = dockFocusIndex,
                 )
             }
@@ -816,8 +949,8 @@ fun LauncherScreen(
         // is composed on top (permissions, glance, etc.), do not consume Back there — let BackHandler close the top overlay.
         val settingsStackedOverlayOpen =
             showPermissionsSettings || showGlanceSettings ||
-                showHomeGroupsSettings || showDockEndAppPicker || showWallpaperSourceOverlay ||
-                showGestureSettings || showAppDrawerBadges
+                showHomeGroupsSettings || showDockSlotPicker != null || showWallpaperSourceOverlay ||
+                showGestureSettings || showAppDrawerBadges || showIconAppearanceSettings
 
         AnimatedVisibility(
             visible = showSettings,
@@ -827,9 +960,22 @@ fun LauncherScreen(
             SettingsScreenOverlay(
                 stackedChildOverlayOpen = settingsStackedOverlayOpen,
                 gridPreset = prefs.gridPreset,
-                shortcut = prefs.secondShortcutTarget,
                 hapticsEnabled = prefs.hapticsEnabled,
-                dockCameraBody = remember(prefs.dockCameraPackage, allApps) {
+                dockMailBody = remember(prefs.dockMailPackage, allApps) {
+                    if (prefs.dockMailPackage.isEmpty()) {
+                        "Default app chooser for mail intents."
+                    } else {
+                        allApps.find { it.packageName == prefs.dockMailPackage }?.label ?: prefs.dockMailPackage
+                    }
+                },
+                dockSecondBody = remember(prefs.dockSecondPackage, allApps) {
+                    if (prefs.dockSecondPackage.isEmpty()) {
+                        "Default messaging app."
+                    } else {
+                        allApps.find { it.packageName == prefs.dockSecondPackage }?.label ?: prefs.dockSecondPackage
+                    }
+                },
+                dockThirdBody = remember(prefs.dockCameraPackage, allApps) {
                     if (prefs.dockCameraPackage.isEmpty()) {
                         "Default: camera app. Open to choose any installed app."
                     } else {
@@ -837,18 +983,11 @@ fun LauncherScreen(
                         label ?: prefs.dockCameraPackage
                     }
                 },
-                mailBadgeBody = remember(prefs.mailBadgePackage, allApps) {
-                    if (prefs.mailBadgePackage.isEmpty()) {
-                        "Automatic: best match among mail apps"
-                    } else {
-                        val label = allApps.find { it.packageName == prefs.mailBadgePackage }?.label
-                        "Fixed: ${label ?: prefs.mailBadgePackage}"
-                    }
-                },
                 onGridPreset = vm::setGridPreset,
-                onShortcut = vm::setSecondShortcutTarget,
-                onCycleMailBadge = vm::cycleMailBadgePackage,
-                onOpenDockEndAppPicker = { showDockEndAppPicker = true },
+                dockMailTitle = prefs.dockMailTitle,
+                dockSecondTitle = prefs.dockSecondTitle,
+                dockThirdTitle = prefs.dockThirdTitle,
+                onOpenDockSlotPicker = { showDockSlotPicker = it },
                 glanceSubtitle = remember(
                     prefs.glanceEnabled,
                     prefs.glanceShowCalendar,
@@ -916,9 +1055,28 @@ fun LauncherScreen(
                 },
                 appIconShape = prefs.appIconShape,
                 onSetAppIconShape = vm::setAppIconShape,
-                onOpenDrawerBadges = { showAppDrawerBadges = true },
+                dockIconStyle = prefs.dockIconStyle,
+                onSetDockIconStyle = vm::setDockIconStyle,
+                onOpenAppearanceSettings = { showIconAppearanceSettings = true },
                 classicMode = prefs.classicMode,
                 onToggleClassicMode = { vm.setClassicMode(!prefs.classicMode) },
+            )
+        }
+
+        if (showIconAppearanceSettings) {
+            IconAppearanceSettingsOverlay(
+                gridPreset = prefs.gridPreset,
+                appIconShape = prefs.appIconShape,
+                drawerBadgesSubtitle = remember(prefs.showIconNotifBadge) {
+                    buildList {
+                        if (prefs.showIconNotifBadge) add("Notifications")
+                    }.let { if (it.isEmpty()) "All off" else it.joinToString(", ") }
+                },
+                onGridPreset = vm::setGridPreset,
+                onSetAppIconShape = vm::setAppIconShape,
+                onOpenDrawerBadges = { showAppDrawerBadges = true },
+                themePalette = themePalette,
+                onDismiss = { showIconAppearanceSettings = false },
             )
         }
 
@@ -970,12 +1128,14 @@ fun LauncherScreen(
                 glanceShowBattery = prefs.glanceShowBattery,
                 glanceShowCalendar = prefs.glanceShowCalendar,
                 glanceShowAlarm = prefs.glanceShowAlarm,
+                glanceWeatherUnit = prefs.glanceWeatherUnit,
                 themePalette = themePalette,
                 onGlanceEnabled = vm::setGlanceEnabled,
                 onGlanceShowFlashlight = vm::setGlanceShowFlashlight,
                 onGlanceShowBattery = vm::setGlanceShowBattery,
                 onGlanceShowCalendar = vm::setGlanceShowCalendar,
                 onGlanceShowAlarm = vm::setGlanceShowAlarm,
+                onGlanceWeatherUnit = vm::setGlanceWeatherUnit,
                 onDismiss = { showGlanceSettings = false },
             )
         }
@@ -998,19 +1158,35 @@ fun LauncherScreen(
             )
         }
 
-        if (showDockEndAppPicker) {
-            DockEndAppPickerOverlay(
+        val activeDockSlot = showDockSlotPicker
+        if (activeDockSlot != null) {
+            DockShortcutPickerOverlay(
                 apps = allApps,
                 themePalette = themePalette,
+                slot = activeDockSlot,
+                currentName = when (activeDockSlot) {
+                    DockSlot.Mail -> prefs.dockMailTitle
+                    DockSlot.Shortcut -> prefs.dockSecondTitle
+                    DockSlot.Camera -> prefs.dockThirdTitle
+                },
+                onNameChange = { vm.setDockSlotTitle(activeDockSlot, it) },
                 onSelect = { pkg ->
-                    vm.setDockCameraPackage(pkg)
-                    showDockEndAppPicker = false
+                    when (activeDockSlot) {
+                        DockSlot.Mail -> vm.setDockMailPackage(pkg)
+                        DockSlot.Shortcut -> vm.setDockSecondPackage(pkg)
+                        DockSlot.Camera -> vm.setDockCameraPackage(pkg)
+                    }
+                    showDockSlotPicker = null
                 },
                 onUseDefault = {
-                    vm.setDockCameraPackage("")
-                    showDockEndAppPicker = false
+                    when (activeDockSlot) {
+                        DockSlot.Mail -> vm.setDockMailPackage("")
+                        DockSlot.Shortcut -> vm.setDockSecondPackage("")
+                        DockSlot.Camera -> vm.setDockCameraPackage("")
+                    }
+                    showDockSlotPicker = null
                 },
-                onDismiss = { showDockEndAppPicker = false },
+                onDismiss = { showDockSlotPicker = null },
             )
         }
 
@@ -1071,11 +1247,19 @@ private fun HomePage(
     focusRequester: FocusRequester,
     homeActive: Boolean,
     onOpenAppDrawer: () -> Unit,
+    homeStripCount: Int,
+    onActivateHomeStripIndex: (Int) -> Unit,
+    onHomeDockFocusChanged: (Boolean, Int) -> Unit,
+    onHomeStripFocusChanged: (Boolean, Int) -> Unit,
+    onHomeDockActivate: (Int) -> Unit,
+    classicMode: Boolean,
     allApps: List<AppEntry>,
     hiddenPackages: Set<String>,
     onLaunchApp: (String) -> Unit,
     swipeUpPackage: String,
     doubleTapPackage: String,
+    hapticsEnabled: Boolean,
+    hapticIntensity: Int,
     hasClock: Boolean,
     onLongPress: () -> Unit,
     doubleTapToSleepEnabled: Boolean,
@@ -1086,6 +1270,25 @@ private fun HomePage(
     glanceEnabled: Boolean,
     glanceStripPreferences: GlanceStripPreferences,
 ) {
+    val view = LocalView.current
+    var navArea by remember { mutableStateOf(HomeNavArea.Strip) }
+    var stripIndex by remember { mutableStateOf(0) }
+    var dockIndex by remember { mutableStateOf(0) }
+    val dockSize = if (classicMode) 2 else 4
+    LaunchedEffect(homeActive) {
+        if (!homeActive) {
+            navArea = HomeNavArea.Strip
+            onHomeDockFocusChanged(false, -1)
+            onHomeStripFocusChanged(false, -1)
+        }
+    }
+    LaunchedEffect(homeActive, navArea, stripIndex, homeStripCount) {
+        if (!homeActive || navArea != HomeNavArea.Strip || homeStripCount <= 0) {
+            onHomeStripFocusChanged(false, -1)
+        } else {
+            onHomeStripFocusChanged(true, stripIndex.coerceIn(0, homeStripCount - 1))
+        }
+    }
     val context = LocalContext.current
     var clockText by remember { mutableStateOf(java.time.LocalTime.now().withSecond(0).withNano(0).toString()) }
     // Battery optimization: only keep the "minute clock" loop running when Home is actually visible.
@@ -1124,10 +1327,92 @@ private fun HomePage(
                     // show search overlay on home instead of navigating to drawer
                     return@onPreviewKeyEvent true
                 }
-                // Any directional swipe on home opens the drawer — nothing falls through to AppDrawer.
                 when (ev.key) {
-                    Key.DirectionDown, Key.DirectionLeft, Key.DirectionRight, Key.DirectionUp -> {
-                        onOpenAppDrawer()
+                    Key.Enter, Key.NumPadEnter -> {
+                        if (navArea == HomeNavArea.Dock) onHomeDockActivate(dockIndex)
+                        else if (homeStripCount > 0) onActivateHomeStripIndex(stripIndex.coerceIn(0, homeStripCount - 1))
+                        true
+                    }
+                    Key.DirectionLeft -> {
+                        if (navArea == HomeNavArea.Dock) {
+                            val next = (dockIndex - 1).coerceAtLeast(0)
+                            if (next != dockIndex) {
+                                dockIndex = next
+                                onHomeDockFocusChanged(true, dockIndex)
+                                doNavFeedback(view, hapticsEnabled, hapticIntensity)
+                            }
+                        } else if (homeStripCount > 0) {
+                            val next = (stripIndex - 1).coerceAtLeast(0)
+                            if (next != stripIndex) {
+                                stripIndex = next
+                                doNavFeedback(view, hapticsEnabled, hapticIntensity)
+                            }
+                        }
+                        true
+                    }
+                    Key.DirectionRight -> {
+                        val longPressRight = (ev.nativeKeyEvent?.repeatCount ?: 0) > 0
+                        if (navArea == HomeNavArea.Dock) {
+                            if (dockIndex >= dockSize - 1) {
+                                if (longPressRight) {
+                                    onHomeDockFocusChanged(false, -1)
+                                    onHomeStripFocusChanged(false, -1)
+                                    doNavFeedback(view, hapticsEnabled, hapticIntensity)
+                                    onOpenAppDrawer()
+                                }
+                            } else {
+                                val next = (dockIndex + 1).coerceAtMost(dockSize - 1)
+                                if (next != dockIndex) {
+                                    dockIndex = next
+                                    onHomeDockFocusChanged(true, dockIndex)
+                                    doNavFeedback(view, hapticsEnabled, hapticIntensity)
+                                }
+                            }
+                        } else if (homeStripCount > 0) {
+                            if (stripIndex >= homeStripCount - 1) {
+                                if (longPressRight) {
+                                    onHomeStripFocusChanged(false, -1)
+                                    doNavFeedback(view, hapticsEnabled, hapticIntensity)
+                                    onOpenAppDrawer()
+                                }
+                            } else {
+                                val next = (stripIndex + 1).coerceAtMost(homeStripCount - 1)
+                                if (next != stripIndex) {
+                                    stripIndex = next
+                                    doNavFeedback(view, hapticsEnabled, hapticIntensity)
+                                }
+                            }
+                        }
+                        true
+                    }
+                    Key.DirectionDown -> {
+                        if (navArea != HomeNavArea.Dock) {
+                            navArea = HomeNavArea.Dock
+                            onHomeDockFocusChanged(true, dockIndex)
+                            doNavFeedback(view, hapticsEnabled, hapticIntensity)
+                        }
+                        true
+                    }
+                    Key.DirectionUp -> {
+                        if (navArea == HomeNavArea.Dock) {
+                            navArea = HomeNavArea.Strip
+                            if (homeStripCount > 0) {
+                                val mapped = if (dockSize <= 1) {
+                                    0
+                                } else {
+                                    ((dockIndex.toFloat() / (dockSize - 1).toFloat()) * (homeStripCount - 1))
+                                        .roundToInt()
+                                        .coerceIn(0, homeStripCount - 1)
+                                }
+                                stripIndex = mapped
+                            }
+                            onHomeDockFocusChanged(false, -1)
+                            doNavFeedback(view, hapticsEnabled, hapticIntensity)
+                        } else {
+                            onHomeStripFocusChanged(false, -1)
+                            doNavFeedback(view, hapticsEnabled, hapticIntensity)
+                            onOpenAppDrawer()
+                        }
                         true
                     }
                     else -> false
@@ -2729,6 +3014,12 @@ private fun HomeGroupFolderOverlay(
 ) {
     var renameOpen by remember { mutableStateOf(false) }
     var renameText by remember(groupTitle) { mutableStateOf(groupTitle) }
+    var focusedIndex by remember(members) { mutableStateOf(0) }
+    val gridFocusRequester = remember { FocusRequester() }
+    LaunchedEffect(members.size) {
+        focusedIndex = focusedIndex.coerceIn(0, (members.size - 1).coerceAtLeast(0))
+    }
+    LaunchedEffect(Unit) { gridFocusRequester.requestFocus() }
     androidx.compose.runtime.LaunchedEffect(groupTitle) {
         renameText = groupTitle
     }
@@ -2768,15 +3059,6 @@ private fun HomeGroupFolderOverlay(
                         modifier = Modifier.size(20.dp),
                     )
                 }
-                Spacer(Modifier.width(4.dp))
-                IconButton(onClick = onDeleteGroup) {
-                    Icon(
-                        imageVector = Icons.Outlined.Close,
-                        contentDescription = "Delete group",
-                        tint = Color(0xFFFF8A80),
-                        modifier = Modifier.size(20.dp),
-                    )
-                }
             }
             if (members.isEmpty()) {
                 Spacer(Modifier.height(8.dp))
@@ -2795,29 +3077,77 @@ private fun HomeGroupFolderOverlay(
                     columns = GridCells.Fixed(4),
                     modifier = Modifier
                         .fillMaxWidth()
-                        .heightIn(max = 400.dp),
+                        .heightIn(max = 400.dp)
+                        .focusRequester(gridFocusRequester)
+                        .focusable()
+                        .onPreviewKeyEvent { ev ->
+                            if (ev.type != KeyEventType.KeyDown || members.isEmpty()) return@onPreviewKeyEvent false
+                            val cols = 4
+                            val rows = ((members.size - 1) / cols) + 1
+                            val row = focusedIndex / cols
+                            val col = focusedIndex % cols
+                            when (ev.key) {
+                                Key.DirectionLeft -> {
+                                    focusedIndex = (focusedIndex - 1).coerceAtLeast(0)
+                                    true
+                                }
+                                Key.DirectionRight -> {
+                                    focusedIndex = (focusedIndex + 1).coerceAtMost(members.lastIndex)
+                                    true
+                                }
+                                Key.DirectionUp -> {
+                                    focusedIndex = (focusedIndex - cols).coerceAtLeast(0)
+                                    true
+                                }
+                                Key.DirectionDown -> {
+                                    val targetRow = (row + 1).coerceAtMost(rows - 1)
+                                    focusedIndex = (targetRow * cols + col).coerceAtMost(members.lastIndex)
+                                    true
+                                }
+                                Key.Enter, Key.NumPadEnter -> {
+                                    members.getOrNull(focusedIndex)?.let { onLaunchApp(it.packageName) }
+                                    true
+                                }
+                                else -> false
+                            }
+                        },
                     horizontalArrangement = Arrangement.spacedBy(8.dp),
                     verticalArrangement = Arrangement.spacedBy(16.dp),
                     contentPadding = PaddingValues(vertical = 4.dp),
                 ) {
-                    items(members, key = { it.packageName }) { app ->
+                    itemsIndexed(members, key = { _, it -> it.packageName }) { index, app ->
                         val cardRadius = themePalette.appCardCornerRadiusDp.dp
                         val cardShape = RoundedCornerShape(cardRadius)
+                        val isFocused = index == focusedIndex
                         Column(
                             horizontalAlignment = Alignment.CenterHorizontally,
                             modifier = Modifier
                                 .fillMaxWidth()
                                 .clip(cardShape)
-                                .background(brush = Brush.verticalGradient(listOf(themePalette.appCardTop, themePalette.appCardBottom)))
+                                .background(
+                                    brush = if (isFocused) {
+                                        Brush.verticalGradient(
+                                            listOf(
+                                                themePalette.dockSelected,
+                                                themePalette.dockSelected,
+                                            ),
+                                        )
+                                    } else {
+                                        Brush.verticalGradient(listOf(themePalette.appCardTop, themePalette.appCardBottom))
+                                    },
+                                )
                                 .border(
-                                    width = 0.8.dp,
-                                    color = Color(0x332F3B4F),
+                                    width = if (isFocused) 1.dp else 0.8.dp,
+                                    color = if (isFocused) Color(0x553D4B60) else Color(0x332F3B4F),
                                     shape = cardShape,
                                 )
                                 .padding(top = 8.dp, start = 4.dp, end = 4.dp, bottom = 6.dp)
                                 .pointerInput(app.packageName) {
                                     detectTapGestures(
-                                        onTap = { onLaunchApp(app.packageName) },
+                                        onTap = {
+                                            focusedIndex = index
+                                            onLaunchApp(app.packageName)
+                                        },
                                         onLongPress = { onRemoveFromGroup(app.packageName) },
                                     )
                                 },
@@ -3171,6 +3501,7 @@ private fun HomeShortcutStrip(
     unreadPackages: Set<String>,
     appIconShape: AppIconShape,
     themePalette: LauncherThemePalette,
+    focusedIndex: Int?,
     onLaunch: (String) -> Unit,
     onLongPressShortcut: (String) -> Unit,
     onOpenHomeGroup: (HomeGroup) -> Unit,
@@ -3181,12 +3512,22 @@ private fun HomeShortcutStrip(
     val rightGroup = homeGroups.firstOrNull { it.side == HomeGroupSide.RIGHT }
 
     @Composable
-    fun ShortcutTile(token: String) {
+    fun ShortcutTile(token: String, selected: Boolean) {
         val (pkg, _) = parseHomeShortcutToken(token)
         val entry = allApps.find { it.packageName == pkg }
         val label =
             entry?.label?.takeIf { it.isNotBlank() } ?: pkg.substringAfterLast('.').ifBlank { pkg }
-        Column(horizontalAlignment = Alignment.CenterHorizontally) {
+        val focusShape = RoundedCornerShape(10.dp)
+        Column(
+            horizontalAlignment = Alignment.CenterHorizontally,
+            modifier = Modifier
+                .clip(focusShape)
+                .background(
+                    if (selected) themePalette.dockSelected
+                    else Color.Transparent,
+                )
+                .padding(horizontal = 4.dp, vertical = 3.dp),
+        ) {
             Box(
                 modifier = Modifier
                     .size(HOME_SHORTCUT_ICON_DP)
@@ -3223,47 +3564,70 @@ private fun HomeShortcutStrip(
     }
 
     @Composable
-    fun GroupTile(g: HomeGroup) {
+    fun GroupTile(g: HomeGroup, selected: Boolean, iconOffsetX: androidx.compose.ui.unit.Dp = 0.dp) {
         val members = g.packageNames.mapNotNull { pkg -> allApps.find { it.packageName == pkg } }
-        Column(horizontalAlignment = Alignment.CenterHorizontally) {
-            HomeGroupStripIcon(
-                title = g.title,
-                members = members,
-                appIconShape = appIconShape,
-                hasUnreadBadge = g.packageNames.any { it in unreadPackages },
-                onClick = { onOpenHomeGroup(g) },
-                onLongPress = { onOpenHomeGroup(g) },
-            )
+        val focusShape = RoundedCornerShape(10.dp)
+        Column(
+            horizontalAlignment = Alignment.CenterHorizontally,
+            modifier = Modifier
+                .clip(focusShape)
+                .background(
+                    if (selected) themePalette.dockSelected
+                    else Color.Transparent,
+                )
+                .padding(horizontal = 4.dp, vertical = 3.dp),
+        ) {
+            Box(
+                modifier = Modifier
+                    .size(HOME_SHORTCUT_ICON_DP)
+                    .offset(x = iconOffsetX),
+                contentAlignment = Alignment.Center,
+            ) {
+                HomeGroupStripIcon(
+                    title = g.title,
+                    members = members,
+                    appIconShape = appIconShape,
+                    hasUnreadBadge = g.packageNames.any { it in unreadPackages },
+                    onClick = { onOpenHomeGroup(g) },
+                    onLongPress = { onOpenHomeGroup(g) },
+                )
+            }
             Spacer(Modifier.height(HOME_STRIP_ICON_LABEL_GAP))
-            HomeStripItemLabel(g.title)
+            Box(
+                modifier = Modifier
+                    .offset(x = -iconOffsetX)
+                    .widthIn(max = 88.dp),
+                contentAlignment = Alignment.Center,
+            ) {
+                HomeStripItemLabel(g.title)
+            }
         }
     }
 
     // Left group at screen-left, right group at screen-right, three shortcuts centered between them.
-    Row(
+    Box(
         modifier = Modifier
             .fillMaxWidth()
-            .padding(horizontal = 12.dp, vertical = 6.dp),
-        verticalAlignment = Alignment.Bottom,
+            .padding(horizontal = 0.dp, vertical = 6.dp),
     ) {
         Box(
-            modifier = Modifier.weight(1f),
-            contentAlignment = Alignment.CenterStart,
+            modifier = Modifier
+                .align(Alignment.BottomStart)
+                .padding(start = 2.dp),
         ) {
-            leftGroup?.let { GroupTile(it) }
+            leftGroup?.let { GroupTile(it, selected = focusedIndex == 0, iconOffsetX = 2.dp) }
         }
         Row(
-            modifier = Modifier.padding(horizontal = 8.dp),
+            modifier = Modifier.align(Alignment.BottomCenter),
             horizontalArrangement = Arrangement.spacedBy(HOME_STRIP_SHORTCUT_GAP),
             verticalAlignment = Alignment.Bottom,
         ) {
-            pkgs.forEach { token -> ShortcutTile(token) }
+            val base = if (leftGroup != null) 1 else 0
+            pkgs.forEachIndexed { i, token -> ShortcutTile(token, selected = focusedIndex == (base + i)) }
         }
-        Box(
-            modifier = Modifier.weight(1f),
-            contentAlignment = Alignment.CenterEnd,
-        ) {
-            rightGroup?.let { GroupTile(it) }
+        Box(modifier = Modifier.align(Alignment.BottomEnd)) {
+            val rightIndex = (if (leftGroup != null) 1 else 0) + pkgs.size
+            rightGroup?.let { GroupTile(it, selected = focusedIndex == rightIndex) }
         }
     }
 }
@@ -3341,9 +3705,14 @@ private fun Dock(
     showHomeButton: Boolean = true,
     /** When false, the Messages/WhatsApp dock icon is omitted (drawer-only launcher). */
     showMessagesShortcut: Boolean = true,
+    dockStartIconModel: Any?,
+    dockMiddleIconModel: Any?,
+    secondDockUseWhatsappFallback: Boolean,
+    thirdDockUseSpotifyFallback: Boolean,
     /** When non-null, show this drawable in the dock end slot (same as app grid). Null = default camera asset. */
     dockEndIconModel: Any?,
     appIconShape: AppIconShape,
+    dockIconStyle: DockIconStyle,
     selectedTint: Color = Color(0x664FC3F7),
     themePalette: LauncherThemePalette,
     /** True when DPAD focus is inside the dock (from AppDrawer key handler). */
@@ -3366,6 +3735,7 @@ private fun Dock(
     val density = LocalDensity.current
     val navBarHeight = themePalette.navBarHeight()
     val navBarSpacing = themePalette.navBarSpacing()
+    val navMidSpacing = navBarSpacing * 0.6f
     val navIconSize = themePalette.navIconSize()
     val dockIconTint = themePalette.dockIconTint
     var scrubbing by remember { mutableStateOf(false) }
@@ -3403,16 +3773,32 @@ private fun Dock(
                 .zIndex(1f),
             verticalAlignment = Alignment.CenterVertically
         ) {
-            DockPng(
-                resId = R.drawable.ic_dock_mail,
-                onClick = onMail,
-                hasUnread = mailHasUnread,
-                buttonSize = 68.dp,
-                iconSize = 52.dp,
-                selected = focused && focusedIndex == 0,
-                selectedTint = selectedTint,
-                iconTint = dockIconTint,
-            )
+            if (dockStartIconModel == null) {
+                DockPng(
+                    resId = R.drawable.ic_dock_mail,
+                    onClick = onMail,
+                    hasUnread = mailHasUnread,
+                    buttonSize = 68.dp,
+                    iconSize = 48.dp,
+                    selected = focused && focusedIndex == 0,
+                    selectedTint = selectedTint,
+                    iconTint = dockIconTint,
+                )
+            } else {
+                DockEndSlot(
+                    iconModel = dockStartIconModel,
+                    fallbackIcon = Icons.Rounded.MailOutline,
+                    appIconShape = appIconShape,
+                    onClick = onMail,
+                    hasUnread = mailHasUnread,
+                    buttonSize = 68.dp,
+                    iconSize = 52.dp,
+                    selected = focused && focusedIndex == 0,
+                    selectedTint = selectedTint,
+                    iconTint = dockIconTint,
+                    forceMonochrome = false,
+                )
+            }
             Spacer(Modifier.weight(1f))
 
             if (showHomeButton) {
@@ -3425,7 +3811,7 @@ private fun Dock(
                     selectedTint = selectedTint,
                     iconTint = dockIconTint,
                 )
-                Spacer(Modifier.width(navBarSpacing))
+                Spacer(Modifier.width(navMidSpacing))
             }
             Box(
                 modifier = Modifier
@@ -3485,9 +3871,13 @@ private fun Dock(
                 }
             }
             if (showMessagesShortcut) {
-                Spacer(Modifier.width(navBarSpacing))
-                DockIcon(
-                    icon = Icons.Outlined.MailOutline,
+                Spacer(Modifier.width(navMidSpacing))
+                DockEndSlot(
+                    iconModel = dockMiddleIconModel,
+                    fallbackIcon = if (secondDockUseWhatsappFallback) Icons.Rounded.Apps else Icons.Outlined.MailOutline,
+                    fallbackResId = if (secondDockUseWhatsappFallback) R.drawable.ic_dock_whatsapp else null,
+                    fallbackScale = if (secondDockUseWhatsappFallback) 0.76f else 0.84f,
+                    appIconShape = appIconShape,
                     onClick = onShortcut,
                     hasUnread = shortcutHasUnread,
                     buttonSize = 56.dp,
@@ -3495,6 +3885,7 @@ private fun Dock(
                     selected = focused && focusedIndex == shortcutFocusIdx,
                     selectedTint = selectedTint,
                     iconTint = dockIconTint,
+                    forceMonochrome = false,
                 )
             }
 
@@ -3502,6 +3893,9 @@ private fun Dock(
             // Third shortcut: same 68×52.dp icon box as mail dock; padding/scale so app icons match the envelope.
             DockEndSlot(
                 iconModel = dockEndIconModel,
+                fallbackIcon = Icons.Rounded.PhotoCamera,
+                fallbackResId = if (thirdDockUseSpotifyFallback) R.drawable.ic_dock_spotify else null,
+                fallbackScale = 0.84f,
                 appIconShape = appIconShape,
                 onClick = onCamera,
                 buttonSize = 68.dp,
@@ -3509,6 +3903,7 @@ private fun Dock(
                 selected = focused && focusedIndex == cameraFocusIdx,
                 selectedTint = selectedTint,
                 iconTint = dockIconTint,
+                forceMonochrome = false,
             )
         }
 
@@ -3687,6 +4082,9 @@ private fun Dots(
 @Composable
 private fun DockEndSlot(
     iconModel: Any?,
+    fallbackIcon: ImageVector,
+    fallbackResId: Int? = null,
+    fallbackScale: Float = 0.84f,
     appIconShape: AppIconShape,
     onClick: () -> Unit,
     buttonSize: androidx.compose.ui.unit.Dp = 62.dp,
@@ -3695,27 +4093,41 @@ private fun DockEndSlot(
     selected: Boolean = false,
     selectedTint: Color = Color(0x664FC3F7),
     iconTint: Color = Color(0xFFE6E6E6),
+    forceMonochrome: Boolean = false,
+    hasUnread: Boolean = false,
 ) {
-    Box(modifier = modifier) {
-        TextButton(
-            onClick = onClick,
-            contentPadding = PaddingValues(0.dp),
-            modifier = Modifier
-                .size(buttonSize)
-                .clip(androidx.compose.foundation.shape.RoundedCornerShape(8.dp))
-                .background(if (selected) selectedTint else Color.Transparent)
-        ) {
-            if (iconModel != null) {
+    val resolvedIconModel = remember(iconModel, forceMonochrome, iconTint) {
+        if (forceMonochrome) dockMonochromeModel(iconModel, iconTint) else iconModel
+    }
+    TextButton(
+        onClick = onClick,
+        contentPadding = PaddingValues(0.dp),
+        modifier = modifier
+            .size(buttonSize)
+            .clip(androidx.compose.foundation.shape.RoundedCornerShape(8.dp))
+            .background(if (selected) selectedTint else Color.Transparent),
+    ) {
+        AppIconWithBadge(hasUnread = hasUnread) {
+            if (resolvedIconModel != null) {
                 AsyncImage(
-                    model = iconModel,
+                    model = resolvedIconModel,
                     contentDescription = null,
                     contentScale = ContentScale.Fit,
-                    modifier = Modifier.size(iconSize).clip(iconMaskShape(appIconShape)),
+                    modifier = Modifier
+                        .size(if (forceMonochrome) iconSize * fallbackScale else iconSize)
+                        .clip(iconMaskShape(appIconShape)),
+                )
+            } else if (fallbackResId != null) {
+                val fallbackResSize = iconSize * fallbackScale
+                Icon(
+                    painter = androidx.compose.ui.res.painterResource(fallbackResId),
+                    contentDescription = null,
+                    tint = iconTint,
+                    modifier = Modifier.size(fallbackResSize),
                 )
             } else {
-                // Monochrome outline (same idea as DockIcon / Home): tint only, no bitmap artwork.
                 Icon(
-                    Icons.Rounded.PhotoCamera,
+                    fallbackIcon,
                     contentDescription = null,
                     tint = iconTint,
                     modifier = Modifier.size(iconSize),
@@ -3726,14 +4138,18 @@ private fun DockEndSlot(
 }
 
 @Composable
-private fun DockEndAppPickerOverlay(
+private fun DockShortcutPickerOverlay(
     apps: List<AppEntry>,
     themePalette: LauncherThemePalette,
+    slot: DockSlot,
+    currentName: String,
+    onNameChange: (String) -> Unit,
     onSelect: (String) -> Unit,
     onUseDefault: () -> Unit,
     onDismiss: () -> Unit,
 ) {
     var query by remember { mutableStateOf("") }
+    var name by remember(slot, currentName) { mutableStateOf(currentName) }
     val filtered = remember(apps, query) {
         val q = query.trim().lowercase()
         apps.filter {
@@ -3768,7 +4184,11 @@ private fun DockEndAppPickerOverlay(
                     )
                 }
                 Text(
-                    "Third shortcut",
+                    when (slot) {
+                        DockSlot.Mail -> "Mail dock shortcut"
+                        DockSlot.Shortcut -> "Second dock shortcut"
+                        DockSlot.Camera -> "Third dock shortcut"
+                    },
                     style = MaterialTheme.typography.titleLarge.copy(
                         color = themePalette.settingsMenuTitle,
                         fontWeight = FontWeight.Medium,
@@ -3779,8 +4199,33 @@ private fun DockEndAppPickerOverlay(
                 onClick = onUseDefault,
                 modifier = Modifier.padding(horizontal = 16.dp),
             ) {
-                Text("Use default (camera)", color = Color(0xFF84D5F6))
+                Text(
+                    when (slot) {
+                        DockSlot.Mail -> "Use default (mail app)"
+                        DockSlot.Shortcut -> "Use default (messages app)"
+                        DockSlot.Camera -> "Use default (camera app)"
+                    },
+                    color = Color(0xFF84D5F6),
+                )
             }
+            OutlinedTextField(
+                value = name,
+                onValueChange = {
+                    name = it
+                    onNameChange(it)
+                },
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(horizontal = 16.dp, vertical = 8.dp),
+                placeholder = { Text("Shortcut label", color = themePalette.settingsMenuBody) },
+                singleLine = true,
+                colors = TextFieldDefaults.colors(
+                    focusedTextColor = themePalette.settingsMenuTitle,
+                    unfocusedTextColor = themePalette.settingsMenuTitle,
+                    focusedContainerColor = Color(0xFF1E2430),
+                    unfocusedContainerColor = Color(0xFF1E2430),
+                ),
+            )
             OutlinedTextField(
                 value = query,
                 onValueChange = { query = it },
@@ -4241,12 +4686,14 @@ private fun GlanceSettingsOverlay(
     glanceShowBattery: Boolean,
     glanceShowCalendar: Boolean,
     glanceShowAlarm: Boolean,
+    glanceWeatherUnit: GlanceWeatherUnit,
     themePalette: LauncherThemePalette,
     onGlanceEnabled: (Boolean) -> Unit,
     onGlanceShowFlashlight: (Boolean) -> Unit,
     onGlanceShowBattery: (Boolean) -> Unit,
     onGlanceShowCalendar: (Boolean) -> Unit,
     onGlanceShowAlarm: (Boolean) -> Unit,
+    onGlanceWeatherUnit: (GlanceWeatherUnit) -> Unit,
     onDismiss: () -> Unit,
 ) {
     val subtitleColor = Color(0xFF8E95A3)
@@ -4354,6 +4801,55 @@ private fun GlanceSettingsOverlay(
                     checked = glanceEnabled,
                     onCheckedChange = onGlanceEnabled,
                 )
+                Surface(shape = cardShape, color = cardBg, modifier = Modifier.fillMaxWidth()) {
+                    Column(modifier = Modifier.padding(horizontal = 16.dp, vertical = 12.dp)) {
+                        Text(
+                            "Weather unit",
+                            style = MaterialTheme.typography.bodyLarge.copy(
+                                color = themePalette.settingsMenuTitle,
+                                fontWeight = FontWeight.Medium,
+                            ),
+                        )
+                        Row(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(top = 8.dp)
+                                .clip(RoundedCornerShape(10.dp))
+                                .background(Color(0xFF141A23))
+                                .padding(4.dp),
+                            horizontalArrangement = Arrangement.spacedBy(6.dp),
+                        ) {
+                            Box(
+                                modifier = Modifier
+                                    .weight(1f)
+                                    .clip(RoundedCornerShape(8.dp))
+                                    .background(if (glanceWeatherUnit == GlanceWeatherUnit.CELSIUS) Color(0xFF4A90D9) else Color.Transparent)
+                                    .clickable(enabled = glanceEnabled) { onGlanceWeatherUnit(GlanceWeatherUnit.CELSIUS) }
+                                    .padding(vertical = 8.dp),
+                                contentAlignment = Alignment.Center,
+                            ) {
+                                Text(
+                                    text = "Celsius",
+                                    color = if (glanceWeatherUnit == GlanceWeatherUnit.CELSIUS) Color.White else subtitleColor,
+                                )
+                            }
+                            Box(
+                                modifier = Modifier
+                                    .weight(1f)
+                                    .clip(RoundedCornerShape(8.dp))
+                                    .background(if (glanceWeatherUnit == GlanceWeatherUnit.FAHRENHEIT) Color(0xFF4A90D9) else Color.Transparent)
+                                    .clickable(enabled = glanceEnabled) { onGlanceWeatherUnit(GlanceWeatherUnit.FAHRENHEIT) }
+                                    .padding(vertical = 8.dp),
+                                contentAlignment = Alignment.Center,
+                            ) {
+                                Text(
+                                    text = "Fahrenheit",
+                                    color = if (glanceWeatherUnit == GlanceWeatherUnit.FAHRENHEIT) Color.White else subtitleColor,
+                                )
+                            }
+                        }
+                    }
+                }
                 ToggleCard(
                     title = "Calendar on glance",
                     subtitle = "Upcoming events when permission is granted",
@@ -4381,22 +4877,124 @@ private fun GlanceSettingsOverlay(
 }
 
 @Composable
+private fun IconAppearanceSettingsOverlay(
+    gridPreset: GridPreset,
+    appIconShape: AppIconShape,
+    drawerBadgesSubtitle: String,
+    onGridPreset: (GridPreset) -> Unit,
+    onSetAppIconShape: (AppIconShape) -> Unit,
+    onOpenDrawerBadges: () -> Unit,
+    themePalette: LauncherThemePalette,
+    onDismiss: () -> Unit,
+) {
+    val subtitleColor = Color(0xFF8E95A3)
+    val cardBg = Color(0xFF1E2430)
+    val cardShape = RoundedCornerShape(12.dp)
+    Surface(
+        modifier = Modifier
+            .fillMaxSize()
+            .zIndex(403f),
+        color = themePalette.settingsBg,
+    ) {
+        Column(
+            modifier = Modifier
+                .fillMaxSize()
+                .statusBarsPadding()
+                .navigationBarsPadding(),
+        ) {
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(start = 4.dp, end = 16.dp, top = 8.dp, bottom = 4.dp),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                IconButton(onClick = onDismiss) {
+                    Icon(
+                        Icons.AutoMirrored.Rounded.ArrowBack,
+                        contentDescription = "Back",
+                        tint = themePalette.settingsMenuTitle,
+                        modifier = Modifier.size(26.dp),
+                    )
+                }
+                Text(
+                    "App icons",
+                    style = MaterialTheme.typography.headlineMedium.copy(
+                        color = themePalette.settingsMenuTitle,
+                        fontWeight = FontWeight.Normal,
+                    ),
+                )
+            }
+            Column(
+                modifier = Modifier
+                    .weight(1f)
+                    .fillMaxWidth()
+                    .verticalScroll(rememberScrollState())
+                    .padding(horizontal = 16.dp)
+                    .padding(bottom = 24.dp),
+                verticalArrangement = Arrangement.spacedBy(12.dp),
+            ) {
+                SettingsCategoryCard(cardBg = cardBg, cardShape = cardShape, selected = false) {
+                    SettingsRow(
+                        icon = Icons.Rounded.GridView,
+                        title = "App grid size",
+                        subtitle = "${gridPreset.rows} × ${gridPreset.cols}",
+                        selected = false,
+                        themePalette = themePalette,
+                        subtitleColor = subtitleColor,
+                        onClick = {
+                            val all = GridPreset.entries
+                            onGridPreset(all[(all.indexOf(gridPreset) + 1) % all.size])
+                        },
+                    )
+                }
+                SettingsCategoryCard(cardBg = cardBg, cardShape = cardShape, selected = false) {
+                    SettingsRow(
+                        icon = Icons.Rounded.Apps,
+                        title = "App icon shape",
+                        subtitle = appIconShapeLabel(appIconShape),
+                        selected = false,
+                        themePalette = themePalette,
+                        subtitleColor = subtitleColor,
+                        onClick = {
+                            val all = AppIconShape.entries
+                            onSetAppIconShape(all[(all.indexOf(appIconShape) + 1) % all.size])
+                        },
+                    )
+                }
+                SettingsCategoryCard(cardBg = cardBg, cardShape = cardShape, selected = false) {
+                    SettingsRow(
+                        icon = Icons.Outlined.QueryStats,
+                        title = "App icon badges",
+                        subtitle = drawerBadgesSubtitle,
+                        selected = false,
+                        themePalette = themePalette,
+                        subtitleColor = subtitleColor,
+                        onClick = onOpenDrawerBadges,
+                    )
+                }
+            }
+        }
+    }
+}
+
+@Composable
 private fun SettingsScreenOverlay(
     /** When true, a full-screen settings sub-overlay is shown above this list — Back must not dismiss settings. */
     stackedChildOverlayOpen: Boolean,
     gridPreset: GridPreset,
-    shortcut: SecondShortcutTarget,
-    dockCameraBody: String,
-    mailBadgeBody: String,
+    dockMailTitle: String,
+    dockSecondTitle: String,
+    dockThirdTitle: String,
+    dockMailBody: String,
+    dockSecondBody: String,
+    dockThirdBody: String,
     glanceSubtitle: String,
     homeGroupsSubtitle: String,
     hapticsEnabled: Boolean,
     hapticIntensity: Int,
     onSetHapticIntensity: (Int) -> Unit,
     onGridPreset: (GridPreset) -> Unit,
-    onShortcut: (SecondShortcutTarget) -> Unit,
-    onCycleMailBadge: () -> Unit,
-    onOpenDockEndAppPicker: () -> Unit,
+    onOpenDockSlotPicker: (DockSlot) -> Unit,
     onOpenGlanceSettings: () -> Unit,
     onOpenHomeGroupsSettings: () -> Unit,
     permissionsSubtitle: String,
@@ -4410,11 +5008,13 @@ private fun SettingsScreenOverlay(
     gestureSubtitle: String,
     onOpenGestureSettings: () -> Unit,
     drawerBadgesSubtitle: String,
-    onOpenDrawerBadges: () -> Unit,
     classicMode: Boolean,
     onToggleClassicMode: () -> Unit,
     appIconShape: AppIconShape,
     onSetAppIconShape: (AppIconShape) -> Unit,
+    dockIconStyle: DockIconStyle,
+    onSetDockIconStyle: (DockIconStyle) -> Unit,
+    onOpenAppearanceSettings: () -> Unit,
     themePalette: LauncherThemePalette,
     onDismiss: () -> Unit,
 ) {
@@ -4422,7 +5022,7 @@ private fun SettingsScreenOverlay(
     val view = LocalView.current
     val focusRequester = remember { FocusRequester() }
     var selectedIndex by remember { mutableStateOf(0) }
-    val itemCount = 16
+    val itemCount = 14
 
     val createBackupDocument = rememberLauncherForActivityResult(
         ActivityResultContracts.CreateDocument("application/json")
@@ -4459,44 +5059,27 @@ private fun SettingsScreenOverlay(
     fun activate(index: Int) {
         when (index) {
             // HOME SCREEN
-            0 -> {
-                val all = GridPreset.entries
-                val next = all[(all.indexOf(gridPreset) + 1) % all.size]
-                onGridPreset(next)
-            }
+            0 -> onOpenAppearanceSettings()
             1 -> onToggleClassicMode()
             2 -> onOpenHomeGroupsSettings()
             3 -> onOpenGestureSettings()
-            4 -> onOpenDrawerBadges()
             // DISPLAY
-            5 -> onOpenGlanceSettings()
-            6 -> onSetWallpaper()
-            7 -> onResetTheme()
-            8 -> {
-                val all = AppIconShape.entries
-                val next = all[(all.indexOf(appIconShape) + 1) % all.size]
-                onSetAppIconShape(next)
-            }
+            4 -> onOpenGlanceSettings()
+            5 -> onSetWallpaper()
+            6 -> onResetTheme()
             // DOCK
-            9 -> onCycleMailBadge()
-            10 -> {
-                val next = if (shortcut == SecondShortcutTarget.MESSAGES) {
-                    SecondShortcutTarget.WHATSAPP
-                } else {
-                    SecondShortcutTarget.MESSAGES
-                }
-                onShortcut(next)
-            }
-            11 -> onOpenDockEndAppPicker()
+            7 -> onOpenDockSlotPicker(DockSlot.Mail)
+            8 -> onOpenDockSlotPicker(DockSlot.Shortcut)
+            9 -> onOpenDockSlotPicker(DockSlot.Camera)
             // SYSTEM
-            12 -> onToggleHaptics()
-            13 -> onOpenPermissionsSettings()
+            10 -> onToggleHaptics()
+            11 -> onOpenPermissionsSettings()
             // BACKUP
-            14 -> {
+            12 -> {
                 val name = "classiclauncher_backup_" + SimpleDateFormat("yyyyMMdd_HHmmss", Locale.US).format(Date()) + ".json"
                 createBackupDocument.launch(name)
             }
-            15 -> openBackupFromDownloads.launch(SettingsDownloads.openBackupJsonPickerIntent())
+            13 -> openBackupFromDownloads.launch(SettingsDownloads.openBackupJsonPickerIntent())
         }
         doNavFeedback(view, hapticsEnabled, hapticIntensity)
     }
@@ -4620,9 +5203,9 @@ private fun SettingsScreenOverlay(
                 Column(Modifier.bringIntoViewRequester(rowBringers[0])) {
                     SettingsCategoryCard(cardBg = cardBg, cardShape = cardShape, selected = selectedIndex == 0) {
                         SettingsRow(
-                            icon = Icons.Rounded.GridView,
-                            title = "App grid size",
-                            subtitle = "${gridPreset.rows} \u00D7 ${gridPreset.cols}",
+                            icon = Icons.Rounded.Apps,
+                            title = "App icons",
+                            subtitle = "Grid size, icon shape, badges",
                             selected = selectedIndex == 0,
                             themePalette = themePalette,
                             subtitleColor = subtitleColor,
@@ -4677,20 +5260,6 @@ private fun SettingsScreenOverlay(
                     }
                 }
                 Spacer(Modifier.height(8.dp))
-                Column(Modifier.bringIntoViewRequester(rowBringers[4])) {
-                    SettingsCategoryCard(cardBg = cardBg, cardShape = cardShape, selected = selectedIndex == 4) {
-                        SettingsRow(
-                            icon = Icons.Outlined.QueryStats,
-                            title = "App icon badges",
-                            subtitle = drawerBadgesSubtitle,
-                            selected = selectedIndex == 4,
-                            themePalette = themePalette,
-                            subtitleColor = subtitleColor,
-                            onClick = { activate(4) },
-                        )
-                    }
-                }
-
                 Spacer(Modifier.height(12.dp))
                 HorizontalDivider(color = Color(0xFF2A3040), thickness = 0.5.dp)
                 Spacer(Modifier.height(12.dp))
@@ -4702,12 +5271,26 @@ private fun SettingsScreenOverlay(
                     color = subtitleColor,
                     modifier = Modifier.padding(start = 4.dp, bottom = 6.dp),
                 )
-                Column(Modifier.bringIntoViewRequester(rowBringers[5])) {
-                    SettingsCategoryCard(cardBg = cardBg, cardShape = cardShape, selected = selectedIndex == 5) {
+                Column(Modifier.bringIntoViewRequester(rowBringers[4])) {
+                    SettingsCategoryCard(cardBg = cardBg, cardShape = cardShape, selected = selectedIndex == 4) {
                         SettingsRow(
                             icon = Icons.Rounded.WbSunny,
                             title = "Glance",
                             subtitle = glanceSubtitle,
+                            selected = selectedIndex == 4,
+                            themePalette = themePalette,
+                            subtitleColor = subtitleColor,
+                            onClick = { activate(4) },
+                        )
+                    }
+                }
+                Spacer(Modifier.height(8.dp))
+                Column(Modifier.bringIntoViewRequester(rowBringers[5])) {
+                    SettingsCategoryCard(cardBg = cardBg, cardShape = cardShape, selected = selectedIndex == 5) {
+                        SettingsRow(
+                            icon = Icons.Rounded.Wallpaper,
+                            title = "Set wallpaper",
+                            subtitle = "Zeno, Gallery, Photos, or system sources",
                             selected = selectedIndex == 5,
                             themePalette = themePalette,
                             subtitleColor = subtitleColor,
@@ -4719,9 +5302,9 @@ private fun SettingsScreenOverlay(
                 Column(Modifier.bringIntoViewRequester(rowBringers[6])) {
                     SettingsCategoryCard(cardBg = cardBg, cardShape = cardShape, selected = selectedIndex == 6) {
                         SettingsRow(
-                            icon = Icons.Rounded.Wallpaper,
-                            title = "Set wallpaper",
-                            subtitle = "Zeno, Gallery, Photos, or system sources",
+                            icon = Icons.Rounded.Palette,
+                            title = "Reset theme",
+                            subtitle = "Restore default launcher colours",
                             selected = selectedIndex == 6,
                             themePalette = themePalette,
                             subtitleColor = subtitleColor,
@@ -4730,34 +5313,6 @@ private fun SettingsScreenOverlay(
                     }
                 }
                 Spacer(Modifier.height(8.dp))
-                Column(Modifier.bringIntoViewRequester(rowBringers[7])) {
-                    SettingsCategoryCard(cardBg = cardBg, cardShape = cardShape, selected = selectedIndex == 7) {
-                        SettingsRow(
-                            icon = Icons.Rounded.Palette,
-                            title = "Reset theme",
-                            subtitle = "Restore default launcher colours",
-                            selected = selectedIndex == 7,
-                            themePalette = themePalette,
-                            subtitleColor = subtitleColor,
-                            onClick = { activate(7) },
-                        )
-                    }
-                }
-                Spacer(Modifier.height(8.dp))
-                Column(Modifier.bringIntoViewRequester(rowBringers[8])) {
-                    SettingsCategoryCard(cardBg = cardBg, cardShape = cardShape, selected = selectedIndex == 8) {
-                        SettingsRow(
-                            icon = Icons.Rounded.Apps,
-                            title = "App icon shape",
-                            subtitle = appIconShapeLabel(appIconShape),
-                            selected = selectedIndex == 8,
-                            themePalette = themePalette,
-                            subtitleColor = subtitleColor,
-                            onClick = { activate(8) },
-                        )
-                    }
-                }
-
                 Spacer(Modifier.height(12.dp))
                 HorizontalDivider(color = Color(0xFF2A3040), thickness = 0.5.dp)
                 Spacer(Modifier.height(12.dp))
@@ -4769,47 +5324,44 @@ private fun SettingsScreenOverlay(
                     color = subtitleColor,
                     modifier = Modifier.padding(start = 4.dp, bottom = 6.dp),
                 )
+                Column(Modifier.bringIntoViewRequester(rowBringers[7])) {
+                    SettingsCategoryCard(cardBg = cardBg, cardShape = cardShape, selected = selectedIndex == 7) {
+                        SettingsRow(
+                            icon = Icons.Rounded.MailOutline,
+                            title = dockMailTitle,
+                            subtitle = dockMailBody,
+                            selected = selectedIndex == 7,
+                            themePalette = themePalette,
+                            subtitleColor = subtitleColor,
+                            onClick = { activate(7) },
+                        )
+                    }
+                }
+                Spacer(Modifier.height(8.dp))
+                Column(Modifier.bringIntoViewRequester(rowBringers[8])) {
+                    SettingsCategoryCard(cardBg = cardBg, cardShape = cardShape, selected = selectedIndex == 8) {
+                        SettingsRow(
+                            icon = Icons.Rounded.TouchApp,
+                            title = dockSecondTitle,
+                            subtitle = dockSecondBody + if (classicMode) " · hidden on dock in Classic mode" else "",
+                            selected = selectedIndex == 8,
+                            themePalette = themePalette,
+                            subtitleColor = subtitleColor,
+                            onClick = { activate(8) },
+                        )
+                    }
+                }
+                Spacer(Modifier.height(8.dp))
                 Column(Modifier.bringIntoViewRequester(rowBringers[9])) {
                     SettingsCategoryCard(cardBg = cardBg, cardShape = cardShape, selected = selectedIndex == 9) {
                         SettingsRow(
-                            icon = Icons.Rounded.MailOutline,
-                            title = "Mail dock",
-                            subtitle = mailBadgeBody,
+                            icon = Icons.Rounded.Apps,
+                            title = dockThirdTitle,
+                            subtitle = dockThirdBody,
                             selected = selectedIndex == 9,
                             themePalette = themePalette,
                             subtitleColor = subtitleColor,
                             onClick = { activate(9) },
-                        )
-                    }
-                }
-                Spacer(Modifier.height(8.dp))
-                Column(Modifier.bringIntoViewRequester(rowBringers[10])) {
-                    SettingsCategoryCard(cardBg = cardBg, cardShape = cardShape, selected = selectedIndex == 10) {
-                        SettingsRow(
-                            icon = Icons.Rounded.TouchApp,
-                            title = "Second shortcut",
-                            subtitle = buildString {
-                                append(if (shortcut == SecondShortcutTarget.MESSAGES) "Messages" else "WhatsApp")
-                                if (classicMode) append(" · hidden on dock in Classic mode")
-                            },
-                            selected = selectedIndex == 10,
-                            themePalette = themePalette,
-                            subtitleColor = subtitleColor,
-                            onClick = { activate(10) },
-                        )
-                    }
-                }
-                Spacer(Modifier.height(8.dp))
-                Column(Modifier.bringIntoViewRequester(rowBringers[11])) {
-                    SettingsCategoryCard(cardBg = cardBg, cardShape = cardShape, selected = selectedIndex == 11) {
-                        SettingsRow(
-                            icon = Icons.Rounded.Apps,
-                            title = "Third shortcut",
-                            subtitle = dockCameraBody,
-                            selected = selectedIndex == 11,
-                            themePalette = themePalette,
-                            subtitleColor = subtitleColor,
-                            onClick = { activate(11) },
                         )
                     }
                 }
@@ -4825,16 +5377,16 @@ private fun SettingsScreenOverlay(
                     color = subtitleColor,
                     modifier = Modifier.padding(start = 4.dp, bottom = 6.dp),
                 )
-                Column(Modifier.bringIntoViewRequester(rowBringers[12])) {
-                    SettingsCategoryCard(cardBg = cardBg, cardShape = cardShape, selected = selectedIndex == 12) {
+                Column(Modifier.bringIntoViewRequester(rowBringers[10])) {
+                    SettingsCategoryCard(cardBg = cardBg, cardShape = cardShape, selected = selectedIndex == 10) {
                         SettingsRow(
                             icon = Icons.Outlined.Vibration,
                             title = "Haptic feedback",
                             subtitle = if (hapticsEnabled) "On (trackpad and keyboard navigation)" else "Off",
-                            selected = selectedIndex == 12,
+                            selected = selectedIndex == 10,
                             themePalette = themePalette,
                             subtitleColor = subtitleColor,
-                            onClick = { activate(12) },
+                            onClick = { activate(10) },
                         )
                         AnimatedVisibility(
                             visible = hapticsEnabled,
@@ -4866,16 +5418,16 @@ private fun SettingsScreenOverlay(
                     }
                 }
                 Spacer(Modifier.height(8.dp))
-                Column(Modifier.bringIntoViewRequester(rowBringers[13])) {
-                    SettingsCategoryCard(cardBg = cardBg, cardShape = cardShape, selected = selectedIndex == 13) {
+                Column(Modifier.bringIntoViewRequester(rowBringers[11])) {
+                    SettingsCategoryCard(cardBg = cardBg, cardShape = cardShape, selected = selectedIndex == 11) {
                         SettingsRow(
                             icon = Icons.Rounded.Security,
                             title = "Permissions",
                             subtitle = permissionsSubtitle,
-                            selected = selectedIndex == 13,
+                            selected = selectedIndex == 11,
                             themePalette = themePalette,
                             subtitleColor = subtitleColor,
-                            onClick = { activate(13) },
+                            onClick = { activate(11) },
                         )
                     }
                 }
@@ -4891,30 +5443,30 @@ private fun SettingsScreenOverlay(
                     color = subtitleColor,
                     modifier = Modifier.padding(start = 4.dp, bottom = 6.dp),
                 )
-                Column(Modifier.bringIntoViewRequester(rowBringers[14])) {
-                    SettingsCategoryCard(cardBg = cardBg, cardShape = cardShape, selected = selectedIndex == 14) {
+                Column(Modifier.bringIntoViewRequester(rowBringers[12])) {
+                    SettingsCategoryCard(cardBg = cardBg, cardShape = cardShape, selected = selectedIndex == 12) {
                         SettingsRow(
                             icon = Icons.Rounded.SettingsBackupRestore,
                             title = "Export backup",
                             subtitle = "Save settings as JSON file",
-                            selected = selectedIndex == 14,
+                            selected = selectedIndex == 12,
                             themePalette = themePalette,
                             subtitleColor = subtitleColor,
-                            onClick = { activate(14) },
+                            onClick = { activate(12) },
                         )
                     }
                 }
                 Spacer(Modifier.height(8.dp))
-                Column(Modifier.bringIntoViewRequester(rowBringers[15])) {
-                    SettingsCategoryCard(cardBg = cardBg, cardShape = cardShape, selected = selectedIndex == 15) {
+                Column(Modifier.bringIntoViewRequester(rowBringers[13])) {
+                    SettingsCategoryCard(cardBg = cardBg, cardShape = cardShape, selected = selectedIndex == 13) {
                         SettingsRow(
                             icon = Icons.Rounded.SettingsBackupRestore,
                             title = "Restore from backup",
                             subtitle = "Pick a backup file from Downloads",
-                            selected = selectedIndex == 15,
+                            selected = selectedIndex == 13,
                             themePalette = themePalette,
                             subtitleColor = subtitleColor,
-                            onClick = { activate(15) },
+                            onClick = { activate(13) },
                         )
                     }
                 }
