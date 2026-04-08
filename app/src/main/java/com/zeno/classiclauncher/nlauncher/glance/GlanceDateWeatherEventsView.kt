@@ -61,6 +61,13 @@ class GlanceDateWeatherEventsView @JvmOverloads constructor(
     context: Context,
     attrs: AttributeSet? = null,
 ) : FrameLayout(context, attrs) {
+    private enum class GlanceItemType {
+        FLASHLIGHT,
+        BATTERY,
+        CALENDAR,
+        ALARM,
+        OTHER,
+    }
 
     private var scope = CoroutineScope(SupervisorJob() + Dispatchers.Main)
     private var attachedJob: Job? = null
@@ -73,6 +80,7 @@ class GlanceDateWeatherEventsView @JvmOverloads constructor(
     private data class GlanceItem(
         val text: String,
         val action: (() -> Unit)? = null,
+        val type: GlanceItemType = GlanceItemType.OTHER,
     )
 
     private data class CalendarEvent(
@@ -159,6 +167,13 @@ class GlanceDateWeatherEventsView @JvmOverloads constructor(
         }
     }
     private var screenReceiverRegistered = false
+    private val batteryReceiver = object : android.content.BroadcastReceiver() {
+        override fun onReceive(ctx: Context, intent: Intent) {
+            if (intent.action != Intent.ACTION_BATTERY_CHANGED) return
+            refreshBatteryGlanceItem()
+        }
+    }
+    private var batteryReceiverRegistered = false
 
     private val torchHandler = Handler(Looper.getMainLooper())
     private var cameraManager: CameraManager? = null
@@ -205,6 +220,13 @@ class GlanceDateWeatherEventsView @JvmOverloads constructor(
                 torchActive = false
                 unregisterTorchCallback()
             }
+            if (stripPrefs.showBattery) {
+                registerBatteryReceiver()
+                refreshBatteryGlanceItem()
+            } else {
+                unregisterBatteryReceiver()
+                refreshBatteryGlanceItem()
+            }
         }
     }
 
@@ -250,8 +272,10 @@ class GlanceDateWeatherEventsView @JvmOverloads constructor(
             )
             screenReceiverRegistered = true
         }
+        if (stripPrefs.showBattery) registerBatteryReceiver()
         screenOn = true
         restartLoops()
+        if (stripPrefs.showBattery) refreshBatteryGlanceItem()
     }
 
     override fun onDetachedFromWindow() {
@@ -263,6 +287,7 @@ class GlanceDateWeatherEventsView @JvmOverloads constructor(
             runCatching { context.unregisterReceiver(screenReceiver) }
             screenReceiverRegistered = false
         }
+        unregisterBatteryReceiver()
         unregisterTorchCallback()
         super.onDetachedFromWindow()
     }
@@ -273,6 +298,7 @@ class GlanceDateWeatherEventsView @JvmOverloads constructor(
             runCatching { context.unregisterReceiver(screenReceiver) }
             screenReceiverRegistered = false
         }
+        unregisterBatteryReceiver()
         glanceJob?.cancel()
         glanceJob = null
         attachedJob?.cancel()
@@ -295,6 +321,49 @@ class GlanceDateWeatherEventsView @JvmOverloads constructor(
         runCatching { cameraManager?.unregisterTorchCallback(torchCallback) }
         torchCallbackRegistered = false
         cameraManager = null
+    }
+
+    private fun registerBatteryReceiver() {
+        if (batteryReceiverRegistered) return
+        runCatching {
+            context.registerReceiver(batteryReceiver, IntentFilter(Intent.ACTION_BATTERY_CHANGED))
+            batteryReceiverRegistered = true
+        }
+    }
+
+    private fun unregisterBatteryReceiver() {
+        if (!batteryReceiverRegistered) return
+        runCatching { context.unregisterReceiver(batteryReceiver) }
+        batteryReceiverRegistered = false
+    }
+
+    private fun refreshBatteryGlanceItem() {
+        val oldItems = glanceItems
+        val oldBatteryIndex = oldItems.indexOfFirst { it.type == GlanceItemType.BATTERY }
+        val newBatteryItem = if (stripPrefs.showBattery) getBatteryGlanceItem() else null
+
+        val changed = when {
+            newBatteryItem == null && oldBatteryIndex < 0 -> false
+            newBatteryItem != null && oldBatteryIndex >= 0 -> {
+                oldItems[oldBatteryIndex].text != newBatteryItem.text
+            }
+            else -> true
+        }
+        if (!changed) return
+
+        val updated = oldItems.toMutableList()
+        when {
+            newBatteryItem == null && oldBatteryIndex >= 0 -> updated.removeAt(oldBatteryIndex)
+            newBatteryItem != null && oldBatteryIndex >= 0 -> updated[oldBatteryIndex] = newBatteryItem
+            newBatteryItem != null -> {
+                val flashlightIndex = updated.indexOfFirst { it.type == GlanceItemType.FLASHLIGHT }
+                val insertAt = if (flashlightIndex >= 0) flashlightIndex + 1 else 0
+                updated.add(insertAt.coerceIn(0, updated.size), newBatteryItem)
+            }
+        }
+        glanceItems = updated
+        if (currentGlanceIndex >= glanceItems.size) currentGlanceIndex = 0
+        showCurrentGlanceItem()
     }
 
     private suspend fun awaitHeavyIoDebounce() {
@@ -463,7 +532,7 @@ class GlanceDateWeatherEventsView @JvmOverloads constructor(
         val prefs = stripPrefs
 
         if (prefs.showFlashlight && torchActive) {
-            items.add(GlanceItem(text = "\uD83D\uDD26 Flashlight on"))
+            items.add(GlanceItem(text = "\uD83D\uDD26 Flashlight on", type = GlanceItemType.FLASHLIGHT))
         }
 
         if (prefs.showBattery) {
@@ -480,6 +549,7 @@ class GlanceDateWeatherEventsView @JvmOverloads constructor(
                     GlanceItem(
                         text = context.getString(R.string.glance_grant_calendar),
                         action = { requestCalendarPermission() },
+                        type = GlanceItemType.CALENDAR,
                     ),
                 )
             } else {
@@ -501,6 +571,7 @@ class GlanceDateWeatherEventsView @JvmOverloads constructor(
                                 } catch (_: Exception) {
                                 }
                             },
+                            type = GlanceItemType.CALENDAR,
                         ),
                     )
                 }
@@ -521,6 +592,7 @@ class GlanceDateWeatherEventsView @JvmOverloads constructor(
                             } catch (_: Exception) {
                             }
                         },
+                        type = GlanceItemType.ALARM,
                     ),
                 )
             }
@@ -555,9 +627,9 @@ class GlanceDateWeatherEventsView @JvmOverloads constructor(
                 } else {
                     ""
                 }
-                GlanceItem(text = "\u26A1 Charging $level%$suffix")
+                GlanceItem(text = "\u26A1 Charging $level%$suffix", type = GlanceItemType.BATTERY)
             }
-            level <= 15 -> GlanceItem(text = "\uD83D\uDD0B Battery low · $level%")
+            level <= 15 -> GlanceItem(text = "\uD83D\uDD0B Battery low · $level%", type = GlanceItemType.BATTERY)
             else -> null
         }
     }
