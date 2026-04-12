@@ -22,8 +22,8 @@ android {
         applicationId = "com.zeno.classiclauncher.nlauncher"
         minSdk = 26
         targetSdk = 34
-        versionCode = 6
-        versionName = "1.2.1"
+        versionCode = 7
+        versionName = "1.2.2"
     }
 
     buildFeatures {

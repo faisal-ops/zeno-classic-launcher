@@ -6,6 +6,10 @@
 package com.zeno.classiclauncher.nlauncher.ui
 
 import android.Manifest
+import android.app.Activity
+import android.appwidget.AppWidgetHost
+import android.appwidget.AppWidgetHostView
+import android.appwidget.AppWidgetManager
 import android.content.ComponentName
 import android.content.Intent
 import android.content.pm.PackageManager
@@ -250,6 +254,7 @@ private const val NAV_FRAME_MS = 120L
  */
 private const val NAV_MOVE_MIN_MS = 40L
 private const val HOME_SHORTCUT_SLOTS = 3
+private const val HOME_WIDGET_HOST_ID = 7777
 private val HOME_SHORTCUT_ICON_DP = 52.dp
 private val HOME_SHORTCUT_FALLBACK_ICON_DP = 48.dp
 private val HOME_STRIP_LABEL_COLOR = Color(0xFFE8EEF7)
@@ -395,18 +400,27 @@ fun LauncherScreen(
     }
     val dockMiddleIconModel = remember(prefs.dockSecondPackage, allApps) {
         val pkg = prefs.dockSecondPackage.trim()
-        if (keepEnvelopeForSecondShortcut(pkg)) null else appIconFor(pkg)
+        if (keepEnvelopeForSecondShortcut(pkg) || pkg == "com.apple.android.music") null else appIconFor(pkg)
     }
-    val secondDockUseWhatsappFallback = remember(prefs.dockSecondPackage, prefs.secondShortcutTarget) {
+    val secondDockFallbackResId = remember(prefs.dockSecondPackage, prefs.secondShortcutTarget) {
         val pkg = prefs.dockSecondPackage.trim()
-        pkg == "com.whatsapp" || (pkg.isEmpty() && prefs.secondShortcutTarget == SecondShortcutTarget.WHATSAPP)
+        when {
+            pkg == "com.apple.android.music" -> R.drawable.ic_dock_apple_music
+            pkg == "com.whatsapp" || (pkg.isEmpty() && prefs.secondShortcutTarget == SecondShortcutTarget.WHATSAPP) -> R.drawable.ic_dock_whatsapp
+            else -> null
+        }
     }
-    val thirdDockUseSpotifyFallback = remember(prefs.dockCameraPackage) {
-        prefs.dockCameraPackage.trim() == "com.spotify.music"
+    val thirdDockFallbackResId = remember(prefs.dockCameraPackage) {
+        when (prefs.dockCameraPackage.trim()) {
+            "com.spotify.music" -> R.drawable.ic_dock_spotify
+            "us.zoom.videomeetings" -> R.drawable.ic_dock_zoom
+            "com.apple.android.music" -> R.drawable.ic_dock_apple_music
+            else -> null
+        }
     }
     val dockEndIconModel = remember(prefs.dockCameraPackage, allApps) {
         val pkg = prefs.dockCameraPackage.trim()
-        if (pkg.isEmpty() || pkg == "com.spotify.music") null else appIconFor(pkg)
+        if (pkg.isEmpty() || thirdDockFallbackResId != null) null else appIconFor(pkg)
     }
     val classicMode = prefs.classicMode
     val pagerState = rememberPagerState(initialPage = 0, pageCount = { if (classicMode) 1 else 2 })
@@ -422,7 +436,27 @@ fun LauncherScreen(
     /** In-app wallpaper source list (replaces jumping straight to system [Intent.ACTION_SET_WALLPAPER]). */
     var showWallpaperSourceOverlay by remember { mutableStateOf(false) }
     var wallpaperSourceSub by remember { mutableStateOf(WallpaperSourceSub.List) }
-    var homeClockEnabled by remember { mutableStateOf(false) }
+    val appWidgetHost = remember(context) { AppWidgetHost(context, HOME_WIDGET_HOST_ID) }
+    var homeWidgetId by remember { mutableStateOf<Int?>(null) }
+    var pendingWidgetId by remember { mutableStateOf<Int?>(null) }
+    DisposableEffect(appWidgetHost) {
+        appWidgetHost.startListening()
+        onDispose { runCatching { appWidgetHost.stopListening() } }
+    }
+    val pickWidgetLauncher = rememberLauncherForActivityResult(ActivityResultContracts.StartActivityForResult()) { result ->
+        val requestedId = pendingWidgetId
+        pendingWidgetId = null
+        val widgetId = result.data?.getIntExtra(AppWidgetManager.EXTRA_APPWIDGET_ID, requestedId ?: -1)
+            ?: (requestedId ?: -1)
+        if (result.resultCode != Activity.RESULT_OK || widgetId == -1) {
+            if (widgetId != -1) runCatching { appWidgetHost.deleteAppWidgetId(widgetId) }
+            return@rememberLauncherForActivityResult
+        }
+        homeWidgetId?.let { oldId ->
+            if (oldId != widgetId) runCatching { appWidgetHost.deleteAppWidgetId(oldId) }
+        }
+        homeWidgetId = widgetId
+    }
     var showAppMenu by remember { mutableStateOf<AppEntry?>(null) }
     /** Storage token (`pkg` or `pkg#id`) when the app menu was opened from the home shortcut strip. */
     var homeShortcutMenuToken by remember { mutableStateOf<String?>(null) }
@@ -599,7 +633,8 @@ fun LauncherScreen(
                         doubleTapPackage = prefs.doubleTapPackage,
                         hapticsEnabled = prefs.hapticsEnabled,
                         hapticIntensity = prefs.hapticIntensity,
-                        hasClock = homeClockEnabled,
+                        homeWidgetId = homeWidgetId,
+                        appWidgetHost = appWidgetHost,
                         onLongPress = { showHomeActions = true },
                         doubleTapToSleepEnabled = prefs.doubleTapToSleepEnabled,
                         searchQuery = searchQuery,
@@ -615,8 +650,7 @@ fun LauncherScreen(
                             prefs.glanceWeatherUnit,
                         ) {
                             GlanceStripPreferences(
-                                // Flashlight on-glance item is disabled (it was unreliable on devices / can be confusing to users).
-                                showFlashlight = false,
+                                showFlashlight = prefs.glanceShowFlashlight,
                                 showBattery = prefs.glanceShowBattery,
                                 showCalendar = prefs.glanceShowCalendar,
                                 showAlarm = prefs.glanceShowAlarm,
@@ -806,8 +840,8 @@ fun LauncherScreen(
                     themePalette = themePalette,
                     dockStartIconModel = dockStartIconModel,
                     dockMiddleIconModel = dockMiddleIconModel,
-                    secondDockUseWhatsappFallback = secondDockUseWhatsappFallback,
-                    thirdDockUseSpotifyFallback = thirdDockUseSpotifyFallback,
+                    secondDockFallbackResId = secondDockFallbackResId,
+                    thirdDockFallbackResId = thirdDockFallbackResId,
                     dockEndIconModel = dockEndIconModel,
                     appIconShape = prefs.appIconShape,
                     dockIconStyle = prefs.dockIconStyle,
@@ -1205,13 +1239,19 @@ fun LauncherScreen(
         if (showHomeActions) {
             HomeActionsSheet(
                 themePalette = themePalette,
-                hasClock = homeClockEnabled,
-                onAddClock = {
-                    homeClockEnabled = true
+                hasWidget = homeWidgetId != null,
+                onAddWidget = {
+                    val id = appWidgetHost.allocateAppWidgetId()
+                    pendingWidgetId = id
+                    val pickIntent = Intent(AppWidgetManager.ACTION_APPWIDGET_PICK).apply {
+                        putExtra(AppWidgetManager.EXTRA_APPWIDGET_ID, id)
+                    }
+                    pickWidgetLauncher.launch(pickIntent)
                     showHomeActions = false
                 },
-                onRemoveClock = {
-                    homeClockEnabled = false
+                onRemoveWidget = {
+                    homeWidgetId?.let { runCatching { appWidgetHost.deleteAppWidgetId(it) } }
+                    homeWidgetId = null
                     showHomeActions = false
                 },
                 onOpenSettings = {
@@ -1260,7 +1300,8 @@ private fun HomePage(
     doubleTapPackage: String,
     hapticsEnabled: Boolean,
     hapticIntensity: Int,
-    hasClock: Boolean,
+    homeWidgetId: Int?,
+    appWidgetHost: AppWidgetHost,
     onLongPress: () -> Unit,
     doubleTapToSleepEnabled: Boolean,
     searchQuery: String,
@@ -1290,17 +1331,7 @@ private fun HomePage(
         }
     }
     val context = LocalContext.current
-    var clockText by remember { mutableStateOf(java.time.LocalTime.now().withSecond(0).withNano(0).toString()) }
-    // Battery optimization: only keep the "minute clock" loop running when Home is actually visible.
-    LaunchedEffect(homeActive, hasClock) {
-        if (!homeActive || !hasClock) return@LaunchedEffect
-        while (true) {
-            val now = System.currentTimeMillis()
-            val msToNextMinute = 60_000L - (now % 60_000L)
-            kotlinx.coroutines.delay(msToNextMinute)
-            clockText = java.time.LocalTime.now().withSecond(0).withNano(0).toString()
-        }
-    }
+    val appWidgetManager = remember(context) { AppWidgetManager.getInstance(context) }
     val glanceRef = remember { mutableStateOf<GlanceDateWeatherEventsView?>(null) }
     DisposableEffect(Unit) {
         onDispose { glanceRef.value?.dispose() }
@@ -1387,6 +1418,15 @@ private fun HomePage(
                     }
                     Key.DirectionDown -> {
                         if (navArea != HomeNavArea.Dock) {
+                            if (homeStripCount > 0) {
+                                dockIndex = if (homeStripCount <= 1 || dockSize <= 1) {
+                                    0
+                                } else {
+                                    ((stripIndex.toFloat() / (homeStripCount - 1).toFloat()) * (dockSize - 1))
+                                        .roundToInt()
+                                        .coerceIn(0, dockSize - 1)
+                                }
+                            }
                             navArea = HomeNavArea.Dock
                             onHomeDockFocusChanged(true, dockIndex)
                             doNavFeedback(view, hapticsEnabled, hapticIntensity)
@@ -1470,23 +1510,35 @@ private fun HomePage(
                 )
             }
             Spacer(Modifier.weight(1f))
-        if (hasClock) {
+            Spacer(Modifier.weight(1f))
+        }
+        if (homeWidgetId != null && appWidgetManager.getAppWidgetInfo(homeWidgetId) != null) {
             Box(
                 modifier = Modifier
-                        .align(Alignment.CenterHorizontally)
-                    .clip(androidx.compose.foundation.shape.RoundedCornerShape(10.dp))
-                    .background(Color(0x332B313A))
-                    .border(1.dp, Color(0x665F6A78), androidx.compose.foundation.shape.RoundedCornerShape(10.dp))
-                        .padding(horizontal = 22.dp, vertical = 12.dp),
+                    .fillMaxSize()
+                    .padding(horizontal = 8.dp, vertical = 72.dp),
+                contentAlignment = Alignment.Center,
             ) {
-                Text(
-                    text = clockText,
-                    style = MaterialTheme.typography.titleLarge.copy(color = Color(0xFFE8EEF7)),
-                    fontWeight = FontWeight.Bold,
+                AndroidView(
+                    factory = { ctx ->
+                        val hostView = appWidgetHost.createView(
+                            ctx,
+                            homeWidgetId,
+                            appWidgetManager.getAppWidgetInfo(homeWidgetId),
+                        )
+                        hostView.setAppWidget(homeWidgetId, appWidgetManager.getAppWidgetInfo(homeWidgetId))
+                        hostView
+                    },
+                    update = { hostView ->
+                        if (hostView is AppWidgetHostView) {
+                            hostView.setAppWidget(homeWidgetId, appWidgetManager.getAppWidgetInfo(homeWidgetId))
+                        }
+                    },
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .heightIn(min = 70.dp, max = 180.dp),
                 )
             }
-            }
-            Spacer(Modifier.weight(1f))
         }
 
         // Home search overlay — compact top card, wallpaper visible below
@@ -1618,9 +1670,9 @@ private fun HomePage(
 @Composable
 private fun HomeActionsSheet(
     themePalette: LauncherThemePalette,
-    hasClock: Boolean,
-    onAddClock: () -> Unit,
-    onRemoveClock: () -> Unit,
+    hasWidget: Boolean,
+    onAddWidget: () -> Unit,
+    onRemoveWidget: () -> Unit,
     onOpenSettings: () -> Unit,
     onOpenWallpaperChooser: () -> Unit,
     onOpenSystemSettings: () -> Unit,
@@ -1670,10 +1722,10 @@ private fun HomeActionsSheet(
                 }
             }
 
-            if (hasClock) {
-                MenuRow(Icons.Rounded.EventBusy, "Remove clock", onRemoveClock)
+            if (hasWidget) {
+                MenuRow(Icons.Rounded.EventBusy, "Remove widget", onRemoveWidget)
             } else {
-                MenuRow(Icons.Rounded.AddAlarm, "Add clock", onAddClock)
+                MenuRow(Icons.Rounded.AddAlarm, "Add system widget", onAddWidget)
             }
             MenuRow(
                 Icons.Rounded.Settings,
@@ -1686,6 +1738,7 @@ private fun HomeActionsSheet(
         }
     }
 }
+
 
 @Composable
 private fun AppDrawer(
@@ -2064,10 +2117,18 @@ private fun AppDrawer(
                 val sliceSlotIds = remember(slice) { slice.mapTo(HashSet(slice.size)) { it.slotId } }
 
             BoxWithConstraints(modifier = Modifier.fillMaxSize()) {
+                // Match AppTile/FolderTile vertical budget (icon pad top, max icon pad bottom, label block).
+                // When swiping home→drawer with a trackpad, the outer pager can briefly give this page
+                // a too-small max height/width; unclamped cardH made icons shrink in remember(height,…).
+                val minLabelBlock = with(density) { (labelSizeSp * 2.55f).sp.toDp() }
+                val minCellHeight = 3.dp + iconSize + 14.dp + 2.dp + minLabelBlock
+                val minCellWidth = iconSize + 14.dp
                 val cardW =
-                    (maxWidth - colSpacing * (gridPreset.cols - 1)) / gridPreset.cols
+                    ((maxWidth - colSpacing * (gridPreset.cols - 1)) / gridPreset.cols)
+                        .coerceAtLeast(minCellWidth)
                 val cardH =
-                    (maxHeight - rowSpacing * (gridPreset.rows - 1)) / gridPreset.rows
+                    ((maxHeight - rowSpacing * (gridPreset.rows - 1)) / gridPreset.rows)
+                        .coerceAtLeast(minCellHeight)
 
                 LazyVerticalGrid(
                     columns = GridCells.Fixed(gridPreset.cols),
@@ -3707,8 +3768,8 @@ private fun Dock(
     showMessagesShortcut: Boolean = true,
     dockStartIconModel: Any?,
     dockMiddleIconModel: Any?,
-    secondDockUseWhatsappFallback: Boolean,
-    thirdDockUseSpotifyFallback: Boolean,
+    secondDockFallbackResId: Int?,
+    thirdDockFallbackResId: Int?,
     /** When non-null, show this drawable in the dock end slot (same as app grid). Null = default camera asset. */
     dockEndIconModel: Any?,
     appIconShape: AppIconShape,
@@ -3874,9 +3935,9 @@ private fun Dock(
                 Spacer(Modifier.width(navMidSpacing))
                 DockEndSlot(
                     iconModel = dockMiddleIconModel,
-                    fallbackIcon = if (secondDockUseWhatsappFallback) Icons.Rounded.Apps else Icons.Outlined.MailOutline,
-                    fallbackResId = if (secondDockUseWhatsappFallback) R.drawable.ic_dock_whatsapp else null,
-                    fallbackScale = if (secondDockUseWhatsappFallback) 0.76f else 0.84f,
+                    fallbackIcon = if (secondDockFallbackResId != null) Icons.Rounded.Apps else Icons.Outlined.MailOutline,
+                    fallbackResId = secondDockFallbackResId,
+                    fallbackScale = if (secondDockFallbackResId == R.drawable.ic_dock_whatsapp) 0.76f else 0.84f,
                     appIconShape = appIconShape,
                     onClick = onShortcut,
                     hasUnread = shortcutHasUnread,
@@ -3894,7 +3955,7 @@ private fun Dock(
             DockEndSlot(
                 iconModel = dockEndIconModel,
                 fallbackIcon = Icons.Rounded.PhotoCamera,
-                fallbackResId = if (thirdDockUseSpotifyFallback) R.drawable.ic_dock_spotify else null,
+                fallbackResId = thirdDockFallbackResId,
                 fallbackScale = 0.84f,
                 appIconShape = appIconShape,
                 onClick = onCamera,
@@ -4850,6 +4911,13 @@ private fun GlanceSettingsOverlay(
                         }
                     }
                 }
+                ToggleCard(
+                    title = "Flashlight on glance",
+                    subtitle = "Show an alert while the torch is on",
+                    checked = glanceShowFlashlight,
+                    enabled = glanceEnabled,
+                    onCheckedChange = onGlanceShowFlashlight,
+                )
                 ToggleCard(
                     title = "Calendar on glance",
                     subtitle = "Upcoming events when permission is granted",

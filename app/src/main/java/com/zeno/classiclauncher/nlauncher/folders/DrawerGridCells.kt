@@ -43,6 +43,19 @@ fun buildDrawerGridCells(
         return a.label.lowercase().contains(normalLower) || a.packageName.contains(normalLower)
     }
 
+    // Lower score = better match. Used to rank results when a search query is active.
+    fun searchScore(a: AppEntry): Int {
+        val q = if (privateMode) privateLower else normalLower
+        if (q.isEmpty()) return Int.MAX_VALUE
+        val label = a.label.lowercase()
+        return when {
+            label.startsWith(q) -> 0
+            label.split(' ', '-', '_').any { it.startsWith(q) } -> 1
+            label.contains(q) -> 2
+            else -> 3 // package name match
+        }
+    }
+
     fun membersForFolderCell(folderId: String, forSearch: Boolean): List<AppEntry> {
         val pkgs = folderContents[folderId] ?: return emptyList()
         val out = ArrayList<AppEntry>(pkgs.size)
@@ -88,6 +101,25 @@ fun buildDrawerGridCells(
         .toList()
 
     result.addAll(tail)
+
+    // When a search is active, re-sort everything by match quality so prefix
+    // matches always surface before substring/package-name matches.
+    if (searching) {
+        result.sortWith(
+            compareBy<DrawerGridCell> { cell ->
+                when (cell) {
+                    is DrawerGridCell.App -> searchScore(cell.entry)
+                    is DrawerGridCell.Folder -> cell.members.minOfOrNull { searchScore(it) } ?: Int.MAX_VALUE
+                }
+            }.thenBy { cell ->
+                when (cell) {
+                    is DrawerGridCell.App -> cell.entry.label.lowercase()
+                    is DrawerGridCell.Folder -> cell.displayTitle.lowercase()
+                }
+            },
+        )
+    }
+
     return result
 }
 

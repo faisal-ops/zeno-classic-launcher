@@ -10,6 +10,7 @@ import android.content.Context
 import android.content.Intent
 import android.content.IntentFilter
 import android.content.pm.PackageManager
+import android.hardware.camera2.CameraCharacteristics
 import android.hardware.camera2.CameraManager
 import android.location.Location
 import android.location.LocationManager
@@ -177,16 +178,21 @@ class GlanceDateWeatherEventsView @JvmOverloads constructor(
 
     private val torchHandler = Handler(Looper.getMainLooper())
     private var cameraManager: CameraManager? = null
+    @Volatile private var activeTorchCameraId: String? = null
     private var torchCallbackRegistered = false
     private val torchCallback = object : CameraManager.TorchCallback() {
         override fun onTorchModeChanged(cameraId: String, enabled: Boolean) {
             torchActive = enabled
+            if (enabled) activeTorchCameraId = cameraId
             glanceForceRebuild = true
+            refreshFlashlightGlanceItem()
         }
 
         override fun onTorchModeUnavailable(cameraId: String) {
             torchActive = false
+            if (activeTorchCameraId == cameraId) activeTorchCameraId = null
             glanceForceRebuild = true
+            refreshFlashlightGlanceItem()
         }
     }
 
@@ -215,10 +221,12 @@ class GlanceDateWeatherEventsView @JvmOverloads constructor(
         if (isAttachedToWindow) {
             if (stripPrefs.showFlashlight) {
                 registerTorchCallback()
+                refreshFlashlightGlanceItem()
             } else {
                 // When disabled, ensure we don't keep torch callbacks registered.
                 torchActive = false
                 unregisterTorchCallback()
+                refreshFlashlightGlanceItem()
             }
             if (stripPrefs.showBattery) {
                 registerBatteryReceiver()
@@ -258,9 +266,11 @@ class GlanceDateWeatherEventsView @JvmOverloads constructor(
         super.onAttachedToWindow()
         if (stripPrefs.showFlashlight) {
             registerTorchCallback()
+            refreshFlashlightGlanceItem()
         } else {
             torchActive = false
             unregisterTorchCallback()
+            refreshFlashlightGlanceItem()
         }
         if (!screenReceiverRegistered) {
             context.registerReceiver(
@@ -321,6 +331,23 @@ class GlanceDateWeatherEventsView @JvmOverloads constructor(
         runCatching { cameraManager?.unregisterTorchCallback(torchCallback) }
         torchCallbackRegistered = false
         cameraManager = null
+        activeTorchCameraId = null
+    }
+
+    private fun turnOffFlashlight() {
+        val cm = cameraManager ?: context.getSystemService<CameraManager>() ?: return
+        val preferredId = activeTorchCameraId
+        val targetId = if (!preferredId.isNullOrBlank()) {
+            preferredId
+        } else {
+            runCatching {
+                cm.cameraIdList.firstOrNull { id ->
+                    cm.getCameraCharacteristics(id)
+                        .get(CameraCharacteristics.FLASH_INFO_AVAILABLE) == true
+                }
+            }.getOrNull()
+        } ?: return
+        runCatching { cm.setTorchMode(targetId, false) }
     }
 
     private fun registerBatteryReceiver() {
@@ -360,6 +387,39 @@ class GlanceDateWeatherEventsView @JvmOverloads constructor(
                 val insertAt = if (flashlightIndex >= 0) flashlightIndex + 1 else 0
                 updated.add(insertAt.coerceIn(0, updated.size), newBatteryItem)
             }
+        }
+        glanceItems = updated
+        if (currentGlanceIndex >= glanceItems.size) currentGlanceIndex = 0
+        showCurrentGlanceItem()
+    }
+
+    private fun refreshFlashlightGlanceItem() {
+        val oldItems = glanceItems
+        val oldFlashlightIndex = oldItems.indexOfFirst { it.type == GlanceItemType.FLASHLIGHT }
+        val newFlashlightItem = if (stripPrefs.showFlashlight && torchActive) {
+            GlanceItem(
+                text = "\uD83D\uDD26 Flashlight on",
+                action = { turnOffFlashlight() },
+                type = GlanceItemType.FLASHLIGHT,
+            )
+        } else {
+            null
+        }
+
+        val changed = when {
+            newFlashlightItem == null && oldFlashlightIndex < 0 -> false
+            newFlashlightItem != null && oldFlashlightIndex >= 0 -> {
+                oldItems[oldFlashlightIndex].text != newFlashlightItem.text
+            }
+            else -> true
+        }
+        if (!changed) return
+
+        val updated = oldItems.toMutableList()
+        when {
+            newFlashlightItem == null && oldFlashlightIndex >= 0 -> updated.removeAt(oldFlashlightIndex)
+            newFlashlightItem != null && oldFlashlightIndex >= 0 -> updated[oldFlashlightIndex] = newFlashlightItem
+            newFlashlightItem != null -> updated.add(0, newFlashlightItem)
         }
         glanceItems = updated
         if (currentGlanceIndex >= glanceItems.size) currentGlanceIndex = 0
@@ -532,7 +592,13 @@ class GlanceDateWeatherEventsView @JvmOverloads constructor(
         val prefs = stripPrefs
 
         if (prefs.showFlashlight && torchActive) {
-            items.add(GlanceItem(text = "\uD83D\uDD26 Flashlight on", type = GlanceItemType.FLASHLIGHT))
+            items.add(
+                GlanceItem(
+                    text = "\uD83D\uDD26 Flashlight on",
+                    action = { turnOffFlashlight() },
+                    type = GlanceItemType.FLASHLIGHT,
+                ),
+            )
         }
 
         if (prefs.showBattery) {

@@ -3,7 +3,9 @@ package com.zeno.classiclauncher.nlauncher
 import android.content.Context
 import android.content.Intent
 import android.content.pm.LauncherApps
+import android.content.pm.PackageManager
 import android.os.Bundle
+import android.telecom.TelecomManager
 import android.view.WindowManager
 import android.widget.Toast
 import androidx.activity.ComponentActivity
@@ -34,6 +36,11 @@ class MainActivity : ComponentActivity() {
     /** Catch KEYCODE_ENDCALL at the Activity level — Compose onPreviewKeyEvent may not receive it
      *  if the system (PhoneWindowManager) intercepts or delivers it only on ACTION_UP. */
     override fun dispatchKeyEvent(event: android.view.KeyEvent): Boolean {
+        if (event.keyCode == android.view.KeyEvent.KEYCODE_CALL &&
+            event.action == android.view.KeyEvent.ACTION_UP
+        ) {
+            if (openDefaultDialer()) return true
+        }
         if (event.keyCode == android.view.KeyEvent.KEYCODE_ENDCALL &&
             event.action == android.view.KeyEvent.ACTION_UP
         ) {
@@ -41,6 +48,27 @@ class MainActivity : ComponentActivity() {
             return true
         }
         return super.dispatchKeyEvent(event)
+    }
+
+    private fun openDefaultDialer(): Boolean {
+        val telecom = getSystemService(TelecomManager::class.java)
+        val defaultDialerPkg = telecom?.defaultDialerPackage.orEmpty()
+        if (defaultDialerPkg.isNotEmpty()) {
+            val explicitDial = Intent(Intent.ACTION_DIAL).apply {
+                setPackage(defaultDialerPkg)
+            }
+            if (packageManager.resolveActivity(explicitDial, PackageManager.MATCH_DEFAULT_ONLY) != null) {
+                return runCatching {
+                    startActivity(explicitDial)
+                    true
+                }.getOrDefault(false)
+            }
+        }
+        val fallback = Intent(Intent.ACTION_DIAL)
+        return runCatching {
+            startActivity(fallback)
+            true
+        }.getOrDefault(false)
     }
 
     override fun onNewIntent(intent: Intent) {

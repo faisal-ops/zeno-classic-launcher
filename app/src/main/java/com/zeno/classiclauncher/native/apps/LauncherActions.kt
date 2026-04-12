@@ -8,6 +8,7 @@ import android.content.pm.PackageManager
 import android.net.Uri
 import android.os.Build
 import android.os.Process
+import android.telecom.TelecomManager
 import android.provider.MediaStore
 import android.provider.Settings
 
@@ -15,6 +16,9 @@ class LauncherActions(private val context: Context) {
     private val pm: PackageManager = context.packageManager
 
     fun launchApp(packageName: String): Boolean {
+        // Some dialer apps expose a launcher activity that only shows "set default phone app".
+        // If this package is the current default dialer, route through ACTION_DIAL first.
+        if (launchDefaultDialerTarget(packageName)) return true
         val intent = pm.getLaunchIntentForPackage(packageName) ?: return false
         intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
         context.startActivity(intent)
@@ -113,5 +117,26 @@ class LauncherActions(private val context: Context) {
         } catch (_: Exception) {
             false
         }
+    }
+
+    private fun launchDefaultDialerTarget(packageName: String): Boolean {
+        val telecom = context.getSystemService(TelecomManager::class.java) ?: return false
+        val defaultDialer = telecom.defaultDialerPackage ?: return false
+        if (defaultDialer != packageName) return false
+
+        val dialWithPackage = Intent(Intent.ACTION_DIAL).apply {
+            setPackage(packageName)
+            addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+        }
+        if (pm.resolveActivity(dialWithPackage, PackageManager.MATCH_DEFAULT_ONLY) != null) {
+            return try {
+                context.startActivity(dialWithPackage)
+                true
+            } catch (_: Exception) {
+                false
+            }
+        }
+
+        return false
     }
 }
