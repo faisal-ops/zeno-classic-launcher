@@ -42,6 +42,8 @@ import kotlinx.coroutines.flow.debounce
 import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
 import org.json.JSONObject
 import java.text.Collator
 import java.util.Locale
@@ -151,6 +153,9 @@ class LauncherViewModel(app: Application) : AndroidViewModel(app) {
     val packagesWithUnread: StateFlow<Set<String>> = NotificationRepository.packagesWithUnread
     private var lastPrunePackageSnapshot: Set<String>? = null
 
+    /** Serializes read–modify–write on drawer grid + home groups so rapid folder edits and prune cannot clobber each other. */
+    private val gridHomeMutex = Mutex()
+
     init {
         viewModelScope.launch {
             combine(apps, prefsRepo.prefsFlow) { list, p -> list to p }
@@ -185,7 +190,9 @@ class LauncherViewModel(app: Application) : AndroidViewModel(app) {
                         newFolders != p.folderContents || newOrder != p.orderedPackages || newNames != p.folderNames
                     val groupsChanged = pruned != p.homeGroups
                     if (gridChanged || groupsChanged) {
-                        prefsRepo.writeGridAndHomeGroupsState(newOrder, newFolders, newNames, pruned)
+                        gridHomeMutex.withLock {
+                            prefsRepo.writeGridAndHomeGroupsState(newOrder, newFolders, newNames, pruned)
+                        }
                     }
                 }
         }
@@ -228,15 +235,17 @@ class LauncherViewModel(app: Application) : AndroidViewModel(app) {
             return
         }
 
-        val currentOrder = prefs.value.orderedPackages.toMutableList()
-        if (!currentOrder.contains(moving)) currentOrder.add(moving)
-        if (!currentOrder.contains(targetSlotId)) currentOrder.add(targetSlotId)
-
-        currentOrder.remove(moving)
-        val targetIndex = currentOrder.indexOf(targetSlotId).coerceAtLeast(0)
-        currentOrder.add(targetIndex, moving)
-
-        viewModelScope.launch { prefsRepo.setOrderedPackages(currentOrder) }
+        viewModelScope.launch {
+            gridHomeMutex.withLock {
+                val currentOrder = prefs.value.orderedPackages.toMutableList()
+                if (!currentOrder.contains(moving)) currentOrder.add(moving)
+                if (!currentOrder.contains(targetSlotId)) currentOrder.add(targetSlotId)
+                currentOrder.remove(moving)
+                val targetIndex = currentOrder.indexOf(targetSlotId).coerceAtLeast(0)
+                currentOrder.add(targetIndex, moving)
+                prefsRepo.setOrderedPackages(currentOrder)
+            }
+        }
     }
 
     /**
@@ -252,6 +261,7 @@ class LauncherViewModel(app: Application) : AndroidViewModel(app) {
     fun createFolderFromApp(packageName: String, title: String, visualCellIndex: Int = -1) {
         if (packageName == AppsRepository.INTERNAL_SETTINGS_PACKAGE) return
         viewModelScope.launch {
+            gridHomeMutex.withLock {
             val snap = prefs.value
             val installed = apps.value
             val searchRaw = _searchQuery.value
@@ -364,14 +374,16 @@ class LauncherViewModel(app: Application) : AndroidViewModel(app) {
             }
 
             prefsRepo.writeGridState(finalOrder, folders, names)
+            }
         }
     }
 
     fun renameFolder(folderId: String, newTitle: String) {
         if (!FolderIds.isFolderId(folderId)) return
         viewModelScope.launch {
+            gridHomeMutex.withLock {
             val snap = prefs.value
-            if (folderId !in snap.folderContents.keys) return@launch
+            if (folderId !in snap.folderContents.keys) return@withLock
             val label = newTitle.trim().ifBlank { "Folder" }
             val names = snap.folderNames.toMutableMap()
             names[folderId] = label
@@ -380,12 +392,14 @@ class LauncherViewModel(app: Application) : AndroidViewModel(app) {
                 snap.folderContents,
                 names.filterKeys { snap.folderContents.containsKey(it) },
             )
+            }
         }
     }
 
     fun addAppToFolder(packageName: String, folderId: String) {
         if (!FolderIds.isFolderId(folderId) || packageName == AppsRepository.INTERNAL_SETTINGS_PACKAGE) return
         viewModelScope.launch {
+            gridHomeMutex.withLock {
             val snap = prefs.value
             val folders = snap.folderContents
                 .mapValues { (_, m) -> m.filter { it != packageName } }
@@ -400,15 +414,17 @@ class LauncherViewModel(app: Application) : AndroidViewModel(app) {
             folders[folderId] = list
             val names = snap.folderNames.filterKeys { folders.containsKey(it) }
             prefsRepo.writeGridState(order, folders, names)
+            }
         }
     }
 
     fun removeAppFromFolder(packageName: String, folderId: String) {
         if (!FolderIds.isFolderId(folderId)) return
         viewModelScope.launch {
+            gridHomeMutex.withLock {
             val snap = prefs.value
             val folders = snap.folderContents.toMutableMap()
-            val list = folders[folderId]?.toMutableList() ?: return@launch
+            val list = folders[folderId]?.toMutableList() ?: return@withLock
             list.remove(packageName)
             val order = snap.orderedPackages.toMutableList()
             var names = snap.folderNames.filterKeys { folders.containsKey(it) }
@@ -439,14 +455,16 @@ class LauncherViewModel(app: Application) : AndroidViewModel(app) {
                 }
             }
             prefsRepo.writeGridState(order, folders, names)
+            }
         }
     }
 
     fun dissolveFolder(folderId: String) {
         if (!FolderIds.isFolderId(folderId)) return
         viewModelScope.launch {
+            gridHomeMutex.withLock {
             val snap = prefs.value
-            val members = snap.folderContents[folderId] ?: return@launch
+            val members = snap.folderContents[folderId] ?: return@withLock
             val folders = snap.folderContents.filterKeys { it != folderId }
             val order = snap.orderedPackages.toMutableList()
             val fi = order.indexOf(folderId)
@@ -458,6 +476,7 @@ class LauncherViewModel(app: Application) : AndroidViewModel(app) {
             }
             val names = snap.folderNames.filterKeys { folders.containsKey(it) }
             prefsRepo.writeGridState(order, folders, names)
+            }
         }
     }
 
@@ -475,7 +494,8 @@ class LauncherViewModel(app: Application) : AndroidViewModel(app) {
 
     fun createHomeGroup(title: String) {
         viewModelScope.launch {
-            if (prefs.value.homeGroups.size >= 2) return@launch
+            gridHomeMutex.withLock {
+            if (prefs.value.homeGroups.size >= 2) return@withLock
             val label = title.trim().ifBlank { "Group" }
             val usedSides = prefs.value.homeGroups.map { it.side }.toSet()
             val side = HomeGroupSide.entries.firstOrNull { it !in usedSides } ?: HomeGroupSide.RIGHT
@@ -487,15 +507,17 @@ class LauncherViewModel(app: Application) : AndroidViewModel(app) {
                 side = side,
             )
             prefsRepo.setHomeGroups(next)
+            }
         }
     }
 
     fun setHomeGroupSide(groupId: String, side: HomeGroupSide) {
         viewModelScope.launch {
-            if (!HomeGroupIds.isHomeGroupId(groupId)) return@launch
+            gridHomeMutex.withLock {
+            if (!HomeGroupIds.isHomeGroupId(groupId)) return@withLock
             val groups = prefs.value.homeGroups
-            val target = groups.find { it.id == groupId } ?: return@launch
-            if (target.side == side) return@launch
+            val target = groups.find { it.id == groupId } ?: return@withLock
+            if (target.side == side) return@withLock
             val other = groups.firstOrNull { it.id != groupId && it.side == side }
             val next = groups.map { g ->
                 when {
@@ -505,30 +527,36 @@ class LauncherViewModel(app: Application) : AndroidViewModel(app) {
                 }
             }
             prefsRepo.setHomeGroups(next)
+            }
         }
     }
 
     fun renameHomeGroup(groupId: String, newTitle: String) {
         if (!HomeGroupIds.isHomeGroupId(groupId)) return
         viewModelScope.launch {
+            gridHomeMutex.withLock {
             val label = newTitle.trim().ifBlank { "Group" }
             val next = prefs.value.homeGroups.map { g ->
                 if (g.id == groupId) g.copy(title = label) else g
             }
             if (next != prefs.value.homeGroups) prefsRepo.setHomeGroups(next)
+            }
         }
     }
 
     fun deleteHomeGroup(groupId: String) {
         if (!HomeGroupIds.isHomeGroupId(groupId)) return
         viewModelScope.launch {
+            gridHomeMutex.withLock {
             prefsRepo.setHomeGroups(prefs.value.homeGroups.filter { it.id != groupId })
+            }
         }
     }
 
     fun addPackageToHomeGroup(packageName: String, groupId: String) {
         if (!HomeGroupIds.isHomeGroupId(groupId) || packageName == AppsRepository.INTERNAL_SETTINGS_PACKAGE) return
         viewModelScope.launch {
+            gridHomeMutex.withLock {
             val next = prefs.value.homeGroups.map { g ->
                 if (g.id != groupId) {
                     g
@@ -539,16 +567,19 @@ class LauncherViewModel(app: Application) : AndroidViewModel(app) {
                 }
             }
             prefsRepo.setHomeGroups(next)
+            }
         }
     }
 
     fun removePackageFromHomeGroup(packageName: String, groupId: String) {
         if (!HomeGroupIds.isHomeGroupId(groupId)) return
         viewModelScope.launch {
+            gridHomeMutex.withLock {
             val next = prefs.value.homeGroups.map { g ->
                 if (g.id != groupId) g else g.copy(packageNames = g.packageNames.filter { it != packageName })
             }
             prefsRepo.setHomeGroups(next)
+            }
         }
     }
 
@@ -746,9 +777,11 @@ class LauncherViewModel(app: Application) : AndroidViewModel(app) {
 
     fun importAppOrder(packages: List<String>) {
         viewModelScope.launch {
+            gridHomeMutex.withLock {
             val snap = prefs.value
             val names = snap.folderNames.filterKeys { snap.folderContents.containsKey(it) }
             prefsRepo.writeGridState(packages, snap.folderContents, names)
+            }
         }
     }
 

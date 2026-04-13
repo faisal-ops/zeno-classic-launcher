@@ -516,6 +516,38 @@ fun LauncherScreen(
     /** App-drawer folder: long-press menu (Open / Rename / Reorder / Delete). */
     var drawerFolderMenu by remember { mutableStateOf<DrawerGridCell.Folder?>(null) }
     var openHomeGroup by remember { mutableStateOf<OpenFolderState?>(null) }
+
+    LaunchedEffect(openFolder?.id, prefs.folderContents, prefs.folderNames, allApps) {
+        val cur = openFolder ?: return@LaunchedEffect
+        val pkgs = prefs.folderContents[cur.id]
+        if (pkgs == null) {
+            openFolder = null
+            return@LaunchedEffect
+        }
+        val byPkg = allApps.associateBy { it.packageName }
+        val newMembers = pkgs.mapNotNull { byPkg[it] }
+        val custom = prefs.folderNames[cur.id]?.trim()?.takeIf { it.isNotEmpty() }
+        val title = custom ?: (newMembers.firstOrNull()?.label ?: cur.title)
+        val newPkgs = newMembers.map { it.packageName }
+        val curPkgs = cur.members.map { it.packageName }
+        if (newPkgs == curPkgs && title == cur.title) return@LaunchedEffect
+        openFolder = cur.copy(members = newMembers, title = title)
+    }
+
+    LaunchedEffect(openHomeGroup?.id, prefs.homeGroups, allApps) {
+        val cur = openHomeGroup ?: return@LaunchedEffect
+        val g = prefs.homeGroups.find { it.id == cur.id } ?: run {
+            openHomeGroup = null
+            return@LaunchedEffect
+        }
+        val byPkg = allApps.associateBy { it.packageName }
+        val newMembers = g.packageNames.mapNotNull { byPkg[it] }
+        val newPkgs = newMembers.map { it.packageName }
+        val curPkgs = cur.members.map { it.packageName }
+        if (newPkgs == curPkgs && g.title == cur.title) return@LaunchedEffect
+        openHomeGroup = cur.copy(members = newMembers, title = g.title)
+    }
+
     val scope = rememberCoroutineScope()
     val homeFocusRequester = remember { FocusRequester() }
     var drawerPageIndex by remember { mutableStateOf(0) }
@@ -4367,7 +4399,7 @@ private fun HomeGroupFolderOverlay(
                     verticalArrangement = Arrangement.spacedBy(16.dp),
                     contentPadding = PaddingValues(vertical = 4.dp),
                 ) {
-                    itemsIndexed(members, key = { _, it -> it.packageName }) { index, app ->
+                    itemsIndexed(members, key = { idx, it -> "${idx}_${it.packageName}" }) { index, app ->
                         val cardRadius = themePalette.appCardCornerRadiusDp.dp
                         val cardShape = RoundedCornerShape(cardRadius)
                         val isFocused = index == focusedIndex
