@@ -95,6 +95,7 @@ import androidx.compose.material.icons.automirrored.rounded.OpenInNew
 import androidx.compose.material.icons.automirrored.rounded.PlaylistAdd
 import androidx.compose.material.icons.outlined.BookmarkRemove
 import androidx.compose.material.icons.outlined.Close
+import androidx.compose.material.icons.outlined.Delete
 import androidx.compose.material.icons.outlined.QueryStats
 import androidx.compose.material.icons.outlined.Search
 import androidx.compose.material.icons.outlined.Menu
@@ -119,12 +120,16 @@ import androidx.compose.material.icons.rounded.VisibilityOff
 import androidx.compose.material.icons.rounded.BookmarkAdd
 import androidx.compose.material.icons.rounded.AddAlarm
 import androidx.compose.material.icons.rounded.EventBusy
+import androidx.compose.material.icons.rounded.Folder
 import androidx.compose.material.icons.rounded.Lock
 import androidx.compose.material.icons.rounded.Security
 import androidx.compose.material.icons.rounded.Settings
-import androidx.compose.material.icons.rounded.SignalCellularAlt
 import androidx.compose.material.icons.rounded.Tune
 import androidx.compose.material.icons.rounded.Wifi
+import androidx.compose.material.icons.rounded.BatteryStd
+import androidx.compose.material.icons.rounded.Bluetooth
+import androidx.compose.material.icons.rounded.FilterBAndW
+import androidx.compose.material.icons.rounded.Nfc
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
@@ -150,6 +155,7 @@ import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.mutableStateListOf
+import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.derivedStateOf
 import androidx.compose.runtime.remember
@@ -194,6 +200,7 @@ import androidx.compose.ui.input.pointer.PointerEventPass
 import androidx.compose.ui.input.pointer.changedToUp
 import androidx.compose.ui.input.pointer.positionChanged
 import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalFocusManager
 import androidx.compose.ui.platform.LocalView
 import androidx.compose.ui.platform.LocalContext
@@ -360,6 +367,12 @@ private fun missingPermissionCount(prefs: LauncherPrefs, r: PermRuntime): Int {
     return n
 }
 
+/** First letter uppercase; [KeyboardCapitalization] is often ignored by OEM keyboards. */
+private fun capitalizeFirstLetterForGroupInput(raw: String): String =
+    raw.replaceFirstChar { ch ->
+        if (ch.isLowerCase()) ch.titlecase(Locale.getDefault()) else ch.toString()
+    }
+
 private data class OpenFolderState(
     val id: String,
     val members: List<AppEntry>,
@@ -388,6 +401,27 @@ fun LauncherScreen(
     val themePalette = remember(prefs.themeJson) { LauncherThemePalette.fromJson(prefs.themeJson) }
     val visibleShortcuts = if (prefs.showShortcutApps) prefs.homeShortcutPackages else emptyList()
     val visibleGroups = if (prefs.showHomeGroups) prefs.homeGroups else emptyList()
+    fun normalizedGroupName(raw: String): String =
+        raw.trim().ifBlank { "Group" }.lowercase(Locale.getDefault())
+    val existingGroupNamesNormalized = remember(
+        prefs.homeGroups,
+        prefs.folderContents,
+        prefs.folderNames,
+        allApps,
+    ) {
+        val byPkg = allApps.associateBy { it.packageName }
+        val drawerGroupNames = prefs.folderContents.mapNotNull { (id, members) ->
+            if (members.isEmpty()) null
+            else {
+                prefs.folderNames[id]?.trim()?.takeIf { it.isNotEmpty() }
+                    ?: (members.firstNotNullOfOrNull { pkg -> byPkg[pkg]?.label } ?: "Folder")
+            }
+        }
+        (prefs.homeGroups.map { it.title } + drawerGroupNames)
+            .map { normalizedGroupName(it) }
+            .toSet()
+    }
+    fun groupNameExists(raw: String): Boolean = normalizedGroupName(raw) in existingGroupNamesNormalized
     fun appIconFor(pkg: String): Any? = allApps.find { it.packageName == pkg }?.icon
     fun keepEnvelopeForMail(pkg: String): Boolean {
         if (pkg.isBlank()) return true
@@ -479,6 +513,8 @@ fun LauncherScreen(
     /** Storage token (`pkg` or `pkg#id`) when the app menu was opened from the home shortcut strip. */
     var homeShortcutMenuToken by remember { mutableStateOf<String?>(null) }
     var openFolder by remember { mutableStateOf<OpenFolderState?>(null) }
+    /** App-drawer folder: long-press menu (Open / Rename / Reorder / Delete). */
+    var drawerFolderMenu by remember { mutableStateOf<DrawerGridCell.Folder?>(null) }
     var openHomeGroup by remember { mutableStateOf<OpenFolderState?>(null) }
     val scope = rememberCoroutineScope()
     val homeFocusRequester = remember { FocusRequester() }
@@ -557,6 +593,7 @@ fun LauncherScreen(
                 appMenuFromHomeShortcut = false
                 homeShortcutMenuToken = null
             }
+            drawerFolderMenu != null -> drawerFolderMenu = null
             showDockSlotPicker != null -> showDockSlotPicker = null
             showPermissionsSettings -> showPermissionsSettings = false
             showGestureSettings -> showGestureSettings = false
@@ -807,6 +844,7 @@ fun LauncherScreen(
                                             vm.clearMove()
                                         }
                                     } else {
+                                        drawerFolderMenu = null
                                         openFolder = OpenFolderState(cell.id, cell.members, cell.displayTitle)
                                     }
                                 }
@@ -818,12 +856,24 @@ fun LauncherScreen(
                                     if (cell.entry.packageName == AppsRepository.INTERNAL_SETTINGS_PACKAGE) {
                                 showSettings = true
                             } else {
+                                        drawerFolderMenu = null
                                         appMenuFromHomeShortcut = false
                                         homeShortcutMenuToken = null
                                         showAppMenu = cell.entry
                                     }
                                 }
-                                is DrawerGridCell.Folder -> openFolder = OpenFolderState(cell.id, cell.members, cell.displayTitle)
+                                is DrawerGridCell.Folder -> {
+                                    if (reorderMode) {
+                                        val m = moving
+                                        if (m == null) vm.startMove(cell.id)
+                                        else {
+                                            vm.moveTo(cell.id)
+                                            vm.clearMove()
+                                        }
+                                    } else {
+                                        drawerFolderMenu = cell
+                                    }
+                                }
                             }
                         },
                         onReorderDrop = vm::finishReorderDrop,
@@ -917,11 +967,16 @@ fun LauncherScreen(
 
         val selectedApp = showAppMenu
         if (selectedApp != null) {
+            LaunchedEffect(selectedApp.packageName) { drawerFolderMenu = null }
             val canAddHomeShortcut =
                 !appMenuFromHomeShortcut &&
                     selectedApp.packageName != AppsRepository.INTERNAL_SETTINGS_PACKAGE &&
                     prefs.homeShortcutPackages.size < HOME_SHORTCUT_SLOTS &&
                     selectedApp.packageName !in prefs.homeShortcutPackages
+            val drawerFolderActionsEnabled =
+                !appMenuFromHomeShortcut &&
+                    selectedApp.packageName != AppsRepository.INTERNAL_SETTINGS_PACKAGE
+            val drawerFolderChoices = vm.foldersForAddMenu()
             AppContextMenu(
                 app = selectedApp,
                 themePalette = themePalette,
@@ -929,6 +984,8 @@ fun LauncherScreen(
                 homeGroups = prefs.homeGroups,
                 addHomeShortcutEnabled = canAddHomeShortcut,
                 removeHomeShortcutEnabled = appMenuFromHomeShortcut,
+                drawerFolderActionsEnabled = drawerFolderActionsEnabled,
+                drawerFolders = drawerFolderChoices,
                 onDismiss = {
                     showAppMenu = null
                     appMenuFromHomeShortcut = false
@@ -984,34 +1041,76 @@ fun LauncherScreen(
                     appMenuFromHomeShortcut = false
                     homeShortcutMenuToken = null
                 },
+                onCreateDrawerFolder = { title ->
+                    if (groupNameExists(title)) {
+                        Toast.makeText(context, "Groups already exist", Toast.LENGTH_SHORT).show()
+                        false
+                    } else {
+                        val visualIdx = gridCells.indexOfFirst { cell ->
+                            cell is DrawerGridCell.App && cell.entry.packageName == selectedApp.packageName
+                        }
+                        vm.createFolderFromApp(selectedApp.packageName, title, visualIdx)
+                        showAppMenu = null
+                        appMenuFromHomeShortcut = false
+                        homeShortcutMenuToken = null
+                        true
+                    }
+                },
+                onAddToDrawerFolder = { folderId ->
+                    vm.addAppToFolder(selectedApp.packageName, folderId)
+                    showAppMenu = null
+                    appMenuFromHomeShortcut = false
+                    homeShortcutMenuToken = null
+                },
+            )
+        }
+
+        val folderMenuCell = drawerFolderMenu
+        if (folderMenuCell != null) {
+            FolderDrawerContextMenu(
+                folder = folderMenuCell,
+                themePalette = themePalette,
+                onDismiss = { drawerFolderMenu = null },
+                onOpenFolder = {
+                    openFolder = OpenFolderState(folderMenuCell.id, folderMenuCell.members, folderMenuCell.displayTitle)
+                    drawerFolderMenu = null
+                },
+                onRenameFolder = { newTitle -> vm.renameFolder(folderMenuCell.id, newTitle) },
+                onReorderApps = {
+                    vm.toggleReorderMode()
+                    drawerFolderMenu = null
+                },
+                onDeleteFolder = {
+                    vm.dissolveFolder(folderMenuCell.id)
+                    if (openFolder?.id == folderMenuCell.id) openFolder = null
+                    drawerFolderMenu = null
+                },
             )
         }
 
         val folderOpen = openFolder
         if (folderOpen != null) {
-            FolderContentsSheet(
-                folderTitle = folderOpen.title,
+            HomeGroupFolderOverlay(
+                groupTitle = folderOpen.title,
                 members = folderOpen.members,
                 onDismiss = { openFolder = null },
                 onLaunchApp = { pkg ->
                     vm.launchApp(pkg)
                     openFolder = null
                 },
-                onRemoveFromFolder = { pkg ->
+                onRemoveFromGroup = { pkg ->
                     vm.removeAppFromFolder(pkg, folderOpen.id)
                     val updated = folderOpen.members.filter { it.packageName != pkg }
                     openFolder = if (updated.isEmpty()) null else folderOpen.copy(members = updated)
                 },
-                onDissolveFolder = {
-                    vm.dissolveFolder(folderOpen.id)
-                    openFolder = null
-                },
-                onRenameFolder = { newTitle ->
+                onRenameGroup = { newTitle ->
                     vm.renameFolder(folderOpen.id, newTitle)
                     openFolder = folderOpen.copy(title = newTitle.trim().ifBlank { "Folder" })
                 },
                 appIconShape = prefs.appIconShape,
                 themePalette = themePalette,
+                renameDialogTitle = "Rename folder",
+                emptyStateMessage = "No apps in this folder.",
             )
         }
 
@@ -1030,16 +1129,14 @@ fun LauncherScreen(
                     val updated = homeGroupOpen.members.filter { it.packageName != pkg }
                     openHomeGroup = if (updated.isEmpty()) null else homeGroupOpen.copy(members = updated)
                 },
-                onDeleteGroup = {
-                    vm.deleteHomeGroup(homeGroupOpen.id)
-                    openHomeGroup = null
-                },
                 onRenameGroup = { newTitle ->
                     vm.renameHomeGroup(homeGroupOpen.id, newTitle)
                     openHomeGroup = homeGroupOpen.copy(title = newTitle.trim().ifBlank { "Group" })
                 },
                 appIconShape = prefs.appIconShape,
                 themePalette = themePalette,
+                renameDialogTitle = "Rename group",
+                emptyStateMessage = "No apps yet — long-press an app in the drawer to add it here.",
             )
         }
 
@@ -1256,7 +1353,13 @@ fun LauncherScreen(
                 showShortcutApps = prefs.showShortcutApps,
                 showHomeGroups = prefs.showHomeGroups,
                 themePalette = themePalette,
-                onCreateGroup = { name -> vm.createHomeGroup(name) },
+                onCreateGroup = { name ->
+                    if (groupNameExists(name)) {
+                        Toast.makeText(context, "Groups already exist", Toast.LENGTH_SHORT).show()
+                    } else {
+                        vm.createHomeGroup(name)
+                    }
+                },
                 onDeleteGroup = { id -> vm.deleteHomeGroup(id) },
                 onSetGroupSide = { id, side -> vm.setHomeGroupSide(id, side) },
                 onMoveShortcut = { from, to -> vm.moveHomeShortcut(from, to) },
@@ -1313,6 +1416,8 @@ fun LauncherScreen(
         if (showQuickSettingsOverlay) {
             QuickSettingsOverlay(
                 themePalette = themePalette,
+                hapticsEnabled = prefs.hapticsEnabled,
+                hapticIntensity = prefs.hapticIntensity,
                 onDismiss = { showQuickSettingsOverlay = false },
             )
         }
@@ -1798,6 +1903,8 @@ private fun qsHorizontalEdgePadding(view: android.view.View, density: Density, e
 @Composable
 private fun QuickSettingsOverlay(
     themePalette: LauncherThemePalette,
+    hapticsEnabled: Boolean,
+    hapticIntensity: Int,
     onDismiss: () -> Unit,
 ) {
     val context = LocalContext.current
@@ -1856,10 +1963,24 @@ private fun QuickSettingsOverlay(
     var nfcOn by remember { mutableStateOf(actions.isNfcEnabled()) }
     var extraDimOn by remember { mutableStateOf(actions.isExtraDimEnabled()) }
     var torchOn by remember { mutableStateOf(actions.isTorchEnabled()) }
+    val cameraPermissionLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.RequestPermission(),
+    ) { granted ->
+        if (granted) {
+            when (val r = actions.toggleTorch()) {
+                is ToggleResult.Changed -> torchOn = r.enabled
+                else -> Toast.makeText(context, "Could not toggle torch", Toast.LENGTH_SHORT).show()
+            }
+        } else {
+            Toast.makeText(context, "Camera permission denied for torch", Toast.LENGTH_SHORT).show()
+        }
+    }
     var keyboardMode by remember { mutableStateOf(actions.lastKnownKeyboardMode()) }
     var showTileEditor by remember { mutableStateOf(false) }
     var preciseWifiPromptAttempted by remember { mutableStateOf(false) }
+    var batteryPct by remember { mutableStateOf(actions.batteryPercent()) }
     val hasBitwarden = remember(actions) { actions.isBitwardenInstalled() }
+    val hasWellbeing = remember(actions) { actions.isDigitalWellbeingInstalled() }
     LaunchedEffect(Unit) {
         if (!actions.hasWifiNamePermission()) {
             wifiPermissionLauncher.launch(Manifest.permission.ACCESS_COARSE_LOCATION)
@@ -1888,6 +2009,7 @@ private fun QuickSettingsOverlay(
             nfcOn = actions.isNfcEnabled()
             extraDimOn = actions.isExtraDimEnabled()
             torchOn = actions.isTorchEnabled()
+            batteryPct = actions.batteryPercent()
             actions.currentKeyboardMode()?.let {
                 keyboardMode = it
                 actions.persistKeyboardModeLabel(it)
@@ -1895,158 +2017,201 @@ private fun QuickSettingsOverlay(
             delay(5_000L)
         }
     }
-    val defaultQuickTiles = mutableListOf(
-        QuickTile(
-            id = "wifi",
-            icon = Icons.Rounded.Wifi,
-            title = "Wi-Fi",
-            subtitle = if (wifiEnabled == false) "Off" else wifiSubtitle,
-            highlighted = wifiEnabled != false && wifiSubtitle != "Disconnected",
-            onLongPress = actions::openWifiSettings,
-            onTap = {
-                when (val r = actions.toggleWifi()) {
-                    is ToggleResult.Changed -> {
-                        wifiEnabled = r.enabled
-                        wifiSubtitle = if (r.enabled) actions.currentWifiSsidLabel() else "Off"
-                        true
-                    }
-                    ToggleResult.PermissionRequired -> true
-                    ToggleResult.Unsupported -> {
-                        actions.openInternetPanel()
-                        true
-                    }
-                }
-            },
-        ),
-        QuickTile(
-            id = "mobile_network",
-            icon = Icons.Rounded.SignalCellularAlt,
-            title = "Mobile network",
-            subtitle = if (mobileDataEnabled == false) "Off" else carrierSubtitle,
-            highlighted = mobileDataEnabled != false,
-            onLongPress = actions::openMobileNetworkSettings,
-            onTap = actions::openInternetPanel,
-        ),
-        QuickTile(
-            id = "bluetooth",
-            icon = Icons.Rounded.Security,
-            title = "Bluetooth",
-            subtitle = btSubtitle,
-            highlighted = bluetoothEnabled == true,
-            closeOnSuccess = false,
-            onLongPress = actions::openBluetoothSettings,
-            onTap = {
-                when (val r = actions.toggleBluetooth()) {
-                    is ToggleResult.Changed -> {
-                        bluetoothEnabled = r.enabled
-                        true
-                    }
-                    ToggleResult.PermissionRequired -> {
-                        btPermissionLauncher.launch(Manifest.permission.BLUETOOTH_CONNECT)
-                        true
-                    }
-                    ToggleResult.Unsupported -> {
-                        Toast.makeText(context, "Direct Bluetooth toggle blocked by system. Long-press opens settings.", Toast.LENGTH_LONG).show()
-                        true
-                    }
-                }
-            },
-        ),
-        QuickTile(
-            id = "qr_scanner",
-            icon = Icons.Outlined.Search,
-            title = "QR code scanner",
-            subtitle = "",
-            showChevron = true,
-            closeOnSuccess = false,
-            onLongPress = actions::openQrScanner,
-            onTap = actions::openQrScanner,
-        ),
-        QuickTile(
-            id = "wireless_debugging",
-            icon = Icons.Rounded.Settings,
-            title = "Wireless debugging",
-            subtitle = if (wirelessDebugOn) "On" else "Off",
-            highlighted = wirelessDebugOn,
-            onLongPress = actions::openWirelessDebuggingSettings,
-            onTap = actions::openWirelessDebuggingSettings,
-        ),
-        QuickTile(
-            id = "keyboard_mode",
-            icon = Icons.Rounded.Tune,
-            title = keyboardMode,
-            subtitle = "",
-            highlighted = true,
-            closeOnSuccess = false,
-            showChevron = true,
-            onLongPress = actions::openKeyboardSettings,
-            onTap = {
-                val nextMode = if (keyboardMode == "keyboard") "mouse" else "keyboard"
-                val ok = actions.setKeyboardMode(nextMode)
-                if (ok) {
-                    keyboardMode = actions.currentKeyboardMode() ?: nextMode
-                    actions.persistKeyboardModeLabel(keyboardMode)
-                } else {
-                    if (!actions.canWriteSystemSettings()) {
-                        actions.requestWriteSettingsPermission()
-                        Toast.makeText(
-                            context,
-                            "Allow Modify system settings, then tap keyboard tile again.",
-                            Toast.LENGTH_LONG,
-                        ).show()
-                    } else {
-                        Toast.makeText(
-                            context,
-                            "Could not apply keyboard mode change. Long-press opens settings.",
-                            Toast.LENGTH_LONG,
-                        ).show()
-                    }
-                }
-                true
-            },
-        ),
-        QuickTile(
-            id = "battery_saver",
-            icon = Icons.Rounded.EventBusy,
-            title = "Battery Saver",
-            subtitle = if (batterySaverOn) "On" else "Off",
-            highlighted = batterySaverOn,
-            onLongPress = actions::openBatterySaverSettings,
-            onTap = actions::openBatterySaverSettings,
-        ),
-        QuickTile(
-            id = "airplane_mode",
-            icon = Icons.Rounded.SwapVert,
-            title = "Aeroplane mode",
-            subtitle = if (airplaneOn) "On" else "Off",
-            highlighted = airplaneOn,
-            onLongPress = actions::openAirplaneModeSettings,
-            onTap = actions::openAirplaneModeSettings,
-        ),
-    )
-    if (hasBitwarden) {
-        defaultQuickTiles.add(
+    val internetSubtitle = when {
+        wifiEnabled != false && wifiSubtitle != "Disconnected" -> wifiSubtitle
+        mobileDataEnabled != false -> carrierSubtitle
+        else -> "Off"
+    }
+    val internetHighlighted =
+        (wifiEnabled != false && wifiSubtitle != "Disconnected") || (mobileDataEnabled != false)
+    val defaultQuickTiles = buildList {
+        add(
             QuickTile(
-                id = "my_vault",
-                icon = Icons.Rounded.Lock,
-                title = "My vault",
+                id = "keyboard_mode",
+                icon = Icons.Rounded.Tune,
+                title = keyboardMode,
+                subtitle = "",
+                highlighted = true,
+                closeOnSuccess = false,
+                showChevron = true,
+                onLongPress = actions::openKeyboardSettings,
+                onTap = {
+                    val nextMode = if (keyboardMode == "keyboard") "mouse" else "keyboard"
+                    val ok = actions.setKeyboardMode(nextMode)
+                    if (ok) {
+                        keyboardMode = actions.currentKeyboardMode() ?: nextMode
+                        actions.persistKeyboardModeLabel(keyboardMode)
+                        Handler(Looper.getMainLooper()).postDelayed({
+                            actions.currentKeyboardMode()?.let { keyboardMode = it }
+                        }, 600L)
+                    } else {
+                        if (!actions.canWriteSystemSettings()) {
+                            actions.requestWriteSettingsPermission()
+                            Toast.makeText(
+                                context,
+                                "Allow Modify system settings, then tap keyboard tile again.",
+                                Toast.LENGTH_LONG,
+                            ).show()
+                        } else {
+                            Toast.makeText(
+                                context,
+                                "Could not apply keyboard mode change. Long-press opens settings.",
+                                Toast.LENGTH_LONG,
+                            ).show()
+                        }
+                    }
+                    true
+                },
+            ),
+        )
+        add(
+            QuickTile(
+                id = "internet",
+                icon = Icons.Rounded.Wifi,
+                title = "Internet",
+                subtitle = internetSubtitle,
+                highlighted = internetHighlighted,
+                closeOnSuccess = false,
+                showChevron = true,
+                onLongPress = actions::openInternetSettings,
+                onTap = actions::openInternetPanel,
+            ),
+        )
+        add(
+            QuickTile(
+                id = "bluetooth",
+                icon = Icons.Rounded.Bluetooth,
+                title = "Bluetooth",
+                subtitle = btSubtitle,
+                highlighted = bluetoothEnabled == true,
+                closeOnSuccess = false,
+                onLongPress = actions::openBluetoothSettings,
+                onTap = {
+                    when (val r = actions.toggleBluetooth()) {
+                        is ToggleResult.Changed -> {
+                            bluetoothEnabled = r.enabled
+                            Handler(Looper.getMainLooper()).postDelayed({
+                                bluetoothEnabled = actions.isBluetoothEnabled()
+                            }, 500L)
+                            true
+                        }
+                        ToggleResult.PermissionRequired -> {
+                            btPermissionLauncher.launch(Manifest.permission.BLUETOOTH_CONNECT)
+                            true
+                        }
+                        ToggleResult.Unsupported -> {
+                            Toast.makeText(
+                                context,
+                                "Bluetooth toggle blocked. Long-press opens settings, or grant all toggles in system settings.",
+                                Toast.LENGTH_LONG,
+                            ).show()
+                            true
+                        }
+                    }
+                },
+            ),
+        )
+        add(
+            QuickTile(
+                id = "qr_scanner",
+                icon = Icons.Outlined.Search,
+                title = "QR code scanner",
                 subtitle = "",
                 showChevron = true,
-                onTap = actions::openBitwardenVault,
-            )
+                closeOnSuccess = false,
+                onLongPress = actions::openQrScanner,
+                onTap = actions::openQrScanner,
+            ),
         )
-    }
-    defaultQuickTiles.addAll(
-        listOf(
+        add(
+            QuickTile(
+                id = "wireless_debugging",
+                icon = Icons.Rounded.Settings,
+                title = "Wireless debugging",
+                subtitle = if (wirelessDebugOn) "On" else "Off",
+                highlighted = wirelessDebugOn,
+                closeOnSuccess = false,
+                onLongPress = actions::openWirelessDebuggingSettings,
+                onTap = actions::openWirelessDebuggingSettings,
+            ),
+        )
+        add(
+            QuickTile(
+                id = "battery",
+                icon = Icons.Rounded.BatteryStd,
+                title = "Battery",
+                subtitle = buildString {
+                    batteryPct?.let { append("$it%") }
+                    if (batterySaverOn) {
+                        if (isNotEmpty()) append(" · ")
+                        append("Saver on")
+                    }
+                },
+                highlighted = batterySaverOn,
+                closeOnSuccess = false,
+                showChevron = true,
+                onLongPress = actions::openBatterySaverSettings,
+                onTap = actions::openBatteryUsageSummary,
+            ),
+        )
+        if (hasBitwarden) {
+            add(
+                QuickTile(
+                    id = "my_vault",
+                    icon = Icons.Rounded.Lock,
+                    title = "My vault",
+                    subtitle = "",
+                    showChevron = true,
+                    closeOnSuccess = false,
+                    onTap = actions::openBitwardenVault,
+                ),
+            )
+        }
+        add(
+            QuickTile(
+                id = "airplane_mode",
+                icon = Icons.Rounded.SwapVert,
+                title = "Aeroplane mode",
+                subtitle = if (airplaneOn) "On" else "Off",
+                highlighted = airplaneOn,
+                onLongPress = actions::openAirplaneModeSettings,
+                onTap = actions::openAirplaneModeSettings,
+            ),
+        )
+        add(
             QuickTile(
                 id = "torch",
                 icon = Icons.Rounded.WbSunny,
                 title = "Torch",
                 subtitle = if (torchOn) "On" else "Off",
                 highlighted = torchOn,
+                closeOnSuccess = false,
                 onLongPress = actions::openDisplaySettings,
-                onTap = actions::openDisplaySettings,
+                onTap = {
+                    if (ContextCompat.checkSelfPermission(context, Manifest.permission.CAMERA) != PackageManager.PERMISSION_GRANTED) {
+                        cameraPermissionLauncher.launch(Manifest.permission.CAMERA)
+                        true
+                    } else {
+                        when (val r = actions.toggleTorch()) {
+                            is ToggleResult.Changed -> {
+                                torchOn = r.enabled
+                                true
+                            }
+                            ToggleResult.Unsupported -> {
+                                if (actions.hasTorchHardware()) {
+                                    Toast.makeText(context, "Could not toggle torch", Toast.LENGTH_SHORT).show()
+                                } else {
+                                    actions.openDisplaySettings()
+                                }
+                                true
+                            }
+                            else -> true
+                        }
+                    }
+                },
             ),
+        )
+        add(
             QuickTile(
                 id = "dnd",
                 icon = Icons.Rounded.VisibilityOff,
@@ -2056,6 +2221,8 @@ private fun QuickSettingsOverlay(
                 onLongPress = actions::openDoNotDisturbSettings,
                 onTap = actions::openDoNotDisturbSettings,
             ),
+        )
+        add(
             QuickTile(
                 id = "storage",
                 icon = Icons.Rounded.Info,
@@ -2065,6 +2232,8 @@ private fun QuickSettingsOverlay(
                 onLongPress = actions::openStorageSettings,
                 onTap = actions::openStorageSettings,
             ),
+        )
+        add(
             QuickTile(
                 id = "hotspot",
                 icon = Icons.Rounded.SwapVert,
@@ -2074,6 +2243,8 @@ private fun QuickSettingsOverlay(
                 onLongPress = actions::openHotspotSettings,
                 onTap = actions::openHotspotSettings,
             ),
+        )
+        add(
             QuickTile(
                 id = "night_light",
                 icon = Icons.Rounded.WbSunny,
@@ -2083,6 +2254,8 @@ private fun QuickSettingsOverlay(
                 onLongPress = actions::openNightLightSettings,
                 onTap = actions::openNightLightSettings,
             ),
+        )
+        add(
             QuickTile(
                 id = "auto_rotate",
                 icon = Icons.Rounded.SwapVert,
@@ -2090,17 +2263,50 @@ private fun QuickSettingsOverlay(
                 subtitle = if (autoRotateOn) "On" else "Off",
                 highlighted = autoRotateOn,
                 onLongPress = actions::openDisplaySettings,
-                onTap = actions::openDisplaySettings,
+                onTap = {
+                    when (val r = actions.toggleAutoRotate()) {
+                        is ToggleResult.Changed -> {
+                            autoRotateOn = r.enabled
+                            true
+                        }
+                        ToggleResult.PermissionRequired -> {
+                            actions.requestWriteSettingsPermission()
+                            Toast.makeText(
+                                context,
+                                "Allow Modify system settings to toggle auto-rotate.",
+                                Toast.LENGTH_LONG,
+                            ).show()
+                            true
+                        }
+                        ToggleResult.Unsupported -> actions.openDisplaySettings()
+                    }
+                },
             ),
+        )
+        add(
             QuickTile(
                 id = "nfc",
-                icon = Icons.Rounded.Security,
+                icon = Icons.Rounded.Nfc,
                 title = "NFC",
                 subtitle = if (nfcOn) "On" else "Off",
                 highlighted = nfcOn,
+                closeOnSuccess = false,
                 onLongPress = actions::openNfcSettings,
-                onTap = actions::openNfcSettings,
+                onTap = {
+                    when (val r = actions.toggleNfc()) {
+                        is ToggleResult.Changed -> {
+                            nfcOn = r.enabled
+                            Handler(Looper.getMainLooper()).postDelayed({
+                                nfcOn = actions.isNfcEnabled()
+                            }, 500L)
+                            true
+                        }
+                        else -> actions.openNfcSettings()
+                    }
+                },
             ),
+        )
+        add(
             QuickTile(
                 id = "extra_dim",
                 icon = Icons.Rounded.VisibilityOff,
@@ -2110,6 +2316,8 @@ private fun QuickSettingsOverlay(
                 onLongPress = actions::openExtraDimSettings,
                 onTap = actions::openExtraDimSettings,
             ),
+        )
+        add(
             QuickTile(
                 id = "screen_record",
                 icon = Icons.Rounded.TouchApp,
@@ -2119,6 +2327,8 @@ private fun QuickSettingsOverlay(
                 onLongPress = actions::openScreenRecordSettings,
                 onTap = actions::openScreenRecordSettings,
             ),
+        )
+        add(
             QuickTile(
                 id = "screen_cast",
                 icon = Icons.Rounded.Wallpaper,
@@ -2128,16 +2338,33 @@ private fun QuickSettingsOverlay(
                 onLongPress = actions::openCastSettings,
                 onTap = actions::openCastSettings,
             ),
-            QuickTile(
-                id = "bedtime",
-                icon = Icons.Rounded.AddAlarm,
-                title = "Bedtime mode",
-                subtitle = "Off",
-                onLongPress = actions::openBedtimeSettings,
-                onTap = actions::openBedtimeSettings,
-            ),
         )
-    )
+        if (hasWellbeing) {
+            add(
+                QuickTile(
+                    id = "grayscale",
+                    icon = Icons.Rounded.FilterBAndW,
+                    title = "Greyscale",
+                    subtitle = "",
+                    showChevron = true,
+                    closeOnSuccess = false,
+                    onLongPress = actions::openDigitalWellbeingHome,
+                    onTap = actions::openDigitalWellbeingHome,
+                ),
+            )
+        } else {
+            add(
+                QuickTile(
+                    id = "bedtime",
+                    icon = Icons.Rounded.AddAlarm,
+                    title = "Bedtime mode",
+                    subtitle = "Off",
+                    onLongPress = actions::openBedtimeSettings,
+                    onTap = actions::openBedtimeSettings,
+                ),
+            )
+        }
+    }
     val orderedTileIds = remember { mutableStateListOf<String>() }
     val defaultTileIds = defaultQuickTiles.map { it.id }
     LaunchedEffect(defaultTileIds) {
@@ -2158,9 +2385,77 @@ private fun QuickSettingsOverlay(
         val id = orderedTileIds.removeAt(from)
         orderedTileIds.add(to, id)
     }
-    val pages = allQuickTiles.chunked(8)
+    val qsTilesPerPage = 8
+    val pages = allQuickTiles.chunked(qsTilesPerPage)
     val pagerState = rememberPagerState(initialPage = 0, pageCount = { pages.size })
     val (qsPadStart, qsPadEnd) = qsHorizontalEdgePadding(view, density, qsHorizontalGutter)
+    val scope = rememberCoroutineScope()
+
+    /** Index within [pagerState.currentPage] only (same idea as app drawer grid index). */
+    var qsGridIndex by remember { mutableIntStateOf(0) }
+    /** Focus on the tune row below the pager (like dock below drawer grid). */
+    var qsOnEdit by remember { mutableStateOf(false) }
+    val lastDirectionalRef = remember { longArrayOf(0L) }
+    val lastMoveRef = remember { longArrayOf(0L) }
+    val qsKeyFocusRequester = remember { FocusRequester() }
+    LaunchedEffect(allQuickTiles.size, pages.size) {
+        if (allQuickTiles.isEmpty()) {
+            qsGridIndex = 0
+            qsOnEdit = false
+            return@LaunchedEffect
+        }
+        val lastPage = pages.lastIndex.coerceAtLeast(0)
+        val p = pagerState.currentPage.coerceIn(0, lastPage)
+        val slice = pages.getOrNull(p)?.size ?: 0
+        if (slice > 0) {
+            qsGridIndex = qsGridIndex.coerceIn(0, slice - 1)
+        } else {
+            qsGridIndex = 0
+        }
+    }
+    LaunchedEffect(Unit) {
+        qsKeyFocusRequester.requestFocus()
+    }
+    LaunchedEffect(showTileEditor) {
+        if (!showTileEditor) {
+            delay(50)
+            qsKeyFocusRequester.requestFocus()
+        }
+    }
+
+    fun runQsTileTap(tile: QuickTile) {
+        if (tile.id == "qr_scanner") {
+            onDismiss()
+            Handler(Looper.getMainLooper()).postDelayed({
+                val ok = tile.onTap()
+                if (!ok) {
+                    Toast.makeText(context, "Could not open ${tile.title}", Toast.LENGTH_SHORT).show()
+                }
+            }, 120L)
+        } else {
+            val ok = tile.onTap()
+            if (!ok) {
+                Toast.makeText(context, "Could not open ${tile.title}", Toast.LENGTH_SHORT).show()
+            } else if (tile.closeOnSuccess) {
+                onDismiss()
+            }
+        }
+    }
+
+    fun runQsTileLongPress(tile: QuickTile) {
+        if (tile.id == "qr_scanner") {
+            onDismiss()
+            Handler(Looper.getMainLooper()).postDelayed({
+                val longOk = tile.onLongPress?.invoke() ?: false
+                if (!longOk) {
+                    Toast.makeText(context, "Could not open ${tile.title}", Toast.LENGTH_SHORT).show()
+                }
+            }, 120L)
+        } else {
+            val longOk = tile.onLongPress?.invoke() ?: false
+            if (longOk) onDismiss()
+        }
+    }
 
     val statusTopPx = ViewCompat.getRootWindowInsets(view)
         ?.getInsets(WindowInsetsCompat.Type.statusBars())?.top ?: 0
@@ -2215,7 +2510,138 @@ private fun QuickSettingsOverlay(
                 .fillMaxSize()
                 .statusBarsPadding()
                 .navigationBarsPadding()
-                .padding(start = qsPadStart, end = qsPadEnd, top = 4.dp, bottom = 4.dp),
+                .padding(start = qsPadStart, end = qsPadEnd, top = 4.dp, bottom = 4.dp)
+                .focusRequester(qsKeyFocusRequester)
+                .focusable()
+                .onPreviewKeyEvent { ev ->
+                    if (showTileEditor) return@onPreviewKeyEvent false
+                    if (ev.type != KeyEventType.KeyDown) return@onPreviewKeyEvent false
+                    if (ev.isVolumePanelKey()) return@onPreviewKeyEvent false
+                    val n = allQuickTiles.size
+                    if (ev.key == Key.Back) {
+                        onDismiss()
+                        return@onPreviewKeyEvent true
+                    }
+                    if (ev.isEndCallKey()) {
+                        onDismiss()
+                        return@onPreviewKeyEvent true
+                    }
+                    val directional =
+                        ev.key == Key.DirectionLeft ||
+                            ev.key == Key.DirectionRight ||
+                            ev.key == Key.DirectionUp ||
+                            ev.key == Key.DirectionDown
+                    if (!directional) {
+                        lastDirectionalRef[0] = 0L
+                    }
+                    val now = SystemClock.uptimeMillis()
+                    val repeatHeavy = (ev.nativeKeyEvent?.repeatCount ?: 0) > 0
+                    val isHard = if (directional) {
+                        val quickPair = lastDirectionalRef[0] != 0L && (now - lastDirectionalRef[0]) < NAV_FRAME_MS
+                        lastDirectionalRef[0] = now
+                        repeatHeavy || quickPair
+                    } else {
+                        false
+                    }
+                    val cols = 2
+                    val lastPageIdx = pages.lastIndex.coerceAtLeast(0)
+
+                    when (ev.key) {
+                        Key.Enter,
+                        Key.NumPadEnter,
+                        -> {
+                            if (n == 0) return@onPreviewKeyEvent true
+                            val shift = ev.nativeKeyEvent?.isShiftPressed == true
+                            if (qsOnEdit) {
+                                if (!shift) showTileEditor = true
+                                return@onPreviewKeyEvent true
+                            }
+                            val page = pagerState.currentPage.coerceIn(0, lastPageIdx)
+                            val pageList = pages.getOrNull(page) ?: emptyList()
+                            val sc = pageList.size
+                            if (sc <= 0) return@onPreviewKeyEvent true
+                            val idx = qsGridIndex.coerceIn(0, sc - 1)
+                            val tile = pageList[idx]
+                            if (shift) runQsTileLongPress(tile) else runQsTileTap(tile)
+                            true
+                        }
+                        Key.DirectionLeft,
+                        Key.DirectionRight,
+                        Key.DirectionUp,
+                        Key.DirectionDown,
+                        -> {
+                            if (n == 0 || pages.isEmpty()) return@onPreviewKeyEvent true
+                            if (qsOnEdit) {
+                                if (ev.key == Key.DirectionUp) {
+                                    qsOnEdit = false
+                                    val page = pagerState.currentPage.coerceIn(0, lastPageIdx)
+                                    val sc = pages.getOrNull(page)?.size ?: 0
+                                    if (sc > 0) {
+                                        val lastTile = sc - 1
+                                        qsGridIndex = (lastTile / cols) * cols
+                                    }
+                                    doNavFeedback(view, hapticsEnabled, hapticIntensity)
+                                }
+                                return@onPreviewKeyEvent true
+                            }
+                            val page = pagerState.currentPage.coerceIn(0, lastPageIdx)
+                            val pageList = pages.getOrNull(page) ?: emptyList()
+                            val sliceCount = pageList.size
+                            if (sliceCount <= 0) return@onPreviewKeyEvent true
+
+                            val currentIndex = qsGridIndex.coerceIn(0, sliceCount - 1)
+                            val currentRow = currentIndex / cols
+                            val currentCol = currentIndex % cols
+                            val isFirstCol = currentCol == 0
+                            val isLastCol = currentCol == cols - 1 || currentIndex == sliceCount - 1
+
+                            if (ev.key == Key.DirectionLeft && isFirstCol && page > 0 && isHard &&
+                                !pagerState.isScrollInProgress
+                            ) {
+                                val prevCount = pages[page - 1].size
+                                val rowStart = currentRow * cols
+                                val target = (rowStart + cols - 1).coerceAtMost(prevCount - 1).coerceAtLeast(0)
+                                qsGridIndex = target
+                                scope.launch {
+                                    pagerState.animateScrollToPage(page - 1)
+                                    doNavFeedback(view, hapticsEnabled, hapticIntensity)
+                                }
+                                return@onPreviewKeyEvent true
+                            }
+                            if (ev.key == Key.DirectionRight && isLastCol && page < lastPageIdx && isHard &&
+                                !pagerState.isScrollInProgress
+                            ) {
+                                val nextCount = pages[page + 1].size
+                                val target = (currentRow * cols).coerceAtMost(nextCount - 1).coerceAtLeast(0)
+                                qsGridIndex = target
+                                scope.launch {
+                                    pagerState.animateScrollToPage(page + 1)
+                                    doNavFeedback(view, hapticsEnabled, hapticIntensity)
+                                }
+                                return@onPreviewKeyEvent true
+                            }
+
+                            if (directional && (now - lastMoveRef[0]) < NAV_MOVE_MIN_MS) {
+                                return@onPreviewKeyEvent true
+                            }
+                            lastMoveRef[0] = now
+
+                            val beforeGrid = qsGridIndex
+                            val afterGrid = NavState(gridIndex = currentIndex).onGridKey(ev.key, cols, sliceCount)
+                            if (afterGrid.area == FocusArea.Dock) {
+                                qsOnEdit = true
+                                doNavFeedback(view, hapticsEnabled, hapticIntensity)
+                            } else {
+                                qsGridIndex = afterGrid.gridIndex
+                                if (qsGridIndex != beforeGrid) {
+                                    doNavFeedback(view, hapticsEnabled, hapticIntensity)
+                                }
+                            }
+                            true
+                        }
+                        else -> false
+                    }
+                },
         ) {
             Text(
                 dateText,
@@ -2270,42 +2696,11 @@ private fun QuickSettingsOverlay(
                     horizontalArrangement = Arrangement.spacedBy(8.dp),
                     verticalArrangement = Arrangement.spacedBy(8.dp),
                 ) {
-                    items(items = pages[page], key = { it.id }) { tile ->
+                    itemsIndexed(items = pages[page], key = { _, t -> t.id }) { _, tile ->
                         ClassicQuickTile(
                             tile = tile,
-                            onTap = {
-                                // GMS scanner can finish immediately if our overlay window is still on top; dismiss first.
-                                if (tile.id == "qr_scanner") {
-                                    onDismiss()
-                                    Handler(Looper.getMainLooper()).postDelayed({
-                                        val ok = tile.onTap()
-                                        if (!ok) {
-                                            Toast.makeText(context, "Could not open ${tile.title}", Toast.LENGTH_SHORT).show()
-                                        }
-                                    }, 120L)
-                                    return@ClassicQuickTile
-                                }
-                                val ok = tile.onTap()
-                                if (!ok) {
-                                    Toast.makeText(context, "Could not open ${tile.title}", Toast.LENGTH_SHORT).show()
-                                } else if (tile.closeOnSuccess) {
-                                    onDismiss()
-                                }
-                            },
-                            onLongPress = {
-                                if (tile.id == "qr_scanner") {
-                                    onDismiss()
-                                    Handler(Looper.getMainLooper()).postDelayed({
-                                        val longOk = tile.onLongPress?.invoke() ?: false
-                                        if (!longOk) {
-                                            Toast.makeText(context, "Could not open ${tile.title}", Toast.LENGTH_SHORT).show()
-                                        }
-                                    }, 120L)
-                                    return@ClassicQuickTile
-                                }
-                                val longOk = tile.onLongPress?.invoke() ?: false
-                                if (longOk) onDismiss()
-                            },
+                            onTap = { runQsTileTap(tile) },
+                            onLongPress = { runQsTileLongPress(tile) },
                         )
                     }
                 }
@@ -2350,10 +2745,26 @@ private fun QuickSettingsTileEditorOverlay(
     val editorView = LocalView.current
     val editorDensity = LocalDensity.current
     val (editorPadStart, editorPadEnd) = qsHorizontalEdgePadding(editorView, editorDensity, 0.dp)
+    val editorFocusRequester = remember { FocusRequester() }
+    LaunchedEffect(Unit) {
+        editorFocusRequester.requestFocus()
+    }
     Surface(
         modifier = Modifier
             .fillMaxSize()
-            .zIndex(600f),
+            .zIndex(600f)
+            .focusRequester(editorFocusRequester)
+            .focusable()
+            .onPreviewKeyEvent { ev ->
+                if (ev.type != KeyEventType.KeyDown) return@onPreviewKeyEvent false
+                if (ev.isVolumePanelKey()) return@onPreviewKeyEvent false
+                if (ev.key == Key.Back || ev.isEndCallKey()) {
+                    onDismiss()
+                    true
+                } else {
+                    false
+                }
+            },
         color = Color(0xF0000000),
     ) {
         Column(
@@ -2490,6 +2901,7 @@ private fun ClassicQuickTile(
         modifier = Modifier
             .fillMaxWidth()
             .height(70.dp)
+            .clip(RoundedCornerShape(10.dp))
             .combinedClickable(onClick = onTap, onLongClick = onLongPress),
         verticalAlignment = Alignment.CenterVertically,
     ) {
@@ -3390,10 +3802,12 @@ private fun FolderTile(
     onClick: () -> Unit,
     onLongPress: () -> Unit,
 ) {
-    /** BlackBerry 10–style folder: square tile, slightly rounded, semi-transparent dark glass. */
+    /** Match app-tile geometry so folder labels/focus look identical in the drawer. */
     val folderShape = RoundedCornerShape(8.dp)
     val folderBg = Color(0xD9181C24)
     val folderBorderIdle = Color(0x38FFFFFF)
+    val cardRadius = themePalette.appCardCornerRadiusDp.dp
+    val selRadius = themePalette.selectorBorderRadiusDp.dp
     val wiggle = rememberInfiniteTransition(label = "folderWiggle")
     val wiggleRotation by wiggle.animateFloat(
         initialValue = -2.5f,
@@ -3454,6 +3868,31 @@ private fun FolderTile(
     ) {
         val iconPadTop = 3.dp
         val textPadBottom = 2.dp
+        if (selected) {
+            Box(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .clip(RoundedCornerShape(selRadius))
+                    .background(themePalette.selectorBackgroundColour)
+                    .border(
+                        width = 1.dp,
+                        color = themePalette.selectorBorderColour,
+                        shape = RoundedCornerShape(selRadius),
+                    ),
+            )
+        } else {
+            Box(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .clip(RoundedCornerShape(cardRadius))
+                    .background(brush = Brush.verticalGradient(listOf(cardTop, cardBottom)))
+                    .border(
+                        width = 0.8.dp,
+                        color = Color(0x332F3B4F),
+                        shape = RoundedCornerShape(cardRadius),
+                    ),
+            )
+        }
         Column(
             horizontalAlignment = Alignment.CenterHorizontally,
             modifier = Modifier.fillMaxSize(),
@@ -3463,31 +3902,17 @@ private fun FolderTile(
                     .padding(top = iconPadTop, bottom = 4.dp, start = 6.dp, end = 6.dp)
                     .size(iconSize),
             ) {
-                if (selected) {
-                    Box(
-                        modifier = Modifier
-                            .fillMaxSize()
-                            .clip(folderShape)
-                            .background(themePalette.selectorBackgroundColour)
-                            .border(
-                                width = 1.5.dp,
-                                color = themePalette.selectorBorderColour,
-                                shape = folderShape,
-                            ),
-                    )
-                } else {
-                    Box(
-                        modifier = Modifier
-                            .fillMaxSize()
-                            .clip(folderShape)
-                            .background(folderBg)
-                            .border(
-                                width = 0.5.dp,
-                                color = folderBorderIdle,
-                                shape = folderShape,
-                            ),
-                    )
-                }
+                Box(
+                    modifier = Modifier
+                        .fillMaxSize()
+                        .clip(folderShape)
+                        .background(folderBg)
+                        .border(
+                            width = 0.5.dp,
+                            color = folderBorderIdle,
+                            shape = folderShape,
+                        ),
+                )
                 Column(
                     modifier = Modifier
                         .fillMaxSize()
@@ -3544,8 +3969,8 @@ private fun FolderTile(
                 OutlinedLabel(
                     text = displayLabel,
                     fontSizeSp = labelSizeSp,
-                    textColor = Color(0xFFF5F5F5),
-                    outlineColor = Color(0x66000000),
+                    textColor = themePalette.appCardTextColour,
+                    outlineColor = themePalette.appCardTextOutlineColour,
                 )
             }
         }
@@ -3820,146 +4245,8 @@ private fun OutlinedLabel(
     }
 }
 
-@OptIn(ExperimentalMaterial3Api::class)
-@Composable
-private fun FolderContentsSheet(
-    folderTitle: String,
-    members: List<AppEntry>,
-    onDismiss: () -> Unit,
-    onLaunchApp: (String) -> Unit,
-    onRemoveFromFolder: (String) -> Unit,
-    onDissolveFolder: () -> Unit,
-    onRenameFolder: (String) -> Unit,
-    appIconShape: AppIconShape,
-    themePalette: LauncherThemePalette,
-) {
-    val state = rememberModalBottomSheetState(skipPartiallyExpanded = true)
-    var renameOpen by remember { mutableStateOf(false) }
-    var renameText by remember(folderTitle) { mutableStateOf(folderTitle) }
-    androidx.compose.runtime.LaunchedEffect(folderTitle) {
-        renameText = folderTitle
-    }
-    ModalBottomSheet(
-        onDismissRequest = onDismiss,
-        sheetState = state,
-        containerColor = themePalette.settingsBg,
-        contentColor = themePalette.settingsMenuTitle,
-    ) {
-        Column(
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(16.dp),
-        ) {
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                verticalAlignment = Alignment.CenterVertically,
-            ) {
-                Text(
-                    folderTitle,
-                    style = MaterialTheme.typography.titleLarge,
-                    color = themePalette.settingsMenuTitle,
-                    modifier = Modifier.weight(1f),
-                    maxLines = 2,
-                )
-                TextButton(onClick = { renameOpen = true }) {
-                    Text("Rename", color = themePalette.settingsMenuBody)
-                }
-                TextButton(onClick = onDissolveFolder) {
-                    Text("Remove", color = Color(0xFFFF6B6B))
-                }
-            }
-            Text(
-                "${members.size} apps",
-                style = MaterialTheme.typography.bodySmall,
-                color = themePalette.settingsMenuBody,
-            )
-            Spacer(Modifier.height(12.dp))
-            LazyColumn(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .heightIn(max = 420.dp),
-            ) {
-                items(members, key = { it.packageName }) { app ->
-                    Row(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .clickable { onLaunchApp(app.packageName) }
-                            .padding(vertical = 8.dp),
-                        verticalAlignment = Alignment.CenterVertically,
-                        horizontalArrangement = androidx.compose.foundation.layout.Arrangement.SpaceBetween,
-                    ) {
-                        Row(
-                            verticalAlignment = Alignment.CenterVertically,
-                            modifier = Modifier.weight(1f),
-                        ) {
-                            AsyncImage(
-                                model = app.icon,
-                                contentDescription = app.label,
-                                modifier = Modifier.size(40.dp).clip(iconMaskShape(appIconShape)),
-                            )
-                            Text(
-                                app.label,
-                                modifier = Modifier.padding(start = 10.dp),
-                                color = themePalette.settingsMenuTitle,
-                                maxLines = 2,
-                            )
-                        }
-                        TextButton(onClick = { onRemoveFromFolder(app.packageName) }) {
-                            Text("Remove", color = themePalette.settingsMenuBody)
-                        }
-                    }
-                }
-            }
-            Spacer(Modifier.height(8.dp))
-        }
-    }
-    if (renameOpen) {
-        val renameFocusRequester = remember { FocusRequester() }
-        LaunchedEffect(Unit) { renameFocusRequester.requestFocus() }
-        AlertDialog(
-            onDismissRequest = { renameOpen = false },
-            shape = RoundedCornerShape(16.dp),
-            title = { Text("Rename folder") },
-            text = {
-                OutlinedTextField(
-                    value = renameText,
-                    onValueChange = { renameText = it },
-                    singleLine = true,
-                    label = { Text("Name", color = themePalette.settingsMenuBody) },
-                    colors = TextFieldDefaults.colors(
-                        focusedTextColor = Color(0xFFE8EEF7),
-                        unfocusedTextColor = Color(0xFFE8EEF7),
-                        focusedLabelColor = themePalette.settingsMenuBody,
-                        unfocusedLabelColor = themePalette.settingsMenuBody,
-                        focusedIndicatorColor = Color(0xFF5B9BD5),
-                        unfocusedIndicatorColor = Color(0xFF5F6A78),
-                        focusedContainerColor = Color(0xFF1E2430),
-                        unfocusedContainerColor = Color(0xFF1E2430),
-                        disabledContainerColor = Color(0xFF1E2430),
-                        cursorColor = Color(0xFF84D5F6),
-                        focusedPlaceholderColor = themePalette.settingsMenuBody.copy(alpha = 0.7f),
-                        unfocusedPlaceholderColor = themePalette.settingsMenuBody.copy(alpha = 0.7f),
-                    ),
-                    modifier = Modifier.fillMaxWidth().focusRequester(renameFocusRequester),
-                )
-            },
-            confirmButton = {
-                TextButton(
-                    onClick = {
-                        onRenameFolder(renameText)
-                        renameOpen = false
-                    },
-                ) { Text("Save") }
-            },
-            dismissButton = {
-                TextButton(onClick = { renameOpen = false }) { Text("Cancel") }
-            },
-        )
-    }
-}
-
 /**
- * Bottom sheet: slides up from the strip, auto-sizes to the app count, swipe-to-dismiss.
+ * Bottom sheet: home strip groups and app-drawer folders share this UI and behavior.
  */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -3969,14 +4256,15 @@ private fun HomeGroupFolderOverlay(
     onDismiss: () -> Unit,
     onLaunchApp: (String) -> Unit,
     onRemoveFromGroup: (String) -> Unit,
-    onDeleteGroup: () -> Unit,
     onRenameGroup: (String) -> Unit,
     appIconShape: AppIconShape,
     themePalette: LauncherThemePalette,
+    renameDialogTitle: String = "Rename group",
+    emptyStateMessage: String = "No apps yet — long-press an app in the drawer to add it here.",
 ) {
     var renameOpen by remember { mutableStateOf(false) }
     var renameText by remember(groupTitle) { mutableStateOf(groupTitle) }
-    var focusedIndex by remember(members) { mutableStateOf(0) }
+    var focusedIndex by remember(members) { mutableIntStateOf(0) }
     val gridFocusRequester = remember { FocusRequester() }
     LaunchedEffect(members.size) {
         focusedIndex = focusedIndex.coerceIn(0, (members.size - 1).coerceAtLeast(0))
@@ -4013,19 +4301,21 @@ private fun HomeGroupFolderOverlay(
                     ),
                     modifier = Modifier.weight(1f),
                 )
-                IconButton(onClick = { renameOpen = true }) {
-                    Icon(
-                        imageVector = Icons.Rounded.Tune,
-                        contentDescription = "Rename",
-                        tint = themePalette.settingsMenuBody,
-                        modifier = Modifier.size(20.dp),
-                    )
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    IconButton(onClick = { renameOpen = true }) {
+                        Icon(
+                            imageVector = Icons.Rounded.Tune,
+                            contentDescription = "Rename",
+                            tint = themePalette.settingsMenuBody,
+                            modifier = Modifier.size(20.dp),
+                        )
+                    }
                 }
             }
             if (members.isEmpty()) {
                 Spacer(Modifier.height(8.dp))
                 Text(
-                    "No apps yet — long-press an app in the drawer to add it here.",
+                    emptyStateMessage,
                     color = themePalette.settingsMenuBody,
                     fontSize = 14.sp,
                     textAlign = TextAlign.Center,
@@ -4148,13 +4438,17 @@ private fun HomeGroupFolderOverlay(
             containerColor = themePalette.settingsBg,
             titleContentColor = themePalette.settingsMenuTitle,
             textContentColor = themePalette.settingsMenuBody,
-            title = { Text("Rename group", color = themePalette.settingsMenuTitle) },
+            title = { Text(renameDialogTitle, color = themePalette.settingsMenuTitle) },
             text = {
                 OutlinedTextField(
                     value = renameText,
-                    onValueChange = { renameText = it },
+                    onValueChange = { renameText = capitalizeFirstLetterForGroupInput(it) },
                     singleLine = true,
                     label = { Text("Name", color = themePalette.settingsMenuBody) },
+                    keyboardOptions = KeyboardOptions(
+                        capitalization = KeyboardCapitalization.Sentences,
+                        imeAction = ImeAction.Done,
+                    ),
                     colors = TextFieldDefaults.colors(
                         focusedTextColor = Color(0xFFE8EEF7),
                         unfocusedTextColor = Color(0xFFE8EEF7),
@@ -4191,6 +4485,135 @@ private fun HomeGroupFolderOverlay(
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
+private fun FolderDrawerContextMenu(
+    folder: DrawerGridCell.Folder,
+    themePalette: LauncherThemePalette,
+    onDismiss: () -> Unit,
+    onOpenFolder: () -> Unit,
+    onRenameFolder: (String) -> Unit,
+    onReorderApps: () -> Unit,
+    onDeleteFolder: () -> Unit,
+) {
+    val state = rememberModalBottomSheetState(skipPartiallyExpanded = true)
+    var renameOpen by remember { mutableStateOf(false) }
+    var renameText by remember(folder.displayTitle) { mutableStateOf(folder.displayTitle) }
+    LaunchedEffect(folder.id, folder.displayTitle) {
+        renameText = folder.displayTitle
+    }
+    val iconTint = themePalette.settingsMenuBody
+    val labelColor = themePalette.settingsMenuTitle
+    ModalBottomSheet(
+        onDismissRequest = onDismiss,
+        sheetState = state,
+        containerColor = themePalette.settingsBg,
+        contentColor = labelColor,
+    ) {
+        Column(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(horizontal = 16.dp, vertical = 8.dp),
+        ) {
+            Text(
+                folder.displayTitle,
+                style = MaterialTheme.typography.titleLarge.copy(fontWeight = FontWeight.SemiBold),
+                color = labelColor,
+                modifier = Modifier.fillMaxWidth(),
+            )
+            Spacer(Modifier.height(8.dp))
+            HorizontalDivider(color = Color(0xFF2C3340))
+            Spacer(Modifier.height(4.dp))
+
+            @Composable
+            fun MenuRow(
+                icon: ImageVector,
+                label: String,
+                onClick: () -> Unit,
+            ) {
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .clip(RoundedCornerShape(10.dp))
+                        .clickable(onClick = onClick)
+                        .padding(horizontal = 12.dp, vertical = 14.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    Icon(icon, contentDescription = null, tint = iconTint, modifier = Modifier.size(22.dp))
+                    Spacer(Modifier.width(16.dp))
+                    Text(
+                        label,
+                        style = MaterialTheme.typography.bodyLarge,
+                        color = labelColor,
+                    )
+                }
+            }
+
+            MenuRow(Icons.AutoMirrored.Rounded.OpenInNew, "Open folder", onClick = onOpenFolder)
+            MenuRow(
+                Icons.Rounded.Tune,
+                "Rename folder",
+                onClick = { renameOpen = true },
+            )
+            MenuRow(Icons.Rounded.SwapVert, "Reorder apps", onClick = onReorderApps)
+            MenuRow(Icons.Outlined.Delete, "Delete folder", onClick = onDeleteFolder)
+        }
+    }
+    if (renameOpen) {
+        val renameFocusRequester = remember { FocusRequester() }
+        LaunchedEffect(Unit) { renameFocusRequester.requestFocus() }
+        AlertDialog(
+            onDismissRequest = { renameOpen = false },
+            shape = RoundedCornerShape(16.dp),
+            containerColor = themePalette.settingsBg,
+            titleContentColor = themePalette.settingsMenuTitle,
+            textContentColor = themePalette.settingsMenuBody,
+            title = { Text("Rename folder", color = themePalette.settingsMenuTitle) },
+            text = {
+                OutlinedTextField(
+                    value = renameText,
+                    onValueChange = { renameText = capitalizeFirstLetterForGroupInput(it) },
+                    singleLine = true,
+                    label = { Text("Name", color = themePalette.settingsMenuBody) },
+                    keyboardOptions = KeyboardOptions(
+                        capitalization = KeyboardCapitalization.Sentences,
+                        imeAction = ImeAction.Done,
+                    ),
+                    colors = TextFieldDefaults.colors(
+                        focusedTextColor = Color(0xFFE8EEF7),
+                        unfocusedTextColor = Color(0xFFE8EEF7),
+                        focusedLabelColor = themePalette.settingsMenuBody,
+                        unfocusedLabelColor = themePalette.settingsMenuBody,
+                        focusedIndicatorColor = Color(0xFF5B9BD5),
+                        unfocusedIndicatorColor = Color(0xFF5F6A78),
+                        focusedContainerColor = Color(0xFF1E2430),
+                        unfocusedContainerColor = Color(0xFF1E2430),
+                        disabledContainerColor = Color(0xFF1E2430),
+                        cursorColor = Color(0xFF84D5F6),
+                        focusedPlaceholderColor = themePalette.settingsMenuBody.copy(alpha = 0.7f),
+                        unfocusedPlaceholderColor = themePalette.settingsMenuBody.copy(alpha = 0.7f),
+                    ),
+                    modifier = Modifier.fillMaxWidth().focusRequester(renameFocusRequester),
+                )
+            },
+            confirmButton = {
+                TextButton(
+                    onClick = {
+                        onRenameFolder(renameText.trim().ifBlank { "Folder" })
+                        renameOpen = false
+                        onDismiss()
+                    },
+                ) { Text("Save", color = themePalette.settingsMenuBody) }
+            },
+            dismissButton = {
+                TextButton(onClick = { renameOpen = false }) {
+                    Text("Cancel", color = themePalette.settingsMenuBody)
+                }
+            },
+        )
+    }
+}
+
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
 private fun AppContextMenu(
     app: AppEntry,
     themePalette: LauncherThemePalette,
@@ -4198,6 +4621,8 @@ private fun AppContextMenu(
     homeGroups: List<HomeGroup>,
     addHomeShortcutEnabled: Boolean,
     removeHomeShortcutEnabled: Boolean,
+    drawerFolderActionsEnabled: Boolean,
+    drawerFolders: List<Pair<String, String>>,
     onDismiss: () -> Unit,
     onLaunch: () -> Unit,
     onInfo: () -> Unit,
@@ -4207,10 +4632,17 @@ private fun AppContextMenu(
     onRemoveHomeShortcut: () -> Unit,
     onAddToHomeGroup: (String) -> Unit,
     onRemoveFromHomeGroup: (String) -> Unit,
+    onCreateDrawerFolder: (String) -> Boolean,
+    onAddToDrawerFolder: (String) -> Unit,
 ) {
     val state = rememberModalBottomSheetState(skipPartiallyExpanded = true)
-    val iconTint = themePalette.settingsMenuBody
+    var newDrawerFolderDialogOpen by remember { mutableStateOf(false) }
+    var newDrawerFolderName by remember { mutableStateOf("") }
+    val newFolderFocusRequester = remember { FocusRequester() }
+       val iconTint = themePalette.settingsMenuBody
     val labelColor = themePalette.settingsMenuTitle
+    val menuScrollState = rememberScrollState()
+    val maxMenuBodyHeight = (LocalConfiguration.current.screenHeightDp * 0.58f).dp
     ModalBottomSheet(
         onDismissRequest = onDismiss,
         sheetState = state,
@@ -4256,40 +4688,122 @@ private fun AppContextMenu(
                 }
             }
 
-            MenuRow(Icons.AutoMirrored.Rounded.OpenInNew, "Open", onLaunch)
-            MenuRow(Icons.Rounded.Info, "App info", onInfo)
-            MenuRow(
-                if (isHidden) Icons.Rounded.Visibility else Icons.Rounded.VisibilityOff,
-                if (isHidden) "Unhide" else "Hide",
-                onHideToggle,
-            )
-            MenuRow(Icons.Rounded.SwapVert, "Reorder apps", onReorder)
-            if (addHomeShortcutEnabled) {
-                MenuRow(Icons.AutoMirrored.Rounded.PlaylistAdd, "Add to home shortcuts", onAddHomeShortcut)
-            }
-            if (removeHomeShortcutEnabled) {
-                MenuRow(Icons.Outlined.Close, "Remove shortcut", onRemoveHomeShortcut)
-            }
-            if (app.packageName != AppsRepository.INTERNAL_SETTINGS_PACKAGE && homeGroups.isNotEmpty()) {
-                for (g in homeGroups) {
-                    val inGroup = app.packageName in g.packageNames
-                    if (inGroup) {
-                        MenuRow(
-                            Icons.Outlined.BookmarkRemove,
-                            "Remove from ${g.title}",
-                            { onRemoveFromHomeGroup(g.id) },
-                        )
-                    } else {
+            Column(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .heightIn(max = maxMenuBodyHeight)
+                    .verticalScroll(menuScrollState),
+            ) {
+                MenuRow(Icons.AutoMirrored.Rounded.OpenInNew, "Open", onLaunch)
+                MenuRow(Icons.Rounded.Info, "App info", onInfo)
+                MenuRow(
+                    if (isHidden) Icons.Rounded.Visibility else Icons.Rounded.VisibilityOff,
+                    if (isHidden) "Unhide" else "Hide",
+                    onHideToggle,
+                )
+                MenuRow(Icons.Rounded.SwapVert, "Reorder apps", onReorder)
+                if (drawerFolderActionsEnabled) {
+                    MenuRow(
+                        Icons.Rounded.Folder,
+                        "New Group",
+                        onClick = {
+                            newDrawerFolderName = ""
+                            newDrawerFolderDialogOpen = true
+                        },
+                    )
+                }
+                if (app.packageName != AppsRepository.INTERNAL_SETTINGS_PACKAGE && homeGroups.isNotEmpty()) {
+                    for (g in homeGroups) {
+                        val inGroup = app.packageName in g.packageNames
+                        if (inGroup) {
+                            MenuRow(
+                                Icons.Outlined.BookmarkRemove,
+                                "Remove from ${g.title}",
+                                { onRemoveFromHomeGroup(g.id) },
+                            )
+                        } else {
+                            MenuRow(
+                                Icons.Rounded.BookmarkAdd,
+                                "Add to ${g.title}",
+                                { onAddToHomeGroup(g.id) },
+                            )
+                        }
+                    }
+                }
+                if (drawerFolderActionsEnabled) {
+                    for ((folderId, label) in drawerFolders) {
                         MenuRow(
                             Icons.Rounded.BookmarkAdd,
-                            "Add to ${g.title}",
-                            { onAddToHomeGroup(g.id) },
+                            "Add to $label",
+                            onClick = {
+                                onAddToDrawerFolder(folderId)
+                                onDismiss()
+                            },
                         )
                     }
                 }
+                if (addHomeShortcutEnabled) {
+                    MenuRow(Icons.AutoMirrored.Rounded.PlaylistAdd, "Add to home shortcuts", onAddHomeShortcut)
+                }
+                if (removeHomeShortcutEnabled) {
+                    MenuRow(Icons.Outlined.Close, "Remove shortcut", onRemoveHomeShortcut)
+                }
+                Spacer(Modifier.height(12.dp))
             }
-            Spacer(Modifier.height(12.dp))
         }
+    }
+    if (newDrawerFolderDialogOpen) {
+        LaunchedEffect(Unit) { newFolderFocusRequester.requestFocus() }
+        AlertDialog(
+            onDismissRequest = { newDrawerFolderDialogOpen = false },
+            shape = RoundedCornerShape(16.dp),
+            containerColor = themePalette.settingsBg,
+            titleContentColor = themePalette.settingsMenuTitle,
+            textContentColor = themePalette.settingsMenuBody,
+            title = { Text("New Group", color = themePalette.settingsMenuTitle) },
+            text = {
+                OutlinedTextField(
+                    value = newDrawerFolderName,
+                    onValueChange = { newDrawerFolderName = capitalizeFirstLetterForGroupInput(it) },
+                    singleLine = true,
+                    label = { Text("Group name", color = themePalette.settingsMenuBody) },
+                    keyboardOptions = KeyboardOptions(
+                        capitalization = KeyboardCapitalization.Sentences,
+                        imeAction = ImeAction.Done,
+                    ),
+                    colors = TextFieldDefaults.colors(
+                        focusedTextColor = Color(0xFFE8EEF7),
+                        unfocusedTextColor = Color(0xFFE8EEF7),
+                        focusedLabelColor = themePalette.settingsMenuBody,
+                        unfocusedLabelColor = themePalette.settingsMenuBody,
+                        focusedIndicatorColor = Color(0xFF5B9BD5),
+                        unfocusedIndicatorColor = Color(0xFF5F6A78),
+                        focusedContainerColor = Color(0xFF1E2430),
+                        unfocusedContainerColor = Color(0xFF1E2430),
+                        disabledContainerColor = Color(0xFF1E2430),
+                        cursorColor = Color(0xFF84D5F6),
+                        focusedPlaceholderColor = themePalette.settingsMenuBody.copy(alpha = 0.7f),
+                        unfocusedPlaceholderColor = themePalette.settingsMenuBody.copy(alpha = 0.7f),
+                    ),
+                    modifier = Modifier.fillMaxWidth().focusRequester(newFolderFocusRequester),
+                )
+            },
+            confirmButton = {
+                TextButton(
+                    onClick = {
+                        if (onCreateDrawerFolder(newDrawerFolderName)) {
+                            newDrawerFolderDialogOpen = false
+                            onDismiss()
+                        }
+                    },
+                ) { Text("Create", color = themePalette.settingsMenuBody) }
+            },
+            dismissButton = {
+                TextButton(onClick = { newDrawerFolderDialogOpen = false }) {
+                    Text("Cancel", color = themePalette.settingsMenuBody)
+                }
+            },
+        )
     }
 }
 
@@ -5339,11 +5853,15 @@ private fun HomeGroupsSettingsOverlay(
                 ) {
                     OutlinedTextField(
                         value = newName,
-                        onValueChange = { newName = it },
+                        onValueChange = { newName = capitalizeFirstLetterForGroupInput(it) },
                         singleLine = true,
                         label = { Text("New group name", color = themePalette.settingsMenuBody) },
                         modifier = Modifier.weight(1f),
                         enabled = groups.size < 2,
+                        keyboardOptions = KeyboardOptions(
+                            capitalization = KeyboardCapitalization.Sentences,
+                            imeAction = ImeAction.Done,
+                        ),
                         colors = TextFieldDefaults.colors(
                             focusedTextColor = Color(0xFFE8EEF7),
                             unfocusedTextColor = Color(0xFFE8EEF7),

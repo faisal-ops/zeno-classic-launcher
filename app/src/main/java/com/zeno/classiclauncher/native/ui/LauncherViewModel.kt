@@ -43,6 +43,9 @@ import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
 import org.json.JSONObject
+import java.text.Collator
+import java.util.Locale
+import kotlin.math.abs
 
 private val PRIVATE_PREFIX_REGEX = Regex("^private\\s+", RegexOption.IGNORE_CASE)
 
@@ -128,14 +131,18 @@ class LauncherViewModel(app: Application) : AndroidViewModel(app) {
 
     val filteredGridCells: StateFlow<List<DrawerGridCell>> =
         combine(_baseCells, usageStats, _sortByUsage) { cells, usage, sort ->
-            if (sort && usage.isNotEmpty()) {
-                cells.sortedByDescending { cell ->
-                    when (cell) {
-                        is DrawerGridCell.App -> usage[cell.entry.packageName] ?: 0L
-                        is DrawerGridCell.Folder -> cell.members.maxOfOrNull { usage[it.packageName] ?: 0L } ?: 0L
+            pinInternalSettingsFirst(
+                if (sort && usage.isNotEmpty()) {
+                    cells.sortedByDescending { cell ->
+                        when (cell) {
+                            is DrawerGridCell.App -> usage[cell.entry.packageName] ?: 0L
+                            is DrawerGridCell.Folder -> cell.members.maxOfOrNull { usage[it.packageName] ?: 0L } ?: 0L
+                        }
                     }
-                }
-            } else cells
+                } else {
+                    cells
+                },
+            )
         }.stateIn(viewModelScope, SharingStarted.Eagerly, emptyList())
 
     val hasUnreadMail: StateFlow<Boolean> = NotificationRepository.hasUnreadMail
@@ -232,29 +239,131 @@ class LauncherViewModel(app: Application) : AndroidViewModel(app) {
         viewModelScope.launch { prefsRepo.setOrderedPackages(currentOrder) }
     }
 
-    fun createFolderFromApp(packageName: String, title: String) {
+    /**
+     * Creates a drawer group containing [packageName]. The new folder is placed at the **same visual index**
+     * as that app’s tile (same grid slot, including Zeno settings pin and usage sort). When the app lived
+     * in the drawer **tail** (not in [orderedPackages]), we rewrite [orderedPackages] from the visible
+     * slot list so the folder can stay on later pages; otherwise a single-token insert can only place
+     * folders before the tail, which wrongly pulled them onto page 1.
+     *
+     * @param visualCellIndex optional index from the UI; used only if the app is not found in a fresh
+     * snapshot of the drawer (race edge case).
+     */
+    fun createFolderFromApp(packageName: String, title: String, visualCellIndex: Int = -1) {
         if (packageName == AppsRepository.INTERNAL_SETTINGS_PACKAGE) return
         viewModelScope.launch {
             val snap = prefs.value
+            val installed = apps.value
+            val searchRaw = _searchQuery.value
+            val sortUsage = _sortByUsage.value
+            val usage = _usageStats.value
+
+            val cellsBefore = filteredDrawerCellsSnapshot(
+                installed = installed,
+                orderedPackages = snap.orderedPackages.filter { tok ->
+                    !FolderIds.isFolderId(tok) || snap.folderContents.containsKey(tok)
+                },
+                folderContents = snap.folderContents,
+                folderNames = snap.folderNames.filterKeys { snap.folderContents.containsKey(it) },
+                hiddenPackages = snap.hiddenPackages,
+                searchQueryRaw = searchRaw,
+                sortByUsage = sortUsage,
+                usageStats = usage,
+            )
+            val resolvedIdx = cellsBefore.indexOfFirst { cell ->
+                cell is DrawerGridCell.App && cell.entry.packageName == packageName
+            }
+            val targetSlotIndex = when {
+                resolvedIdx >= 0 -> resolvedIdx
+                visualCellIndex >= 0 -> visualCellIndex
+                else -> -1
+            }
+
             val id = FolderIds.newId()
             val folders = snap.folderContents
                 .mapValues { (_, m) -> m.filter { it != packageName } }
                 .filterValues { it.isNotEmpty() }
                 .toMutableMap()
-            val order = snap.orderedPackages
-                .filter { tok -> !FolderIds.isFolderId(tok) || folders.containsKey(tok) }
-                .toMutableList()
-            val idx = order.indexOf(packageName)
-            if (idx >= 0) order[idx] = id else order.add(id)
             folders[id] = listOf(packageName)
+            val label = title.trim().ifBlank { "Group" }
             val names = snap.folderNames
                 .filterKeys { folders.containsKey(it) }
                 .toMutableMap()
-            val label = title.trim().ifBlank {
-                apps.value.find { it.packageName == packageName }?.label?.let { "$it folder" } ?: "Folder"
-            }
             names[id] = label
-            prefsRepo.writeGridState(order, folders, names)
+
+            val folderMembers = folders.values.flatten().toSet()
+
+            val order = snap.orderedPackages
+                .filter { tok -> !FolderIds.isFolderId(tok) || folders.containsKey(tok) }
+                .toMutableList()
+            val posBeforeRemove = order.indexOf(packageName)
+            order.removeAll { it == packageName }
+
+            fun cellsForTrial(trialOrder: List<String>): List<DrawerGridCell> =
+                filteredDrawerCellsSnapshot(
+                    installed = installed,
+                    orderedPackages = trialOrder,
+                    folderContents = folders,
+                    folderNames = names,
+                    hiddenPackages = snap.hiddenPackages,
+                    searchQueryRaw = searchRaw,
+                    sortByUsage = sortUsage,
+                    usageStats = usage,
+                )
+
+            /**
+             * Folder tokens only exist in [orderedPackages]; apps in the "tail" are not, so inserting a
+             * single folder id can never land in the middle of the tail — only before/within the ordered
+             * prefix. Rebuild [orderedPackages] from the current visible top-level slot order instead.
+             */
+            fun orderFromMaterializedGrid(): MutableList<String>? {
+                val cellAt = cellsBefore.getOrNull(targetSlotIndex) ?: return null
+                if (cellAt !is DrawerGridCell.App || cellAt.entry.packageName != packageName) return null
+                val slotIds = cellsBefore.map { it.slotId }.toMutableList()
+                slotIds[targetSlotIndex] = id
+                val cleaned = slotIds.filter { tok ->
+                    when {
+                        FolderIds.isFolderId(tok) -> folders.containsKey(tok)
+                        else -> !folderMembers.contains(tok)
+                    }
+                }.toMutableList()
+                val verifyCells = cellsForTrial(cleaned)
+                val folderIdx = verifyCells.indexOfFirst { cell ->
+                    cell is DrawerGridCell.Folder && cell.id == id
+                }
+                return if (folderIdx == targetSlotIndex) cleaned else null
+            }
+
+            fun orderByInsertScan(): MutableList<String> {
+                var best: MutableList<String>? = null
+                var bestDist = Int.MAX_VALUE
+                for (insertAt in 0..order.size) {
+                    val trial = order.toMutableList().apply { add(insertAt, id) }
+                    val cells = cellsForTrial(trial)
+                    val folderIdx = cells.indexOfFirst { cell ->
+                        cell is DrawerGridCell.Folder && cell.id == id
+                    }
+                    if (folderIdx == targetSlotIndex) return trial
+                    if (folderIdx >= 0) {
+                        val d = abs(folderIdx - targetSlotIndex)
+                        if (d < bestDist) {
+                            bestDist = d
+                            best = trial
+                        }
+                    }
+                }
+                return best ?: order.toMutableList().apply { add(id) }
+            }
+
+            val finalOrder: MutableList<String> = when {
+                targetSlotIndex >= 0 -> {
+                    orderFromMaterializedGrid() ?: orderByInsertScan()
+                }
+                posBeforeRemove >= 0 -> order.toMutableList().apply { add(posBeforeRemove, id) }
+                else -> order.toMutableList().apply { add(id) }
+            }
+
+            prefsRepo.writeGridState(finalOrder, folders, names)
         }
     }
 
@@ -309,13 +418,24 @@ class LauncherViewModel(app: Application) : AndroidViewModel(app) {
                 names = names.filterKeys { it != folderId }
             } else {
                 folders[folderId] = list
-                val fi = order.indexOf(folderId)
-                if (fi >= 0) {
-                    order.add(fi + 1, packageName)
-                } else {
-                    val existingMember = list.firstOrNull { it != packageName }
-                    val anchor = existingMember?.let { order.indexOf(it) } ?: -1
-                    if (anchor >= 0) order.add(anchor + 1, packageName) else order.add(packageName)
+            }
+            order.removeAll { it == packageName }
+            val usageReorderActive = _sortByUsage.value && _usageStats.value.isNotEmpty()
+            if (usageReorderActive) {
+                order.add(packageName)
+            } else {
+                when (
+                    val insertAt = alphabeticalDrawerInsertIndex(
+                        orderWithoutApp = order,
+                        packageName = packageName,
+                        installed = apps.value,
+                        folderContents = folders,
+                        folderNames = names,
+                        hiddenPackages = snap.hiddenPackages,
+                    )
+                ) {
+                    -1 -> Unit // Not in orderedPackages: appears in tail with correct A→Z among unplaced apps.
+                    else -> order.add(insertAt, packageName)
                 }
             }
             prefsRepo.writeGridState(order, folders, names)
@@ -348,7 +468,7 @@ class LauncherViewModel(app: Application) : AndroidViewModel(app) {
             else {
                 val custom = prefs.value.folderNames[id]?.trim()?.takeIf { it.isNotEmpty() }
                 val label = custom ?: (members.firstNotNullOfOrNull { byPkg[it]?.label } ?: "Folder")
-                id to "$label (${members.size})"
+                id to label
             }
         }
     }
@@ -702,6 +822,119 @@ class LauncherViewModel(app: Application) : AndroidViewModel(app) {
         return true
     }
 
+}
+
+/** Zeno Classic settings is always the first drawer tile when it appears in the grid. */
+private fun pinInternalSettingsFirst(cells: List<DrawerGridCell>): List<DrawerGridCell> {
+    val idx = cells.indexOfFirst { cell ->
+        cell is DrawerGridCell.App && cell.entry.packageName == AppsRepository.INTERNAL_SETTINGS_PACKAGE
+    }
+    if (idx <= 0) return cells
+    val settingsCell = cells[idx]
+    return listOf(settingsCell) + cells.filterIndexed { i, _ -> i != idx }
+}
+
+/**
+ * Same cell ordering as [LauncherViewModel.filteredGridCells] for a hypothetical grid state (used when
+ * inserting a new drawer folder at the on-screen position where the app was).
+ */
+private fun filteredDrawerCellsSnapshot(
+    installed: List<AppEntry>,
+    orderedPackages: List<String>,
+    folderContents: Map<String, List<String>>,
+    folderNames: Map<String, String>,
+    hiddenPackages: Set<String>,
+    searchQueryRaw: String,
+    sortByUsage: Boolean,
+    usageStats: Map<String, Long>,
+): List<DrawerGridCell> {
+    val query = searchQueryRaw.trim()
+    val ql = query.lowercase()
+    val (privateMode, privateQuery) = when {
+        ql == "private" -> true to ""
+        PRIVATE_PREFIX_REGEX.containsMatchIn(query) -> true to PRIVATE_PREFIX_REGEX.replaceFirst(query, "").trim()
+        else -> false to ""
+    }
+    val normalQuery = if (privateMode) "" else query
+    val cells = buildDrawerGridCells(
+        installed = installed,
+        orderedPackages = orderedPackages,
+        folderContents = folderContents,
+        folderNames = folderNames,
+        hiddenPackages = hiddenPackages,
+        privateMode = privateMode,
+        privateQuery = privateQuery,
+        normalQuery = normalQuery,
+    )
+    val sorted = if (sortByUsage && usageStats.isNotEmpty()) {
+        cells.sortedByDescending { cell ->
+            when (cell) {
+                is DrawerGridCell.App -> usageStats[cell.entry.packageName] ?: 0L
+                is DrawerGridCell.Folder -> cell.members.maxOfOrNull { usageStats[it.packageName] ?: 0L } ?: 0L
+            }
+        }
+    } else {
+        cells
+    }
+    return pinInternalSettingsFirst(sorted)
+}
+
+/**
+ * Returns an index in [orderedPackages] such that, after [buildDrawerGridCells], the released app sits at
+ * the same position it would in a purely A→Z list of visible app tiles (folders skipped). If no placement
+ * in [orderedPackages] can achieve that (e.g. the correct spot is only inside the tail), returns **-1** so
+ * the caller leaves the package out of [orderedPackages] and it appears in the tail with correct ordering.
+ */
+private fun alphabeticalDrawerInsertIndex(
+    orderWithoutApp: List<String>,
+    packageName: String,
+    installed: List<AppEntry>,
+    folderContents: Map<String, List<String>>,
+    folderNames: Map<String, String>,
+    hiddenPackages: Set<String>,
+): Int {
+    val collator = Collator.getInstance(Locale.getDefault()).apply { strength = Collator.PRIMARY }
+    val released = installed.find { it.packageName == packageName } ?: return -1
+    val baseCells = buildDrawerGridCells(
+        installed = installed,
+        orderedPackages = orderWithoutApp,
+        folderContents = folderContents,
+        folderNames = folderNames,
+        hiddenPackages = hiddenPackages,
+        privateMode = false,
+        privateQuery = "",
+        normalQuery = "",
+    )
+    val targetIdx = baseCells.appKeysExcludingSettings().count { e ->
+        val c = collator.compare(e.label, released.label)
+        c < 0 || (c == 0 && e.packageName < released.packageName)
+    }
+    for (insertAt in 0..orderWithoutApp.size) {
+        val trial = orderWithoutApp.toMutableList().apply { add(insertAt, packageName) }
+        val trialCells = buildDrawerGridCells(
+            installed = installed,
+            orderedPackages = trial,
+            folderContents = folderContents,
+            folderNames = folderNames,
+            hiddenPackages = hiddenPackages,
+            privateMode = false,
+            privateQuery = "",
+            normalQuery = "",
+        )
+        val idx = trialCells.appKeysExcludingSettings().indexOfFirst { it.packageName == packageName }
+        if (idx == targetIdx) return insertAt
+    }
+    return -1
+}
+
+private fun List<DrawerGridCell>.appKeysExcludingSettings(): List<AppEntry> = mapNotNull { cell ->
+    when (cell) {
+        is DrawerGridCell.App -> {
+            if (cell.entry.packageName == AppsRepository.INTERNAL_SETTINGS_PACKAGE) null
+            else cell.entry
+        }
+        is DrawerGridCell.Folder -> null
+    }
 }
 
 enum class DockSlot { Mail, Shortcut, Camera }

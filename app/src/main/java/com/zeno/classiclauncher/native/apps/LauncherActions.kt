@@ -12,11 +12,16 @@ import android.net.ConnectivityManager
 import android.net.NetworkCapabilities
 import android.net.wifi.WifiInfo
 import android.net.Uri
+import android.hardware.camera2.CameraCharacteristics
+import android.hardware.camera2.CameraManager
+import android.os.BatteryManager
 import android.os.Build
 import android.os.Process
 import android.telecom.TelecomManager
 import android.telephony.TelephonyManager
 import android.net.wifi.WifiManager
+import android.nfc.NfcAdapter
+import android.nfc.NfcManager
 import android.provider.MediaStore
 import android.provider.AlarmClock
 import android.provider.Settings
@@ -32,6 +37,7 @@ sealed class ToggleResult {
 class LauncherActions(private val context: Context) {
     private val pm: PackageManager = context.packageManager
     private val bitwardenPackage = "com.x8bit.bitwarden"
+    private val wellbeingPackage = "com.google.android.apps.wellbeing"
     private val gmsPackage = "com.google.android.gms"
     /**
      * GMS barcode UI is registered on intent actions; starting by raw [ComponentName] alone often
@@ -167,8 +173,20 @@ class LauncherActions(private val context: Context) {
         @Suppress("DEPRECATION")
         val targetEnabled = !wifi.isWifiEnabled
         @Suppress("DEPRECATION")
-        val changed = runCatching { wifi.setWifiEnabled(targetEnabled) }.getOrDefault(false)
-        return if (changed) ToggleResult.Changed(targetEnabled) else ToggleResult.Unsupported
+        var changed = runCatching { wifi.setWifiEnabled(targetEnabled) }.getOrDefault(false)
+        if (!changed) {
+            @Suppress("DEPRECATION")
+            changed = runCatching { wifi.setWifiEnabled(targetEnabled) }.getOrDefault(false)
+        }
+        if (changed) return ToggleResult.Changed(targetEnabled)
+        val globalOk = runCatching {
+            Settings.Global.putInt(
+                context.contentResolver,
+                Settings.Global.WIFI_ON,
+                if (targetEnabled) 1 else 0,
+            )
+        }.getOrDefault(false)
+        return if (globalOk) ToggleResult.Changed(targetEnabled) else ToggleResult.Unsupported
     }
 
     fun isMobileDataEnabled(): Boolean? {
@@ -193,7 +211,14 @@ class LauncherActions(private val context: Context) {
         }.getOrDefault(false)
         if (reflectionChanged) return ToggleResult.Changed(targetEnabled)
 
-        return ToggleResult.Unsupported
+        val globalOk = runCatching {
+            Settings.Global.putInt(
+                context.contentResolver,
+                "mobile_data",
+                if (targetEnabled) 1 else 0,
+            )
+        }.getOrDefault(false)
+        return if (globalOk) ToggleResult.Changed(targetEnabled) else ToggleResult.Unsupported
     }
 
     fun openAlarmSettings(): Boolean =
@@ -323,6 +348,26 @@ class LauncherActions(private val context: Context) {
         startActivityNewTask(Intent(Settings.ACTION_BATTERY_SAVER_SETTINGS)) ||
             startActivityNewTask(Intent("android.settings.BATTERY_SAVER_SETTINGS"))
 
+    /** Matches system QS “battery” tile: usage / power summary. */
+    fun openBatteryUsageSummary(): Boolean =
+        startActivityNewTask(Intent(Intent.ACTION_POWER_USAGE_SUMMARY)) ||
+            openBatterySaverSettings()
+
+    fun batteryPercent(): Int? {
+        val bm = context.getSystemService(BatteryManager::class.java) ?: return null
+        val p = bm.getIntProperty(BatteryManager.BATTERY_PROPERTY_CAPACITY)
+        return if (p in 0..100) p else null
+    }
+
+    fun isDigitalWellbeingInstalled(): Boolean =
+        pm.getLaunchIntentForPackage(wellbeingPackage) != null
+
+    /** Opens Digital Wellbeing (system Grayscale / Wind Down live here on Pixel-style builds). */
+    fun openDigitalWellbeingHome(): Boolean {
+        val intent = pm.getLaunchIntentForPackage(wellbeingPackage) ?: return false
+        return startActivityNewTask(intent)
+    }
+
     fun openSecuritySettings(): Boolean =
         startActivityNewTask(Intent(Settings.ACTION_SECURITY_SETTINGS))
 
@@ -374,31 +419,82 @@ class LauncherActions(private val context: Context) {
     fun isBitwardenInstalled(): Boolean =
         pm.getLaunchIntentForPackage(bitwardenPackage) != null
 
+    @Suppress("DEPRECATION")
+    private fun bluetoothAdapter(): android.bluetooth.BluetoothAdapter? {
+        val fromManager = context.applicationContext.getSystemService(BluetoothManager::class.java)?.adapter
+        if (fromManager != null) return fromManager
+        return android.bluetooth.BluetoothAdapter.getDefaultAdapter()
+    }
+
     fun isBluetoothEnabled(): Boolean? {
         if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.S &&
             ContextCompat.checkSelfPermission(context, Manifest.permission.BLUETOOTH_CONNECT) != PackageManager.PERMISSION_GRANTED
         ) {
             return null
         }
-        val manager = context.getSystemService(BluetoothManager::class.java) ?: return null
-        val adapter = manager.adapter ?: return null
+        val adapter = bluetoothAdapter() ?: return null
         @Suppress("DEPRECATION")
         return adapter.isEnabled
     }
 
+    /**
+     * Same strategy as [setKeyboardMode]: direct API, retry, then [Settings.Global] mirror some OEMs honour.
+     * Keyboard tile also relies on Settings.System + a Settings-scoped broadcast; Bluetooth has no stable public
+     * broadcast, so Global [Settings.Global.BLUETOOTH_ON] is the main extra lever.
+     *
+     * **Platform note:** On API 31+, [android.bluetooth.BluetoothAdapter.enable]/[disable] usually fail for
+     * third-party apps, and writing [Settings.Global.BLUETOOTH_ON] is not permitted. [ToggleResult.Unsupported]
+     * is expected on many devices even when [Manifest.permission.BLUETOOTH_CONNECT] is granted. See `docs/NOTES.md`.
+     */
     fun toggleBluetooth(): ToggleResult {
         if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.S &&
             ContextCompat.checkSelfPermission(context, Manifest.permission.BLUETOOTH_CONNECT) != PackageManager.PERMISSION_GRANTED
         ) {
             return ToggleResult.PermissionRequired
         }
-        val manager = context.getSystemService(BluetoothManager::class.java) ?: return ToggleResult.Unsupported
-        val adapter = manager.adapter ?: return ToggleResult.Unsupported
+        val adapter = bluetoothAdapter() ?: return ToggleResult.Unsupported
         @Suppress("DEPRECATION")
         val targetEnabled = !adapter.isEnabled
         @Suppress("DEPRECATION")
-        val changed = if (targetEnabled) adapter.enable() else adapter.disable()
-        return if (changed) ToggleResult.Changed(targetEnabled) else ToggleResult.Unsupported
+        fun tryAdapter(): Boolean =
+            if (targetEnabled) adapter.enable() else adapter.disable()
+
+        var changed = tryAdapter()
+        if (!changed) changed = tryAdapter()
+        if (changed) return ToggleResult.Changed(targetEnabled)
+
+        val globalOk = runCatching {
+            Settings.Global.putInt(
+                context.contentResolver,
+                Settings.Global.BLUETOOTH_ON,
+                if (targetEnabled) 1 else 0,
+            )
+        }.getOrDefault(false)
+        if (globalOk) return ToggleResult.Changed(targetEnabled)
+
+        @Suppress("DEPRECATION")
+        return if (adapter.isEnabled == targetEnabled) {
+            ToggleResult.Changed(targetEnabled)
+        } else {
+            ToggleResult.Unsupported
+        }
+    }
+
+    fun toggleNfc(): ToggleResult {
+        val adapter = context.getSystemService(NfcManager::class.java)?.defaultAdapter ?: return ToggleResult.Unsupported
+        val wasEnabled = adapter.isEnabled
+        val targetEnabled = !wasEnabled
+        val methodName = if (targetEnabled) "enable" else "disable"
+        val invoked = runCatching {
+            val m = NfcAdapter::class.java.getMethod(methodName)
+            m.invoke(adapter)
+        }
+        if (invoked.isFailure) return ToggleResult.Unsupported
+        return if (adapter.isEnabled != wasEnabled) {
+            ToggleResult.Changed(adapter.isEnabled)
+        } else {
+            ToggleResult.Unsupported
+        }
     }
 
     fun currentCarrierName(): String {
@@ -478,6 +574,47 @@ class LauncherActions(private val context: Context) {
 
     fun isTorchEnabled(): Boolean =
         readSecureInt("flashlight_enabled") > 0
+
+    private fun firstBackCameraIdWithFlash(): String? {
+        val cm = context.getSystemService(CameraManager::class.java) ?: return null
+        return cm.cameraIdList.firstOrNull { id ->
+            val ch = cm.getCameraCharacteristics(id)
+            val facing = ch.get(CameraCharacteristics.LENS_FACING)
+            val flash = ch.get(CameraCharacteristics.FLASH_INFO_AVAILABLE) == true
+            flash && facing == CameraCharacteristics.LENS_FACING_BACK
+        } ?: cm.cameraIdList.firstOrNull { id ->
+            cm.getCameraCharacteristics(id).get(CameraCharacteristics.FLASH_INFO_AVAILABLE) == true
+        }
+    }
+
+    /** Toggle torch via Camera2 (needs [Manifest.permission.CAMERA] at runtime). */
+    fun toggleTorch(): ToggleResult {
+        val cm = context.getSystemService(CameraManager::class.java) ?: return ToggleResult.Unsupported
+        val id = firstBackCameraIdWithFlash() ?: return ToggleResult.Unsupported
+        val wantOn = !isTorchEnabled()
+        return try {
+            cm.setTorchMode(id, wantOn)
+            ToggleResult.Changed(wantOn)
+        } catch (_: Exception) {
+            ToggleResult.Unsupported
+        }
+    }
+
+    fun hasTorchHardware(): Boolean = firstBackCameraIdWithFlash() != null
+
+    /** Toggle auto-rotate when [Settings.System.canWrite] is true ([WRITE_SETTINGS]). */
+    fun toggleAutoRotate(): ToggleResult {
+        if (!Settings.System.canWrite(context)) return ToggleResult.PermissionRequired
+        val cur = isAutoRotateEnabled() ?: return ToggleResult.Unsupported
+        val next = !cur
+        val v = if (next) 1 else 0
+        return try {
+            Settings.System.putInt(context.contentResolver, Settings.System.ACCELEROMETER_ROTATION, v)
+            ToggleResult.Changed(next)
+        } catch (_: Exception) {
+            ToggleResult.Unsupported
+        }
+    }
 
     fun isHotspotEnabled(): Boolean =
         readGlobalInt("tethering_on") > 0 || readGlobalInt("hotspot_on") > 0

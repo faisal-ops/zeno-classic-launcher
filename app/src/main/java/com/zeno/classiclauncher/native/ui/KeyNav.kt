@@ -71,3 +71,4 @@ fun NavState.onDockKey(key: Key, dockSize: Int = 4): NavState {
         else -> this
     }
 }
+
