@@ -1,10 +1,11 @@
 package com.zeno.classiclauncher.nlauncher.ui
 
+import android.content.Intent
+import android.provider.Settings
 import android.widget.Toast
-import androidx.activity.compose.rememberLauncherForActivityResult
-import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
@@ -22,11 +23,14 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.rounded.ArrowBack
 import androidx.compose.material.icons.outlined.Close
+import androidx.compose.material.icons.rounded.GridView
 import androidx.compose.material.icons.rounded.Lock
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
+import androidx.compose.material3.Switch
+import androidx.compose.material3.SwitchDefaults
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
@@ -56,26 +60,19 @@ fun GestureShortcutsOverlay(
     swipeUpPackage: String,
     doubleTapPackage: String,
     doubleTapToSleepEnabled: Boolean,
+    customQuickSettingsEnabled: Boolean,
     themePalette: LauncherThemePalette,
     onDismiss: () -> Unit,
     onSetSwipeUp: (String) -> Unit,
     onSetDoubleTap: (String) -> Unit,
     onDoubleTapSleepChange: (Boolean) -> Unit,
+    onCustomQuickSettingsChange: (Boolean) -> Unit,
 ) {
     var activePicker by remember { mutableStateOf(GesturePicker.None) }
     val subtitleColor = Color(0xFF8E95A3)
     val cardBg = Color(0xFF1E2430)
     val cardShape = RoundedCornerShape(16.dp)
     val context = LocalContext.current
-
-    val adminLauncher = rememberLauncherForActivityResult(
-        ActivityResultContracts.StartActivityForResult(),
-    ) {
-        if (!SleepManager.isAdminActive(context)) {
-            onDoubleTapSleepChange(false)
-            Toast.makeText(context, "Device admin not granted — double tap sleep disabled", Toast.LENGTH_LONG).show()
-        }
-    }
 
     Surface(
         modifier = Modifier.fillMaxSize().zIndex(400f),
@@ -126,8 +123,18 @@ fun GestureShortcutsOverlay(
                         modifier = Modifier.fillMaxWidth().clickable {
                             onDoubleTapSleepChange(true)
                             onSetDoubleTap("")
-                            if (!SleepManager.isAdminActive(context)) {
-                                adminLauncher.launch(SleepManager.createEnableAdminIntent(context))
+                            if (!SleepManager.isDoubleTapLockReady(context)) {
+                                runCatching {
+                                    context.startActivity(
+                                        Intent(Settings.ACTION_ACCESSIBILITY_SETTINGS)
+                                            .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK),
+                                    )
+                                }
+                                Toast.makeText(
+                                    context,
+                                    "Turn on “Zeno Classic lock helper”, or grant device admin in Lock & wake / Permissions.",
+                                    Toast.LENGTH_LONG,
+                                ).show()
                             }
                             activePicker = GesturePicker.None
                         }.padding(horizontal = 16.dp, vertical = 14.dp),
@@ -185,10 +192,60 @@ fun GestureShortcutsOverlay(
                     IconButton(onClick = onDismiss) {
                         Icon(Icons.AutoMirrored.Rounded.ArrowBack, contentDescription = "Back", tint = themePalette.settingsMenuTitle)
                     }
-                    Text("Gesture shortcuts", style = MaterialTheme.typography.titleMedium.copy(color = themePalette.settingsMenuTitle, fontWeight = FontWeight.SemiBold))
+                    Text(
+                        "Home gestures",
+                        style = MaterialTheme.typography.titleMedium.copy(color = themePalette.settingsMenuTitle, fontWeight = FontWeight.SemiBold),
+                    )
                 }
                 Spacer(Modifier.height(12.dp))
                 Column(modifier = Modifier.padding(horizontal = 16.dp)) {
+                    Surface(modifier = Modifier.fillMaxWidth(), shape = cardShape, color = cardBg) {
+                        Row(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(horizontal = 16.dp, vertical = 12.dp),
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.SpaceBetween,
+                        ) {
+                            Row(
+                                modifier = Modifier.weight(1f).padding(end = 12.dp),
+                                verticalAlignment = Alignment.CenterVertically,
+                            ) {
+                                Icon(
+                                    Icons.Rounded.GridView,
+                                    contentDescription = null,
+                                    tint = subtitleColor,
+                                    modifier = Modifier.size(40.dp).padding(8.dp),
+                                )
+                                Spacer(Modifier.width(8.dp))
+                                Column(modifier = Modifier.weight(1f)) {
+                                    Text(
+                                        "Launcher quick settings",
+                                        color = themePalette.settingsMenuTitle,
+                                        fontSize = 15.sp,
+                                        fontWeight = FontWeight.Medium,
+                                    )
+                                    Spacer(Modifier.height(2.dp))
+                                    Text(
+                                        "Swipe down on the home wallpaper to open Zeno’s quick settings panel",
+                                        color = subtitleColor,
+                                        fontSize = 13.sp,
+                                    )
+                                }
+                            }
+                            Switch(
+                                checked = customQuickSettingsEnabled,
+                                onCheckedChange = onCustomQuickSettingsChange,
+                                colors = SwitchDefaults.colors(
+                                    checkedThumbColor = Color.White,
+                                    checkedTrackColor = Color(0xFF4A90D9),
+                                    uncheckedThumbColor = Color(0xFF9AA0A8),
+                                    uncheckedTrackColor = Color(0xFF3A3F4A),
+                                ),
+                            )
+                        }
+                    }
+                    Spacer(Modifier.height(10.dp))
                     // Swipe up row
                     Surface(modifier = Modifier.fillMaxWidth(), shape = cardShape, color = cardBg) {
                         Column(modifier = Modifier.fillMaxWidth().clickable { activePicker = GesturePicker.SwipeUp }.padding(16.dp)) {
@@ -219,7 +276,13 @@ fun GestureShortcutsOverlay(
                     }
                     Spacer(Modifier.height(16.dp))
                     Text(
-                        "Swipe up on the home screen wallpaper to open the selected app.\nDouble tap to sleep requires device admin permission.",
+                        buildString {
+                            append("Swipe up on the home wallpaper to open the selected app.\n")
+                            append("Double tap to lock uses the lock helper (Accessibility) when on—same as the power button for face unlock—or device admin as fallback.")
+                            if (customQuickSettingsEnabled) {
+                                append("\nWhen the launcher panel is open, opening the system shade closes it.")
+                            }
+                        },
                         color = subtitleColor, fontSize = 12.sp, lineHeight = 18.sp,
                     )
                 }

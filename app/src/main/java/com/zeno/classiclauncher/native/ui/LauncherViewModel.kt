@@ -62,6 +62,14 @@ class LauncherViewModel(app: Application) : AndroidViewModel(app) {
 
     fun requestNavigateHome() { _navigateHomeEvent.value++ }
 
+    /** Window lost focus (e.g. system notification / QS shade) — UI closes launcher quick settings overlay. */
+    private val _dismissLauncherQsEvent = MutableStateFlow(0)
+    val dismissLauncherQsEvent: StateFlow<Int> = _dismissLauncherQsEvent.asStateFlow()
+
+    fun requestDismissLauncherQuickSettings() {
+        _dismissLauncherQsEvent.value++
+    }
+
     private val _searchQuery = MutableStateFlow("")
     val searchQuery: StateFlow<String> = _searchQuery.asStateFlow()
     private val _reorderMode = MutableStateFlow(false)
@@ -672,6 +680,10 @@ class LauncherViewModel(app: Application) : AndroidViewModel(app) {
 
     fun setShowHomeGroups(enabled: Boolean) {
         viewModelScope.launch { prefsRepo.setShowHomeGroups(enabled) }
+    }
+
+    fun setCustomQuickSettingsEnabled(enabled: Boolean) {
+        viewModelScope.launch { prefsRepo.setCustomQuickSettingsEnabled(enabled) }
     }
 
     fun setClassicMode(enabled: Boolean) {

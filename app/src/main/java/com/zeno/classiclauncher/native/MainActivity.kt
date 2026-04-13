@@ -4,8 +4,10 @@ import android.content.Context
 import android.content.Intent
 import android.content.pm.LauncherApps
 import android.content.pm.PackageManager
+import android.os.Build
 import android.os.Bundle
 import android.telecom.TelecomManager
+import android.view.View
 import android.view.WindowManager
 import android.widget.Toast
 import androidx.activity.ComponentActivity
@@ -23,6 +25,16 @@ class MainActivity : ComponentActivity() {
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        // QS / edge-to-edge experiment: lay out under system bars (status bar stays visible;
+        // content can extend behind it). Off by default — flip to true to retest.
+        if (ENABLE_EDGE_TO_EDGE_UNDER_SYSTEM_BARS &&
+            Build.VERSION.SDK_INT >= Build.VERSION_CODES.LOLLIPOP
+        ) {
+            @Suppress("DEPRECATION")
+            window.decorView.systemUiVisibility =
+                View.SYSTEM_UI_FLAG_LAYOUT_STABLE or
+                    View.SYSTEM_UI_FLAG_LAYOUT_FULLSCREEN
+        }
         handlePinShortcutIntent(intent)
         window.addFlags(WindowManager.LayoutParams.FLAG_SHOW_WALLPAPER)
         window.setBackgroundDrawableResource(android.R.color.transparent)
@@ -30,6 +42,13 @@ class MainActivity : ComponentActivity() {
             BbTheme {
                 LauncherScreen()
             }
+        }
+    }
+
+    override fun onWindowFocusChanged(hasFocus: Boolean) {
+        super.onWindowFocusChanged(hasFocus)
+        if (!hasFocus) {
+            viewModel.requestDismissLauncherQuickSettings()
         }
     }
 
@@ -100,5 +119,9 @@ class MainActivity : ComponentActivity() {
                 ).show()
             }
         }
+    }
+
+    private companion object {
+        private const val ENABLE_EDGE_TO_EDGE_UNDER_SYSTEM_BARS = true
     }
 }

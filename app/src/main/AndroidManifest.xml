@@ -3,8 +3,25 @@
 
     <uses-permission android:name="android.permission.INTERNET" />
     <uses-permission android:name="android.permission.PACKAGE_USAGE_STATS" tools:ignore="ProtectedPermissions" />
+    <uses-permission android:name="android.permission.WRITE_SETTINGS" />
+    <uses-permission android:name="android.permission.ACCESS_FINE_LOCATION" />
     <uses-permission android:name="android.permission.ACCESS_COARSE_LOCATION" />
     <uses-permission android:name="android.permission.READ_CALENDAR" />
+    <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />
+    <uses-permission android:name="android.permission.ACCESS_WIFI_STATE" />
+    <uses-permission android:name="android.permission.CHANGE_WIFI_STATE" />
+    <uses-permission android:name="android.permission.NFC" />
+    <uses-permission android:name="android.permission.BLUETOOTH_CONNECT" />
+    <uses-permission
+        android:name="android.permission.BLUETOOTH"
+        android:maxSdkVersion="30" />
+    <uses-permission
+        android:name="android.permission.BLUETOOTH_ADMIN"
+        android:maxSdkVersion="30" />
+    <uses-permission android:name="android.permission.READ_MEDIA_IMAGES" />
+    <uses-permission
+        android:name="android.permission.READ_EXTERNAL_STORAGE"
+        android:maxSdkVersion="32" />
     <uses-permission android:name="android.permission.VIBRATE" />
     <uses-permission android:name="android.permission.SET_WALLPAPER" />
     <!-- Pre-Android 10: optional copy to public Pictures (ignored on API 29+). -->
@@ -13,6 +30,16 @@
         android:maxSdkVersion="28" />
     <!-- Package visibility (Android 11+) so we can list all launcher apps. -->
     <queries>
+        <package android:name="com.google.android.gms" />
+        <intent>
+            <action android:name="com.google.android.gms.mlkit_barcode_ui.SCAN_QR_CODE" />
+        </intent>
+        <intent>
+            <action android:name="com.google.android.gms.mlkit.ACTION_SCAN_BARCODE" />
+        </intent>
+        <intent>
+            <action android:name="com.google.android.gms.mlkit_barcode_ui.SCAN_QR_CODE_V2" />
+        </intent>
         <intent>
             <action android:name="android.intent.action.MAIN" />
             <category android:name="android.intent.category.LAUNCHER" />
@@ -107,6 +134,22 @@
                 <action android:name="android.app.action.DEVICE_ADMIN_ENABLED" />
             </intent-filter>
         </receiver>
+
+        <!-- Lock screen via GLOBAL_ACTION_LOCK_SCREEN (power-button path) for face unlock; optional vs device admin. -->
+        <service
+            android:name=".power.LockScreenAccessibilityService"
+            android:exported="false"
+            android:isAccessibilityTool="true"
+            android:label="@string/lock_accessibility_service_label"
+            android:permission="android.permission.BIND_ACCESSIBILITY_SERVICE"
+            tools:targetApi="34">
+            <intent-filter>
+                <action android:name="android.accessibilityservice.AccessibilityService" />
+            </intent-filter>
+            <meta-data
+                android:name="android.accessibilityservice"
+                android:resource="@xml/lock_screen_accessibility_service" />
+        </service>
     </application>
 </manifest>
 

@@ -58,6 +58,7 @@ private const val ACTION_DEVICE_ADMIN_SETTINGS = "android.settings.ACTION_DEVICE
 private data class RuntimePerms(
     val notificationAccess: Boolean,
     val deviceAdmin: Boolean,
+    val lockAccessibility: Boolean,
     val location: Boolean,
     val calendar: Boolean,
 )
@@ -66,6 +67,7 @@ private fun computeRuntimePerms(context: android.content.Context): RuntimePerms 
     RuntimePerms(
         notificationAccess = isNotificationListenerEnabled(context),
         deviceAdmin = SleepManager.isAdminActive(context),
+        lockAccessibility = SleepManager.isLockAccessibilityEnabled(context),
         location = ContextCompat.checkSelfPermission(
             context,
             Manifest.permission.ACCESS_COARSE_LOCATION,
@@ -107,11 +109,10 @@ fun PermissionsSettingsOverlay(
         ActivityResultContracts.StartActivityForResult(),
     ) {
         runtime = computeRuntimePerms(context)
-        if (prefs.doubleTapToSleepEnabled && !SleepManager.isAdminActive(context)) {
-            onDoubleTapSleepEnabled(false)
+        if (prefs.doubleTapToSleepEnabled && !SleepManager.isDoubleTapLockReady(context)) {
             Toast.makeText(
                 context,
-                "Device admin was not enabled — double tap to lock was turned off",
+                "Double tap won’t lock until lock helper (Accessibility) or device admin is enabled.",
                 Toast.LENGTH_LONG,
             ).show()
         }
@@ -221,41 +222,86 @@ fun PermissionsSettingsOverlay(
 
                 PermissionSwitchCard(
                     title = "Double tap to lock",
-                    subtitleOff = "Off — device admin not required",
-                    subtitleOnOk = "On — device admin active",
-                    subtitleOnMissing = "On — grant device admin to lock the screen",
+                    subtitleOff = "Off — lock helper and device admin not required",
+                    subtitleOnOk = when {
+                        runtime.lockAccessibility -> "On — lock helper (face unlock)"
+                        runtime.deviceAdmin -> "On — device admin fallback"
+                        else -> "On"
+                    },
+                    subtitleOnMissing = "On — enable lock helper (recommended) or device admin",
                     featureOn = prefs.doubleTapToSleepEnabled,
-                    permissionOk = runtime.deviceAdmin,
+                    permissionOk = runtime.deviceAdmin || runtime.lockAccessibility,
                     themePalette = themePalette,
                     onFeatureChange = { on ->
                         onDoubleTapSleepEnabled(on)
-                        if (on && !SleepManager.isAdminActive(context)) {
-                            adminLauncher.launch(SleepManager.createEnableAdminIntent(context))
+                        if (on && !SleepManager.isDoubleTapLockReady(context)) {
+                            runCatching {
+                                context.startActivity(
+                                    Intent(Settings.ACTION_ACCESSIBILITY_SETTINGS)
+                                        .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK),
+                                )
+                            }
+                            Toast.makeText(
+                                context,
+                                "Turn on “Zeno Classic lock helper”, or use Grant below for device admin.",
+                                Toast.LENGTH_LONG,
+                            ).show()
                         }
                         runtime = computeRuntimePerms(context)
                     },
-                    showGrant = prefs.doubleTapToSleepEnabled && !runtime.deviceAdmin,
-                    onGrant = { adminLauncher.launch(SleepManager.createEnableAdminIntent(context)) },
-                    grantLabel = "Grant device admin",
+                    showGrant = prefs.doubleTapToSleepEnabled &&
+                        !runtime.deviceAdmin &&
+                        !runtime.lockAccessibility,
+                    onGrant = {
+                        runCatching {
+                            context.startActivity(
+                                Intent(Settings.ACTION_ACCESSIBILITY_SETTINGS)
+                                    .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK),
+                            )
+                        }
+                    },
+                    grantLabel = "Open Accessibility (lock helper)",
+                    secondaryGrantLabel = "Grant device admin (fallback)",
+                    onSecondaryGrant = { adminLauncher.launch(SleepManager.createEnableAdminIntent(context)) },
                     openSystemSettingsWhenTurningOff =
-                        if (prefs.doubleTapToSleepEnabled && runtime.deviceAdmin) {
+                        if (prefs.doubleTapToSleepEnabled &&
+                            (runtime.deviceAdmin || runtime.lockAccessibility)
+                        ) {
                             {
-                                runCatching {
-                                    context.startActivity(
-                                        Intent(ACTION_DEVICE_ADMIN_SETTINGS)
-                                            .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK),
-                                    )
-                                }.onFailure {
+                                if (SleepManager.isLockAccessibilityEnabled(context)) {
                                     runCatching {
                                         context.startActivity(
-                                            Intent(Settings.ACTION_SECURITY_SETTINGS)
+                                            Intent(Settings.ACTION_ACCESSIBILITY_SETTINGS)
                                                 .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK),
                                         )
                                     }
                                 }
+                                if (SleepManager.isAdminActive(context)) {
+                                    runCatching {
+                                        context.startActivity(
+                                            Intent(ACTION_DEVICE_ADMIN_SETTINGS)
+                                                .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK),
+                                        )
+                                    }.onFailure {
+                                        runCatching {
+                                            context.startActivity(
+                                                Intent(Settings.ACTION_SECURITY_SETTINGS)
+                                                    .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK),
+                                            )
+                                        }
+                                    }
+                                }
                                 Toast.makeText(
                                     context,
-                                    "Turn off device admin for Zeno Classic on this screen, then return.",
+                                    when {
+                                        SleepManager.isLockAccessibilityEnabled(context) &&
+                                            SleepManager.isAdminActive(context) ->
+                                            "Turn off Zeno lock helper and/or device admin if you want them removed."
+                                        SleepManager.isLockAccessibilityEnabled(context) ->
+                                            "Turn off Zeno Classic lock helper, then return."
+                                        else ->
+                                            "Turn off device admin for Zeno Classic, then return."
+                                    },
                                     Toast.LENGTH_LONG,
                                 ).show()
                             }
@@ -360,6 +406,8 @@ private fun PermissionSwitchCard(
     showGrant: Boolean,
     onGrant: () -> Unit,
     grantLabel: String,
+    secondaryGrantLabel: String? = null,
+    onSecondaryGrant: (() -> Unit)? = null,
     /** When non-null and the user turns the switch off while the feature was on, run before updating prefs (e.g. open system settings to revoke access). */
     openSystemSettingsWhenTurningOff: (() -> Unit)? = null,
 ) {
@@ -418,6 +466,11 @@ private fun PermissionSwitchCard(
             if (showGrant && grantLabel.isNotEmpty()) {
                 TextButton(onClick = onGrant, modifier = Modifier.padding(top = 4.dp)) {
                     Text(grantLabel, color = themePalette.settingsMenuBody)
+                }
+            }
+            if (showGrant && secondaryGrantLabel != null && onSecondaryGrant != null) {
+                TextButton(onClick = onSecondaryGrant, modifier = Modifier.padding(top = 0.dp)) {
+                    Text(secondaryGrantLabel, color = themePalette.settingsMenuBody)
                 }
             }
         }

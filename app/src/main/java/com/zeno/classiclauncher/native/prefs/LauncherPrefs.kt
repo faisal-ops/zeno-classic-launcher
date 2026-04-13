@@ -103,7 +103,7 @@ data class LauncherPrefs(
     val glanceWeatherManualLongitude: String = "",
     /** At most two home groups (left / right of centre shortcuts). */
     val homeGroups: List<HomeGroup> = emptyList(),
-    /** Double-tap home workspace to lock (requires device admin). Default on. */
+    /** Double-tap home workspace to lock (lock helper accessibility and/or device admin). Default on. */
     val doubleTapToSleepEnabled: Boolean = true,
     /** Package to launch on swipe-up gesture on home. Empty = disabled. */
     val swipeUpPackage: String = "",
@@ -117,6 +117,8 @@ data class LauncherPrefs(
     val showShortcutApps: Boolean = true,
     /** Whether home groups are visible on the home strip. */
     val showHomeGroups: Boolean = true,
+    /** Swipe-down custom quick settings overlay on home page. */
+    val customQuickSettingsEnabled: Boolean = false,
     /**
      * Classic mode: app drawer only (no separate home page). Dock is mail + page dots + camera (no home
      * button, no Messages/WhatsApp shortcut). Home glance strip is not composed — no glance coroutines or
@@ -172,6 +174,7 @@ class LauncherPrefsRepository(private val context: Context) {
         val SHOW_ICON_NOTIF_BADGE = booleanPreferencesKey("showIconNotifBadge")
         val SHOW_SHORTCUT_APPS = booleanPreferencesKey("showShortcutApps")
         val SHOW_HOME_GROUPS = booleanPreferencesKey("showHomeGroups")
+        val CUSTOM_QS_ENABLED = booleanPreferencesKey("customQuickSettingsEnabled")
         val CLASSIC_MODE = booleanPreferencesKey("classicMode")
         /** Legacy key from earlier builds; read only for migration. */
         val CLASSIC_MODE_LEGACY = booleanPreferencesKey("drawerOnlyMode")
@@ -227,6 +230,7 @@ class LauncherPrefsRepository(private val context: Context) {
         val showIconNotifBadge = p[Keys.SHOW_ICON_NOTIF_BADGE] ?: DEFAULT_PREFS.showIconNotifBadge
         val showShortcutApps = p[Keys.SHOW_SHORTCUT_APPS] ?: DEFAULT_PREFS.showShortcutApps
         val showHomeGroups = p[Keys.SHOW_HOME_GROUPS] ?: DEFAULT_PREFS.showHomeGroups
+        val customQuickSettingsEnabled = p[Keys.CUSTOM_QS_ENABLED] ?: DEFAULT_PREFS.customQuickSettingsEnabled
         val classicMode = p[Keys.CLASSIC_MODE] ?: p[Keys.CLASSIC_MODE_LEGACY] ?: DEFAULT_PREFS.classicMode
         val appIconShape =
             p[Keys.APP_ICON_SHAPE]?.let { v -> AppIconShape.entries.firstOrNull { it.name == v } }
@@ -269,6 +273,7 @@ class LauncherPrefsRepository(private val context: Context) {
             showIconNotifBadge = showIconNotifBadge,
             showShortcutApps = showShortcutApps,
             showHomeGroups = showHomeGroups,
+            customQuickSettingsEnabled = customQuickSettingsEnabled,
             classicMode = classicMode,
             appIconShape = appIconShape,
         )
@@ -471,6 +476,10 @@ class LauncherPrefsRepository(private val context: Context) {
         context.dataStore.edit { it[Keys.SHOW_HOME_GROUPS] = enabled }
     }
 
+    suspend fun setCustomQuickSettingsEnabled(enabled: Boolean) {
+        context.dataStore.edit { it[Keys.CUSTOM_QS_ENABLED] = enabled }
+    }
+
     suspend fun setClassicMode(enabled: Boolean) {
         context.dataStore.edit { s ->
             s[Keys.CLASSIC_MODE] = enabled
@@ -522,6 +531,7 @@ class LauncherPrefsRepository(private val context: Context) {
             s[Keys.SHOW_ICON_NOTIF_BADGE] = prefs.showIconNotifBadge
             s[Keys.SHOW_SHORTCUT_APPS] = prefs.showShortcutApps
             s[Keys.SHOW_HOME_GROUPS] = prefs.showHomeGroups
+            s[Keys.CUSTOM_QS_ENABLED] = prefs.customQuickSettingsEnabled
             s[Keys.CLASSIC_MODE] = prefs.classicMode
             s.remove(Keys.CLASSIC_MODE_LEGACY)
             s[Keys.APP_ICON_SHAPE] = prefs.appIconShape.name

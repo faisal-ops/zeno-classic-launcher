@@ -11,13 +11,17 @@ import android.appwidget.AppWidgetHost
 import android.appwidget.AppWidgetHostView
 import android.appwidget.AppWidgetManager
 import android.content.ComponentName
+import android.content.ContextWrapper
 import android.content.Intent
 import android.content.pm.PackageManager
 import android.net.Uri
 import android.os.Build
+import android.os.Handler
+import android.os.Looper
 import android.os.SystemClock
 import android.provider.Settings
 import android.view.HapticFeedbackConstants
+import android.view.View
 import android.view.KeyEvent as AndroidKeyEvent
 import android.view.MotionEvent
 import android.widget.Toast
@@ -26,11 +30,13 @@ import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.focusable
 import androidx.compose.foundation.gestures.awaitEachGesture
 import androidx.compose.foundation.gestures.awaitFirstDown
 import androidx.compose.foundation.gestures.detectDragGestures
+import androidx.compose.foundation.gestures.detectDragGesturesAfterLongPress
 import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.Image
 import androidx.compose.animation.AnimatedVisibility
@@ -116,7 +122,9 @@ import androidx.compose.material.icons.rounded.EventBusy
 import androidx.compose.material.icons.rounded.Lock
 import androidx.compose.material.icons.rounded.Security
 import androidx.compose.material.icons.rounded.Settings
+import androidx.compose.material.icons.rounded.SignalCellularAlt
 import androidx.compose.material.icons.rounded.Tune
+import androidx.compose.material.icons.rounded.Wifi
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
@@ -141,6 +149,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableFloatStateOf
+import androidx.compose.runtime.mutableStateListOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.derivedStateOf
 import androidx.compose.runtime.remember
@@ -195,10 +204,15 @@ import androidx.compose.ui.text.PlatformTextStyle
 import androidx.compose.ui.text.style.LineHeightStyle
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.text.TextStyle
+import androidx.compose.ui.unit.Density
+import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.IntSize
 import androidx.compose.ui.window.DialogProperties
 import androidx.core.content.ContextCompat
+import androidx.core.view.ViewCompat
+import androidx.core.view.WindowInsetsCompat
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.input.KeyboardCapitalization
@@ -211,6 +225,8 @@ import com.zeno.classiclauncher.nlauncher.glance.GlanceDateWeatherEventsView
 import com.zeno.classiclauncher.nlauncher.glance.GlanceStripPreferences
 import com.zeno.classiclauncher.nlauncher.apps.AppEntry
 import com.zeno.classiclauncher.nlauncher.apps.AppsRepository
+import com.zeno.classiclauncher.nlauncher.apps.LauncherActions
+import com.zeno.classiclauncher.nlauncher.apps.ToggleResult
 import com.zeno.classiclauncher.nlauncher.apps.parseHomeShortcutToken
 import com.zeno.classiclauncher.native.ui.WallpaperSourceOverlay
 import com.zeno.classiclauncher.native.ui.WallpaperSourceSub
@@ -235,6 +251,7 @@ import kotlinx.coroutines.withTimeoutOrNull
 import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
+import kotlin.math.abs
 import kotlin.math.hypot
 import kotlin.math.roundToInt
 import androidx.compose.ui.graphics.Shape
@@ -436,6 +453,7 @@ fun LauncherScreen(
     /** In-app wallpaper source list (replaces jumping straight to system [Intent.ACTION_SET_WALLPAPER]). */
     var showWallpaperSourceOverlay by remember { mutableStateOf(false) }
     var wallpaperSourceSub by remember { mutableStateOf(WallpaperSourceSub.List) }
+    var showQuickSettingsOverlay by remember { mutableStateOf(false) }
     val appWidgetHost = remember(context) { AppWidgetHost(context, HOME_WIDGET_HOST_ID) }
     var homeWidgetId by remember { mutableStateOf<Int?>(null) }
     var pendingWidgetId by remember { mutableStateOf<Int?>(null) }
@@ -484,10 +502,47 @@ fun LauncherScreen(
         onDispose { lifecycleOwner.lifecycle.removeObserver(observer) }
     }
 
+    // Pulling the system notification / QS shade while our overlay is open: dismiss launcher QS so both aren’t stacked.
+    DisposableEffect(showQuickSettingsOverlay) {
+        if (!showQuickSettingsOverlay) {
+            return@DisposableEffect onDispose { }
+        }
+        val activity = context.findHostActivity() ?: return@DisposableEffect onDispose { }
+        val decor = activity.window.decorView
+        val slopPx = (2f * context.resources.displayMetrics.density).toInt().coerceAtLeast(8)
+        var layoutPass = 0
+        var baselineStatusTop: Int? = null
+        val layoutListener =
+            object : android.view.ViewTreeObserver.OnGlobalLayoutListener {
+                override fun onGlobalLayout() {
+                    val wi = ViewCompat.getRootWindowInsets(decor) ?: return
+                    if (!wi.isVisible(WindowInsetsCompat.Type.statusBars())) {
+                        if (baselineStatusTop != null) showQuickSettingsOverlay = false
+                        return
+                    }
+                    val top = wi.getInsets(WindowInsetsCompat.Type.statusBars()).top
+                    layoutPass++
+                    if (layoutPass <= 2) {
+                        baselineStatusTop = top
+                        return
+                    }
+                    val b = baselineStatusTop ?: return
+                    if (abs(top - b) > slopPx) {
+                        showQuickSettingsOverlay = false
+                    }
+                }
+            }
+        decor.viewTreeObserver.addOnGlobalLayoutListener(layoutListener)
+        onDispose {
+            decor.viewTreeObserver.removeOnGlobalLayoutListener(layoutListener)
+        }
+    }
+
     // Consume back for overlays / drawer / search; on home (page 0) with nothing open, do nothing — system volume
     // and recents are handled elsewhere; no moveTaskToBack (avoids feeling like “recent apps”).
     BackHandler(enabled = true) {
         when {
+            showQuickSettingsOverlay -> showQuickSettingsOverlay = false
             showWallpaperSourceOverlay -> {
                 when (wallpaperSourceSub) {
                     WallpaperSourceSub.ZenoGrid -> wallpaperSourceSub = WallpaperSourceSub.List
@@ -534,6 +589,11 @@ fun LauncherScreen(
         if (navigateHomeEvent > 0) pagerState.animateScrollToPage(0)
     }
 
+    val dismissLauncherQsEvent by vm.dismissLauncherQsEvent.collectAsState()
+    androidx.compose.runtime.LaunchedEffect(dismissLauncherQsEvent) {
+        if (dismissLauncherQsEvent > 0) showQuickSettingsOverlay = false
+    }
+
     // Dock shows which app-drawer page is active; trackpad flings can move the outer home/drawer pager
     // in one motion without intermediate inner pager steps, so drawerPageIndex may still be the last
     // drawer page while we're on home — show page 0 in the indicator whenever home is visible.
@@ -565,6 +625,9 @@ fun LauncherScreen(
                     !classicMode && page == 0 -> HomePage(
                         focusRequester = homeFocusRequester,
                         homeActive = pagerState.currentPage == 0,
+                        onOpenQuickSettings = {
+                            if (prefs.customQuickSettingsEnabled) showQuickSettingsOverlay = true
+                        },
                         onOpenAppDrawer = {
                             if (searchQuery.isNotEmpty()) vm.setSearchQuery("")
                             scope.launch { pagerState.animateScrollToPage(1) }
@@ -813,6 +876,7 @@ fun LauncherScreen(
                 }
                 Dock(
                     pageIndex = dockPageIndexForDisplay,
+                    homeActive = !classicMode && pagerState.currentPage == 0,
                     onMail = { vm.launchFromDock(DockSlot.Mail) },
                     onShortcut = { vm.launchFromDock(DockSlot.Shortcut) },
                     onCamera = { vm.launchFromDock(DockSlot.Camera) },
@@ -1070,14 +1134,22 @@ fun LauncherScreen(
                 onResetTheme = vm::resetTheme,
                 themePalette = themePalette,
                 onDismiss = { showSettings = false },
-                gestureSubtitle = remember(prefs.swipeUpPackage, prefs.doubleTapPackage, prefs.doubleTapToSleepEnabled, allApps) {
+                gestureSubtitle = remember(
+                    prefs.swipeUpPackage,
+                    prefs.doubleTapPackage,
+                    prefs.doubleTapToSleepEnabled,
+                    prefs.customQuickSettingsEnabled,
+                    allApps,
+                ) {
                     val parts = buildList {
-                        if (prefs.swipeUpPackage.isNotEmpty())
+                        if (prefs.swipeUpPackage.isNotEmpty()) {
                             add("Swipe up: " + (allApps.find { it.packageName == prefs.swipeUpPackage }?.label ?: prefs.swipeUpPackage))
+                        }
                         when {
                             prefs.doubleTapToSleepEnabled -> add("Double tap: Sleep")
                             prefs.doubleTapPackage.isNotEmpty() -> add("Double tap: " + (allApps.find { it.packageName == prefs.doubleTapPackage }?.label ?: prefs.doubleTapPackage))
                         }
+                        if (prefs.customQuickSettingsEnabled) add("Swipe-down panel on")
                     }
                     if (parts.isEmpty()) "Not configured" else parts.joinToString(" · ")
                 },
@@ -1132,11 +1204,13 @@ fun LauncherScreen(
                 swipeUpPackage = prefs.swipeUpPackage,
                 doubleTapPackage = prefs.doubleTapPackage,
                 doubleTapToSleepEnabled = prefs.doubleTapToSleepEnabled,
+                customQuickSettingsEnabled = prefs.customQuickSettingsEnabled,
                 themePalette = themePalette,
                 onDismiss = { showGestureSettings = false },
                 onSetSwipeUp = vm::setSwipeUpPackage,
                 onSetDoubleTap = vm::setDoubleTapPackage,
                 onDoubleTapSleepChange = vm::setDoubleTapToSleepEnabled,
+                onCustomQuickSettingsChange = vm::setCustomQuickSettingsEnabled,
             )
         }
 
@@ -1236,6 +1310,13 @@ fun LauncherScreen(
             )
         }
 
+        if (showQuickSettingsOverlay) {
+            QuickSettingsOverlay(
+                themePalette = themePalette,
+                onDismiss = { showQuickSettingsOverlay = false },
+            )
+        }
+
         if (showHomeActions) {
             HomeActionsSheet(
                 themePalette = themePalette,
@@ -1280,12 +1361,14 @@ fun LauncherScreen(
 
 /**
  * Long-press opens the home actions sheet. Double-tap to lock runs when [doubleTapToSleepEnabled] is on
- * ([SleepManager.lockNow]); child views (glance strip) consume their own taps first.
+ * ([SleepManager.lockNow]: accessibility lock helper first, else device admin); child views (glance strip)
+ * consume their own taps first.
  */
 @Composable
 private fun HomePage(
     focusRequester: FocusRequester,
     homeActive: Boolean,
+    onOpenQuickSettings: () -> Unit,
     onOpenAppDrawer: () -> Unit,
     homeStripCount: Int,
     onActivateHomeStripIndex: (Int) -> Unit,
@@ -1488,6 +1571,26 @@ private fun HomePage(
                         }
                     }
                 }
+            }
+            .pointerInput(Unit) {
+                val threshold = 72.dp.toPx()
+                awaitPointerEventScope {
+                    while (true) {
+                        val down = awaitFirstDown(requireUnconsumed = false)
+                        val startY = down.position.y
+                        var triggered = false
+                        while (!triggered) {
+                            val event = awaitPointerEvent(PointerEventPass.Initial)
+                            val change = event.changes.firstOrNull() ?: break
+                            if (!change.pressed) break
+                            val dy = change.position.y - startY
+                            if (dy > threshold) {
+                                triggered = true
+                                onOpenQuickSettings()
+                            }
+                        }
+                    }
+                }
             },
     ) {
         Column(
@@ -1666,6 +1769,790 @@ private fun HomePage(
     }
 }
 
+private data class QuickTile(
+    val id: String,
+    val icon: ImageVector,
+    val title: String,
+    val subtitle: String,
+    val highlighted: Boolean = false,
+    val showChevron: Boolean = false,
+    val closeOnSuccess: Boolean = true,
+    val onLongPress: (() -> Boolean)? = null,
+    val onTap: () -> Boolean,
+)
+
+/**
+ * Horizontal padding for QS so tiles line up with the status-bar clock, not with generic "system bar"
+ * side insets (those are often much larger than where the time glyph starts).
+ * Only display cutout is applied; [extra] is a tiny symmetric gutter (0 for max alignment with "1").
+ */
+private fun qsHorizontalEdgePadding(view: android.view.View, density: Density, extra: Dp): Pair<Dp, Dp> {
+    val px = ViewCompat.getRootWindowInsets(view)
+        ?.getInsets(WindowInsetsCompat.Type.displayCutout())
+        ?: androidx.core.graphics.Insets.NONE
+    return with(density) {
+        (px.left.toDp() + extra) to (px.right.toDp() + extra)
+    }
+}
+
+@Composable
+private fun QuickSettingsOverlay(
+    themePalette: LauncherThemePalette,
+    onDismiss: () -> Unit,
+) {
+    val context = LocalContext.current
+    val view = LocalView.current
+    val density = LocalDensity.current
+    /** Minimal extra beyond cutout — 0 so tile column aligns with status-bar time. */
+    val qsHorizontalGutter = 0.dp
+    /** Extra height below status bar for date + divider band — covered by a darker top scrim. */
+    val qsTopDarkBelowStatusDp = 96.dp
+    // Activity context: starting GMS barcode UI can mis-route via applicationContext on some OEMs.
+    val actions = remember(context) { LauncherActions(context) }
+    val dateFormatter = remember { SimpleDateFormat("EEEE, MMMM d", Locale.getDefault()) }
+    var dateText by remember { mutableStateOf(dateFormatter.format(Date())) }
+    LaunchedEffect(Unit) {
+        while (true) {
+            dateText = dateFormatter.format(Date())
+            delay(60_000L)
+        }
+    }
+    var bluetoothEnabled by remember { mutableStateOf(actions.isBluetoothEnabled()) }
+    val btPermissionLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.RequestPermission(),
+    ) { granted ->
+        if (granted) {
+            bluetoothEnabled = actions.isBluetoothEnabled()
+        } else {
+            Toast.makeText(context, "Bluetooth permission denied", Toast.LENGTH_SHORT).show()
+        }
+    }
+    val wifiPermissionLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.RequestPermission(),
+    ) { granted ->
+        if (!granted) {
+            Toast.makeText(context, "Location permission denied for Wi-Fi name", Toast.LENGTH_SHORT).show()
+        }
+    }
+    val wifiPrecisePermissionLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.RequestPermission(),
+    ) { _ -> }
+    val btSubtitle = when (bluetoothEnabled) {
+        true -> "On"
+        false -> "Off"
+        null -> "Tap to allow control"
+    }
+    var wifiSubtitle by remember { mutableStateOf(actions.currentWifiSsidLabel()) }
+    var carrierSubtitle by remember { mutableStateOf(actions.currentCarrierName()) }
+    var wifiEnabled by remember { mutableStateOf(actions.isWifiEnabled()) }
+    var mobileDataEnabled by remember { mutableStateOf(actions.isMobileDataEnabled()) }
+    var wirelessDebugOn by remember { mutableStateOf(actions.isWirelessDebuggingEnabled()) }
+    var batterySaverOn by remember { mutableStateOf(actions.isBatterySaverEnabled()) }
+    var airplaneOn by remember { mutableStateOf(actions.isAirplaneModeEnabled()) }
+    var dndOn by remember { mutableStateOf(actions.isDoNotDisturbEnabled()) }
+    var hotspotOn by remember { mutableStateOf(actions.isHotspotEnabled()) }
+    var nightLightOn by remember { mutableStateOf(actions.isNightLightEnabled()) }
+    var autoRotateOn by remember { mutableStateOf(actions.isAutoRotateEnabled()) }
+    var nfcOn by remember { mutableStateOf(actions.isNfcEnabled()) }
+    var extraDimOn by remember { mutableStateOf(actions.isExtraDimEnabled()) }
+    var torchOn by remember { mutableStateOf(actions.isTorchEnabled()) }
+    var keyboardMode by remember { mutableStateOf(actions.lastKnownKeyboardMode()) }
+    var showTileEditor by remember { mutableStateOf(false) }
+    var preciseWifiPromptAttempted by remember { mutableStateOf(false) }
+    val hasBitwarden = remember(actions) { actions.isBitwardenInstalled() }
+    LaunchedEffect(Unit) {
+        if (!actions.hasWifiNamePermission()) {
+            wifiPermissionLauncher.launch(Manifest.permission.ACCESS_COARSE_LOCATION)
+        }
+        while (true) {
+            wifiSubtitle = actions.currentWifiSsidLabel()
+            if (
+                wifiSubtitle == "Connected" &&
+                actions.isWifiConnected() &&
+                !actions.hasPreciseLocationPermission() &&
+                !preciseWifiPromptAttempted
+            ) {
+                preciseWifiPromptAttempted = true
+                wifiPrecisePermissionLauncher.launch(Manifest.permission.ACCESS_FINE_LOCATION)
+            }
+            carrierSubtitle = actions.currentCarrierName()
+            wifiEnabled = actions.isWifiEnabled()
+            mobileDataEnabled = actions.isMobileDataEnabled()
+            wirelessDebugOn = actions.isWirelessDebuggingEnabled()
+            batterySaverOn = actions.isBatterySaverEnabled()
+            airplaneOn = actions.isAirplaneModeEnabled()
+            dndOn = actions.isDoNotDisturbEnabled()
+            hotspotOn = actions.isHotspotEnabled()
+            nightLightOn = actions.isNightLightEnabled()
+            autoRotateOn = actions.isAutoRotateEnabled()
+            nfcOn = actions.isNfcEnabled()
+            extraDimOn = actions.isExtraDimEnabled()
+            torchOn = actions.isTorchEnabled()
+            actions.currentKeyboardMode()?.let {
+                keyboardMode = it
+                actions.persistKeyboardModeLabel(it)
+            }
+            delay(5_000L)
+        }
+    }
+    val defaultQuickTiles = mutableListOf(
+        QuickTile(
+            id = "wifi",
+            icon = Icons.Rounded.Wifi,
+            title = "Wi-Fi",
+            subtitle = if (wifiEnabled == false) "Off" else wifiSubtitle,
+            highlighted = wifiEnabled != false && wifiSubtitle != "Disconnected",
+            onLongPress = actions::openWifiSettings,
+            onTap = {
+                when (val r = actions.toggleWifi()) {
+                    is ToggleResult.Changed -> {
+                        wifiEnabled = r.enabled
+                        wifiSubtitle = if (r.enabled) actions.currentWifiSsidLabel() else "Off"
+                        true
+                    }
+                    ToggleResult.PermissionRequired -> true
+                    ToggleResult.Unsupported -> {
+                        actions.openInternetPanel()
+                        true
+                    }
+                }
+            },
+        ),
+        QuickTile(
+            id = "mobile_network",
+            icon = Icons.Rounded.SignalCellularAlt,
+            title = "Mobile network",
+            subtitle = if (mobileDataEnabled == false) "Off" else carrierSubtitle,
+            highlighted = mobileDataEnabled != false,
+            onLongPress = actions::openMobileNetworkSettings,
+            onTap = actions::openInternetPanel,
+        ),
+        QuickTile(
+            id = "bluetooth",
+            icon = Icons.Rounded.Security,
+            title = "Bluetooth",
+            subtitle = btSubtitle,
+            highlighted = bluetoothEnabled == true,
+            closeOnSuccess = false,
+            onLongPress = actions::openBluetoothSettings,
+            onTap = {
+                when (val r = actions.toggleBluetooth()) {
+                    is ToggleResult.Changed -> {
+                        bluetoothEnabled = r.enabled
+                        true
+                    }
+                    ToggleResult.PermissionRequired -> {
+                        btPermissionLauncher.launch(Manifest.permission.BLUETOOTH_CONNECT)
+                        true
+                    }
+                    ToggleResult.Unsupported -> {
+                        Toast.makeText(context, "Direct Bluetooth toggle blocked by system. Long-press opens settings.", Toast.LENGTH_LONG).show()
+                        true
+                    }
+                }
+            },
+        ),
+        QuickTile(
+            id = "qr_scanner",
+            icon = Icons.Outlined.Search,
+            title = "QR code scanner",
+            subtitle = "",
+            showChevron = true,
+            closeOnSuccess = false,
+            onLongPress = actions::openQrScanner,
+            onTap = actions::openQrScanner,
+        ),
+        QuickTile(
+            id = "wireless_debugging",
+            icon = Icons.Rounded.Settings,
+            title = "Wireless debugging",
+            subtitle = if (wirelessDebugOn) "On" else "Off",
+            highlighted = wirelessDebugOn,
+            onLongPress = actions::openWirelessDebuggingSettings,
+            onTap = actions::openWirelessDebuggingSettings,
+        ),
+        QuickTile(
+            id = "keyboard_mode",
+            icon = Icons.Rounded.Tune,
+            title = keyboardMode,
+            subtitle = "",
+            highlighted = true,
+            closeOnSuccess = false,
+            showChevron = true,
+            onLongPress = actions::openKeyboardSettings,
+            onTap = {
+                val nextMode = if (keyboardMode == "keyboard") "mouse" else "keyboard"
+                val ok = actions.setKeyboardMode(nextMode)
+                if (ok) {
+                    keyboardMode = actions.currentKeyboardMode() ?: nextMode
+                    actions.persistKeyboardModeLabel(keyboardMode)
+                } else {
+                    if (!actions.canWriteSystemSettings()) {
+                        actions.requestWriteSettingsPermission()
+                        Toast.makeText(
+                            context,
+                            "Allow Modify system settings, then tap keyboard tile again.",
+                            Toast.LENGTH_LONG,
+                        ).show()
+                    } else {
+                        Toast.makeText(
+                            context,
+                            "Could not apply keyboard mode change. Long-press opens settings.",
+                            Toast.LENGTH_LONG,
+                        ).show()
+                    }
+                }
+                true
+            },
+        ),
+        QuickTile(
+            id = "battery_saver",
+            icon = Icons.Rounded.EventBusy,
+            title = "Battery Saver",
+            subtitle = if (batterySaverOn) "On" else "Off",
+            highlighted = batterySaverOn,
+            onLongPress = actions::openBatterySaverSettings,
+            onTap = actions::openBatterySaverSettings,
+        ),
+        QuickTile(
+            id = "airplane_mode",
+            icon = Icons.Rounded.SwapVert,
+            title = "Aeroplane mode",
+            subtitle = if (airplaneOn) "On" else "Off",
+            highlighted = airplaneOn,
+            onLongPress = actions::openAirplaneModeSettings,
+            onTap = actions::openAirplaneModeSettings,
+        ),
+    )
+    if (hasBitwarden) {
+        defaultQuickTiles.add(
+            QuickTile(
+                id = "my_vault",
+                icon = Icons.Rounded.Lock,
+                title = "My vault",
+                subtitle = "",
+                showChevron = true,
+                onTap = actions::openBitwardenVault,
+            )
+        )
+    }
+    defaultQuickTiles.addAll(
+        listOf(
+            QuickTile(
+                id = "torch",
+                icon = Icons.Rounded.WbSunny,
+                title = "Torch",
+                subtitle = if (torchOn) "On" else "Off",
+                highlighted = torchOn,
+                onLongPress = actions::openDisplaySettings,
+                onTap = actions::openDisplaySettings,
+            ),
+            QuickTile(
+                id = "dnd",
+                icon = Icons.Rounded.VisibilityOff,
+                title = "Do Not Disturb",
+                subtitle = if (dndOn) "On" else "Off",
+                highlighted = dndOn,
+                onLongPress = actions::openDoNotDisturbSettings,
+                onTap = actions::openDoNotDisturbSettings,
+            ),
+            QuickTile(
+                id = "storage",
+                icon = Icons.Rounded.Info,
+                title = "Storage",
+                subtitle = "",
+                showChevron = true,
+                onLongPress = actions::openStorageSettings,
+                onTap = actions::openStorageSettings,
+            ),
+            QuickTile(
+                id = "hotspot",
+                icon = Icons.Rounded.SwapVert,
+                title = "Hotspot",
+                subtitle = if (hotspotOn) "On" else "Off",
+                highlighted = hotspotOn,
+                onLongPress = actions::openHotspotSettings,
+                onTap = actions::openHotspotSettings,
+            ),
+            QuickTile(
+                id = "night_light",
+                icon = Icons.Rounded.WbSunny,
+                title = "Night Light",
+                subtitle = if (nightLightOn) "On" else "Off",
+                highlighted = nightLightOn,
+                onLongPress = actions::openNightLightSettings,
+                onTap = actions::openNightLightSettings,
+            ),
+            QuickTile(
+                id = "auto_rotate",
+                icon = Icons.Rounded.SwapVert,
+                title = "Auto-rotate",
+                subtitle = if (autoRotateOn) "On" else "Off",
+                highlighted = autoRotateOn,
+                onLongPress = actions::openDisplaySettings,
+                onTap = actions::openDisplaySettings,
+            ),
+            QuickTile(
+                id = "nfc",
+                icon = Icons.Rounded.Security,
+                title = "NFC",
+                subtitle = if (nfcOn) "On" else "Off",
+                highlighted = nfcOn,
+                onLongPress = actions::openNfcSettings,
+                onTap = actions::openNfcSettings,
+            ),
+            QuickTile(
+                id = "extra_dim",
+                icon = Icons.Rounded.VisibilityOff,
+                title = "Extra dim",
+                subtitle = if (extraDimOn) "On" else "Off",
+                highlighted = extraDimOn,
+                onLongPress = actions::openExtraDimSettings,
+                onTap = actions::openExtraDimSettings,
+            ),
+            QuickTile(
+                id = "screen_record",
+                icon = Icons.Rounded.TouchApp,
+                title = "Screen record",
+                subtitle = "Start",
+                showChevron = true,
+                onLongPress = actions::openScreenRecordSettings,
+                onTap = actions::openScreenRecordSettings,
+            ),
+            QuickTile(
+                id = "screen_cast",
+                icon = Icons.Rounded.Wallpaper,
+                title = "Screen Cast",
+                subtitle = "Off",
+                showChevron = true,
+                onLongPress = actions::openCastSettings,
+                onTap = actions::openCastSettings,
+            ),
+            QuickTile(
+                id = "bedtime",
+                icon = Icons.Rounded.AddAlarm,
+                title = "Bedtime mode",
+                subtitle = "Off",
+                onLongPress = actions::openBedtimeSettings,
+                onTap = actions::openBedtimeSettings,
+            ),
+        )
+    )
+    val orderedTileIds = remember { mutableStateListOf<String>() }
+    val defaultTileIds = defaultQuickTiles.map { it.id }
+    LaunchedEffect(defaultTileIds) {
+        if (orderedTileIds.isEmpty()) {
+            orderedTileIds.addAll(defaultTileIds)
+        } else {
+            orderedTileIds.retainAll(defaultTileIds.toSet())
+            defaultTileIds.forEach { id ->
+                if (id !in orderedTileIds) orderedTileIds.add(id)
+            }
+        }
+    }
+    val tileById = defaultQuickTiles.associateBy { it.id }
+    val allQuickTiles = orderedTileIds.mapNotNull { tileById[it] }
+    fun moveTile(from: Int, to: Int) {
+        if (from == to) return
+        if (from !in orderedTileIds.indices || to !in orderedTileIds.indices) return
+        val id = orderedTileIds.removeAt(from)
+        orderedTileIds.add(to, id)
+    }
+    val pages = allQuickTiles.chunked(8)
+    val pagerState = rememberPagerState(initialPage = 0, pageCount = { pages.size })
+    val (qsPadStart, qsPadEnd) = qsHorizontalEdgePadding(view, density, qsHorizontalGutter)
+
+    val statusTopPx = ViewCompat.getRootWindowInsets(view)
+        ?.getInsets(WindowInsetsCompat.Type.statusBars())?.top ?: 0
+    val qsTopDarkBand = with(density) { statusTopPx.toDp() } + qsTopDarkBelowStatusDp
+    val qsTopDarkBandPx = with(density) { qsTopDarkBand.toPx() }
+    Box(
+        modifier = Modifier
+            .fillMaxSize()
+            .zIndex(520f)
+            .pointerInput(Unit) {
+                val threshold = 72.dp.toPx()
+                awaitPointerEventScope {
+                    while (true) {
+                        val down = awaitFirstDown(requireUnconsumed = false)
+                        val startY = down.position.y
+                        var triggered = false
+                        while (!triggered) {
+                            val event = awaitPointerEvent(PointerEventPass.Initial)
+                            val change = event.changes.firstOrNull() ?: break
+                            if (!change.pressed) break
+                            val dy = change.position.y - startY
+                            if (dy < -threshold) {
+                                triggered = true
+                                onDismiss()
+                            }
+                        }
+                    }
+                }
+            },
+    ) {
+        Box(Modifier.fillMaxSize().background(Color(0xE6000000)))
+        // Stronger dim from the top edge through the date row so wallpaper does not show through.
+        Box(
+            modifier = Modifier
+                .fillMaxWidth()
+                .height(qsTopDarkBand)
+                .align(Alignment.TopCenter)
+                .background(
+                    Brush.verticalGradient(
+                        colors = listOf(
+                            Color(0xFA000000),
+                            Color(0xE8000000),
+                            Color(0x00000000),
+                        ),
+                        startY = 0f,
+                        endY = qsTopDarkBandPx,
+                    ),
+                ),
+        )
+        Column(
+            modifier = Modifier
+                .fillMaxSize()
+                .statusBarsPadding()
+                .navigationBarsPadding()
+                .padding(start = qsPadStart, end = qsPadEnd, top = 4.dp, bottom = 4.dp),
+        ) {
+            Text(
+                dateText,
+                style = MaterialTheme.typography.titleLarge.copy(
+                    color = Color(0xFFE6EBF2),
+                    fontWeight = FontWeight.Normal,
+                    fontSize = 18.sp,
+                    lineHeight = 18.sp,
+                ),
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(top = 6.dp, bottom = 2.dp),
+            )
+            Box(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(bottom = 8.dp),
+            ) {
+                HorizontalDivider(
+                    color = Color(0xFF47515D),
+                    thickness = 1.dp,
+                    modifier = Modifier.align(Alignment.TopCenter),
+                )
+                Row(
+                    modifier = Modifier
+                        .align(Alignment.TopCenter)
+                        .padding(top = 6.dp),
+                    horizontalArrangement = Arrangement.Center,
+                ) {
+                    repeat(pages.size) { i ->
+                        Box(
+                            modifier = Modifier
+                                .padding(horizontal = 3.dp)
+                                .size(5.dp)
+                                .clip(CircleShape)
+                                .background(if (i == pagerState.currentPage) Color(0xFFE6EBF2) else Color(0xFF6E7885)),
+                        )
+                    }
+                }
+            }
+            val maxPageRows = pages.maxOfOrNull { (it.size + 1) / 2 } ?: 0
+            val pagerHeight = (maxPageRows * 70 + (maxPageRows - 1).coerceAtLeast(0) * 8).dp
+            HorizontalPager(
+                state = pagerState,
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .height(pagerHeight),
+            ) { page ->
+                LazyVerticalGrid(
+                    columns = GridCells.Fixed(2),
+                    modifier = Modifier.fillMaxSize(),
+                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                    verticalArrangement = Arrangement.spacedBy(8.dp),
+                ) {
+                    items(items = pages[page], key = { it.id }) { tile ->
+                        ClassicQuickTile(
+                            tile = tile,
+                            onTap = {
+                                // GMS scanner can finish immediately if our overlay window is still on top; dismiss first.
+                                if (tile.id == "qr_scanner") {
+                                    onDismiss()
+                                    Handler(Looper.getMainLooper()).postDelayed({
+                                        val ok = tile.onTap()
+                                        if (!ok) {
+                                            Toast.makeText(context, "Could not open ${tile.title}", Toast.LENGTH_SHORT).show()
+                                        }
+                                    }, 120L)
+                                    return@ClassicQuickTile
+                                }
+                                val ok = tile.onTap()
+                                if (!ok) {
+                                    Toast.makeText(context, "Could not open ${tile.title}", Toast.LENGTH_SHORT).show()
+                                } else if (tile.closeOnSuccess) {
+                                    onDismiss()
+                                }
+                            },
+                            onLongPress = {
+                                if (tile.id == "qr_scanner") {
+                                    onDismiss()
+                                    Handler(Looper.getMainLooper()).postDelayed({
+                                        val longOk = tile.onLongPress?.invoke() ?: false
+                                        if (!longOk) {
+                                            Toast.makeText(context, "Could not open ${tile.title}", Toast.LENGTH_SHORT).show()
+                                        }
+                                    }, 120L)
+                                    return@ClassicQuickTile
+                                }
+                                val longOk = tile.onLongPress?.invoke() ?: false
+                                if (longOk) onDismiss()
+                            },
+                        )
+                    }
+                }
+            }
+            Box(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(top = 10.dp),
+                contentAlignment = Alignment.Center,
+            ) {
+                Icon(
+                    imageVector = Icons.Rounded.Tune,
+                    contentDescription = "Edit quick settings",
+                    tint = Color(0x80E6EBF2),
+                    modifier = Modifier
+                        .size(28.dp)
+                        .clickable { showTileEditor = true },
+                )
+            }
+        }
+        if (showTileEditor) {
+            QuickSettingsTileEditorOverlay(
+                tiles = allQuickTiles,
+                onDismiss = { showTileEditor = false },
+                onReset = {
+                    orderedTileIds.clear()
+                    orderedTileIds.addAll(defaultTileIds)
+                },
+                onMove = ::moveTile,
+            )
+        }
+    }
+}
+
+@Composable
+private fun QuickSettingsTileEditorOverlay(
+    tiles: List<QuickTile>,
+    onDismiss: () -> Unit,
+    onReset: () -> Unit,
+    onMove: (from: Int, to: Int) -> Unit,
+) {
+    val editorView = LocalView.current
+    val editorDensity = LocalDensity.current
+    val (editorPadStart, editorPadEnd) = qsHorizontalEdgePadding(editorView, editorDensity, 0.dp)
+    Surface(
+        modifier = Modifier
+            .fillMaxSize()
+            .zIndex(600f),
+        color = Color(0xF0000000),
+    ) {
+        Column(
+            modifier = Modifier
+                .fillMaxSize()
+                .statusBarsPadding()
+                .navigationBarsPadding()
+                .padding(start = editorPadStart, end = editorPadEnd, top = 8.dp, bottom = 8.dp),
+        ) {
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                IconButton(onClick = onDismiss) {
+                    Icon(
+                        imageVector = Icons.AutoMirrored.Rounded.ArrowBack,
+                        contentDescription = "Back",
+                        tint = Color(0xFFEAF0F6),
+                    )
+                }
+                Text(
+                    text = "Edit",
+                    color = Color(0xFFEAF0F6),
+                    style = MaterialTheme.typography.titleLarge.copy(
+                        fontWeight = FontWeight.SemiBold,
+                        fontSize = 30.sp,
+                    ),
+                    modifier = Modifier.weight(1f),
+                )
+                TextButton(onClick = onReset) {
+                    Text(
+                        "RESET",
+                        color = Color(0xFFEAF0F6),
+                        style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.SemiBold),
+                    )
+                }
+            }
+            Text(
+                text = "Hold and drag to rearrange tiles",
+                color = Color(0xFFB8C1CE),
+                style = MaterialTheme.typography.bodyLarge.copy(fontSize = 16.sp),
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(top = 18.dp, bottom = 16.dp),
+                textAlign = TextAlign.Center,
+            )
+            LazyVerticalGrid(
+                columns = GridCells.Fixed(2),
+                modifier = Modifier.fillMaxSize(),
+                horizontalArrangement = Arrangement.spacedBy(8.dp),
+                verticalArrangement = Arrangement.spacedBy(8.dp),
+            ) {
+                itemsIndexed(items = tiles, key = { _, tile -> tile.id }) { _, tile ->
+                    var dragX by remember(tile.id) { mutableFloatStateOf(0f) }
+                    var dragY by remember(tile.id) { mutableFloatStateOf(0f) }
+                    Box(
+                        modifier = Modifier
+                            .graphicsLayer {
+                                translationX = dragX
+                                translationY = dragY
+                            }
+                            .pointerInput(tile.id, tiles.size) {
+                                val horizontalThreshold = 58.dp.toPx()
+                                val verticalThreshold = 48.dp.toPx()
+                                detectDragGesturesAfterLongPress(
+                                    onDragEnd = {
+                                        dragX = 0f
+                                        dragY = 0f
+                                    },
+                                    onDragCancel = {
+                                        dragX = 0f
+                                        dragY = 0f
+                                    },
+                                    onDrag = { change, amount ->
+                                        change.consume()
+                                        dragX += amount.x
+                                        dragY += amount.y
+                                        val from = tiles.indexOfFirst { it.id == tile.id }
+                                        if (from < 0) return@detectDragGesturesAfterLongPress
+                                        if (dragX >= horizontalThreshold) {
+                                            val to = from + 1
+                                            if (to < tiles.size && (from / 2 == to / 2)) {
+                                                onMove(from, to)
+                                                dragX = 0f
+                                                dragY = 0f
+                                            }
+                                        } else if (dragX <= -horizontalThreshold) {
+                                            val to = from - 1
+                                            if (to >= 0 && (from / 2 == to / 2)) {
+                                                onMove(from, to)
+                                                dragX = 0f
+                                                dragY = 0f
+                                            }
+                                        } else if (dragY >= verticalThreshold) {
+                                            val to = from + 2
+                                            if (to < tiles.size) {
+                                                onMove(from, to)
+                                                dragX = 0f
+                                                dragY = 0f
+                                            }
+                                        } else if (dragY <= -verticalThreshold) {
+                                            val to = from - 2
+                                            if (to >= 0) {
+                                                onMove(from, to)
+                                                dragX = 0f
+                                                dragY = 0f
+                                            }
+                                        }
+                                    },
+                                )
+                            },
+                    ) {
+                        ClassicQuickTile(
+                            tile = tile,
+                            onTap = {},
+                            onLongPress = {},
+                        )
+                    }
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun ClassicQuickTile(
+    tile: QuickTile,
+    onTap: () -> Unit,
+    onLongPress: () -> Unit,
+) {
+    val darkCell = Color(0xFF191D22)
+    val iconBoxColor = if (tile.highlighted) Color(0xFF145A77) else darkCell
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .height(70.dp)
+            .combinedClickable(onClick = onTap, onLongClick = onLongPress),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Box(
+            modifier = Modifier
+                .width(68.dp)
+                .fillMaxHeight()
+                .background(iconBoxColor),
+            contentAlignment = Alignment.Center,
+        ) {
+            Icon(
+                imageVector = tile.icon,
+                contentDescription = null,
+                tint = Color(0xFFEAF0F6),
+                modifier = Modifier.size(28.dp),
+            )
+            if (tile.highlighted) {
+                Box(
+                    modifier = Modifier
+                        .align(Alignment.BottomCenter)
+                        .fillMaxWidth()
+                        .height(2.dp)
+                        .background(Color(0xFF00B7FF)),
+                )
+            }
+        }
+        Row(
+            modifier = Modifier
+                .weight(1f)
+                .fillMaxHeight()
+                .background(darkCell)
+                .padding(horizontal = 10.dp, vertical = 8.dp),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Column(modifier = Modifier.weight(1f)) {
+                Text(
+                    tile.title,
+                    color = Color(0xFFEAF0F6),
+                    style = MaterialTheme.typography.titleMedium.copy(
+                        fontWeight = FontWeight.SemiBold,
+                        fontSize = 15.sp,
+                        lineHeight = 16.sp,
+                    ),
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                )
+                if (tile.subtitle.isNotBlank()) {
+                    Text(
+                        tile.subtitle,
+                        color = Color(0xFFAEB8C5),
+                        style = MaterialTheme.typography.bodyMedium.copy(
+                            fontSize = 11.sp,
+                            lineHeight = 12.sp,
+                        ),
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis,
+                    )
+                }
+            }
+        }
+    }
+}
+
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 private fun HomeActionsSheet(
@@ -1798,6 +2685,7 @@ private fun AppDrawer(
     }
     val edgeHoverJobRef = remember { mutableListOf<Job?>(null) }
     var pagerContainerCoords by remember { mutableStateOf<LayoutCoordinates?>(null) }
+    var pagerViewportSize by remember { mutableStateOf(IntSize.Zero) }
     val pagerCoordsRef = remember { mutableListOf<LayoutCoordinates?>(null) }
     val dragFingerRootRef = remember { mutableListOf(Offset.Zero) }
     val pagesRef = remember { mutableListOf(pages) }
@@ -1843,9 +2731,14 @@ private fun AppDrawer(
             drawerPager.animateScrollToPage(target)
         }
     }
+    // Match HomePage: keep drawer below status bar when the activity draws edge-to-edge.
+    // Sort row is ~32dp tall; when searching that row is hidden — reserve the same height so the grid
+    // does not jump up under the status bar.
+    val drawerSortHeaderHeight = 32.dp
     Column(
         modifier = Modifier
             .fillMaxSize()
+            .statusBarsPadding()
             // Flutter `app_grid_theme.dart`: appGridOutterPadding top = 0, bottom = 12 (not 4dp top).
             .padding(start = outerPadH, end = outerPadH, top = 0.dp, bottom = outerPadV)
             .focusRequester(focusRequester)
@@ -2067,7 +2960,7 @@ private fun AppDrawer(
                 }
             }
         }
-        // Sort toggle — only shown when not searching
+        // Sort toggle — hidden while searching, but keep the same vertical slot so the grid stays put.
         if (searchQuery.isEmpty()) {
             Row(
                 modifier = Modifier
@@ -2096,11 +2989,14 @@ private fun AppDrawer(
                     )
                 }
             }
+        } else {
+            Spacer(Modifier.height(drawerSortHeaderHeight))
         }
         Box(
             modifier = Modifier
                 .weight(1f)
                 .fillMaxWidth()
+                .onSizeChanged { pagerViewportSize = it }
                 .onGloballyPositioned {
                     pagerContainerCoords = it
                     pagerCoordsRef[0] = it
@@ -2118,16 +3014,21 @@ private fun AppDrawer(
 
             BoxWithConstraints(modifier = Modifier.fillMaxSize()) {
                 // Match AppTile/FolderTile vertical budget (icon pad top, max icon pad bottom, label block).
-                // When swiping home→drawer with a trackpad, the outer pager can briefly give this page
-                // a too-small max height/width; unclamped cardH made icons shrink in remember(height,…).
+                // Prefer stable pager viewport dimensions to avoid first-open transient undersizing.
+                val viewportWidth = if (pagerViewportSize.width > 0) {
+                    with(density) { pagerViewportSize.width.toDp() }
+                } else maxWidth
+                val viewportHeight = if (pagerViewportSize.height > 0) {
+                    with(density) { pagerViewportSize.height.toDp() }
+                } else maxHeight
                 val minLabelBlock = with(density) { (labelSizeSp * 2.55f).sp.toDp() }
                 val minCellHeight = 3.dp + iconSize + 14.dp + 2.dp + minLabelBlock
                 val minCellWidth = iconSize + 14.dp
                 val cardW =
-                    ((maxWidth - colSpacing * (gridPreset.cols - 1)) / gridPreset.cols)
+                    ((viewportWidth - colSpacing * (gridPreset.cols - 1)) / gridPreset.cols)
                         .coerceAtLeast(minCellWidth)
                 val cardH =
-                    ((maxHeight - rowSpacing * (gridPreset.rows - 1)) / gridPreset.rows)
+                    ((viewportHeight - rowSpacing * (gridPreset.rows - 1)) / gridPreset.rows)
                         .coerceAtLeast(minCellHeight)
 
                 LazyVerticalGrid(
@@ -3754,6 +4655,7 @@ private fun DrawerSearchBar(
 @Composable
 private fun Dock(
     pageIndex: Int,
+    homeActive: Boolean = false,
     onMail: () -> Unit,
     onShortcut: () -> Unit,
     onHome: () -> Unit,
@@ -3928,6 +4830,7 @@ private fun Dock(
                         count = drawerPageCount,
                         themePalette = themePalette,
                         emphasize = false,
+                        hideFirstPageLabel = homeActive,
                     )
                 }
             }
@@ -3986,6 +4889,7 @@ private fun Dock(
                     count = drawerPageCount,
                     themePalette = themePalette,
                     emphasize = true,
+                    hideFirstPageLabel = homeActive,
                 )
             }
 
@@ -4010,7 +4914,7 @@ private fun Dock(
                 contentAlignment = Alignment.Center
             ) {
                 Text(
-                    text = (hoveredPage + 1).toString(),
+                    text = if (homeActive && hoveredPage == 0) "" else (hoveredPage + 1).toString(),
                     modifier = Modifier.padding(top = 5.dp),
                     style = MaterialTheme.typography.bodyLarge.copy(
                         color = Color.White,
@@ -4083,6 +4987,7 @@ private fun Dots(
     count: Int,
     themePalette: LauncherThemePalette,
     emphasize: Boolean = false,
+    hideFirstPageLabel: Boolean = false,
 ) {
     val maxDots = 5
     val dotCount = count.coerceIn(0, maxDots)
@@ -4096,11 +5001,12 @@ private fun Dots(
     val spacingDp = themePalette.pageIndicatorSpacingDp.dp
     val pageColor = themePalette.pageIndicatorColour
     val inactiveAlpha = if (emphasize) 0.92f else 0.69f
+    val suppressActiveFirstDot = hideFirstPageLabel && current == 0
     // Flutter `page_indicator.dart`: squircle uses ContinuousRectangleBorder with radius 10.
     val squircleShape = RoundedCornerShape(10.dp)
     Row(verticalAlignment = Alignment.CenterVertically) {
         repeat(dotCount) { i ->
-            if (i == activeDot) {
+            if (i == activeDot && !suppressActiveFirstDot) {
                 val activeShape =
                     if (themePalette.pageIndicatorShapeSquircle) squircleShape else CircleShape
                 Box(
@@ -4114,7 +5020,7 @@ private fun Dots(
                     contentAlignment = Alignment.Center,
                 ) {
                     Text(
-                        text = (current + 1).toString(),
+                        text = if (hideFirstPageLabel && current == 0) "" else (current + 1).toString(),
                         style = MaterialTheme.typography.labelMedium.copy(
                             color = Color.Black,
                             fontSize = themePalette.pageIndicatorFontSp.sp,
@@ -4955,6 +5861,9 @@ private fun IconAppearanceSettingsOverlay(
     themePalette: LauncherThemePalette,
     onDismiss: () -> Unit,
 ) {
+    val focusRequester = remember { FocusRequester() }
+    var selectedIndex by remember { mutableStateOf(0) }
+    val itemCount = 3
     val subtitleColor = Color(0xFF8E95A3)
     val cardBg = Color(0xFF1E2430)
     val cardShape = RoundedCornerShape(12.dp)
@@ -4970,6 +5879,7 @@ private fun IconAppearanceSettingsOverlay(
                 .statusBarsPadding()
                 .navigationBarsPadding(),
         ) {
+            LaunchedEffect(Unit) { focusRequester.requestFocus() }
             Row(
                 modifier = Modifier
                     .fillMaxWidth()
@@ -4996,48 +5906,97 @@ private fun IconAppearanceSettingsOverlay(
                 modifier = Modifier
                     .weight(1f)
                     .fillMaxWidth()
+                    .focusRequester(focusRequester)
+                    .focusable()
+                    .onPreviewKeyEvent { ev ->
+                        if (ev.type != KeyEventType.KeyDown) return@onPreviewKeyEvent false
+                        val nk = ev.nativeKeyEvent
+                        when {
+                            ev.key == Key.Back || nk?.keyCode == AndroidKeyEvent.KEYCODE_BACK || ev.isEndCallKey() -> {
+                                onDismiss()
+                                true
+                            }
+                            ev.key == Key.DirectionUp || nk?.keyCode == AndroidKeyEvent.KEYCODE_DPAD_UP -> {
+                                val next = (selectedIndex - 1).coerceAtLeast(0)
+                                if (next != selectedIndex) {
+                                    selectedIndex = next
+                                }
+                                true
+                            }
+                            ev.key == Key.DirectionDown || nk?.keyCode == AndroidKeyEvent.KEYCODE_DPAD_DOWN -> {
+                                val next = (selectedIndex + 1).coerceAtMost(itemCount - 1)
+                                if (next != selectedIndex) {
+                                    selectedIndex = next
+                                }
+                                true
+                            }
+                            ev.key == Key.Enter ||
+                                ev.key == Key.NumPadEnter ||
+                                nk?.keyCode == AndroidKeyEvent.KEYCODE_DPAD_CENTER ||
+                                nk?.keyCode == AndroidKeyEvent.KEYCODE_ENTER -> {
+                                when (selectedIndex) {
+                                    0 -> {
+                                        val all = GridPreset.entries
+                                        onGridPreset(all[(all.indexOf(gridPreset) + 1) % all.size])
+                                    }
+                                    1 -> {
+                                        val all = AppIconShape.entries
+                                        onSetAppIconShape(all[(all.indexOf(appIconShape) + 1) % all.size])
+                                    }
+                                    2 -> onOpenDrawerBadges()
+                                }
+                                true
+                            }
+                            else -> false
+                        }
+                    }
                     .verticalScroll(rememberScrollState())
                     .padding(horizontal = 16.dp)
                     .padding(bottom = 24.dp),
                 verticalArrangement = Arrangement.spacedBy(12.dp),
             ) {
-                SettingsCategoryCard(cardBg = cardBg, cardShape = cardShape, selected = false) {
+                SettingsCategoryCard(cardBg = cardBg, cardShape = cardShape, selected = selectedIndex == 0) {
                     SettingsRow(
                         icon = Icons.Rounded.GridView,
                         title = "App grid size",
                         subtitle = "${gridPreset.rows} × ${gridPreset.cols}",
-                        selected = false,
+                        selected = selectedIndex == 0,
                         themePalette = themePalette,
                         subtitleColor = subtitleColor,
                         onClick = {
+                            selectedIndex = 0
                             val all = GridPreset.entries
                             onGridPreset(all[(all.indexOf(gridPreset) + 1) % all.size])
                         },
                     )
                 }
-                SettingsCategoryCard(cardBg = cardBg, cardShape = cardShape, selected = false) {
+                SettingsCategoryCard(cardBg = cardBg, cardShape = cardShape, selected = selectedIndex == 1) {
                     SettingsRow(
                         icon = Icons.Rounded.Apps,
                         title = "App icon shape",
                         subtitle = appIconShapeLabel(appIconShape),
-                        selected = false,
+                        selected = selectedIndex == 1,
                         themePalette = themePalette,
                         subtitleColor = subtitleColor,
                         onClick = {
+                            selectedIndex = 1
                             val all = AppIconShape.entries
                             onSetAppIconShape(all[(all.indexOf(appIconShape) + 1) % all.size])
                         },
                     )
                 }
-                SettingsCategoryCard(cardBg = cardBg, cardShape = cardShape, selected = false) {
+                SettingsCategoryCard(cardBg = cardBg, cardShape = cardShape, selected = selectedIndex == 2) {
                     SettingsRow(
                         icon = Icons.Outlined.QueryStats,
                         title = "App icon badges",
                         subtitle = drawerBadgesSubtitle,
-                        selected = false,
+                        selected = selectedIndex == 2,
                         themePalette = themePalette,
                         subtitleColor = subtitleColor,
-                        onClick = onOpenDrawerBadges,
+                        onClick = {
+                            selectedIndex = 2
+                            onOpenDrawerBadges()
+                        },
                     )
                 }
             }
@@ -5088,6 +6047,7 @@ private fun SettingsScreenOverlay(
 ) {
     val context = LocalContext.current
     val view = LocalView.current
+    val scope = rememberCoroutineScope()
     val focusRequester = remember { FocusRequester() }
     var selectedIndex by remember { mutableStateOf(0) }
     val itemCount = 14
@@ -5150,6 +6110,7 @@ private fun SettingsScreenOverlay(
             13 -> openBackupFromDownloads.launch(SettingsDownloads.openBackupJsonPickerIntent())
         }
         doNavFeedback(view, hapticsEnabled, hapticIntensity)
+        scope.launch { focusRequester.requestFocus() }
     }
 
     val cardBg = Color(0xFF1E2430)
@@ -5168,6 +6129,9 @@ private fun SettingsScreenOverlay(
         // Steal focus from drawer/pager (still composed under us) so trackpad/DPAD events hit settings.
         LaunchedEffect(Unit) {
             focusManager.clearFocus(force = true)
+            focusRequester.requestFocus()
+        }
+        LaunchedEffect(classicMode) {
             focusRequester.requestFocus()
         }
         // BB Classic / Q20 trackpad sends DPAD up/down: we move selection but must scroll the viewport too.
@@ -5318,7 +6282,7 @@ private fun SettingsScreenOverlay(
                     SettingsCategoryCard(cardBg = cardBg, cardShape = cardShape, selected = selectedIndex == 3) {
                         SettingsRow(
                             icon = Icons.Rounded.TouchApp,
-                            title = "Gesture shortcuts",
+                            title = "Home gestures",
                             subtitle = gestureSubtitle,
                             selected = selectedIndex == 3,
                             themePalette = themePalette,
@@ -5358,7 +6322,7 @@ private fun SettingsScreenOverlay(
                         SettingsRow(
                             icon = Icons.Rounded.Wallpaper,
                             title = "Set wallpaper",
-                            subtitle = "Zeno, Gallery, Photos, or system sources",
+                            subtitle = "Zeno wallpapers or Wallpapers & style",
                             selected = selectedIndex == 5,
                             themePalette = themePalette,
                             subtitleColor = subtitleColor,
@@ -5616,4 +6580,11 @@ private fun SettingsRow(
         }
     }
 }
+
+private tailrec fun android.content.Context.findHostActivity(): Activity? =
+    when (this) {
+        is Activity -> this
+        is ContextWrapper -> baseContext.findHostActivity()
+        else -> null
+    }
 

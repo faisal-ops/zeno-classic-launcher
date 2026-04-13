@@ -13,7 +13,7 @@ object LauncherBackup {
     const val FORMAT_KEY = "format"
     const val FORMAT_VALUE = "classiclauncher_backup"
     const val VERSION_KEY = "version"
-    const val CURRENT_VERSION = 18
+    const val CURRENT_VERSION = 19
 
     fun toJson(prefs: LauncherPrefs): String {
         val root = JSONObject()
@@ -75,6 +75,7 @@ object LauncherBackup {
         p.put("showIconNotifBadge", prefs.showIconNotifBadge)
         p.put("showShortcutApps", prefs.showShortcutApps)
         p.put("showHomeGroups", prefs.showHomeGroups)
+        p.put("customQuickSettingsEnabled", prefs.customQuickSettingsEnabled)
         p.put("classicMode", prefs.classicMode)
         p.put("appIconShape", prefs.appIconShape.name)
         root.put("prefs", p)
@@ -176,6 +177,7 @@ object LauncherBackup {
         val legacyShowHomeStrip = if (p.has("showHomeStrip")) p.optBoolean("showHomeStrip", true) else null
         val showShortcutApps = p.optBoolean("showShortcutApps", legacyShowHomeStrip ?: true)
         val showHomeGroups = p.optBoolean("showHomeGroups", legacyShowHomeStrip ?: true)
+        val customQuickSettingsEnabled = p.optBoolean("customQuickSettingsEnabled", false)
         val classicMode = when {
             p.has("classicMode") -> p.optBoolean("classicMode", false)
             else -> p.optBoolean("drawerOnlyMode", false)
@@ -240,6 +242,7 @@ object LauncherBackup {
             showIconNotifBadge = showIconNotifBadge,
             showShortcutApps = showShortcutApps,
             showHomeGroups = showHomeGroups,
+            customQuickSettingsEnabled = customQuickSettingsEnabled,
             classicMode = classicMode,
             appIconShape = appIconShape,
         )

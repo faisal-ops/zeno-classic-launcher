@@ -1,5 +1,7 @@
 package com.zeno.classiclauncher.nlauncher.ui
 
+import android.content.Intent
+import android.provider.Settings
 import android.widget.Toast
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
@@ -27,6 +29,7 @@ import androidx.compose.material3.SwitchDefaults
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -35,6 +38,9 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
+import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.LifecycleEventObserver
+import androidx.lifecycle.compose.LocalLifecycleOwner
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -50,18 +56,37 @@ fun LockWakeSettingsOverlay(
     onDoubleTapChange: (Boolean) -> Unit,
 ) {
     val context = LocalContext.current
+    val lifecycleOwner = LocalLifecycleOwner.current
     var adminActive by remember { mutableStateOf(SleepManager.isAdminActive(context)) }
+    var lockHelperOn by remember { mutableStateOf(SleepManager.isLockAccessibilityEnabled(context)) }
+    DisposableEffect(lifecycleOwner) {
+        val observer = LifecycleEventObserver { _, event ->
+            if (event == Lifecycle.Event.ON_RESUME) {
+                adminActive = SleepManager.isAdminActive(context)
+                lockHelperOn = SleepManager.isLockAccessibilityEnabled(context)
+            }
+        }
+        lifecycleOwner.lifecycle.addObserver(observer)
+        onDispose { lifecycleOwner.lifecycle.removeObserver(observer) }
+    }
     val adminLauncher = rememberLauncherForActivityResult(
         ActivityResultContracts.StartActivityForResult(),
     ) {
         adminActive = SleepManager.isAdminActive(context)
-        if (doubleTapEnabled && !adminActive) {
-            onDoubleTapChange(false)
+        lockHelperOn = SleepManager.isLockAccessibilityEnabled(context)
+        if (doubleTapEnabled && !SleepManager.isDoubleTapLockReady(context)) {
             Toast.makeText(
                 context,
-                "Device admin was not enabled — double tap to lock stays off until you grant it",
+                "Double tap won’t lock until you enable the lock helper (Accessibility) or grant device admin.",
                 Toast.LENGTH_LONG,
             ).show()
+        }
+    }
+    fun openAccessibilitySettings() {
+        runCatching {
+            context.startActivity(
+                Intent(Settings.ACTION_ACCESSIBILITY_SETTINGS).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK),
+            )
         }
     }
 
@@ -108,7 +133,7 @@ fun LockWakeSettingsOverlay(
                 verticalArrangement = Arrangement.spacedBy(16.dp),
             ) {
                 Text(
-                    "Double tap locks the screen using device admin (same as the power key lock).",
+                    "Double tap uses “Zeno Classic lock helper” in Accessibility when it is on—the same lock path as the power button, so face unlock works. If you granted device admin earlier, remove it in system settings when the lock helper is on; otherwise a brief disconnect could still use admin lock and skip face.",
                     style = MaterialTheme.typography.bodyMedium,
                     color = subtitleColor,
                 )
@@ -117,30 +142,45 @@ fun LockWakeSettingsOverlay(
                     title = "Double tap to lock",
                     subtitle = when {
                         !doubleTapEnabled -> "Off"
-                        adminActive -> "On — double-tap home workspace"
-                        else -> "Enable, then grant device admin"
+                        lockHelperOn -> "On — lock helper (face unlock)"
+                        adminActive -> "On — device admin only"
+                        else -> "Needs lock helper or device admin"
                     },
                     checked = doubleTapEnabled,
                     themePalette = themePalette,
                     onCheckedChange = { want ->
                         if (want) {
                             onDoubleTapChange(true)
-                            if (!SleepManager.isAdminActive(context)) {
-                                adminLauncher.launch(SleepManager.createEnableAdminIntent(context))
-                            }
                             adminActive = SleepManager.isAdminActive(context)
+                            lockHelperOn = SleepManager.isLockAccessibilityEnabled(context)
+                            if (!SleepManager.isDoubleTapLockReady(context)) {
+                                Toast.makeText(
+                                    context,
+                                    "Turn on “Zeno Classic lock helper” here, or grant device admin below.",
+                                    Toast.LENGTH_LONG,
+                                ).show()
+                                openAccessibilitySettings()
+                            }
                         } else {
                             onDoubleTapChange(false)
                             adminActive = SleepManager.isAdminActive(context)
+                            lockHelperOn = SleepManager.isLockAccessibilityEnabled(context)
                         }
                     },
                 )
 
-                if (doubleTapEnabled && !adminActive) {
-                    TextButton(
-                        onClick = { adminLauncher.launch(SleepManager.createEnableAdminIntent(context)) },
-                    ) {
-                        Text("Grant device admin", color = themePalette.settingsMenuBody)
+                if (doubleTapEnabled) {
+                    if (!lockHelperOn) {
+                        TextButton(onClick = { openAccessibilitySettings() }) {
+                            Text("Enable lock helper (Accessibility)", color = themePalette.settingsMenuBody)
+                        }
+                    }
+                    if (!adminActive) {
+                        TextButton(
+                            onClick = { adminLauncher.launch(SleepManager.createEnableAdminIntent(context)) },
+                        ) {
+                            Text("Grant device admin (fallback)", color = themePalette.settingsMenuBody)
+                        }
                     }
                 }
 

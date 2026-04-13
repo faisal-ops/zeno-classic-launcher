@@ -4,5 +4,7 @@
     <string name="app_name">Zeno Classic</string>
     <!-- Synthetic app drawer row that opens in-app settings -->
     <string name="home_menu_settings_title">Zeno Classic settings</string>
-    <string name="device_admin_explanation">Zeno Classic needs this permission to lock the screen when you double-tap the home screen.</string>
+    <string name="device_admin_explanation">Optional fallback: lock the screen when double-tap is on and the lock helper (Accessibility) is not enabled.</string>
+    <string name="lock_accessibility_service_label">Zeno Classic lock helper</string>
+    <string name="lock_accessibility_service_description">Locks the screen when you double-tap the home workspace—the same as the power button so face unlock works. Only window events from Zeno Classic are observed; screen content is not read.</string>
 </resources>

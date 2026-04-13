@@ -1,9 +1,16 @@
 package com.zeno.classiclauncher.native.ui
 
 import android.app.WallpaperManager
+import android.Manifest
+import android.content.pm.PackageManager
 import android.graphics.BitmapFactory
+import android.os.Build
+import android.os.Environment
 import android.net.Uri
+import android.provider.MediaStore
 import android.widget.Toast
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
@@ -28,11 +35,7 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.rounded.ArrowBack
 import androidx.compose.material.icons.rounded.Collections
-import androidx.compose.material.icons.rounded.LiveTv
 import androidx.compose.material.icons.rounded.Palette
-import androidx.compose.material.icons.rounded.Photo
-import androidx.compose.material.icons.rounded.PhotoLibrary
-import androidx.compose.material.icons.rounded.Wallpaper
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
@@ -56,6 +59,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.zIndex
+import androidx.core.content.ContextCompat
 import coil.compose.AsyncImage
 import com.zeno.classiclauncher.nlauncher.apps.LauncherActions
 import com.zeno.classiclauncher.nlauncher.theme.LauncherThemePalette
@@ -65,6 +69,15 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 
 private const val ASSET_WALLPAPER_DIR = "zeno_wallpapers"
+private const val PUBLIC_WALLPAPER_DIR = "ZenoClassicWallpapers"
+
+private data class ZenoWallpaperItem(
+    val id: String,
+    val label: String,
+    val previewUri: String,
+    val sourceAssetName: String? = null,
+    val sourceContentUri: Uri? = null,
+)
 
 enum class WallpaperSourceSub {
     List,
@@ -85,6 +98,15 @@ fun WallpaperSourceOverlay(
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
     val actions = remember(context) { LauncherActions(context.applicationContext) }
+    var mediaPermissionGranted by remember { mutableStateOf(hasMediaReadPermission(context)) }
+    val mediaPermLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.RequestPermission(),
+    ) { granted ->
+        mediaPermissionGranted = granted
+        if (!granted) {
+            Toast.makeText(context, "Allow Photos permission to show device wallpapers", Toast.LENGTH_SHORT).show()
+        }
+    }
 
     LaunchedEffect(Unit) {
         withContext(Dispatchers.IO) {
@@ -103,20 +125,29 @@ fun WallpaperSourceOverlay(
                 themePalette = themePalette,
                 onBack = onDismiss,
                 onZeno = { onSubViewChange(WallpaperSourceSub.ZenoGrid) },
-                onGallery = { actions.openGalleryForWallpaper(); onDismiss() },
-                onLiveWallpapers = { actions.openLiveWallpaperChooser(); onDismiss() },
-                onPhotos = { actions.openPhotosForWallpaper(); onDismiss() },
                 onWallpaperAndStyle = { actions.openWallpaperStyleSettings(); onDismiss() },
-                onSystemWallpapers = { actions.openSystemWallpaperChooser(); onDismiss() },
             )
             WallpaperSourceSub.ZenoGrid -> ZenoWallpaperGrid(
                 themePalette = themePalette,
                 onBack = { onSubViewChange(WallpaperSourceSub.List) },
-                onPickAsset = { fileName ->
+                mediaPermissionGranted = mediaPermissionGranted,
+                onRequestMediaPermission = {
+                    val perm = mediaReadPermission()
+                    if (perm != null) mediaPermLauncher.launch(perm)
+                },
+                onPickWallpaper = { item ->
                     scope.launch(Dispatchers.IO) {
                         val bmp = runCatching {
-                            context.assets.open("$ASSET_WALLPAPER_DIR/$fileName").use { ins ->
-                                BitmapFactory.decodeStream(ins)
+                            when {
+                                item.sourceAssetName != null ->
+                                    context.assets.open("$ASSET_WALLPAPER_DIR/${item.sourceAssetName}").use { ins ->
+                                        BitmapFactory.decodeStream(ins)
+                                    }
+                                item.sourceContentUri != null ->
+                                    context.contentResolver.openInputStream(item.sourceContentUri)?.use { ins ->
+                                        BitmapFactory.decodeStream(ins)
+                                    }
+                                else -> null
                             }
                         }.getOrNull()
                         if (bmp == null) {
@@ -150,11 +181,7 @@ private fun WallpaperSourceList(
     themePalette: LauncherThemePalette,
     onBack: () -> Unit,
     onZeno: () -> Unit,
-    onGallery: () -> Unit,
-    onLiveWallpapers: () -> Unit,
-    onPhotos: () -> Unit,
     onWallpaperAndStyle: () -> Unit,
-    onSystemWallpapers: () -> Unit,
 ) {
     val titleColor = themePalette.settingsMenuTitle
     val labelColor = Color(0xFFE8EEF7)
@@ -199,16 +226,10 @@ private fun WallpaperSourceList(
             verticalArrangement = Arrangement.spacedBy(4.dp),
         ) {
             SourceRow(Icons.Rounded.Collections, "Zeno wallpapers", iconTint, labelColor, onZeno)
-            SourceRow(Icons.Rounded.PhotoLibrary, "Gallery", iconTint, labelColor, onGallery)
-            SourceRow(Icons.Rounded.LiveTv, "Live wallpapers", iconTint, labelColor, onLiveWallpapers)
-            SourceRow(Icons.Rounded.Photo, "Photos", iconTint, labelColor, onPhotos)
-            SourceRow(Icons.Rounded.Palette, "Wallpaper and style", iconTint, labelColor, onWallpaperAndStyle)
-            SourceRow(Icons.Rounded.Wallpaper, "Wallpapers", iconTint, labelColor, onSystemWallpapers)
+            SourceRow(Icons.Rounded.Palette, "Wallpapers & style", iconTint, labelColor, onWallpaperAndStyle)
             Spacer(Modifier.height(20.dp))
             Text(
-                "Zeno wallpapers are saved to Pictures/ZenoClassicWallpapers so they show in Gallery, " +
-                    "Photos, and other apps. The system “Wallpapers” app uses its own catalog and cannot " +
-                    "list third-party files.",
+                "Choose from bundled Zeno wallpapers, or open system Wallpapers & style settings.",
                 style = MaterialTheme.typography.bodySmall.copy(
                     color = Color(0xFF8E95A3),
                     lineHeight = 18.sp,
@@ -248,16 +269,28 @@ private fun SourceRow(
 private fun ZenoWallpaperGrid(
     themePalette: LauncherThemePalette,
     onBack: () -> Unit,
-    onPickAsset: (String) -> Unit,
+    mediaPermissionGranted: Boolean,
+    onRequestMediaPermission: () -> Unit,
+    onPickWallpaper: (ZenoWallpaperItem) -> Unit,
 ) {
     val context = LocalContext.current
     val titleColor = themePalette.settingsMenuTitle
-    var assetNames by remember { mutableStateOf<List<String>>(emptyList()) }
-    LaunchedEffect(Unit) {
-        assetNames = context.assets.list(ASSET_WALLPAPER_DIR)
+    var wallpapers by remember { mutableStateOf<List<ZenoWallpaperItem>>(emptyList()) }
+    LaunchedEffect(mediaPermissionGranted) {
+        val assetItems = context.assets.list(ASSET_WALLPAPER_DIR)
             ?.filter { it.endsWith(".jpg", true) || it.endsWith(".jpeg", true) || it.endsWith(".png", true) }
             .orEmpty()
             .sorted()
+            .map { assetName ->
+                ZenoWallpaperItem(
+                    id = "asset:$assetName",
+                    label = humanizeAssetLabel(assetName),
+                    previewUri = "file:///android_asset/$ASSET_WALLPAPER_DIR/${Uri.encode(assetName)}",
+                    sourceAssetName = assetName,
+                )
+            }
+        val deviceItems = if (mediaPermissionGranted) queryDeviceZenoWallpapers(context) else emptyList()
+        wallpapers = (assetItems + deviceItems).distinctBy { it.id }
     }
 
     Column(
@@ -285,7 +318,23 @@ private fun ZenoWallpaperGrid(
                 style = MaterialTheme.typography.titleLarge.copy(color = titleColor, fontWeight = FontWeight.Normal),
             )
         }
-        if (assetNames.isEmpty()) {
+        if (!mediaPermissionGranted) {
+            Text(
+                "Allow Photos permission to include images from Pictures/$PUBLIC_WALLPAPER_DIR.",
+                color = Color(0xFF8E95A3),
+                modifier = Modifier.padding(horizontal = 12.dp, vertical = 8.dp),
+            )
+            Text(
+                "Grant permission",
+                color = Color(0xFF84D5F6),
+                modifier = Modifier
+                    .padding(horizontal = 12.dp, vertical = 4.dp)
+                    .clip(RoundedCornerShape(10.dp))
+                    .clickable(onClick = onRequestMediaPermission)
+                    .padding(horizontal = 12.dp, vertical = 10.dp),
+            )
+        }
+        if (wallpapers.isEmpty()) {
             Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
                 Text("No bundled wallpapers", color = Color(0xFF8E95A3))
             }
@@ -299,19 +348,18 @@ private fun ZenoWallpaperGrid(
             horizontalArrangement = Arrangement.spacedBy(10.dp),
             verticalArrangement = Arrangement.spacedBy(10.dp),
         ) {
-            items(assetNames, key = { it }) { name ->
-                val uri = "file:///android_asset/$ASSET_WALLPAPER_DIR/${Uri.encode(name)}"
+            items(wallpapers, key = { it.id }) { item ->
                 Column(
                     modifier = Modifier
                         .fillMaxWidth()
                         .clip(RoundedCornerShape(12.dp))
                         .background(Color(0xFF1E2430))
-                        .clickable { onPickAsset(name) },
+                        .clickable { onPickWallpaper(item) },
                     horizontalAlignment = Alignment.CenterHorizontally,
                 ) {
                     AsyncImage(
-                        model = uri,
-                        contentDescription = name,
+                        model = item.previewUri,
+                        contentDescription = item.label,
                         contentScale = ContentScale.Crop,
                         modifier = Modifier
                             .fillMaxWidth()
@@ -319,12 +367,70 @@ private fun ZenoWallpaperGrid(
                             .clip(RoundedCornerShape(12.dp)),
                     )
                     Text(
-                        humanizeAssetLabel(name),
+                        item.label,
                         modifier = Modifier.padding(8.dp),
                         style = MaterialTheme.typography.labelSmall.copy(color = Color(0xFFB8C0CC)),
                         maxLines = 2,
                     )
                 }
+            }
+        }
+    }
+}
+
+private fun hasMediaReadPermission(context: android.content.Context): Boolean {
+    val permission = mediaReadPermission() ?: return true
+    return ContextCompat.checkSelfPermission(context, permission) == PackageManager.PERMISSION_GRANTED
+}
+
+private fun mediaReadPermission(): String? = when {
+    Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU -> Manifest.permission.READ_MEDIA_IMAGES
+    Build.VERSION.SDK_INT >= Build.VERSION_CODES.M -> Manifest.permission.READ_EXTERNAL_STORAGE
+    else -> null
+}
+
+private fun queryDeviceZenoWallpapers(context: android.content.Context): List<ZenoWallpaperItem> {
+    val resolver = context.contentResolver
+    val collection = MediaStore.Images.Media.EXTERNAL_CONTENT_URI
+    val projection = arrayOf(
+        MediaStore.Images.Media._ID,
+        MediaStore.Images.Media.DISPLAY_NAME,
+        MediaStore.Images.Media.RELATIVE_PATH,
+    )
+    val selection: String
+    val args: Array<String>
+    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+        selection = "${MediaStore.Images.Media.RELATIVE_PATH} LIKE ?"
+        args = arrayOf("${Environment.DIRECTORY_PICTURES}/$PUBLIC_WALLPAPER_DIR/%")
+    } else {
+        @Suppress("DEPRECATION")
+        run {
+            selection = "${MediaStore.Images.Media.DATA} LIKE ?"
+            args = arrayOf("%/${Environment.DIRECTORY_PICTURES}/$PUBLIC_WALLPAPER_DIR/%")
+        }
+    }
+    return buildList {
+        resolver.query(
+            collection,
+            projection,
+            selection,
+            args,
+            "${MediaStore.Images.Media.DATE_ADDED} DESC",
+        )?.use { cursor ->
+            val idCol = cursor.getColumnIndexOrThrow(MediaStore.Images.Media._ID)
+            val nameCol = cursor.getColumnIndexOrThrow(MediaStore.Images.Media.DISPLAY_NAME)
+            while (cursor.moveToNext()) {
+                val id = cursor.getLong(idCol)
+                val name = cursor.getString(nameCol) ?: continue
+                val uri = Uri.withAppendedPath(collection, id.toString())
+                add(
+                    ZenoWallpaperItem(
+                        id = "device:$id",
+                        label = humanizeAssetLabel(name),
+                        previewUri = uri.toString(),
+                        sourceContentUri = uri,
+                    )
+                )
             }
         }
     }
