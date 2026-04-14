@@ -3870,10 +3870,27 @@ private fun FolderTile(
         animationSpec = tween(220),
         label = "folderAppliedScale",
     )
+    val density = LocalDensity.current
+    val iconPadTop = 3.dp
+    val textPadBottom = 2.dp
+    // Keep folder tile vertical geometry in lockstep with AppTile so label baseline matches.
+    val (iconSizeUsed, iconPadBottom) = remember(height, iconSize, labelSizeSp, density) {
+        val minLabel = with(density) { (labelSizeSp * 2.55f).sp.toDp() }
+        var sz = iconSize
+        var pad = (height - iconPadTop - sz - textPadBottom - minLabel).coerceIn(3.dp, 14.dp)
+        repeat(10) {
+            val labelSpace = height - iconPadTop - sz - pad - textPadBottom
+            if (labelSpace >= minLabel) return@remember Pair(sz, pad)
+            if (sz <= 40.dp) return@remember Pair(sz, pad)
+            sz -= 3.dp
+            pad = (height - iconPadTop - sz - textPadBottom - minLabel).coerceIn(3.dp, 14.dp)
+        }
+        Pair(sz.coerceAtLeast(40.dp), pad)
+    }
     val preview = members.take(4)
     val inset = 5.dp
     val gap = 2.dp
-    val half = (iconSize - inset * 2 - gap) / 2
+    val half = (iconSizeUsed - inset * 2 - gap) / 2
     Box(
         modifier = Modifier
             .zIndex(if (isFingerDraggingThisTile) 1f else 0f)
@@ -3898,8 +3915,6 @@ private fun FolderTile(
             },
         contentAlignment = Alignment.TopCenter,
     ) {
-        val iconPadTop = 3.dp
-        val textPadBottom = 2.dp
         if (selected) {
             Box(
                 modifier = Modifier
@@ -3931,8 +3946,8 @@ private fun FolderTile(
         ) {
             Box(
                 modifier = Modifier
-                    .padding(top = iconPadTop, bottom = 4.dp, start = 6.dp, end = 6.dp)
-                    .size(iconSize),
+                    .padding(top = iconPadTop, bottom = iconPadBottom, start = 6.dp, end = 6.dp)
+                    .size(iconSizeUsed),
             ) {
                 Box(
                     modifier = Modifier
@@ -3995,6 +4010,7 @@ private fun FolderTile(
                 modifier = Modifier
                     .weight(1f)
                     .fillMaxWidth()
+                    .fillMaxHeight()
                     .padding(bottom = textPadBottom, start = 3.dp, end = 3.dp),
                 contentAlignment = Alignment.TopCenter,
             ) {

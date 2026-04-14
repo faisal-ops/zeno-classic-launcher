@@ -102,6 +102,7 @@ class LauncherViewModel(app: Application) : AndroidViewModel(app) {
 
     private val _usageStats = MutableStateFlow<Map<String, Long>>(emptyMap())
     val usageStats: StateFlow<Map<String, Long>> = _usageStats.asStateFlow()
+    private fun isStrictDrawerAlphabeticalMode(): Boolean = !_reorderMode.value && !_sortByUsage.value
 
     /** Force an immediate refresh of usage stats (call after returning from Usage Access settings). */
     fun refreshUsageStats() {
@@ -179,10 +180,18 @@ class LauncherViewModel(app: Application) : AndroidViewModel(app) {
                         val filtered = members.filter { it in pkgs }
                         if (filtered.isNotEmpty()) newFolders[id] = filtered
                     }
-                    val newOrder = p.orderedPackages.filter { token ->
-                        !FolderIds.isFolderId(token) || newFolders.containsKey(token)
-                    }
                     val newNames = p.folderNames.filterKeys { newFolders.containsKey(it) }
+                    val newOrder = if (isStrictDrawerAlphabeticalMode()) {
+                        strictAlphabeticalDrawerOrder(
+                            installed = list,
+                            folderContents = newFolders,
+                            folderNames = newNames,
+                        )
+                    } else {
+                        p.orderedPackages.filter { token ->
+                            !FolderIds.isFolderId(token) || newFolders.containsKey(token)
+                        }
+                    }
                     val pruned = p.homeGroups.map { g ->
                         g.copy(packageNames = g.packageNames.filter { it in pkgs })
                     }
@@ -301,6 +310,16 @@ class LauncherViewModel(app: Application) : AndroidViewModel(app) {
                 .toMutableMap()
             names[id] = label
 
+            if (isStrictDrawerAlphabeticalMode()) {
+                val finalOrder = strictAlphabeticalDrawerOrder(
+                    installed = installed,
+                    folderContents = folders,
+                    folderNames = names,
+                )
+                prefsRepo.writeGridState(finalOrder, folders, names)
+                return@withLock
+            }
+
             val folderMembers = folders.values.flatten().toSet()
 
             val order = snap.orderedPackages
@@ -387,10 +406,20 @@ class LauncherViewModel(app: Application) : AndroidViewModel(app) {
             val label = newTitle.trim().ifBlank { "Folder" }
             val names = snap.folderNames.toMutableMap()
             names[folderId] = label
+            val prunedNames = names.filterKeys { snap.folderContents.containsKey(it) }
+            val finalOrder = if (isStrictDrawerAlphabeticalMode()) {
+                strictAlphabeticalDrawerOrder(
+                    installed = apps.value,
+                    folderContents = snap.folderContents,
+                    folderNames = prunedNames,
+                )
+            } else {
+                snap.orderedPackages
+            }
             prefsRepo.writeGridState(
-                snap.orderedPackages,
+                finalOrder,
                 snap.folderContents,
-                names.filterKeys { snap.folderContents.containsKey(it) },
+                prunedNames,
             )
             }
         }
@@ -413,7 +442,16 @@ class LauncherViewModel(app: Application) : AndroidViewModel(app) {
             if (packageName !in list) list.add(packageName)
             folders[folderId] = list
             val names = snap.folderNames.filterKeys { folders.containsKey(it) }
-            prefsRepo.writeGridState(order, folders, names)
+            val finalOrder = if (isStrictDrawerAlphabeticalMode()) {
+                strictAlphabeticalDrawerOrder(
+                    installed = apps.value,
+                    folderContents = folders,
+                    folderNames = names,
+                )
+            } else {
+                order
+            }
+            prefsRepo.writeGridState(finalOrder, folders, names)
             }
         }
     }
@@ -436,6 +474,15 @@ class LauncherViewModel(app: Application) : AndroidViewModel(app) {
                 folders[folderId] = list
             }
             order.removeAll { it == packageName }
+            if (isStrictDrawerAlphabeticalMode()) {
+                val finalOrder = strictAlphabeticalDrawerOrder(
+                    installed = apps.value,
+                    folderContents = folders,
+                    folderNames = names,
+                )
+                prefsRepo.writeGridState(finalOrder, folders, names)
+                return@withLock
+            }
             val usageReorderActive = _sortByUsage.value && _usageStats.value.isNotEmpty()
             if (usageReorderActive) {
                 order.add(packageName)
@@ -466,6 +513,16 @@ class LauncherViewModel(app: Application) : AndroidViewModel(app) {
             val snap = prefs.value
             val members = snap.folderContents[folderId] ?: return@withLock
             val folders = snap.folderContents.filterKeys { it != folderId }
+            val names = snap.folderNames.filterKeys { folders.containsKey(it) }
+            if (isStrictDrawerAlphabeticalMode()) {
+                val finalOrder = strictAlphabeticalDrawerOrder(
+                    installed = apps.value,
+                    folderContents = folders,
+                    folderNames = names,
+                )
+                prefsRepo.writeGridState(finalOrder, folders, names)
+                return@withLock
+            }
             val order = snap.orderedPackages.toMutableList()
             val fi = order.indexOf(folderId)
             order.removeAll { it == folderId }
@@ -474,7 +531,6 @@ class LauncherViewModel(app: Application) : AndroidViewModel(app) {
             } else {
                 members.forEach { order.add(it) }
             }
-            val names = snap.folderNames.filterKeys { folders.containsKey(it) }
             prefsRepo.writeGridState(order, folders, names)
             }
         }
@@ -855,6 +911,58 @@ class LauncherViewModel(app: Application) : AndroidViewModel(app) {
         return true
     }
 
+}
+
+private fun strictAlphabeticalDrawerOrder(
+    installed: List<AppEntry>,
+    folderContents: Map<String, List<String>>,
+    folderNames: Map<String, String>,
+): List<String> {
+    val collator = Collator.getInstance(Locale.getDefault()).apply { strength = Collator.PRIMARY }
+    val byPkg = installed.associateBy { it.packageName }
+    val folderMemberPkgs = folderContents.values.flatten().toSet()
+    data class TokenSortKey(
+        val token: String,
+        val label: String,
+        val settingsFirst: Int,
+    )
+
+    val topLevelApps = installed
+        .asSequence()
+        .filter { it.packageName !in folderMemberPkgs }
+        .map { app ->
+            TokenSortKey(
+                token = app.packageName,
+                label = app.label,
+                settingsFirst = if (app.packageName == AppsRepository.INTERNAL_SETTINGS_PACKAGE) 0 else 1,
+            )
+        }
+        .toMutableList()
+
+    val topLevelFolders = folderContents
+        .asSequence()
+        .filter { (_, members) -> members.isNotEmpty() }
+        .map { (folderId, members) ->
+            val custom = folderNames[folderId]?.trim()?.takeIf { it.isNotEmpty() }
+            val fallback = members.firstNotNullOfOrNull { byPkg[it]?.label } ?: "Folder"
+            TokenSortKey(
+                token = folderId,
+                label = custom ?: fallback,
+                settingsFirst = 1,
+            )
+        }.toList()
+
+    val allTopLevel = (topLevelApps + topLevelFolders).toMutableList()
+    allTopLevel.sortWith { a, b ->
+        when {
+            a.settingsFirst != b.settingsFirst -> a.settingsFirst - b.settingsFirst
+            else -> {
+                val c = collator.compare(a.label, b.label)
+                if (c != 0) c else a.token.compareTo(b.token)
+            }
+        }
+    }
+    return allTopLevel.map { it.token }
 }
 
 /** Zeno Classic settings is always the first drawer tile when it appears in the grid. */
