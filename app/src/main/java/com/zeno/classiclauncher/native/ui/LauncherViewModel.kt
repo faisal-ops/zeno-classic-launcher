@@ -70,9 +70,14 @@ class LauncherViewModel(app: Application) : AndroidViewModel(app) {
     /** Window lost focus (e.g. system notification / QS shade) — UI closes launcher quick settings overlay. */
     private val _dismissLauncherQsEvent = MutableStateFlow(0)
     val dismissLauncherQsEvent: StateFlow<Int> = _dismissLauncherQsEvent.asStateFlow()
+    private val _newAppAddedToast = MutableStateFlow<String?>(null)
+    val newAppAddedToast: StateFlow<String?> = _newAppAddedToast.asStateFlow()
 
     fun requestDismissLauncherQuickSettings() {
         _dismissLauncherQsEvent.value++
+    }
+    fun consumeNewAppAddedToast() {
+        _newAppAddedToast.value = null
     }
 
     private val _searchQuery = MutableStateFlow("")
@@ -153,6 +158,7 @@ class LauncherViewModel(app: Application) : AndroidViewModel(app) {
     val hasUnreadWhatsApp: StateFlow<Boolean> = NotificationRepository.hasUnreadWhatsApp
     val packagesWithUnread: StateFlow<Set<String>> = NotificationRepository.packagesWithUnread
     private var lastPrunePackageSnapshot: Set<String>? = null
+    private var lastObservedInstalledPackages: Set<String>? = null
 
     /** Serializes read–modify–write on drawer grid + home groups so rapid folder edits and prune cannot clobber each other. */
     private val gridHomeMutex = Mutex()
@@ -201,6 +207,50 @@ class LauncherViewModel(app: Application) : AndroidViewModel(app) {
                     if (gridChanged || groupsChanged) {
                         gridHomeMutex.withLock {
                             prefsRepo.writeGridAndHomeGroupsState(newOrder, newFolders, newNames, pruned)
+                        }
+                    }
+                }
+        }
+        viewModelScope.launch {
+            apps
+                .debounce(250)
+                .collect { list ->
+                    if (list.isEmpty()) {
+                        lastObservedInstalledPackages = null
+                        return@collect
+                    }
+                    val pkgs = list.mapTo(HashSet(list.size)) { it.packageName }
+                    val prev = lastObservedInstalledPackages
+                    lastObservedInstalledPackages = pkgs
+                    if (prev == null || prev == pkgs) return@collect
+                    val added = pkgs - prev
+                    if (added.isEmpty()) return@collect
+
+                    val byPkg = list.associateBy { it.packageName }
+                    val collator = Collator.getInstance(Locale.getDefault()).apply { strength = Collator.PRIMARY }
+                    val addedLabel = added
+                        .mapNotNull { pkg -> byPkg[pkg]?.label }
+                        .minWithOrNull { a, b -> collator.compare(a, b) }
+                    if (!addedLabel.isNullOrBlank()) {
+                        _newAppAddedToast.value = "New app added: $addedLabel"
+                    }
+
+                    if (!isStrictDrawerAlphabeticalMode()) return@collect
+                    gridHomeMutex.withLock {
+                        val snap = prefs.value
+                        val folders = snap.folderContents
+                            .mapValues { (_, members) -> members.filter { it in pkgs } }
+                            .filterValues { it.isNotEmpty() }
+                        val names = snap.folderNames.filterKeys { folders.containsKey(it) }
+                        val finalOrder = strictAlphabeticalDrawerOrder(
+                            installed = list,
+                            folderContents = folders,
+                            folderNames = names,
+                        )
+                        val changed =
+                            finalOrder != snap.orderedPackages || folders != snap.folderContents || names != snap.folderNames
+                        if (changed) {
+                            prefsRepo.writeGridState(finalOrder, folders, names)
                         }
                     }
                 }

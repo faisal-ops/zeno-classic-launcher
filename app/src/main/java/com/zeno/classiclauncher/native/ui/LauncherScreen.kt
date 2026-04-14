@@ -398,6 +398,7 @@ fun LauncherScreen(
     val hasUnreadWhatsApp by vm.hasUnreadWhatsApp.collectAsState()
     val unreadPackages by vm.packagesWithUnread.collectAsState()
     val sortByUsage by vm.sortByUsage.collectAsState()
+    val newAppAddedToast by vm.newAppAddedToast.collectAsState()
     val themePalette = remember(prefs.themeJson) { LauncherThemePalette.fromJson(prefs.themeJson) }
     val visibleShortcuts = if (prefs.showShortcutApps) prefs.homeShortcutPackages else emptyList()
     val visibleGroups = if (prefs.showHomeGroups) prefs.homeGroups else emptyList()
@@ -546,6 +547,12 @@ fun LauncherScreen(
         val curPkgs = cur.members.map { it.packageName }
         if (newPkgs == curPkgs && g.title == cur.title) return@LaunchedEffect
         openHomeGroup = cur.copy(members = newMembers, title = g.title)
+    }
+
+    LaunchedEffect(newAppAddedToast) {
+        val msg = newAppAddedToast ?: return@LaunchedEffect
+        Toast.makeText(context, msg, Toast.LENGTH_SHORT).show()
+        vm.consumeNewAppAddedToast()
     }
 
     val scope = rememberCoroutineScope()
