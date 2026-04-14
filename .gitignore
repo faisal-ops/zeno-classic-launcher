@@ -42,3 +42,8 @@ PARITY_CHECKLIST.md
 
 # Wallpapers — large binaries; generated exports (see scripts/export_wallpapers_for_phone.py)
 wallpapers/
+
+# Local working notes/scripts/temp artifacts
+docs/NOTES.md
+scripts/
+tmp/
