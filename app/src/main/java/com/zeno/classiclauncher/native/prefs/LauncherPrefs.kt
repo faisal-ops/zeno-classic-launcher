@@ -70,6 +70,8 @@ data class LauncherPrefs(
     val dockMailTitle: String = "Mail",
     val dockSecondTitle: String = "Messages",
     val dockThirdTitle: String = "Camera",
+    /** When false, the second dock shortcut is hidden from the dock. */
+    val dockSecondEnabled: Boolean = true,
     val dockIconStyle: DockIconStyle = DockIconStyle.MONOCHROME,
     val orderedPackages: List<String> = emptyList(),
     /** Folder slot id → member package names (order preserved). */
@@ -127,6 +129,8 @@ data class LauncherPrefs(
     val classicMode: Boolean = false,
     /** Global installed-app icon mask used across launcher surfaces. */
     val appIconShape: AppIconShape = AppIconShape.ROUNDED,
+    /** Show a gradient card background behind each app tile in the A-Z drawer. */
+    val showAppCardBackground: Boolean = false,
 )
 
 /** Full nested JSON (Flutter-shaped); legacy flat-only strings still load via [LauncherThemePalette.fromJson]. */
@@ -146,6 +150,7 @@ class LauncherPrefsRepository(private val context: Context) {
         val DOCK_MAIL_TITLE = stringPreferencesKey("dockMailTitle")
         val DOCK_SECOND_TITLE = stringPreferencesKey("dockSecondTitle")
         val DOCK_THIRD_TITLE = stringPreferencesKey("dockThirdTitle")
+        val DOCK_SECOND_ENABLED = booleanPreferencesKey("dockSecondEnabled")
         val DOCK_ICON_STYLE = stringPreferencesKey("dockIconStyle")
         val ORDER = stringPreferencesKey("orderedPackagesCsv")
         val FOLDERS = stringPreferencesKey("folderContentsJson")
@@ -179,6 +184,7 @@ class LauncherPrefsRepository(private val context: Context) {
         /** Legacy key from earlier builds; read only for migration. */
         val CLASSIC_MODE_LEGACY = booleanPreferencesKey("drawerOnlyMode")
         val APP_ICON_SHAPE = stringPreferencesKey("appIconShape")
+        val SHOW_APP_CARD_BG = booleanPreferencesKey("showAppCardBackground")
     }
 
     val prefsFlow: Flow<LauncherPrefs> = context.dataStore.data.map { p ->
@@ -194,6 +200,7 @@ class LauncherPrefsRepository(private val context: Context) {
         val dockMailTitle = p[Keys.DOCK_MAIL_TITLE]?.trim().orEmpty().ifEmpty { DEFAULT_PREFS.dockMailTitle }
         val dockSecondTitle = p[Keys.DOCK_SECOND_TITLE]?.trim().orEmpty().ifEmpty { DEFAULT_PREFS.dockSecondTitle }
         val dockThirdTitle = p[Keys.DOCK_THIRD_TITLE]?.trim().orEmpty().ifEmpty { DEFAULT_PREFS.dockThirdTitle }
+        val dockSecondEnabled = p[Keys.DOCK_SECOND_ENABLED] ?: DEFAULT_PREFS.dockSecondEnabled
         val dockIconStyle =
             p[Keys.DOCK_ICON_STYLE]?.let { v -> DockIconStyle.entries.firstOrNull { it.name == v } }
                 ?: DEFAULT_PREFS.dockIconStyle
@@ -235,6 +242,7 @@ class LauncherPrefsRepository(private val context: Context) {
         val appIconShape =
             p[Keys.APP_ICON_SHAPE]?.let { v -> AppIconShape.entries.firstOrNull { it.name == v } }
                 ?: DEFAULT_PREFS.appIconShape
+        val showAppCardBackground = p[Keys.SHOW_APP_CARD_BG] ?: DEFAULT_PREFS.showAppCardBackground
         LauncherPrefs(
             gridPreset = grid,
             secondShortcutTarget = shortcut,
@@ -245,6 +253,7 @@ class LauncherPrefsRepository(private val context: Context) {
             dockMailTitle = dockMailTitle,
             dockSecondTitle = dockSecondTitle,
             dockThirdTitle = dockThirdTitle,
+            dockSecondEnabled = dockSecondEnabled,
             dockIconStyle = dockIconStyle,
             orderedPackages = order,
             folderContents = folders,
@@ -276,6 +285,7 @@ class LauncherPrefsRepository(private val context: Context) {
             customQuickSettingsEnabled = customQuickSettingsEnabled,
             classicMode = classicMode,
             appIconShape = appIconShape,
+            showAppCardBackground = showAppCardBackground,
         )
     }.distinctUntilChanged()
 
@@ -313,6 +323,10 @@ class LauncherPrefsRepository(private val context: Context) {
 
     suspend fun setDockThirdTitle(title: String) {
         context.dataStore.edit { it[Keys.DOCK_THIRD_TITLE] = title.trim().ifEmpty { DEFAULT_PREFS.dockThirdTitle } }
+    }
+
+    suspend fun setDockSecondEnabled(enabled: Boolean) {
+        context.dataStore.edit { it[Keys.DOCK_SECOND_ENABLED] = enabled }
     }
 
     suspend fun setDockIconStyle(style: DockIconStyle) {
@@ -489,6 +503,10 @@ class LauncherPrefsRepository(private val context: Context) {
 
     suspend fun setAppIconShape(shape: AppIconShape) {
         context.dataStore.edit { it[Keys.APP_ICON_SHAPE] = shape.name }
+    }
+
+    suspend fun setShowAppCardBackground(enabled: Boolean) {
+        context.dataStore.edit { it[Keys.SHOW_APP_CARD_BG] = enabled }
     }
 
     /** Replaces all launcher preferences in one atomic write (full backup restore). */

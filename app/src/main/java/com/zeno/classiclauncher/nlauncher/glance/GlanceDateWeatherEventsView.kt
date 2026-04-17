@@ -1,15 +1,22 @@
 package com.zeno.classiclauncher.nlauncher.glance
 
 import android.Manifest
+import android.util.Log
 import android.animation.Animator
 import android.animation.AnimatorListenerAdapter
 import android.app.Activity
+import android.app.AlertDialog
 import android.app.AlarmManager
 import android.content.ContentUris
 import android.content.Context
 import android.content.Intent
 import android.content.IntentFilter
 import android.content.pm.PackageManager
+import android.net.Uri
+import android.widget.ArrayAdapter
+import android.widget.CheckBox
+import android.widget.LinearLayout
+import android.widget.ListView
 import android.hardware.camera2.CameraCharacteristics
 import android.hardware.camera2.CameraManager
 import android.location.Location
@@ -88,7 +95,11 @@ class GlanceDateWeatherEventsView @JvmOverloads constructor(
         val id: Long,
         val title: String,
         val startTime: Long,
+        val endTime: Long,
+        val calendarId: Long = 0L,
+        val accountType: String = "",
     )
+
 
     private data class WeatherData(
         val tempC: Float,
@@ -137,10 +148,14 @@ class GlanceDateWeatherEventsView @JvmOverloads constructor(
     private var locationFetchedAt = 0L
     private val locationCacheMs = 2 * 60 * 60 * 1000L // re-use location for 2h
 
-    private var cachedCalendarEvent: CalendarEvent? = null
+    private var cachedCalendarEvents: List<CalendarEvent> = emptyList()
     private var calendarFetchedAt = 0L
     // Battery optimization: recompute calendar info only hourly.
     private val calendarCacheMs = 60 * 60 * 1000L
+
+    private val calendarAppPrefs by lazy {
+        context.getSharedPreferences("zeno_glance_cal_app", Context.MODE_PRIVATE)
+    }
 
     private val dateFormat = SimpleDateFormat("EEE, MMM d", Locale.getDefault())
     private val timeFormat = SimpleDateFormat("h:mm a", Locale.getDefault())
@@ -510,7 +525,7 @@ class GlanceDateWeatherEventsView @JvmOverloads constructor(
                 glanceBuiltAt == 0L ||
                 now - glanceBuiltAt >= heavyGlanceIoIntervalMs
             if (needHeavyIo) {
-                // Periodic rebuild: allow calendar provider query (see [getNextCalendarEvent] cache).
+                // Periodic rebuild: allow calendar provider query (see [getUpcomingCalendarEvents] cache).
                 if (!glanceForceRebuild && glanceBuiltAt > 0L) {
                     calendarFetchedAt = 0L
                 }
@@ -619,24 +634,12 @@ class GlanceDateWeatherEventsView @JvmOverloads constructor(
                     ),
                 )
             } else {
-                getNextCalendarEvent(prefs.calendarLookAheadDays.coerceIn(1, 7))?.let { event ->
+                for (event in getUpcomingCalendarEvents(prefs.calendarLookAheadDays.coerceIn(1, 7))) {
                     val timeStr = formatEventTime(event.startTime)
                     items.add(
                         GlanceItem(
                             text = "\uD83D\uDCC5 ${event.title} · $timeStr",
-                            action = {
-                                try {
-                                    val uri = ContentUris.withAppendedId(
-                                        CalendarContract.Events.CONTENT_URI,
-                                        event.id,
-                                    )
-                                    context.startActivity(
-                                        Intent(Intent.ACTION_VIEW, uri)
-                                            .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK),
-                                    )
-                                } catch (_: Exception) {
-                                }
-                            },
+                            action = { openCalendarEvent(event) },
                             type = GlanceItemType.CALENDAR,
                         ),
                     )
@@ -700,10 +703,10 @@ class GlanceDateWeatherEventsView @JvmOverloads constructor(
         }
     }
 
-    private fun getNextCalendarEvent(lookAheadDays: Int): CalendarEvent? {
+    private fun getUpcomingCalendarEvents(lookAheadDays: Int): List<CalendarEvent> {
         val now = System.currentTimeMillis()
-        if (cachedCalendarEvent != null && now - calendarFetchedAt < calendarCacheMs) {
-            return cachedCalendarEvent
+        if (cachedCalendarEvents.isNotEmpty() && now - calendarFetchedAt < calendarCacheMs) {
+            return cachedCalendarEvents
         }
         val end = now + lookAheadDays.toLong() * 24L * 60 * 60 * 1000
         val uri = CalendarContract.Instances.CONTENT_URI.buildUpon().let {
@@ -712,30 +715,62 @@ class GlanceDateWeatherEventsView @JvmOverloads constructor(
             it.build()
         }
         return try {
+            val events = mutableListOf<CalendarEvent>()
+            val calendarIds = mutableSetOf<Long>()
             context.contentResolver.query(
                 uri,
                 arrayOf(
-                    CalendarContract.Instances.EVENT_ID,
-                    CalendarContract.Instances.TITLE,
-                    CalendarContract.Instances.BEGIN,
-                    CalendarContract.Instances.ALL_DAY,
+                    CalendarContract.Instances.EVENT_ID,   // 0
+                    CalendarContract.Instances.TITLE,      // 1
+                    CalendarContract.Instances.BEGIN,      // 2
+                    CalendarContract.Instances.END,        // 3
+                    CalendarContract.Instances.CALENDAR_ID, // 4
+                    CalendarContract.Instances.ALL_DAY,    // 5
                 ),
-                "${CalendarContract.Instances.BEGIN} >= ? AND ${CalendarContract.Instances.ALL_DAY} = 0",
+                // Show events not yet finished (includes ongoing events)
+                "${CalendarContract.Instances.END} >= ? AND ${CalendarContract.Instances.ALL_DAY} = 0",
                 arrayOf(now.toString()),
                 "${CalendarContract.Instances.BEGIN} ASC",
             )?.use { cursor ->
-                if (!cursor.moveToFirst()) return null
-                val event = CalendarEvent(
-                    id = cursor.getLong(0),
-                    title = cursor.getString(1)?.takeIf { it.isNotBlank() } ?: return null,
-                    startTime = cursor.getLong(2),
-                )
-                cachedCalendarEvent = event
-                calendarFetchedAt = now
-                event
+                while (cursor.moveToNext() && events.size < MAX_CALENDAR_EVENTS) {
+                    val title = cursor.getString(1)?.takeIf { it.isNotBlank() } ?: return@use
+                    val calId = cursor.getLong(4)
+                    events.add(
+                        CalendarEvent(
+                            id = cursor.getLong(0),
+                            title = title,
+                            startTime = cursor.getLong(2),
+                            endTime = cursor.getLong(3),
+                            calendarId = calId,
+                        ),
+                    )
+                    calendarIds.add(calId)
+                }
             }
+
+            // Batch-fetch account types for all collected calendar IDs
+            val accountTypeMap = mutableMapOf<Long, String>()
+            if (calendarIds.isNotEmpty()) {
+                val selection = "${CalendarContract.Calendars._ID} IN (${calendarIds.joinToString(",")})"
+                context.contentResolver.query(
+                    CalendarContract.Calendars.CONTENT_URI,
+                    arrayOf(CalendarContract.Calendars._ID, CalendarContract.Calendars.ACCOUNT_TYPE),
+                    selection,
+                    null,
+                    null,
+                )?.use { cal ->
+                    while (cal.moveToNext()) {
+                        accountTypeMap[cal.getLong(0)] = cal.getString(1) ?: ""
+                    }
+                }
+            }
+
+            val result = events.map { it.copy(accountType = accountTypeMap[it.calendarId] ?: "") }
+            cachedCalendarEvents = result
+            calendarFetchedAt = now
+            result
         } catch (_: Exception) {
-            null
+            emptyList()
         }
     }
 
@@ -750,6 +785,168 @@ class GlanceDateWeatherEventsView @JvmOverloads constructor(
             else -> timeFormat.format(Date(startTime))
         }
     }
+
+    // ── Calendar event tap handling ────────────────────────────────────────────
+
+    private fun buildCalendarEventIntent(event: CalendarEvent): Intent =
+        Intent(Intent.ACTION_VIEW, ContentUris.withAppendedId(CalendarContract.Events.CONTENT_URI, event.id))
+            .putExtra(CalendarContract.EXTRA_EVENT_BEGIN_TIME, event.startTime)
+            .putExtra(CalendarContract.EXTRA_EVENT_END_TIME, event.endTime)
+            .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+
+    private fun openCalendarEvent(event: CalendarEvent) {
+        Log.d("ZenoCalendar", "tap: title=${event.title} accountType='${event.accountType}'")
+        val eventIntent = buildCalendarEventIntent(event)
+        // Always open in Google Calendar — works for all event types (Google, Outlook, etc.)
+        val gCal = "com.google.android.calendar"
+        if (isCalendarPackageInstalled(gCal)) {
+            tryOpenViaComponent(eventIntent, gCal, event.startTime)
+            return
+        }
+        // Fallback: system default calendar app
+        tryStartCalendarActivity(eventIntent)
+    }
+
+    /**
+     * Launch the calendar event intent targeting the specific activity component registered by
+     * [pkg]. Uses the host Activity context (no FLAG_ACTIVITY_NEW_TASK) to mirror the system
+     * chooser behaviour. Falls back to a time URI and then the app's launch intent.
+     *
+     * Note: only call this for non-Microsoft packages. Outlook's CalendarDispatcherActivity
+     * requires the system as caller; Microsoft events are handled via the system chooser instead.
+     */
+    private fun tryOpenViaComponent(eventIntent: Intent, pkg: String, startTime: Long = 0L): Boolean {
+        val allResolvers = context.packageManager
+            .queryIntentActivities(Intent(eventIntent).setPackage(pkg), 0)
+        val resolver = allResolvers.firstOrNull { it.activityInfo.packageName == pkg }
+
+        Log.d("ZenoCalendar", "tryOpenViaComponent pkg=$pkg " +
+            "resolverCount=${allResolvers.size} resolverActivity=${resolver?.activityInfo?.name}")
+
+        if (resolver != null) {
+            val hostActivity = generateSequence(context) { (it as? android.content.ContextWrapper)?.baseContext }
+                .filterIsInstance<android.app.Activity>()
+                .firstOrNull()
+            val componentIntent = Intent(eventIntent).setComponent(
+                android.content.ComponentName(resolver.activityInfo.packageName, resolver.activityInfo.name),
+            ).apply { if (hostActivity != null) removeFlags(Intent.FLAG_ACTIVITY_NEW_TASK) }
+
+            val launched = if (hostActivity != null) {
+                try { hostActivity.startActivity(componentIntent); true } catch (_: Exception) { false }
+            } else {
+                tryStartCalendarActivity(componentIntent)
+            }
+            if (launched) return true
+        }
+
+        // Time URI fallback
+        if (startTime > 0L && tryStartCalendarActivity(
+                Intent(Intent.ACTION_VIEW)
+                    .setData(Uri.parse("content://com.android.calendar/time/$startTime"))
+                    .setPackage(pkg)
+                    .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK),
+            )
+        ) return true
+
+        // Last resort: open the app's home screen
+        val launchIntent = context.packageManager.getLaunchIntentForPackage(pkg)
+            ?.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK) ?: return false
+        return tryStartCalendarActivity(launchIntent)
+    }
+
+    /**
+     * Reads the server-side sync ID for a calendar event from its content URI.
+     * For Outlook-synced events this is the Exchange event ID used by ms-outlook:// deep links.
+     */
+    private fun getCalendarEventSyncId(eventUri: Uri?): String? {
+        eventUri ?: return null
+        return try {
+            context.contentResolver.query(
+                eventUri,
+                arrayOf(CalendarContract.Events._SYNC_ID),
+                null, null, null,
+            )?.use { cursor ->
+                if (cursor.moveToFirst()) cursor.getString(0)?.takeIf { it.isNotBlank() } else null
+            }
+        } catch (_: Exception) { null }
+    }
+
+    /** For a known account type, returns the preferred calendar app package. */
+    private fun knownPackageForAccountType(accountType: String): String? = when {
+        accountType == "com.google" -> "com.google.android.calendar"
+        accountType.contains("microsoft", ignoreCase = true) -> "com.microsoft.office.outlook"
+        else -> null
+    }
+
+    private fun calendarAccountLabel(accountType: String): String = when {
+        accountType == "com.google" -> "Google"
+        accountType.contains("microsoft", ignoreCase = true) -> "Outlook / Exchange"
+        else -> "this calendar"
+    }
+
+    private fun isCalendarPackageInstalled(pkg: String): Boolean = try {
+        context.packageManager.getPackageInfo(pkg, 0)
+        true
+    } catch (_: PackageManager.NameNotFoundException) {
+        false
+    }
+
+    private fun tryStartCalendarActivity(intent: Intent): Boolean = try {
+        context.startActivity(intent)
+        true
+    } catch (_: Exception) {
+        false
+    }
+
+    /**
+     * Custom chooser shown when multiple calendar apps are available and there is no remembered
+     * preference for this account type. Includes a "Remember" checkbox so the user won't be
+     * asked again for the same calendar source.
+     */
+    private fun showCalendarChooser(
+        event: CalendarEvent,
+        eventIntent: Intent,
+        resolvers: List<android.content.pm.ResolveInfo>,
+        prefKey: String,
+    ) {
+        val pm = context.packageManager
+        val labels = resolvers.map { it.loadLabel(pm).toString() }
+        val packages = resolvers.map { it.activityInfo.packageName }
+        val accountLabel = calendarAccountLabel(event.accountType)
+
+        val checkBox = CheckBox(context).apply {
+            text = "Always open $accountLabel events with selected app"
+            isChecked = true
+            setPadding(56, 32, 56, 8)
+        }
+
+        val listView = ListView(context)
+        listView.adapter = ArrayAdapter(context, android.R.layout.simple_list_item_1, labels)
+
+        val container = LinearLayout(context).apply {
+            orientation = LinearLayout.VERTICAL
+            addView(checkBox)
+            addView(listView)
+        }
+
+        val dialog = AlertDialog.Builder(context)
+            .setTitle("Open calendar event")
+            .setView(container)
+            .create()
+
+        listView.setOnItemClickListener { _, _, which, _ ->
+            val pkg = packages[which]
+            if (checkBox.isChecked) {
+                calendarAppPrefs.edit().putString(prefKey, pkg).apply()
+            }
+            tryOpenViaComponent(eventIntent, pkg, event.startTime)
+            dialog.dismiss()
+        }
+
+        dialog.show()
+    }
+
+    // ──────────────────────────────────────────────────────────────────────────
 
     private fun getNextAlarmInfo(): String? {
         val am = context.getSystemService<AlarmManager>() ?: return null
@@ -873,5 +1070,6 @@ class GlanceDateWeatherEventsView @JvmOverloads constructor(
     companion object {
         const val REQ_LOCATION = 4301
         const val REQ_CALENDAR = 4302
+        private const val MAX_CALENDAR_EVENTS = 5
     }
 }

@@ -831,6 +831,7 @@ fun LauncherScreen(
                         searchQuery = searchQuery,
                         onSearchQueryChange = vm::setSearchQuery,
                         appIconShape = prefs.appIconShape,
+                        showAppCardBackground = prefs.showAppCardBackground,
                         reorderMode = reorderMode,
                         movingSlotId = moving,
                         onToggleReorder = vm::toggleReorderMode,
@@ -988,7 +989,7 @@ fun LauncherScreen(
                         else -> hasUnreadSms
                     },
                     showHomeButton = !classicMode,
-                    showMessagesShortcut = !classicMode,
+                    showMessagesShortcut = !classicMode && prefs.dockSecondEnabled,
                     selectedTint = themePalette.dockSelected,
                     themePalette = themePalette,
                     dockStartIconModel = dockStartIconModel,
@@ -1302,6 +1303,8 @@ fun LauncherScreen(
                 onOpenAppearanceSettings = { showIconAppearanceSettings = true },
                 classicMode = prefs.classicMode,
                 onToggleClassicMode = { vm.setClassicMode(!prefs.classicMode) },
+                dockSecondEnabled = prefs.dockSecondEnabled,
+                onToggleDockSecond = { vm.setDockSecondEnabled(!prefs.dockSecondEnabled) },
             )
         }
 
@@ -1309,6 +1312,7 @@ fun LauncherScreen(
             IconAppearanceSettingsOverlay(
                 gridPreset = prefs.gridPreset,
                 appIconShape = prefs.appIconShape,
+                showAppCardBackground = prefs.showAppCardBackground,
                 drawerBadgesSubtitle = remember(prefs.showIconNotifBadge) {
                     buildList {
                         if (prefs.showIconNotifBadge) add("Notifications")
@@ -1316,6 +1320,7 @@ fun LauncherScreen(
                 },
                 onGridPreset = vm::setGridPreset,
                 onSetAppIconShape = vm::setAppIconShape,
+                onToggleAppCardBackground = { vm.setShowAppCardBackground(!prefs.showAppCardBackground) },
                 onOpenDrawerBadges = { showAppDrawerBadges = true },
                 themePalette = themePalette,
                 onDismiss = { showIconAppearanceSettings = false },
@@ -1572,6 +1577,15 @@ private fun HomePage(
         }
     }
     val currentOnLongPress = rememberUpdatedState(onLongPress)
+
+    // Search result navigation state — index into top-5 results (-1 = nothing focused)
+    var searchFocusIndex by remember { mutableStateOf(-1) }
+    val searchResults = remember(searchQuery, allApps, hiddenPackages) {
+        if (searchQuery.isEmpty()) emptyList()
+        else allApps.filter { it.label.contains(searchQuery, ignoreCase = true) && it.packageName !in hiddenPackages }.take(5)
+    }
+    LaunchedEffect(searchQuery) { searchFocusIndex = -1 }
+
     Box(
         modifier = Modifier
             .fillMaxSize()
@@ -1585,6 +1599,38 @@ private fun HomePage(
                     // show search overlay on home instead of navigating to drawer
                     return@onPreviewKeyEvent true
                 }
+
+                // When search overlay is active, D-pad navigates the result list
+                if (searchQuery.isNotEmpty() && searchResults.isNotEmpty()) {
+                    val nk = ev.nativeKeyEvent
+                    when {
+                        ev.key == Key.DirectionDown || nk?.keyCode == android.view.KeyEvent.KEYCODE_DPAD_DOWN -> {
+                            searchFocusIndex = (searchFocusIndex + 1).coerceAtMost(searchResults.size - 1)
+                            doNavFeedback(view, hapticsEnabled, hapticIntensity)
+                            return@onPreviewKeyEvent true
+                        }
+                        ev.key == Key.DirectionUp || nk?.keyCode == android.view.KeyEvent.KEYCODE_DPAD_UP -> {
+                            if (searchFocusIndex > 0) {
+                                searchFocusIndex -= 1
+                            } else {
+                                searchFocusIndex = -1
+                            }
+                            doNavFeedback(view, hapticsEnabled, hapticIntensity)
+                            return@onPreviewKeyEvent true
+                        }
+                        (ev.key == Key.Enter || ev.key == Key.NumPadEnter ||
+                            nk?.keyCode == android.view.KeyEvent.KEYCODE_DPAD_CENTER ||
+                            nk?.keyCode == android.view.KeyEvent.KEYCODE_ENTER) && searchFocusIndex >= 0 -> {
+                            val app = searchResults.getOrNull(searchFocusIndex)
+                            if (app != null) {
+                                onSearchQueryChange("")
+                                onLaunchApp(app.packageName)
+                            }
+                            return@onPreviewKeyEvent true
+                        }
+                    }
+                }
+
                 when (ev.key) {
                     Key.Enter, Key.NumPadEnter -> {
                         if (navArea == HomeNavArea.Dock) onHomeDockActivate(dockIndex)
@@ -1790,11 +1836,10 @@ private fun HomePage(
 
         // Home search overlay — compact top card, wallpaper visible below
         if (searchQuery.isNotEmpty()) {
-            val filtered = remember(searchQuery, allApps, hiddenPackages) {
+            val allFiltered = remember(searchQuery, allApps, hiddenPackages) {
                 allApps.filter { it.label.contains(searchQuery, ignoreCase = true) && it.packageName !in hiddenPackages }
             }
-            val top5 = remember(filtered) { filtered.take(5) }
-            val extra = filtered.size - top5.size
+            val extra = allFiltered.size - searchResults.size
             BackHandler { onSearchQueryChange("") }
             Column(
                 modifier = Modifier
@@ -1841,14 +1886,16 @@ private fun HomePage(
                     }
                 }
                 // Divider
-                if (top5.isNotEmpty()) {
+                if (searchResults.isNotEmpty()) {
                     Box(modifier = Modifier.fillMaxWidth().height(0.5.dp).background(Color(0x33FFFFFF)))
                 }
-                // Results list — top 5 only
-                top5.forEach { app ->
+                // Results list — top 5, with D-pad focus highlight
+                searchResults.forEachIndexed { idx, app ->
+                    val isFocused = idx == searchFocusIndex
                     Row(
                         modifier = Modifier
                             .fillMaxWidth()
+                            .background(if (isFocused) Color(0x336EA8D8) else Color.Transparent)
                             .clickable {
                                 onSearchQueryChange("")
                                 onLaunchApp(app.packageName)
@@ -1865,7 +1912,7 @@ private fun HomePage(
                         Spacer(Modifier.width(14.dp))
                         Text(
                             text = app.label,
-                            color = HOME_STRIP_LABEL_COLOR,
+                            color = if (isFocused) Color(0xFF84D5F6) else HOME_STRIP_LABEL_COLOR,
                             fontSize = 15.sp,
                             maxLines = 1,
                             overflow = TextOverflow.Ellipsis,
@@ -1883,7 +1930,7 @@ private fun HomePage(
                     )
                 }
                 // empty state
-                if (top5.isEmpty()) {
+                if (searchResults.isEmpty()) {
                     Column(
                         modifier = Modifier
                             .fillMaxWidth()
@@ -3096,6 +3143,7 @@ private fun AppDrawer(
     searchQuery: String,
     onSearchQueryChange: (String) -> Unit,
     appIconShape: AppIconShape,
+    showAppCardBackground: Boolean,
     reorderMode: Boolean,
     movingSlotId: String?,
     onToggleReorder: () -> Unit,
@@ -3610,6 +3658,7 @@ private fun AppDrawer(
                             labelSizeSp = labelSizeSp,
                             cardTop = themePalette.appCardTop,
                             cardBottom = themePalette.appCardBottom,
+                            showAppCardBackground = showAppCardBackground,
                             themePalette = themePalette,
                             reorderDragModifier = reorderDragModifier,
                                         isFingerDraggingThisTile = reorderFingerDragging && movingSlotId == slot,
@@ -3680,6 +3729,7 @@ private fun AppDrawer(
                             labelSizeSp = labelSizeSp,
                             cardTop = themePalette.appCardTop,
                             cardBottom = themePalette.appCardBottom,
+                            showAppCardBackground = showAppCardBackground,
                             themePalette = themePalette,
                             reorderDragModifier = Modifier,
                             isFingerDraggingThisTile = true,
@@ -4044,6 +4094,7 @@ private fun AppTile(
     labelSizeSp: Int,
     cardTop: Color,
     cardBottom: Color,
+    showAppCardBackground: Boolean = false,
     themePalette: LauncherThemePalette,
     reorderDragModifier: Modifier = Modifier,
     isFingerDraggingThisTile: Boolean = false,
@@ -4146,7 +4197,7 @@ private fun AppTile(
                         shape = androidx.compose.foundation.shape.RoundedCornerShape(selRadius),
                     )
             )
-        } else {
+        } else if (showAppCardBackground) {
             Box(
                 modifier = Modifier
                     .fillMaxSize()
@@ -6427,16 +6478,18 @@ private fun GlanceSettingsOverlay(
 private fun IconAppearanceSettingsOverlay(
     gridPreset: GridPreset,
     appIconShape: AppIconShape,
+    showAppCardBackground: Boolean,
     drawerBadgesSubtitle: String,
     onGridPreset: (GridPreset) -> Unit,
     onSetAppIconShape: (AppIconShape) -> Unit,
+    onToggleAppCardBackground: () -> Unit,
     onOpenDrawerBadges: () -> Unit,
     themePalette: LauncherThemePalette,
     onDismiss: () -> Unit,
 ) {
     val focusRequester = remember { FocusRequester() }
     var selectedIndex by remember { mutableStateOf(0) }
-    val itemCount = 3
+    val itemCount = 4
     val subtitleColor = Color(0xFF8E95A3)
     val cardBg = Color(0xFF1E2430)
     val cardShape = RoundedCornerShape(12.dp)
@@ -6516,7 +6569,8 @@ private fun IconAppearanceSettingsOverlay(
                                         val all = AppIconShape.entries
                                         onSetAppIconShape(all[(all.indexOf(appIconShape) + 1) % all.size])
                                     }
-                                    2 -> onOpenDrawerBadges()
+                                    2 -> onToggleAppCardBackground()
+                                    3 -> onOpenDrawerBadges()
                                 }
                                 true
                             }
@@ -6560,14 +6614,34 @@ private fun IconAppearanceSettingsOverlay(
                 }
                 SettingsCategoryCard(cardBg = cardBg, cardShape = cardShape, selected = selectedIndex == 2) {
                     SettingsRow(
-                        icon = Icons.Outlined.QueryStats,
-                        title = "App icon badges",
-                        subtitle = drawerBadgesSubtitle,
+                        icon = Icons.Rounded.GridView,
+                        title = "App card background",
+                        subtitle = if (showAppCardBackground) "Gradient card shown behind each app" else "No background behind app icons",
                         selected = selectedIndex == 2,
                         themePalette = themePalette,
                         subtitleColor = subtitleColor,
                         onClick = {
                             selectedIndex = 2
+                            onToggleAppCardBackground()
+                        },
+                        trailingContent = {
+                            Switch(
+                                checked = showAppCardBackground,
+                                onCheckedChange = { onToggleAppCardBackground() },
+                            )
+                        },
+                    )
+                }
+                SettingsCategoryCard(cardBg = cardBg, cardShape = cardShape, selected = selectedIndex == 3) {
+                    SettingsRow(
+                        icon = Icons.Outlined.QueryStats,
+                        title = "App icon badges",
+                        subtitle = drawerBadgesSubtitle,
+                        selected = selectedIndex == 3,
+                        themePalette = themePalette,
+                        subtitleColor = subtitleColor,
+                        onClick = {
+                            selectedIndex = 3
                             onOpenDrawerBadges()
                         },
                     )
@@ -6610,6 +6684,8 @@ private fun SettingsScreenOverlay(
     drawerBadgesSubtitle: String,
     classicMode: Boolean,
     onToggleClassicMode: () -> Unit,
+    dockSecondEnabled: Boolean,
+    onToggleDockSecond: () -> Unit,
     appIconShape: AppIconShape,
     onSetAppIconShape: (AppIconShape) -> Unit,
     dockIconStyle: DockIconStyle,
@@ -6945,15 +7021,81 @@ private fun SettingsScreenOverlay(
                 Spacer(Modifier.height(8.dp))
                 Column(Modifier.bringIntoViewRequester(rowBringers[8])) {
                     SettingsCategoryCard(cardBg = cardBg, cardShape = cardShape, selected = selectedIndex == 8) {
-                        SettingsRow(
-                            icon = Icons.Rounded.TouchApp,
-                            title = dockSecondTitle,
-                            subtitle = dockSecondBody + if (classicMode) " · hidden on dock in Classic mode" else "",
-                            selected = selectedIndex == 8,
-                            themePalette = themePalette,
-                            subtitleColor = subtitleColor,
-                            onClick = { activate(8) },
-                        )
+                        // Toggle row — enable / disable the second dock shortcut
+                        Row(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .clickable { onToggleDockSecond() }
+                                .padding(horizontal = 16.dp, vertical = 14.dp),
+                            verticalAlignment = Alignment.CenterVertically,
+                        ) {
+                            Icon(
+                                imageVector = Icons.Rounded.TouchApp,
+                                contentDescription = null,
+                                tint = if (selectedIndex == 8) Color(0xFF84D5F6) else Color(0xFF7A8290),
+                                modifier = Modifier.size(26.dp),
+                            )
+                            Spacer(Modifier.width(16.dp))
+                            Column(modifier = Modifier.weight(1f)) {
+                                Text(
+                                    text = dockSecondTitle,
+                                    style = MaterialTheme.typography.bodyLarge.copy(
+                                        color = if (selectedIndex == 8) themePalette.settingsMenuTitleSelected else themePalette.settingsMenuTitle,
+                                        fontWeight = FontWeight.Medium,
+                                        fontSize = 16.sp,
+                                        lineHeight = 20.sp,
+                                    ),
+                                )
+                                Spacer(Modifier.height(2.dp))
+                                Text(
+                                    text = if (!dockSecondEnabled) "Hidden from dock" else dockSecondBody + if (classicMode) " · hidden in Classic mode" else "",
+                                    style = MaterialTheme.typography.bodySmall.copy(
+                                        color = if (selectedIndex == 8) themePalette.settingsMenuBodySelected else subtitleColor,
+                                        fontSize = 13.sp,
+                                        lineHeight = 16.sp,
+                                    ),
+                                    maxLines = 2,
+                                    overflow = TextOverflow.Ellipsis,
+                                )
+                            }
+                            Switch(
+                                checked = dockSecondEnabled,
+                                onCheckedChange = { onToggleDockSecond() },
+                            )
+                        }
+                        // Select-app sub-row — only visible when the shortcut is enabled
+                        AnimatedVisibility(
+                            visible = dockSecondEnabled,
+                            enter = expandVertically() + fadeIn(),
+                            exit = shrinkVertically() + fadeOut(),
+                        ) {
+                            Column {
+                                HorizontalDivider(color = Color(0xFF2A3040), thickness = 0.5.dp)
+                                Row(
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .clickable { activate(8) }
+                                        .padding(horizontal = 16.dp, vertical = 12.dp),
+                                    verticalAlignment = Alignment.CenterVertically,
+                                ) {
+                                    Spacer(Modifier.width(42.dp))
+                                    Text(
+                                        text = "Select app",
+                                        style = MaterialTheme.typography.bodyMedium.copy(
+                                            color = Color(0xFF84D5F6),
+                                            fontSize = 14.sp,
+                                        ),
+                                        modifier = Modifier.weight(1f),
+                                    )
+                                    Icon(
+                                        imageVector = Icons.AutoMirrored.Rounded.ArrowForward,
+                                        contentDescription = null,
+                                        tint = Color(0xFF84D5F6),
+                                        modifier = Modifier.size(20.dp),
+                                    )
+                                }
+                            }
+                        }
                     }
                 }
                 Spacer(Modifier.height(8.dp))
@@ -7109,6 +7251,7 @@ private fun SettingsRow(
     themePalette: LauncherThemePalette,
     subtitleColor: Color,
     onClick: () -> Unit,
+    trailingContent: (@Composable () -> Unit)? = null,
 ) {
     val bgColor = if (selected) themePalette.settingsSelected else Color.Transparent
     val titleColor = if (selected) themePalette.settingsMenuTitleSelected else themePalette.settingsMenuTitle
@@ -7150,6 +7293,10 @@ private fun SettingsRow(
                 maxLines = 2,
                 overflow = TextOverflow.Ellipsis,
             )
+        }
+        if (trailingContent != null) {
+            Spacer(Modifier.width(8.dp))
+            trailingContent()
         }
     }
 }

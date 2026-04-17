@@ -94,10 +94,13 @@ class MainActivity : ComponentActivity() {
         super.onNewIntent(intent)
         setIntent(intent)
         handlePinShortcutIntent(intent)
-        // End-call / home button press while launcher is already foregrounded → go to home page.
-        // System re-delivers the HOME intent via onNewIntent (singleTask), giving us the signal.
+        // Navigate to home page only when the HOME intent arrives while the launcher is already
+        // in the foreground (RESUMED). When the launcher is being *restored* from the background
+        // (e.g. back press from recents), onNewIntent fires while the lifecycle is still STARTED —
+        // in that case we keep whatever page the user was on.
         if (intent.action == Intent.ACTION_MAIN &&
-            intent.hasCategory(Intent.CATEGORY_HOME)
+            intent.hasCategory(Intent.CATEGORY_HOME) &&
+            lifecycle.currentState.isAtLeast(androidx.lifecycle.Lifecycle.State.RESUMED)
         ) {
             viewModel.requestNavigateHome()
         }

@@ -758,6 +758,10 @@ class LauncherViewModel(app: Application) : AndroidViewModel(app) {
         viewModelScope.launch { prefsRepo.setDockSecondPackage(packageName.trim()) }
     }
 
+    fun setDockSecondEnabled(enabled: Boolean) {
+        viewModelScope.launch { prefsRepo.setDockSecondEnabled(enabled) }
+    }
+
     fun setDockSlotTitle(slot: DockSlot, title: String) {
         viewModelScope.launch {
             when (slot) {
@@ -951,6 +955,10 @@ class LauncherViewModel(app: Application) : AndroidViewModel(app) {
 
     fun setAppIconShape(shape: AppIconShape) {
         viewModelScope.launch { prefsRepo.setAppIconShape(shape) }
+    }
+
+    fun setShowAppCardBackground(enabled: Boolean) {
+        viewModelScope.launch { prefsRepo.setShowAppCardBackground(enabled) }
     }
 
     fun exportBackupJson(): String = LauncherBackup.toJson(prefs.value)
