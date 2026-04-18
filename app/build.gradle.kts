@@ -22,8 +22,8 @@ android {
         applicationId = "com.zeno.classiclauncher.nlauncher"
         minSdk = 26
         targetSdk = 34
-        versionCode = 7
-        versionName = "1.2.2"
+        versionCode = 8
+        versionName = "1.2.4"
     }
 
     buildFeatures {
@@ -63,7 +63,7 @@ android {
     }
 }
 
-// Installer / file-manager name: short brand. Launcher label stays @string/app_name ("Zeno Classic").
+// APK output name: zeno-classic-launcher-vX.Y.Z.apk for release builds.
 androidComponents {
     onVariants(selector().all()) { variant ->
         val buildType = variant.buildType
@@ -71,8 +71,8 @@ androidComponents {
             val impl = output as? VariantOutputImpl ?: return@forEach
             impl.outputFileName.set(
                 when (buildType) {
-                    "release" -> "Zeno Classic.apk"
-                    else -> "Zeno Classic-$buildType.apk"
+                    "release" -> "zeno-classic-launcher-v${android.defaultConfig.versionName}.apk"
+                    else -> "zeno-classic-launcher-$buildType.apk"
                 },
             )
         }
