@@ -1974,6 +1974,14 @@ private fun HomePage(
             }
             val extra = allFiltered.size - searchResults.size
             BackHandler { onSearchQueryChange("") }
+            val totalSearchItems = searchResults.size + settingsResults.size
+            val searchRowBringers = remember(totalSearchItems) { List(totalSearchItems) { BringIntoViewRequester() } }
+            val searchScrollScope = rememberCoroutineScope()
+            LaunchedEffect(searchFocusIndex) {
+                if (searchFocusIndex in 0 until totalSearchItems) {
+                    searchScrollScope.launch { searchRowBringers[searchFocusIndex].bringIntoView() }
+                }
+            }
             Column(
                 modifier = Modifier
                     .fillMaxWidth()
@@ -1983,7 +1991,7 @@ private fun HomePage(
                     .clip(RoundedCornerShape(18.dp))
                     .background(Color(0xF01A1F28)),
             ) {
-                // Search bar row
+                // Search bar row — fixed, never scrolls away
                 Row(
                     modifier = Modifier
                         .fillMaxWidth()
@@ -2019,6 +2027,12 @@ private fun HomePage(
                         )
                     }
                 }
+                // Scrollable results — capped so it never goes behind the dock
+                Column(
+                    modifier = Modifier
+                        .heightIn(max = 340.dp)
+                        .verticalScroll(rememberScrollState()),
+                ) {
                 // Divider
                 if (searchResults.isNotEmpty()) {
                     Box(modifier = Modifier.fillMaxWidth().height(0.5.dp).background(Color(0x33FFFFFF)))
@@ -2029,6 +2043,7 @@ private fun HomePage(
                     Row(
                         modifier = Modifier
                             .fillMaxWidth()
+                            .bringIntoViewRequester(searchRowBringers[idx])
                             .background(if (isFocused) Color(0x336EA8D8) else Color.Transparent)
                             .clickable {
                                 onSearchQueryChange("")
@@ -2098,6 +2113,7 @@ private fun HomePage(
                         Row(
                             modifier = Modifier
                                 .fillMaxWidth()
+                                .bringIntoViewRequester(searchRowBringers[absoluteIdx])
                                 .background(if (isFocused) Color(0x336EA8D8) else Color.Transparent)
                                 .clickable {
                                     onSearchQueryChange("")
@@ -2180,7 +2196,8 @@ private fun HomePage(
                     )
                 }
                 } // end Play Store row
-                Spacer(Modifier.height(4.dp))
+                Spacer(Modifier.height(8.dp))
+                } // end scrollable results column
             }
         }
     }
@@ -3913,6 +3930,7 @@ private fun AppDrawer(
                                         labelSizeSp = labelSizeSp,
                                         cardTop = themePalette.appCardTop,
                                         cardBottom = themePalette.appCardBottom,
+                                        showAppCardBackground = showAppCardBackground,
                                         themePalette = themePalette,
                                         reorderDragModifier = reorderDragModifier,
                                         isFingerDraggingThisTile = reorderFingerDragging && movingSlotId == slot,
@@ -3978,6 +3996,7 @@ private fun AppDrawer(
                             labelSizeSp = labelSizeSp,
                             cardTop = themePalette.appCardTop,
                             cardBottom = themePalette.appCardBottom,
+                            showAppCardBackground = showAppCardBackground,
                             themePalette = themePalette,
                             reorderDragModifier = Modifier,
                             isFingerDraggingThisTile = true,
@@ -4174,6 +4193,7 @@ private fun FolderTile(
     labelSizeSp: Int,
     cardTop: Color,
     cardBottom: Color,
+    showAppCardBackground: Boolean = false,
     themePalette: LauncherThemePalette,
     reorderDragModifier: Modifier = Modifier,
     isFingerDraggingThisTile: Boolean = false,
@@ -4276,7 +4296,7 @@ private fun FolderTile(
                         shape = RoundedCornerShape(selRadius),
                     ),
             )
-        } else {
+        } else if (showAppCardBackground) {
             Box(
                 modifier = Modifier
                     .fillMaxSize()
