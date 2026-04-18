@@ -3904,7 +3904,7 @@ private fun AppDrawer(
                                         displayLabel = cell.displayTitle,
                                         members = cell.members,
                                         appIconShape = appIconShape,
-                                        hasUnreadBadge = cell.members.any { it.packageName in unreadPackages },
+                                        hasUnreadBadge = showIconNotifBadge && cell.members.any { it.packageName in unreadPackages },
                                         reorderMode = reorderMode,
                                         selected = movingSlotId == slot || focusedHere,
                                         width = cardW,

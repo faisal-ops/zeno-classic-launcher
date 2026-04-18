@@ -126,6 +126,27 @@ object NotificationRepository {
         }
     }
 
+    /**
+     * Optimistically clears badge for [pkg] when the user opens the app directly.
+     * The badge returns naturally when a new notification arrives via [onPosted].
+     */
+    fun clearForPackage(pkg: String) {
+        scope.launch {
+            synchronized(lock) {
+                val keysToRemove = iconBadgePackagesByKey.entries
+                    .filter { it.value == pkg }
+                    .map { it.key }
+                if (keysToRemove.isEmpty()) return@synchronized
+                for (key in keysToRemove) {
+                    iconBadgePackagesByKey.remove(key)
+                    activeByKey.remove(key)
+                    removeKeyFromAllBuckets(key)
+                }
+                publishAll()
+            }
+        }
+    }
+
     fun onRemoved(sbn: StatusBarNotification?) {
         if (sbn == null) return
         scope.launch {

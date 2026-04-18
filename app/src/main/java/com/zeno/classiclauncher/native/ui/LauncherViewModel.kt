@@ -876,6 +876,7 @@ class LauncherViewModel(app: Application) : AndroidViewModel(app) {
     }
 
     fun launchApp(packageName: String) {
+        NotificationRepository.clearForPackage(packageName)
         actions.launchApp(packageName)
     }
 

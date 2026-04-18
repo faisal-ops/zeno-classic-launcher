@@ -77,9 +77,22 @@ fun buildDrawerGridCells(
 
     for (token in orderedPackages) {
         if (FolderIds.isFolderId(token)) {
-            val members = membersForFolderCell(token, forSearch = searching || privateMode)
+            // All installed, non-hidden members — used for title derivation and title-match fallback.
+            val allNonHidden = folderContents[token].orEmpty()
+                .mapNotNull { byPkg[it] }
+                .filter { it.packageName !in hiddenPackages }
+            if (allNonHidden.isEmpty()) continue
+
+            val title = folderDisplayTitle(token, allNonHidden, folderNames)
+            // When the folder title itself matches the query, show the whole folder (all members).
+            val titleMatchesSearch = !privateMode && normalLower.isNotEmpty() &&
+                title.lowercase().contains(normalLower)
+            val members = if (titleMatchesSearch) {
+                allNonHidden
+            } else {
+                membersForFolderCell(token, forSearch = searching || privateMode)
+            }
             if (members.isNotEmpty()) {
-                val title = folderDisplayTitle(token, members, folderNames)
                 result.add(DrawerGridCell.Folder(token, members, title))
             }
         } else {
@@ -105,11 +118,22 @@ fun buildDrawerGridCells(
     // When a search is active, re-sort everything by match quality so prefix
     // matches always surface before substring/package-name matches.
     if (searching) {
+        val q = if (privateMode) privateLower else normalLower
         result.sortWith(
             compareBy<DrawerGridCell> { cell ->
                 when (cell) {
                     is DrawerGridCell.App -> searchScore(cell.entry)
-                    is DrawerGridCell.Folder -> cell.members.minOfOrNull { searchScore(it) } ?: Int.MAX_VALUE
+                    is DrawerGridCell.Folder -> {
+                        val titleLower = cell.displayTitle.lowercase()
+                        val titleScore = when {
+                            q.isEmpty() -> Int.MAX_VALUE
+                            titleLower.startsWith(q) -> 0
+                            titleLower.split(' ', '-', '_').any { it.startsWith(q) } -> 1
+                            titleLower.contains(q) -> 2
+                            else -> Int.MAX_VALUE
+                        }
+                        minOf(titleScore, cell.members.minOfOrNull { searchScore(it) } ?: Int.MAX_VALUE)
+                    }
                 }
             }.thenBy { cell ->
                 when (cell) {
