@@ -899,13 +899,15 @@ fun LauncherScreen(
                             when (cell) {
                                 is DrawerGridCell.App -> {
                                     if (cell.entry.packageName == AppsRepository.INTERNAL_SETTINGS_PACKAGE) {
-                                showSettings = true
-                            } else {
+                                        showSettings = true
+                                    } else if (!reorderMode) {
+                                        // Normal mode: show context menu
                                         drawerFolderMenu = null
                                         appMenuFromHomeShortcut = false
                                         homeShortcutMenuToken = null
                                         showAppMenu = cell.entry
                                     }
+                                    // Reorder mode: drag gesture handles pickup + haptic; ignore long press here
                                 }
                                 is DrawerGridCell.Folder -> {
                                     if (reorderMode) {
@@ -921,6 +923,7 @@ fun LauncherScreen(
                                 }
                             }
                         },
+                        onStartMove = vm::startMove,
                         onReorderDrop = vm::finishReorderDrop,
                         onExitToHome = {
                             if (searchQuery.isNotEmpty()) vm.setSearchQuery("")
@@ -3395,6 +3398,7 @@ private fun AppDrawer(
     onDockActivate: (Int) -> Unit,
     onCellTap: (DrawerGridCell) -> Unit,
     onCellLongPress: (DrawerGridCell) -> Unit,
+    onStartMove: (String) -> Unit,
     onReorderDrop: (String?) -> Unit,
     onExitToHome: () -> Unit,
     themePalette: LauncherThemePalette,
@@ -3432,6 +3436,13 @@ private fun AppDrawer(
     val dragFingerRootRef = remember { mutableListOf(Offset.Zero) }
     val pagesRef = remember { mutableListOf(pages) }
     pagesRef[0] = pages
+    // Stable refs for haptic inside pointerInput closures (avoids stale captures).
+    val hapticsEnabledRef = remember { mutableListOf(hapticsEnabled) }
+    hapticsEnabledRef[0] = hapticsEnabled
+    val hapticIntensityRef = remember { mutableListOf(hapticIntensity) }
+    hapticIntensityRef[0] = hapticIntensity
+    // Tracks the uptime of the last page flip to enforce a cooldown between edge-scroll flips.
+    val lastPageFlipRef = remember { longArrayOf(0L) }
     val drawerContext = LocalContext.current
     val dockKeyNavSize = if (classicDock) 2 else 4
 
@@ -3782,9 +3793,8 @@ private fun AppDrawer(
                         items(slice, key = { it.slotId }) { cell ->
                             val slot = cell.slotId
                         val reorderDragModifier =
-                                if (reorderMode && movingSlotId == slot) {
+                                if (reorderMode) {
                                     Modifier.pointerInput(
-                                        movingSlotId,
                                         reorderMode,
                                         slot,
                                         page,
@@ -3792,22 +3802,29 @@ private fun AppDrawer(
                                         themePalette.appGridEdgeHoverZoneWidthDp,
                                         themePalette.appGridEdgeHoverDurationMs,
                                     ) {
-                                    detectDragGestures(
+                                        detectDragGesturesAfterLongPress(
                                             onDragStart = { startOffset ->
+                                                // Haptic: soft pickup buzz at the moment long-press fires.
+                                                // Uses the mutable ref so the closure always reads the
+                                                // current hapticsEnabled / intensity even after recompose.
+                                                doNavFeedback(view, hapticsEnabledRef[0], hapticIntensityRef[0])
+                                                onStartMove(slot)
                                                 reorderFingerDragging = true
                                                 dragOverlayDims = Triple(cardW, cardH, iconSize)
-                                                val mp = movingSlotId!!
-                                                val src = cellLayouts[mp]
+                                                val src = cellLayouts[slot]
                                                 if (src != null) {
                                                     dragFingerRoot = src.localToRoot(startOffset)
                                                     dragFingerRootRef[0] = dragFingerRoot
                                                 }
                                             },
-                                        onDrag = { change, dragAmount ->
-                                            reorderDragOffset += dragAmount
-                                            change.consume()
-                                                val mp = movingSlotId ?: return@detectDragGestures
-                                                val src = cellLayouts[mp]
+                                            onDrag = { change, dragAmount ->
+                                                // slot is stable (captured from the LazyColumn item scope),
+                                                // so we never need to cross-check movingSlotId here —
+                                                // this gesture coroutine can only fire on the tile that
+                                                // received the long press.
+                                                reorderDragOffset += dragAmount
+                                                change.consume()
+                                                val src = cellLayouts[slot]
                                                 if (src != null) {
                                                     dragFingerRoot = src.localToRoot(change.position)
                                                 } else {
@@ -3817,14 +3834,18 @@ private fun AppDrawer(
                                                     )
                                                 }
                                                 dragFingerRootRef[0] = dragFingerRoot
-                                                val pc = pagerCoordsRef[0] ?: return@detectDragGestures
+                                                val pc = pagerCoordsRef[0] ?: return@detectDragGesturesAfterLongPress
                                                 val bb = pc.boundsInRoot()
                                                 val localX = dragFingerRoot.x - bb.left
                                                 val zonePx = with(density) {
                                                     themePalette.appGridEdgeHoverZoneWidthDp.dp.toPx()
                                                 }
                                                 val inEdge = localX < zonePx || localX > bb.width - zonePx
-                                                if (reorderFingerDragging && pages > 1 && inEdge) {
+                                                // 1200 ms cooldown between successive page flips so
+                                                // a slow drag in the edge zone doesn't race through pages.
+                                                val flipCooldownMs = 1200L
+                                                val sinceLastFlip = android.os.SystemClock.uptimeMillis() - lastPageFlipRef[0]
+                                                if (reorderFingerDragging && pages > 1 && inEdge && sinceLastFlip >= flipCooldownMs) {
                                                     if (edgeHoverJobRef[0]?.isActive != true) {
                                                         edgeHoverJobRef[0] = scope.launch {
                                                             delay(themePalette.appGridEdgeHoverDurationMs)
@@ -3838,53 +3859,60 @@ private fun AppDrawer(
                                                             val cp = drawerPager.currentPage
                                                             val pageCount = pagesRef[0].coerceAtLeast(1)
                                                             if (lx < z && cp > 0) {
+                                                                lastPageFlipRef[0] = android.os.SystemClock.uptimeMillis()
                                                                 drawerPager.animateScrollToPage(cp - 1)
                                                             } else if (lx > b2.width - z && cp < pageCount - 1) {
+                                                                lastPageFlipRef[0] = android.os.SystemClock.uptimeMillis()
                                                                 drawerPager.animateScrollToPage(cp + 1)
                                                             }
                                                         }
                                                     }
-                                                } else {
+                                                } else if (!inEdge) {
                                                     edgeHoverJobRef[0]?.cancel()
                                                     edgeHoverJobRef[0] = null
                                                 }
-                                        },
-                                        onDragEnd = {
+                                            },
+                                            onDragEnd = {
                                                 edgeHoverJobRef[0]?.cancel()
                                                 edgeHoverJobRef[0] = null
-                                            reorderFingerDragging = false
+                                                reorderFingerDragging = false
                                                 dragOverlayDims = null
-                                                val mp = movingSlotId!!
-                                            val src = cellLayouts[mp]
-                                            if (src != null) {
-                                                val releaseCenter = src.boundsInRoot().center + reorderDragOffset
-                                                val target = cellLayouts.entries
-                                                        .filter { it.key != mp && it.key in sliceSlotIds }
-                                                    .minByOrNull { (_, lc) ->
-                                                        val c = lc.boundsInRoot().center
-                                                        hypot(
-                                                            (c.x - releaseCenter.x).toDouble(),
-                                                            (c.y - releaseCenter.y).toDouble(),
+                                                val src = cellLayouts[slot]
+                                                if (src != null) {
+                                                    val releaseCenter = src.boundsInRoot().center + reorderDragOffset
+                                                    val target = cellLayouts.entries
+                                                        .filter { it.key != slot && it.key in sliceSlotIds }
+                                                        .minByOrNull { (_, lc) ->
+                                                            val c = lc.boundsInRoot().center
+                                                            hypot(
+                                                                (c.x - releaseCenter.x).toDouble(),
+                                                                (c.y - releaseCenter.y).toDouble(),
+                                                            )
+                                                        }?.key
+                                                    // Haptic: light tick to confirm the drop/swap
+                                                    if (target != null) {
+                                                        view.performHapticFeedback(
+                                                            HapticFeedbackConstants.CLOCK_TICK,
                                                         )
-                                                    }?.key
-                                                onReorderDrop(target)
-                                            } else {
-                                                onReorderDrop(null)
-                                            }
-                                            reorderDragOffset = Offset.Zero
-                                        },
-                                        onDragCancel = {
+                                                    }
+                                                    onReorderDrop(target)
+                                                } else {
+                                                    onReorderDrop(null)
+                                                }
+                                                reorderDragOffset = Offset.Zero
+                                            },
+                                            onDragCancel = {
                                                 edgeHoverJobRef[0]?.cancel()
                                                 edgeHoverJobRef[0] = null
-                                            reorderFingerDragging = false
+                                                reorderFingerDragging = false
                                                 dragOverlayDims = null
-                                            reorderDragOffset = Offset.Zero
-                                        },
-                                    )
+                                                reorderDragOffset = Offset.Zero
+                                            },
+                                        )
+                                    }
+                                } else {
+                                    Modifier
                                 }
-                            } else {
-                                Modifier
-                            }
                             val focusedHere =
                                 nav.area == FocusArea.DrawerGrid && slice.getOrNull(nav.gridIndex)?.slotId == slot
                             when (cell) {
@@ -4211,19 +4239,19 @@ private fun FolderTile(
     val selRadius = themePalette.selectorBorderRadiusDp.dp
     val wiggle = rememberInfiniteTransition(label = "folderWiggle")
     val wiggleRotation by wiggle.animateFloat(
-        initialValue = -2.5f,
-        targetValue = 2.5f,
+        initialValue = -4.5f,
+        targetValue = 4.5f,
         animationSpec = infiniteRepeatable(
-            animation = tween(durationMillis = 320, easing = FastOutSlowInEasing),
+            animation = tween(durationMillis = 240, easing = FastOutSlowInEasing),
             repeatMode = RepeatMode.Reverse,
         ),
         label = "wiggleRotation",
     )
     val wiggleScale by wiggle.animateFloat(
-        initialValue = 0.985f,
-        targetValue = 1.0f,
+        initialValue = 0.95f,
+        targetValue = 1.02f,
         animationSpec = infiniteRepeatable(
-            animation = tween(durationMillis = 320, easing = FastOutSlowInEasing),
+            animation = tween(durationMillis = 240, easing = FastOutSlowInEasing),
             repeatMode = RepeatMode.Reverse,
         ),
         label = "wiggleScale",
@@ -4279,8 +4307,11 @@ private fun FolderTile(
                 }
             }
             .alpha(animateFloatAsState(if (hideSourceWhileFingerDragging && isFingerDraggingThisTile) 0f else 1f, label = "folderTileAlpha").value)
-            .pointerInput(Unit) {
-                detectTapGestures(onTap = { onClick() }, onLongPress = { onLongPress() })
+            .pointerInput(reorderMode) {
+                detectTapGestures(
+                    onTap = { onClick() },
+                    onLongPress = if (reorderMode) null else { _ -> onLongPress() },
+                )
             },
         contentAlignment = Alignment.TopCenter,
     ) {
@@ -4425,19 +4456,19 @@ private fun AppTile(
     val selRadius = themePalette.selectorBorderRadiusDp.dp
     val wiggle = rememberInfiniteTransition(label = "wiggle")
     val wiggleRotation by wiggle.animateFloat(
-        initialValue = -2.5f,
-        targetValue = 2.5f,
+        initialValue = -4.5f,
+        targetValue = 4.5f,
         animationSpec = infiniteRepeatable(
-            animation = tween(durationMillis = 320, easing = FastOutSlowInEasing),
+            animation = tween(durationMillis = 240, easing = FastOutSlowInEasing),
             repeatMode = RepeatMode.Reverse,
         ),
         label = "wiggleRotation",
     )
     val wiggleScale by wiggle.animateFloat(
-        initialValue = 0.985f,
-        targetValue = 1.0f,
+        initialValue = 0.95f,
+        targetValue = 1.02f,
         animationSpec = infiniteRepeatable(
-            animation = tween(durationMillis = 320, easing = FastOutSlowInEasing),
+            animation = tween(durationMillis = 240, easing = FastOutSlowInEasing),
             repeatMode = RepeatMode.Reverse,
         ),
         label = "wiggleScale",
@@ -4473,8 +4504,13 @@ private fun AppTile(
                 }
             }
             .alpha(animateFloatAsState(if (hideSourceWhileFingerDragging && isFingerDraggingThisTile) 0f else 1f, label = "appTileAlpha").value)
-            .pointerInput(app.packageName) {
-                detectTapGestures(onTap = { onClick() }, onLongPress = { onLongPress() })
+            .pointerInput(app.packageName, reorderMode) {
+                // In reorder mode the drag gesture (detectDragGesturesAfterLongPress) owns the
+                // long-press; passing null here prevents detectTapGestures from competing for it.
+                detectTapGestures(
+                    onTap = { onClick() },
+                    onLongPress = if (reorderMode) null else { _ -> onLongPress() },
+                )
             },
         // Top-align so the column fills from the top; Center would vertically center a short column (not our case with fillMaxSize).
         contentAlignment = Alignment.TopCenter,
