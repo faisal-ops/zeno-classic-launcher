@@ -45,12 +45,15 @@ import androidx.compose.animation.expandVertically
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.animation.shrinkVertically
+import androidx.compose.animation.core.Animatable
 import androidx.compose.animation.core.FastOutSlowInEasing
 import androidx.compose.animation.core.RepeatMode
+import androidx.compose.animation.core.Spring
 import androidx.compose.animation.core.animateFloat
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.infiniteRepeatable
 import androidx.compose.animation.core.rememberInfiniteTransition
+import androidx.compose.animation.core.spring
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Box
@@ -3425,6 +3428,13 @@ private fun AppDrawer(
     val cellLayouts = remember { mutableMapOf<String, LayoutCoordinates>() }
     var reorderDragOffset by remember { mutableStateOf(Offset.Zero) }
     var reorderFingerDragging by remember { mutableStateOf(false) }
+    // True from long-press pickup until the drop animation finishes — keeps the ghost visible
+    // and the source tile hidden across both the drag and the brief drop animation.
+    var ghostVisible by remember { mutableStateOf(false) }
+    // Slot the drag ghost is currently hovering over (for drop-target highlight ring).
+    var hoveredSlotId by remember { mutableStateOf<String?>(null) }
+    // Animates the ghost scale: springs to 1.15 on pickup, shrinks on drop.
+    val ghostScaleAnim = remember { Animatable(1f) }
     var dragFingerRoot by remember { mutableStateOf(Offset.Zero) }
     var dragOverlayDims by remember {
         mutableStateOf<Triple<androidx.compose.ui.unit.Dp, androidx.compose.ui.unit.Dp, androidx.compose.ui.unit.Dp>?>(null)
@@ -3805,16 +3815,25 @@ private fun AppDrawer(
                                         detectDragGesturesAfterLongPress(
                                             onDragStart = { startOffset ->
                                                 // Haptic: soft pickup buzz at the moment long-press fires.
-                                                // Uses the mutable ref so the closure always reads the
-                                                // current hapticsEnabled / intensity even after recompose.
                                                 doNavFeedback(view, hapticsEnabledRef[0], hapticIntensityRef[0])
                                                 onStartMove(slot)
                                                 reorderFingerDragging = true
+                                                ghostVisible = true
                                                 dragOverlayDims = Triple(cardW, cardH, iconSize)
                                                 val src = cellLayouts[slot]
                                                 if (src != null) {
                                                     dragFingerRoot = src.localToRoot(startOffset)
                                                     dragFingerRootRef[0] = dragFingerRoot
+                                                }
+                                                // Spring the ghost up to 115% to give a "lifted" feel.
+                                                scope.launch {
+                                                    ghostScaleAnim.animateTo(
+                                                        1.15f,
+                                                        spring(
+                                                            dampingRatio = Spring.DampingRatioMediumBouncy,
+                                                            stiffness = Spring.StiffnessMedium,
+                                                        ),
+                                                    )
                                                 }
                                             },
                                             onDrag = { change, dragAmount ->
@@ -3871,16 +3890,26 @@ private fun AppDrawer(
                                                     edgeHoverJobRef[0]?.cancel()
                                                     edgeHoverJobRef[0] = null
                                                 }
+                                                // Update hover highlight: nearest slot to finger tip.
+                                                hoveredSlotId = cellLayouts.entries
+                                                    .filter { it.key != slot }
+                                                    .minByOrNull { (_, lc) ->
+                                                        val c = lc.boundsInRoot().center
+                                                        hypot(
+                                                            (c.x - dragFingerRoot.x).toDouble(),
+                                                            (c.y - dragFingerRoot.y).toDouble(),
+                                                        )
+                                                    }?.key
                                             },
                                             onDragEnd = {
                                                 edgeHoverJobRef[0]?.cancel()
                                                 edgeHoverJobRef[0] = null
                                                 reorderFingerDragging = false
-                                                dragOverlayDims = null
+                                                hoveredSlotId = null
                                                 val src = cellLayouts[slot]
-                                                if (src != null) {
+                                                val target = if (src != null) {
                                                     val releaseCenter = src.boundsInRoot().center + reorderDragOffset
-                                                    val target = cellLayouts.entries
+                                                    cellLayouts.entries
                                                         .filter { it.key != slot && it.key in sliceSlotIds }
                                                         .minByOrNull { (_, lc) ->
                                                             val c = lc.boundsInRoot().center
@@ -3889,23 +3918,32 @@ private fun AppDrawer(
                                                                 (c.y - releaseCenter.y).toDouble(),
                                                             )
                                                         }?.key
-                                                    // Haptic: light tick to confirm the drop/swap
-                                                    if (target != null) {
-                                                        view.performHapticFeedback(
-                                                            HapticFeedbackConstants.CLOCK_TICK,
-                                                        )
-                                                    }
-                                                    onReorderDrop(target)
-                                                } else {
-                                                    onReorderDrop(null)
+                                                } else null
+                                                // Drop animation: ghost shrinks before disappearing,
+                                                // then onReorderDrop fires and cleans up state.
+                                                if (target != null) {
+                                                    view.performHapticFeedback(HapticFeedbackConstants.CLOCK_TICK)
                                                 }
-                                                reorderDragOffset = Offset.Zero
+                                                scope.launch {
+                                                    ghostScaleAnim.animateTo(
+                                                        0.85f,
+                                                        tween(130, easing = FastOutSlowInEasing),
+                                                    )
+                                                    onReorderDrop(target)
+                                                    ghostScaleAnim.snapTo(1f)
+                                                    ghostVisible = false
+                                                    dragOverlayDims = null
+                                                    reorderDragOffset = Offset.Zero
+                                                }
                                             },
                                             onDragCancel = {
                                                 edgeHoverJobRef[0]?.cancel()
                                                 edgeHoverJobRef[0] = null
                                                 reorderFingerDragging = false
+                                                hoveredSlotId = null
+                                                ghostVisible = false
                                                 dragOverlayDims = null
+                                                scope.launch { ghostScaleAnim.snapTo(1f) }
                                                 reorderDragOffset = Offset.Zero
                                             },
                                         )
@@ -3915,31 +3953,35 @@ private fun AppDrawer(
                                 }
                             val focusedHere =
                                 nav.area == FocusArea.DrawerGrid && slice.getOrNull(nav.gridIndex)?.slotId == slot
+                            val isMovingThisTile = ghostVisible && movingSlotId == slot
+                            val isDropTarget = reorderMode && ghostVisible &&
+                                slot == hoveredSlotId && slot != movingSlotId
                             when (cell) {
                                 is DrawerGridCell.App -> {
                                     val app = cell.entry
-                        AppTile(
-                            app = app,
-                            reorderMode = reorderMode,
-                            appIconShape = appIconShape,
+                                    AppTile(
+                                        app = app,
+                                        reorderMode = reorderMode,
+                                        appIconShape = appIconShape,
                                         selected = movingSlotId == slot || focusedHere,
-                            width = cardW,
-                            height = cardH,
-                            iconSize = iconSize,
-                            labelSizeSp = labelSizeSp,
-                            cardTop = themePalette.appCardTop,
-                            cardBottom = themePalette.appCardBottom,
-                            showAppCardBackground = showAppCardBackground,
-                            themePalette = themePalette,
-                            reorderDragModifier = reorderDragModifier,
-                                        isFingerDraggingThisTile = reorderFingerDragging && movingSlotId == slot,
-                            reorderDragOffset = reorderDragOffset,
-                                        hideSourceWhileFingerDragging = reorderFingerDragging && movingSlotId == slot,
+                                        isDropTarget = isDropTarget,
+                                        width = cardW,
+                                        height = cardH,
+                                        iconSize = iconSize,
+                                        labelSizeSp = labelSizeSp,
+                                        cardTop = themePalette.appCardTop,
+                                        cardBottom = themePalette.appCardBottom,
+                                        showAppCardBackground = showAppCardBackground,
+                                        themePalette = themePalette,
+                                        reorderDragModifier = reorderDragModifier,
+                                        isFingerDraggingThisTile = isMovingThisTile,
+                                        reorderDragOffset = reorderDragOffset,
+                                        hideSourceWhileFingerDragging = isMovingThisTile,
                                         usageTimeMs = usageStats[app.packageName] ?: 0L,
                                         hasNotifBadge = showIconNotifBadge && app.packageName in unreadPackages,
-                            onGloballyPositioned = { coords ->
-                                cellLayouts[app.packageName] = coords
-                            },
+                                        onGloballyPositioned = { coords ->
+                                            cellLayouts[app.packageName] = coords
+                                        },
                                         onClick = { onCellTap(cell) },
                                         onLongPress = { onCellLongPress(cell) },
                                     )
@@ -3952,6 +3994,7 @@ private fun AppDrawer(
                                         hasUnreadBadge = showIconNotifBadge && cell.members.any { it.packageName in unreadPackages },
                                         reorderMode = reorderMode,
                                         selected = movingSlotId == slot || focusedHere,
+                                        isDropTarget = isDropTarget,
                                         width = cardW,
                                         height = cardH,
                                         iconSize = iconSize,
@@ -3961,9 +4004,9 @@ private fun AppDrawer(
                                         showAppCardBackground = showAppCardBackground,
                                         themePalette = themePalette,
                                         reorderDragModifier = reorderDragModifier,
-                                        isFingerDraggingThisTile = reorderFingerDragging && movingSlotId == slot,
+                                        isFingerDraggingThisTile = isMovingThisTile,
                                         reorderDragOffset = reorderDragOffset,
-                                        hideSourceWhileFingerDragging = reorderFingerDragging && movingSlotId == slot,
+                                        hideSourceWhileFingerDragging = isMovingThisTile,
                                         onGloballyPositioned = { coords ->
                                             cellLayouts[cell.id] = coords
                                         },
@@ -3979,7 +4022,7 @@ private fun AppDrawer(
 
             val dragCell = movingSlotId?.let { id -> gridCells.find { it.slotId == id } }
             val dims = dragOverlayDims
-            if (reorderFingerDragging && dragCell != null && dims != null && pagerContainerCoords != null) {
+            if (ghostVisible && dragCell != null && dims != null && pagerContainerCoords != null) {
                 val b = pagerContainerCoords!!.boundsInRoot()
                 val (cw, ch, isz) = dims
                 val xDp = with(density) { (dragFingerRoot.x - b.left).toDp() } - cw / 2
@@ -3987,7 +4030,11 @@ private fun AppDrawer(
                 Box(
                     Modifier
                         .offset(xDp, yDp)
-                        .zIndex(4f),
+                        .zIndex(4f)
+                        .graphicsLayer {
+                            scaleX = ghostScaleAnim.value
+                            scaleY = ghostScaleAnim.value
+                        },
                 ) {
                     when (dragCell) {
                         is DrawerGridCell.App -> AppTile(
@@ -4215,6 +4262,7 @@ private fun FolderTile(
     reorderMode: Boolean,
     selected: Boolean,
     hasUnreadBadge: Boolean,
+    isDropTarget: Boolean = false,
     width: androidx.compose.ui.unit.Dp,
     height: androidx.compose.ui.unit.Dp,
     iconSize: androidx.compose.ui.unit.Dp,
@@ -4340,6 +4388,15 @@ private fun FolderTile(
                     ),
             )
         }
+        // Drop-target highlight ring — shown while a drag ghost hovers over this slot.
+        if (isDropTarget) {
+            Box(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .clip(RoundedCornerShape(selRadius))
+                    .border(2.dp, Color.White.copy(alpha = 0.65f), RoundedCornerShape(selRadius)),
+            )
+        }
         Column(
             horizontalAlignment = Alignment.CenterHorizontally,
             modifier = Modifier.fillMaxSize(),
@@ -4431,6 +4488,7 @@ private fun AppTile(
     reorderMode: Boolean,
     appIconShape: AppIconShape,
     selected: Boolean,
+    isDropTarget: Boolean = false,
     width: androidx.compose.ui.unit.Dp,
     height: androidx.compose.ui.unit.Dp,
     iconSize: androidx.compose.ui.unit.Dp,
@@ -4555,6 +4613,19 @@ private fun AppTile(
                         width = 0.8.dp,
                         color = Color(0x332F3B4F),
                         shape = androidx.compose.foundation.shape.RoundedCornerShape(cardRadius)
+                    )
+            )
+        }
+        // Drop-target highlight ring — shown while a drag ghost hovers over this slot.
+        if (isDropTarget) {
+            Box(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .clip(androidx.compose.foundation.shape.RoundedCornerShape(selRadius))
+                    .border(
+                        width = 2.dp,
+                        color = Color.White.copy(alpha = 0.65f),
+                        shape = androidx.compose.foundation.shape.RoundedCornerShape(selRadius),
                     )
             )
         }
