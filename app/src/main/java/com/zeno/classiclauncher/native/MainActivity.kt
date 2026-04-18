@@ -60,12 +60,6 @@ class MainActivity : ComponentActivity() {
         ) {
             if (openDefaultDialer()) return true
         }
-        if (event.keyCode == android.view.KeyEvent.KEYCODE_ENDCALL &&
-            event.action == android.view.KeyEvent.ACTION_UP
-        ) {
-            viewModel.requestNavigateHome()
-            return true
-        }
         return super.dispatchKeyEvent(event)
     }
 

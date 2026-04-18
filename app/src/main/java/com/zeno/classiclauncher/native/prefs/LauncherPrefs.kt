@@ -131,6 +131,8 @@ data class LauncherPrefs(
     val appIconShape: AppIconShape = AppIconShape.ROUNDED,
     /** Show a gradient card background behind each app tile in the A-Z drawer. */
     val showAppCardBackground: Boolean = false,
+    /** Swipe-down on home opens the App Spotlight overlay instead of the launcher QS panel. */
+    val swipeDownAppSpotlight: Boolean = false,
 )
 
 /** Full nested JSON (Flutter-shaped); legacy flat-only strings still load via [LauncherThemePalette.fromJson]. */
@@ -185,6 +187,7 @@ class LauncherPrefsRepository(private val context: Context) {
         val CLASSIC_MODE_LEGACY = booleanPreferencesKey("drawerOnlyMode")
         val APP_ICON_SHAPE = stringPreferencesKey("appIconShape")
         val SHOW_APP_CARD_BG = booleanPreferencesKey("showAppCardBackground")
+        val SWIPE_DOWN_SPOTLIGHT = booleanPreferencesKey("swipeDownAppSpotlight")
     }
 
     val prefsFlow: Flow<LauncherPrefs> = context.dataStore.data.map { p ->
@@ -243,6 +246,7 @@ class LauncherPrefsRepository(private val context: Context) {
             p[Keys.APP_ICON_SHAPE]?.let { v -> AppIconShape.entries.firstOrNull { it.name == v } }
                 ?: DEFAULT_PREFS.appIconShape
         val showAppCardBackground = p[Keys.SHOW_APP_CARD_BG] ?: DEFAULT_PREFS.showAppCardBackground
+        val swipeDownAppSpotlight = p[Keys.SWIPE_DOWN_SPOTLIGHT] ?: DEFAULT_PREFS.swipeDownAppSpotlight
         LauncherPrefs(
             gridPreset = grid,
             secondShortcutTarget = shortcut,
@@ -286,6 +290,7 @@ class LauncherPrefsRepository(private val context: Context) {
             classicMode = classicMode,
             appIconShape = appIconShape,
             showAppCardBackground = showAppCardBackground,
+            swipeDownAppSpotlight = swipeDownAppSpotlight,
         )
     }.distinctUntilChanged()
 
@@ -507,6 +512,10 @@ class LauncherPrefsRepository(private val context: Context) {
 
     suspend fun setShowAppCardBackground(enabled: Boolean) {
         context.dataStore.edit { it[Keys.SHOW_APP_CARD_BG] = enabled }
+    }
+
+    suspend fun setSwipeDownAppSpotlight(enabled: Boolean) {
+        context.dataStore.edit { it[Keys.SWIPE_DOWN_SPOTLIGHT] = enabled }
     }
 
     /** Replaces all launcher preferences in one atomic write (full backup restore). */

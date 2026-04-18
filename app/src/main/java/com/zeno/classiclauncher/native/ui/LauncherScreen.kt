@@ -211,6 +211,7 @@ import androidx.compose.ui.text.PlatformTextStyle
 import androidx.compose.ui.text.style.LineHeightStyle
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.text.TextStyle
+import androidx.compose.ui.text.withStyle
 import androidx.compose.ui.unit.Density
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.sp
@@ -479,6 +480,7 @@ fun LauncherScreen(
     var showSettings by remember { mutableStateOf(false) }
     var showPermissionsSettings by remember { mutableStateOf(false) }
     var showDockSlotPicker by remember { mutableStateOf<DockSlot?>(null) }
+    var dockQuickActionSlot by remember { mutableStateOf<DockSlot?>(null) }
     var showGlanceSettings by remember { mutableStateOf(false) }
     var showHomeGroupsSettings by remember { mutableStateOf(false) }
     var showGestureSettings by remember { mutableStateOf(false) }
@@ -489,6 +491,8 @@ fun LauncherScreen(
     var showWallpaperSourceOverlay by remember { mutableStateOf(false) }
     var wallpaperSourceSub by remember { mutableStateOf(WallpaperSourceSub.List) }
     var showQuickSettingsOverlay by remember { mutableStateOf(false) }
+    var showSpotlightOverlay by remember { mutableStateOf(false) }
+    var spotlightInitialQuery by remember { mutableStateOf("") }
     val appWidgetHost = remember(context) { AppWidgetHost(context, HOME_WIDGET_HOST_ID) }
     var homeWidgetId by remember { mutableStateOf<Int?>(null) }
     var pendingWidgetId by remember { mutableStateOf<Int?>(null) }
@@ -633,6 +637,7 @@ fun LauncherScreen(
                 homeShortcutMenuToken = null
             }
             drawerFolderMenu != null -> drawerFolderMenu = null
+            dockQuickActionSlot != null -> dockQuickActionSlot = null
             showDockSlotPicker != null -> showDockSlotPicker = null
             showPermissionsSettings -> showPermissionsSettings = false
             showGestureSettings -> showGestureSettings = false
@@ -970,6 +975,9 @@ fun LauncherScreen(
                     onMail = { vm.launchFromDock(DockSlot.Mail) },
                     onShortcut = { vm.launchFromDock(DockSlot.Shortcut) },
                     onCamera = { vm.launchFromDock(DockSlot.Camera) },
+                    onLongPressMail = { dockQuickActionSlot = DockSlot.Mail },
+                    onLongPressShortcut = { dockQuickActionSlot = DockSlot.Shortcut },
+                    onLongPressCamera = { dockQuickActionSlot = DockSlot.Camera },
                     onHome = {
                         if (!classicMode) scope.launch { pagerState.animateScrollToPage(0) }
                     },
@@ -1442,7 +1450,101 @@ fun LauncherScreen(
                     showDockSlotPicker = null
                 },
                 onDismiss = { showDockSlotPicker = null },
+                dockSecondEnabled = prefs.dockSecondEnabled,
+                onToggleDockSecond = { vm.setDockSecondEnabled(!prefs.dockSecondEnabled) },
             )
+        }
+
+        val activeQuickSlot = dockQuickActionSlot
+        if (activeQuickSlot != null) {
+            BackHandler { dockQuickActionSlot = null }
+            Box(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .background(Color(0x55000000))
+                    .clickable(
+                        indication = null,
+                        interactionSource = remember { androidx.compose.foundation.interaction.MutableInteractionSource() },
+                    ) { dockQuickActionSlot = null },
+                contentAlignment = Alignment.BottomCenter,
+            ) {
+                Surface(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .navigationBarsPadding()
+                        .padding(horizontal = 16.dp)
+                        .padding(bottom = 16.dp)
+                        .clickable(enabled = false) {},
+                    shape = RoundedCornerShape(20.dp),
+                    color = Color(0xFF1E2430),
+                ) {
+                    Column(modifier = Modifier.padding(vertical = 8.dp)) {
+                        Text(
+                            text = when (activeQuickSlot) {
+                                DockSlot.Mail -> prefs.dockMailTitle
+                                DockSlot.Shortcut -> prefs.dockSecondTitle
+                                DockSlot.Camera -> prefs.dockThirdTitle
+                            },
+                            color = Color(0xFF8E95A3),
+                            fontSize = 12.sp,
+                            modifier = Modifier.padding(horizontal = 20.dp, vertical = 8.dp),
+                        )
+                        HorizontalDivider(color = Color(0x22FFFFFF))
+                        // Change shortcut
+                        Row(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .clickable {
+                                    dockQuickActionSlot = null
+                                    showDockSlotPicker = activeQuickSlot
+                                }
+                                .padding(horizontal = 20.dp, vertical = 16.dp),
+                            verticalAlignment = Alignment.CenterVertically,
+                        ) {
+                            Icon(Icons.Rounded.Tune, contentDescription = null, tint = Color.White, modifier = Modifier.size(20.dp))
+                            Spacer(Modifier.width(14.dp))
+                            Text("Change shortcut", color = Color.White, fontSize = 15.sp)
+                        }
+                        HorizontalDivider(color = Color(0x22FFFFFF))
+                        // Remove / hide
+                        if (activeQuickSlot == DockSlot.Shortcut) {
+                            Row(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .clickable {
+                                        vm.setDockSecondEnabled(false)
+                                        dockQuickActionSlot = null
+                                    }
+                                    .padding(horizontal = 20.dp, vertical = 16.dp),
+                                verticalAlignment = Alignment.CenterVertically,
+                            ) {
+                                Icon(Icons.Rounded.VisibilityOff, contentDescription = null, tint = Color(0xFFFF6B6B), modifier = Modifier.size(20.dp))
+                                Spacer(Modifier.width(14.dp))
+                                Text("Hide from dock", color = Color(0xFFFF6B6B), fontSize = 15.sp)
+                            }
+                        } else {
+                            Row(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .clickable {
+                                        when (activeQuickSlot) {
+                                            DockSlot.Mail -> vm.setDockMailPackage("")
+                                            DockSlot.Camera -> vm.setDockCameraPackage("")
+                                            else -> Unit
+                                        }
+                                        dockQuickActionSlot = null
+                                    }
+                                    .padding(horizontal = 20.dp, vertical = 16.dp),
+                                verticalAlignment = Alignment.CenterVertically,
+                            ) {
+                                Icon(Icons.Rounded.VisibilityOff, contentDescription = null, tint = Color(0xFFFF6B6B), modifier = Modifier.size(20.dp))
+                                Spacer(Modifier.width(14.dp))
+                                Text("Reset to default", color = Color(0xFFFF6B6B), fontSize = 15.sp)
+                            }
+                        }
+                    }
+                }
+            }
         }
 
         if (showWallpaperSourceOverlay) {
@@ -1463,6 +1565,25 @@ fun LauncherScreen(
                 hapticsEnabled = prefs.hapticsEnabled,
                 hapticIntensity = prefs.hapticIntensity,
                 onDismiss = { showQuickSettingsOverlay = false },
+            )
+        }
+
+        if (showSpotlightOverlay) {
+            AppSpotlightOverlay(
+                allApps = allApps,
+                hiddenPackages = prefs.hiddenPackages,
+                themePalette = themePalette,
+                initialQuery = spotlightInitialQuery,
+                onLaunchApp = { app ->
+                    showSpotlightOverlay = false
+                    spotlightInitialQuery = ""
+                    val launchIntent = context.packageManager.getLaunchIntentForPackage(app.packageName)
+                    if (launchIntent != null) context.startActivity(launchIntent)
+                },
+                onDismiss = {
+                    showSpotlightOverlay = false
+                    spotlightInitialQuery = ""
+                },
             )
         }
 
@@ -1578,12 +1699,12 @@ private fun HomePage(
     }
     val currentOnLongPress = rememberUpdatedState(onLongPress)
 
-    // Search result navigation state — index into top-5 results (-1 = nothing focused)
     var searchFocusIndex by remember { mutableStateOf(-1) }
     val searchResults = remember(searchQuery, allApps, hiddenPackages) {
         if (searchQuery.isEmpty()) emptyList()
-        else allApps.filter { it.label.contains(searchQuery, ignoreCase = true) && it.packageName !in hiddenPackages }.take(5)
+        else allApps.filter { it.label.contains(searchQuery, ignoreCase = true) && it.packageName !in hiddenPackages }.take(4)
     }
+    val settingsResults = remember(searchQuery) { matchSettingsEntries(searchQuery) }
     LaunchedEffect(searchQuery) { searchFocusIndex = -1 }
 
     Box(
@@ -1596,35 +1717,41 @@ private fun HomePage(
                 val newQuery = tryConsumeSearchKey(ev, searchQuery)
                 if (newQuery != null) {
                     onSearchQueryChange(newQuery)
-                    // show search overlay on home instead of navigating to drawer
                     return@onPreviewKeyEvent true
                 }
 
-                // When search overlay is active, D-pad navigates the result list
-                if (searchQuery.isNotEmpty() && searchResults.isNotEmpty()) {
+                // When search overlay is active, D-pad navigates app + settings results
+                val totalSearchItems = searchResults.size + settingsResults.size
+                if (searchQuery.isNotEmpty() && totalSearchItems > 0) {
                     val nk = ev.nativeKeyEvent
                     when {
                         ev.key == Key.DirectionDown || nk?.keyCode == android.view.KeyEvent.KEYCODE_DPAD_DOWN -> {
-                            searchFocusIndex = (searchFocusIndex + 1).coerceAtMost(searchResults.size - 1)
+                            searchFocusIndex = (searchFocusIndex + 1).coerceAtMost(totalSearchItems - 1)
                             doNavFeedback(view, hapticsEnabled, hapticIntensity)
                             return@onPreviewKeyEvent true
                         }
                         ev.key == Key.DirectionUp || nk?.keyCode == android.view.KeyEvent.KEYCODE_DPAD_UP -> {
-                            if (searchFocusIndex > 0) {
-                                searchFocusIndex -= 1
-                            } else {
-                                searchFocusIndex = -1
-                            }
+                            if (searchFocusIndex > 0) searchFocusIndex -= 1 else searchFocusIndex = -1
                             doNavFeedback(view, hapticsEnabled, hapticIntensity)
                             return@onPreviewKeyEvent true
                         }
                         (ev.key == Key.Enter || ev.key == Key.NumPadEnter ||
                             nk?.keyCode == android.view.KeyEvent.KEYCODE_DPAD_CENTER ||
                             nk?.keyCode == android.view.KeyEvent.KEYCODE_ENTER) && searchFocusIndex >= 0 -> {
-                            val app = searchResults.getOrNull(searchFocusIndex)
-                            if (app != null) {
-                                onSearchQueryChange("")
-                                onLaunchApp(app.packageName)
+                            if (searchFocusIndex < searchResults.size) {
+                                val app = searchResults.getOrNull(searchFocusIndex)
+                                if (app != null) { onSearchQueryChange(""); onLaunchApp(app.packageName) }
+                            } else {
+                                val entry = settingsResults.getOrNull(searchFocusIndex - searchResults.size)
+                                if (entry != null) {
+                                    onSearchQueryChange("")
+                                    val intent = Intent(entry.action).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                                    runCatching { context.startActivity(intent) }.onFailure {
+                                        runCatching {
+                                            context.startActivity(Intent(entry.fallbackAction).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK))
+                                        }
+                                    }
+                                }
                             }
                             return@onPreviewKeyEvent true
                         }
@@ -1731,18 +1858,24 @@ private fun HomePage(
                     else -> false
                 }
             }
-            .pointerInput(doubleTapToSleepEnabled, doubleTapPackage) {
+            .pointerInput(doubleTapToSleepEnabled, doubleTapPackage, searchQuery) {
                 detectTapGestures(
-                    onLongPress = { currentOnLongPress.value() },
+                    onLongPress = { if (searchQuery.isEmpty()) currentOnLongPress.value() },
                     onDoubleTap = {
-                        when {
-                            doubleTapToSleepEnabled -> SleepManager.lockNow(context)
-                            doubleTapPackage.isNotEmpty() -> onLaunchApp(doubleTapPackage)
+                        if (searchQuery.isEmpty()) when {
+                            doubleTapToSleepEnabled -> {
+                                view.performHapticFeedback(HapticFeedbackConstants.CLOCK_TICK)
+                                SleepManager.lockNow(context)
+                            }
+                            doubleTapPackage.isNotEmpty() -> {
+                                view.performHapticFeedback(HapticFeedbackConstants.CLOCK_TICK)
+                                onLaunchApp(doubleTapPackage)
+                            }
                         }
                     },
                 )
             }
-            .pointerInput(swipeUpPackage) {
+            .pointerInput(swipeUpPackage, searchQuery) {
                 val threshold = 80.dp.toPx()
                 awaitPointerEventScope {
                     while (true) {
@@ -1754,7 +1887,7 @@ private fun HomePage(
                             val change = event.changes.firstOrNull() ?: break
                             if (!change.pressed) break
                             val dy = change.position.y - startY
-                            if (dy < -threshold && swipeUpPackage.isNotEmpty()) {
+                            if (dy < -threshold && swipeUpPackage.isNotEmpty() && searchQuery.isEmpty()) {
                                 triggered = true
                                 onLaunchApp(swipeUpPackage)
                             }
@@ -1762,7 +1895,7 @@ private fun HomePage(
                     }
                 }
             }
-            .pointerInput(Unit) {
+            .pointerInput(searchQuery) {
                 val threshold = 72.dp.toPx()
                 awaitPointerEventScope {
                     while (true) {
@@ -1774,7 +1907,7 @@ private fun HomePage(
                             val change = event.changes.firstOrNull() ?: break
                             if (!change.pressed) break
                             val dy = change.position.y - startY
-                            if (dy > threshold) {
+                            if (dy > threshold && searchQuery.isEmpty()) {
                                 triggered = true
                                 onOpenQuickSettings()
                             }
@@ -1846,14 +1979,15 @@ private fun HomePage(
                     .fillMaxWidth()
                     .statusBarsPadding()
                     .padding(horizontal = 12.dp)
-                    .clip(RoundedCornerShape(bottomStart = 18.dp, bottomEnd = 18.dp))
+                    .padding(top = 8.dp)
+                    .clip(RoundedCornerShape(18.dp))
                     .background(Color(0xF01A1F28)),
             ) {
                 // Search bar row
                 Row(
                     modifier = Modifier
                         .fillMaxWidth()
-                        .padding(horizontal = 14.dp, vertical = 12.dp),
+                        .padding(horizontal = 14.dp, vertical = 10.dp),
                     verticalAlignment = Alignment.CenterVertically,
                 ) {
                     Icon(
@@ -1889,7 +2023,7 @@ private fun HomePage(
                 if (searchResults.isNotEmpty()) {
                     Box(modifier = Modifier.fillMaxWidth().height(0.5.dp).background(Color(0x33FFFFFF)))
                 }
-                // Results list — top 5, with D-pad focus highlight
+                // Results list — top 4, with D-pad focus highlight
                 searchResults.forEachIndexed { idx, app ->
                     val isFocused = idx == searchFocusIndex
                     Row(
@@ -1900,60 +2034,152 @@ private fun HomePage(
                                 onSearchQueryChange("")
                                 onLaunchApp(app.packageName)
                             }
-                            .padding(horizontal = 14.dp, vertical = 10.dp),
+                            .padding(horizontal = 14.dp, vertical = 7.dp),
                         verticalAlignment = Alignment.CenterVertically,
                     ) {
                         AsyncImage(
                             model = app.icon,
                             contentDescription = app.label,
                             contentScale = ContentScale.Fit,
-                            modifier = Modifier.size(40.dp).clip(iconMaskShape(appIconShape)),
+                            modifier = Modifier.size(42.dp).clip(iconMaskShape(appIconShape)),
                         )
-                        Spacer(Modifier.width(14.dp))
+                        Spacer(Modifier.width(12.dp))
+                        val baseColor = if (isFocused) Color(0xFF84D5F6) else HOME_STRIP_LABEL_COLOR
+                        val highlightColor = Color(0xFF84D5F6)
+                        val label = app.label
+                        val matchStart = label.indexOf(searchQuery, ignoreCase = true)
+                        val annotated = remember(label, searchQuery, isFocused) {
+                            androidx.compose.ui.text.buildAnnotatedString {
+                                if (matchStart >= 0) {
+                                    val matchEnd = matchStart + searchQuery.length
+                                    append(label.substring(0, matchStart))
+                                    withStyle(
+                                        androidx.compose.ui.text.SpanStyle(
+                                            color = highlightColor,
+                                            fontWeight = FontWeight.Bold,
+                                        )
+                                    ) { append(label.substring(matchStart, matchEnd)) }
+                                    append(label.substring(matchEnd))
+                                } else {
+                                    append(label)
+                                }
+                            }
+                        }
                         Text(
-                            text = app.label,
-                            color = if (isFocused) Color(0xFF84D5F6) else HOME_STRIP_LABEL_COLOR,
-                            fontSize = 15.sp,
+                            text = annotated,
+                            color = baseColor,
+                            fontSize = 14.sp,
                             maxLines = 1,
                             overflow = TextOverflow.Ellipsis,
                         )
                     }
                 }
-                // "and X more" footer
-                if (extra > 0) {
+                // Settings results
+                if (settingsResults.isNotEmpty()) {
                     Box(modifier = Modifier.fillMaxWidth().height(0.5.dp).background(Color(0x22FFFFFF)))
-                    Text(
-                        text = "and $extra more — open drawer to see all",
-                        color = Color(0xFF8E95A3),
-                        fontSize = 12.sp,
-                        modifier = Modifier.padding(horizontal = 14.dp, vertical = 8.dp),
-                    )
-                }
-                // empty state
-                if (searchResults.isEmpty()) {
-                    Column(
+                    Row(
                         modifier = Modifier
                             .fillMaxWidth()
-                            .padding(horizontal = 14.dp, vertical = 8.dp),
+                            .padding(start = 14.dp, end = 14.dp, top = 7.dp, bottom = 2.dp),
+                        verticalAlignment = Alignment.CenterVertically,
                     ) {
-                        Text(
-                            text = "No apps found",
-                            color = Color(0xFF8E95A3),
-                            fontSize = 14.sp,
+                        Icon(
+                            Icons.Rounded.Settings,
+                            contentDescription = null,
+                            tint = Color(0xFF8E95A3),
+                            modifier = Modifier.size(11.dp),
                         )
-                        TextButton(
-                            onClick = { openPlayStoreSearch(context, searchQuery) },
-                            contentPadding = PaddingValues(0.dp),
+                        Spacer(Modifier.width(5.dp))
+                        Text("Settings", color = Color(0xFF8E95A3), fontSize = 11.sp, fontWeight = FontWeight.Medium)
+                    }
+                    settingsResults.forEachIndexed { settingsIdx, entry ->
+                        val absoluteIdx = searchResults.size + settingsIdx
+                        val isFocused = absoluteIdx == searchFocusIndex
+                        Row(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .background(if (isFocused) Color(0x336EA8D8) else Color.Transparent)
+                                .clickable {
+                                    onSearchQueryChange("")
+                                    val intent = Intent(entry.action).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                                    runCatching { context.startActivity(intent) }.onFailure {
+                                        runCatching {
+                                            context.startActivity(
+                                                Intent(entry.fallbackAction).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                                            )
+                                        }
+                                    }
+                                }
+                                .padding(horizontal = 14.dp, vertical = 7.dp),
+                            verticalAlignment = Alignment.CenterVertically,
                         ) {
+                            Box(
+                                modifier = Modifier
+                                    .size(32.dp)
+                                    .background(Color(0xFF2C3547), RoundedCornerShape(8.dp)),
+                                contentAlignment = Alignment.Center,
+                            ) {
+                                Icon(
+                                    Icons.Rounded.Settings,
+                                    contentDescription = null,
+                                    tint = if (isFocused) Color(0xFF84D5F6) else Color(0xFF8E95A3),
+                                    modifier = Modifier.size(18.dp),
+                                )
+                            }
+                            Spacer(Modifier.width(12.dp))
                             Text(
-                                text = "Search \"$searchQuery\" on Play Store",
-                                color = Color(0xFF84D5F6),
+                                text = entry.label,
+                                color = if (isFocused) Color(0xFF84D5F6) else HOME_STRIP_LABEL_COLOR,
+                                fontSize = 14.sp,
+                                fontWeight = if (isFocused) FontWeight.SemiBold else FontWeight.Normal,
                                 maxLines = 1,
                                 overflow = TextOverflow.Ellipsis,
                             )
                         }
                     }
                 }
+                // No results text
+                if (searchResults.isEmpty() && settingsResults.isEmpty()) {
+                    Text(
+                        text = "No apps found",
+                        color = Color(0xFF8E95A3),
+                        fontSize = 14.sp,
+                        modifier = Modifier.padding(horizontal = 14.dp, vertical = 8.dp),
+                    )
+                }
+                // Play Store row — only when no app results found
+                if (searchResults.isEmpty()) {
+                Box(modifier = Modifier.fillMaxWidth().height(0.5.dp).background(Color(0x22FFFFFF)))
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .clickable { openPlayStoreSearch(context, searchQuery) }
+                        .padding(horizontal = 14.dp, vertical = 9.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    Box(
+                        modifier = Modifier
+                            .size(32.dp)
+                            .background(Color(0xFF2C3547), RoundedCornerShape(8.dp)),
+                        contentAlignment = Alignment.Center,
+                    ) {
+                        Icon(
+                            Icons.Rounded.Apps,
+                            contentDescription = null,
+                            tint = Color(0xFF4A90D9),
+                            modifier = Modifier.size(18.dp),
+                        )
+                    }
+                    Spacer(Modifier.width(12.dp))
+                    Text(
+                        text = "Search \"$searchQuery\" on Play Store",
+                        color = Color(0xFF84D5F6),
+                        fontSize = 14.sp,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis,
+                    )
+                }
+                } // end Play Store row
                 Spacer(Modifier.height(4.dp))
             }
         }
@@ -3768,6 +3994,72 @@ private fun AppDrawer(
     }
 }
 
+private data class SettingsSearchEntry(
+    val label: String,
+    val keywords: List<String>,
+    val action: String,
+    val fallbackAction: String = Settings.ACTION_SETTINGS,
+)
+
+private val SETTINGS_SEARCH_ENTRIES = listOf(
+    SettingsSearchEntry("Wi-Fi", listOf("wifi", "wi-fi", "wireless", "internet", "network"), Settings.ACTION_WIFI_SETTINGS),
+    SettingsSearchEntry("Bluetooth", listOf("bluetooth", "bt", "pair", "headphone", "speaker", "earbuds"), Settings.ACTION_BLUETOOTH_SETTINGS),
+    SettingsSearchEntry("Mobile Data", listOf("mobile data", "cellular", "data", "sim", "roaming", "4g", "5g", "lte"), Settings.ACTION_DATA_ROAMING_SETTINGS),
+    SettingsSearchEntry("Airplane Mode", listOf("airplane", "flight mode", "aeroplane", "offline"), Settings.ACTION_AIRPLANE_MODE_SETTINGS),
+    SettingsSearchEntry("Hotspot & Tethering", listOf("hotspot", "tethering", "share wifi", "personal hotspot"), Settings.ACTION_WIRELESS_SETTINGS),
+    SettingsSearchEntry("Display", listOf("display", "screen", "resolution", "refresh rate", "adaptive"), Settings.ACTION_DISPLAY_SETTINGS),
+    SettingsSearchEntry("Brightness", listOf("brightness", "dim", "auto brightness", "adaptive brightness"), Settings.ACTION_DISPLAY_SETTINGS),
+    SettingsSearchEntry("Dark Mode", listOf("dark mode", "night mode", "dark theme", "light mode", "dark"), Settings.ACTION_DISPLAY_SETTINGS),
+    SettingsSearchEntry("Screen Timeout", listOf("timeout", "sleep", "auto lock", "screen off", "always on"), Settings.ACTION_DISPLAY_SETTINGS),
+    SettingsSearchEntry("Font Size", listOf("font", "font size", "text size", "large text"), Settings.ACTION_ACCESSIBILITY_SETTINGS),
+    SettingsSearchEntry("Auto-rotate", listOf("rotate", "auto rotate", "rotation", "orientation", "portrait", "landscape"), Settings.ACTION_DISPLAY_SETTINGS),
+    SettingsSearchEntry("Sound & Vibration", listOf("sound", "volume", "vibration", "vibrate", "silent", "mute", "ring"), Settings.ACTION_SOUND_SETTINGS),
+    SettingsSearchEntry("Ringtone", listOf("ringtone", "notification tone", "alarm tone", "call sound"), Settings.ACTION_SOUND_SETTINGS),
+    SettingsSearchEntry("Do Not Disturb", listOf("do not disturb", "dnd", "quiet", "focus", "priority mode"), Settings.ACTION_NOTIFICATION_POLICY_ACCESS_SETTINGS),
+    SettingsSearchEntry("Notifications", listOf("notification", "alerts", "badge", "banner", "app notification"), "android.settings.NOTIFICATION_SETTINGS"),
+    SettingsSearchEntry("Battery", listOf("battery", "power", "charging", "battery saver", "low power", "usage"), Settings.ACTION_BATTERY_SAVER_SETTINGS),
+    SettingsSearchEntry("Storage", listOf("storage", "memory", "space", "disk", "files", "clear cache"), Settings.ACTION_INTERNAL_STORAGE_SETTINGS),
+    SettingsSearchEntry("Location", listOf("location", "gps", "maps", "find my", "google location", "tracking"), Settings.ACTION_LOCATION_SOURCE_SETTINGS),
+    SettingsSearchEntry("Screen Lock & Security", listOf("security", "screen lock", "pin", "password", "pattern", "lock", "unlock"), Settings.ACTION_SECURITY_SETTINGS),
+    SettingsSearchEntry("Fingerprint", listOf("fingerprint", "biometric", "touch id", "finger"), Settings.ACTION_SECURITY_SETTINGS),
+    SettingsSearchEntry("Face Unlock", listOf("face", "face unlock", "face recognition", "face id"), Settings.ACTION_SECURITY_SETTINGS),
+    SettingsSearchEntry("Privacy", listOf("privacy", "permissions", "tracking", "data privacy", "app permissions"), Settings.ACTION_PRIVACY_SETTINGS),
+    SettingsSearchEntry("App Permissions", listOf("permission", "camera permission", "mic permission", "contacts permission", "allow"), Settings.ACTION_APPLICATION_SETTINGS),
+    SettingsSearchEntry("Accessibility", listOf("accessibility", "magnifier", "color correction", "caption", "talkback"), Settings.ACTION_ACCESSIBILITY_SETTINGS),
+    SettingsSearchEntry("Language & Input", listOf("language", "keyboard", "input method", "autocorrect", "spell check", "gboard"), Settings.ACTION_LOCALE_SETTINGS),
+    SettingsSearchEntry("Date & Time", listOf("date", "time", "timezone", "clock", "24 hour", "ntp"), Settings.ACTION_DATE_SETTINGS),
+    SettingsSearchEntry("VPN", listOf("vpn", "virtual private network", "proxy"), Settings.ACTION_VPN_SETTINGS),
+    SettingsSearchEntry("NFC", listOf("nfc", "tap to pay", "contactless", "near field", "google pay", "payments"), Settings.ACTION_NFC_SETTINGS),
+    SettingsSearchEntry("Accounts & Sync", listOf("account", "sync", "google account", "email account", "add account"), Settings.ACTION_SYNC_SETTINGS),
+    SettingsSearchEntry("Default Apps", listOf("default app", "default browser", "default launcher", "default camera", "default"), Settings.ACTION_MANAGE_DEFAULT_APPS_SETTINGS),
+    SettingsSearchEntry("Developer Options", listOf("developer", "developer options", "dev options"), Settings.ACTION_APPLICATION_DEVELOPMENT_SETTINGS),
+    SettingsSearchEntry("USB Debugging", listOf("usb debug", "adb", "usb adb", "android debug bridge"), Settings.ACTION_APPLICATION_DEVELOPMENT_SETTINGS),
+    SettingsSearchEntry("Wireless Debugging", listOf("wireless debug", "wifi adb", "wireless adb", "adb wifi"), Settings.ACTION_APPLICATION_DEVELOPMENT_SETTINGS),
+    SettingsSearchEntry("Animation Scale", listOf("animation", "animation speed", "transition animation", "animator", "window animation", "slow animation"), Settings.ACTION_APPLICATION_DEVELOPMENT_SETTINGS),
+    SettingsSearchEntry("Mock Location", listOf("mock location", "fake gps", "fake location", "spoof location"), Settings.ACTION_APPLICATION_DEVELOPMENT_SETTINGS),
+    SettingsSearchEntry("GPU Overdraw", listOf("gpu", "overdraw", "gpu rendering", "profile gpu", "hardware layer"), Settings.ACTION_APPLICATION_DEVELOPMENT_SETTINGS),
+    SettingsSearchEntry("Background Process Limit", listOf("background process", "background limit", "process limit", "running services"), Settings.ACTION_APPLICATION_DEVELOPMENT_SETTINGS),
+    SettingsSearchEntry("OEM Unlock", listOf("oem unlock", "bootloader", "unlock bootloader"), Settings.ACTION_APPLICATION_DEVELOPMENT_SETTINGS),
+    SettingsSearchEntry("Stay Awake", listOf("stay awake", "screen awake", "screen on charging", "keep screen on"), Settings.ACTION_APPLICATION_DEVELOPMENT_SETTINGS),
+    SettingsSearchEntry("Bluetooth HCI Log", listOf("bluetooth log", "hci", "hci snoop", "bluetooth debug"), Settings.ACTION_APPLICATION_DEVELOPMENT_SETTINGS),
+    SettingsSearchEntry("Bug Report", listOf("bug report", "bugreport", "report bug", "capture logs"), Settings.ACTION_APPLICATION_DEVELOPMENT_SETTINGS),
+    SettingsSearchEntry("Show Touches", listOf("show touches", "touch indicator", "show tap", "pointer location"), Settings.ACTION_APPLICATION_DEVELOPMENT_SETTINGS),
+    SettingsSearchEntry("Don't Keep Activities", listOf("dont keep activities", "don't keep activities", "destroy activity", "activity limit"), Settings.ACTION_APPLICATION_DEVELOPMENT_SETTINGS),
+    SettingsSearchEntry("About Phone", listOf("about", "android version", "build number", "software version", "imei", "model"), Settings.ACTION_DEVICE_INFO_SETTINGS),
+    SettingsSearchEntry("Software Update", listOf("update", "software update", "system update", "ota", "upgrade"), "android.settings.SYSTEM_UPDATE_SETTINGS"),
+    SettingsSearchEntry("Cast / Screen Share", listOf("cast", "screen mirror", "chromecast", "screen share", "wireless display"), Settings.ACTION_CAST_SETTINGS),
+    SettingsSearchEntry("Mobile Network", listOf("mobile network", "apn", "carrier", "operator", "preferred network", "roam"), Settings.ACTION_NETWORK_OPERATOR_SETTINGS),
+)
+
+private fun matchSettingsEntries(query: String): List<SettingsSearchEntry> {
+    if (query.length < 2) return emptyList()
+    val q = query.lowercase()
+    return SETTINGS_SEARCH_ENTRIES.filter { entry ->
+        entry.label.contains(q, ignoreCase = true) ||
+            entry.keywords.any { it.contains(q, ignoreCase = true) || q.contains(it, ignoreCase = true) }
+    }.take(3)
+}
+
 /** @return new query if key updates search; null if not a text/search key. */
 private fun tryConsumeSearchKey(ev: KeyEvent, searchQuery: String): String? {
     if (ev.type != KeyEventType.KeyDown) return null
@@ -5280,6 +5572,9 @@ private fun Dock(
     onShortcut: () -> Unit,
     onHome: () -> Unit,
     onCamera: () -> Unit,
+    onLongPressMail: (() -> Unit)? = null,
+    onLongPressShortcut: (() -> Unit)? = null,
+    onLongPressCamera: (() -> Unit)? = null,
     onScrubPage: (Int) -> Unit,
     drawerPageCount: Int,
     mailHasUnread: Boolean,
@@ -5360,6 +5655,7 @@ private fun Dock(
                 DockPng(
                     resId = R.drawable.ic_dock_mail,
                     onClick = onMail,
+                    onLongPress = onLongPressMail,
                     hasUnread = mailHasUnread,
                     buttonSize = 68.dp,
                     iconSize = 48.dp,
@@ -5373,6 +5669,7 @@ private fun Dock(
                     fallbackIcon = Icons.Rounded.MailOutline,
                     appIconShape = appIconShape,
                     onClick = onMail,
+                    onLongPress = onLongPressMail,
                     hasUnread = mailHasUnread,
                     buttonSize = 68.dp,
                     iconSize = 52.dp,
@@ -5463,6 +5760,7 @@ private fun Dock(
                     fallbackScale = if (secondDockFallbackResId == R.drawable.ic_dock_whatsapp) 0.76f else 0.84f,
                     appIconShape = appIconShape,
                     onClick = onShortcut,
+                    onLongPress = onLongPressShortcut,
                     hasUnread = shortcutHasUnread,
                     buttonSize = 56.dp,
                     iconSize = navIconSize,
@@ -5482,6 +5780,7 @@ private fun Dock(
                 fallbackScale = 0.84f,
                 appIconShape = appIconShape,
                 onClick = onCamera,
+                onLongPress = onLongPressCamera,
                 buttonSize = 68.dp,
                 iconSize = 52.dp,
                 selected = focused && focusedIndex == cameraFocusIdx,
@@ -5575,6 +5874,7 @@ private fun DockIcon(
 private fun DockPng(
     resId: Int,
     onClick: () -> Unit,
+    onLongPress: (() -> Unit)? = null,
     hasUnread: Boolean = false,
     buttonSize: androidx.compose.ui.unit.Dp = 62.dp,
     iconSize: androidx.compose.ui.unit.Dp = 44.dp,
@@ -5583,13 +5883,14 @@ private fun DockPng(
     selectedTint: Color = Color(0x664FC3F7),
     iconTint: Color = Color(0xFFE6E6E6),
 ) {
-        TextButton(
-            onClick = onClick,
+    Box(
+        contentAlignment = Alignment.Center,
         modifier = modifier
-                .size(buttonSize)
-                .clip(androidx.compose.foundation.shape.RoundedCornerShape(8.dp))
-                .background(if (selected) selectedTint else Color.Transparent)
-        ) {
+            .size(buttonSize)
+            .clip(androidx.compose.foundation.shape.RoundedCornerShape(8.dp))
+            .background(if (selected) selectedTint else Color.Transparent)
+            .combinedClickable(onClick = onClick, onLongClick = onLongPress),
+    ) {
         AppIconWithBadge(hasUnread = hasUnread) {
             Image(
                 painter = androidx.compose.ui.res.painterResource(resId),
@@ -5674,6 +5975,7 @@ private fun DockEndSlot(
     fallbackScale: Float = 0.84f,
     appIconShape: AppIconShape,
     onClick: () -> Unit,
+    onLongPress: (() -> Unit)? = null,
     buttonSize: androidx.compose.ui.unit.Dp = 62.dp,
     iconSize: androidx.compose.ui.unit.Dp = 44.dp,
     modifier: Modifier = Modifier,
@@ -5686,13 +5988,13 @@ private fun DockEndSlot(
     val resolvedIconModel = remember(iconModel, forceMonochrome, iconTint) {
         if (forceMonochrome) dockMonochromeModel(iconModel, iconTint) else iconModel
     }
-    TextButton(
-        onClick = onClick,
-        contentPadding = PaddingValues(0.dp),
+    Box(
+        contentAlignment = Alignment.Center,
         modifier = modifier
             .size(buttonSize)
             .clip(androidx.compose.foundation.shape.RoundedCornerShape(8.dp))
-            .background(if (selected) selectedTint else Color.Transparent),
+            .background(if (selected) selectedTint else Color.Transparent)
+            .combinedClickable(onClick = onClick, onLongClick = onLongPress),
     ) {
         AppIconWithBadge(hasUnread = hasUnread) {
             if (resolvedIconModel != null) {
@@ -5734,6 +6036,8 @@ private fun DockShortcutPickerOverlay(
     onSelect: (String) -> Unit,
     onUseDefault: () -> Unit,
     onDismiss: () -> Unit,
+    dockSecondEnabled: Boolean = true,
+    onToggleDockSecond: () -> Unit = {},
 ) {
     var query by remember { mutableStateOf("") }
     var name by remember(slot, currentName) { mutableStateOf(currentName) }
@@ -5782,6 +6086,28 @@ private fun DockShortcutPickerOverlay(
                     ),
                 )
             }
+            // Toggle enable/disable — only for the second shortcut slot
+            if (slot == DockSlot.Shortcut) {
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .clickable { onToggleDockSecond() }
+                        .padding(horizontal = 20.dp, vertical = 12.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    Text(
+                        text = "Show in dock",
+                        color = themePalette.settingsMenuTitle,
+                        fontSize = 15.sp,
+                        modifier = Modifier.weight(1f),
+                    )
+                    Switch(
+                        checked = dockSecondEnabled,
+                        onCheckedChange = { onToggleDockSecond() },
+                    )
+                }
+                HorizontalDivider(color = Color(0x22FFFFFF), thickness = 0.5.dp)
+            }
             TextButton(
                 onClick = onUseDefault,
                 modifier = Modifier.padding(horizontal = 16.dp),
@@ -5795,24 +6121,27 @@ private fun DockShortcutPickerOverlay(
                     color = Color(0xFF84D5F6),
                 )
             }
-            OutlinedTextField(
-                value = name,
-                onValueChange = {
-                    name = it
-                    onNameChange(it)
-                },
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(horizontal = 16.dp, vertical = 8.dp),
-                placeholder = { Text("Shortcut label", color = themePalette.settingsMenuBody) },
-                singleLine = true,
-                colors = TextFieldDefaults.colors(
-                    focusedTextColor = themePalette.settingsMenuTitle,
-                    unfocusedTextColor = themePalette.settingsMenuTitle,
-                    focusedContainerColor = Color(0xFF1E2430),
-                    unfocusedContainerColor = Color(0xFF1E2430),
-                ),
-            )
+            // Label field — hidden for second shortcut (app label is used directly)
+            if (slot != DockSlot.Shortcut) {
+                OutlinedTextField(
+                    value = name,
+                    onValueChange = {
+                        name = it
+                        onNameChange(it)
+                    },
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(horizontal = 16.dp, vertical = 8.dp),
+                    placeholder = { Text("Shortcut label", color = themePalette.settingsMenuBody) },
+                    singleLine = true,
+                    colors = TextFieldDefaults.colors(
+                        focusedTextColor = themePalette.settingsMenuTitle,
+                        unfocusedTextColor = themePalette.settingsMenuTitle,
+                        focusedContainerColor = Color(0xFF1E2430),
+                        unfocusedContainerColor = Color(0xFF1E2430),
+                    ),
+                )
+            }
             OutlinedTextField(
                 value = query,
                 onValueChange = { query = it },
@@ -7021,81 +7350,15 @@ private fun SettingsScreenOverlay(
                 Spacer(Modifier.height(8.dp))
                 Column(Modifier.bringIntoViewRequester(rowBringers[8])) {
                     SettingsCategoryCard(cardBg = cardBg, cardShape = cardShape, selected = selectedIndex == 8) {
-                        // Toggle row — enable / disable the second dock shortcut
-                        Row(
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .clickable { onToggleDockSecond() }
-                                .padding(horizontal = 16.dp, vertical = 14.dp),
-                            verticalAlignment = Alignment.CenterVertically,
-                        ) {
-                            Icon(
-                                imageVector = Icons.Rounded.TouchApp,
-                                contentDescription = null,
-                                tint = if (selectedIndex == 8) Color(0xFF84D5F6) else Color(0xFF7A8290),
-                                modifier = Modifier.size(26.dp),
-                            )
-                            Spacer(Modifier.width(16.dp))
-                            Column(modifier = Modifier.weight(1f)) {
-                                Text(
-                                    text = dockSecondTitle,
-                                    style = MaterialTheme.typography.bodyLarge.copy(
-                                        color = if (selectedIndex == 8) themePalette.settingsMenuTitleSelected else themePalette.settingsMenuTitle,
-                                        fontWeight = FontWeight.Medium,
-                                        fontSize = 16.sp,
-                                        lineHeight = 20.sp,
-                                    ),
-                                )
-                                Spacer(Modifier.height(2.dp))
-                                Text(
-                                    text = if (!dockSecondEnabled) "Hidden from dock" else dockSecondBody + if (classicMode) " · hidden in Classic mode" else "",
-                                    style = MaterialTheme.typography.bodySmall.copy(
-                                        color = if (selectedIndex == 8) themePalette.settingsMenuBodySelected else subtitleColor,
-                                        fontSize = 13.sp,
-                                        lineHeight = 16.sp,
-                                    ),
-                                    maxLines = 2,
-                                    overflow = TextOverflow.Ellipsis,
-                                )
-                            }
-                            Switch(
-                                checked = dockSecondEnabled,
-                                onCheckedChange = { onToggleDockSecond() },
-                            )
-                        }
-                        // Select-app sub-row — only visible when the shortcut is enabled
-                        AnimatedVisibility(
-                            visible = dockSecondEnabled,
-                            enter = expandVertically() + fadeIn(),
-                            exit = shrinkVertically() + fadeOut(),
-                        ) {
-                            Column {
-                                HorizontalDivider(color = Color(0xFF2A3040), thickness = 0.5.dp)
-                                Row(
-                                    modifier = Modifier
-                                        .fillMaxWidth()
-                                        .clickable { activate(8) }
-                                        .padding(horizontal = 16.dp, vertical = 12.dp),
-                                    verticalAlignment = Alignment.CenterVertically,
-                                ) {
-                                    Spacer(Modifier.width(42.dp))
-                                    Text(
-                                        text = "Select app",
-                                        style = MaterialTheme.typography.bodyMedium.copy(
-                                            color = Color(0xFF84D5F6),
-                                            fontSize = 14.sp,
-                                        ),
-                                        modifier = Modifier.weight(1f),
-                                    )
-                                    Icon(
-                                        imageVector = Icons.AutoMirrored.Rounded.ArrowForward,
-                                        contentDescription = null,
-                                        tint = Color(0xFF84D5F6),
-                                        modifier = Modifier.size(20.dp),
-                                    )
-                                }
-                            }
-                        }
+                        SettingsRow(
+                            icon = Icons.Rounded.TouchApp,
+                            title = dockSecondTitle,
+                            subtitle = if (!dockSecondEnabled) "Hidden from dock" else dockSecondBody + if (classicMode) " · hidden in Classic mode" else "",
+                            selected = selectedIndex == 8,
+                            themePalette = themePalette,
+                            subtitleColor = subtitleColor,
+                            onClick = { selectedIndex = 8; activate(8) },
+                        )
                     }
                 }
                 Spacer(Modifier.height(8.dp))
@@ -7297,6 +7560,241 @@ private fun SettingsRow(
         if (trailingContent != null) {
             Spacer(Modifier.width(8.dp))
             trailingContent()
+        }
+    }
+}
+
+@Composable
+private fun AppSpotlightOverlay(
+    allApps: List<AppEntry>,
+    hiddenPackages: Set<String>,
+    themePalette: LauncherThemePalette,
+    initialQuery: String = "",
+    onLaunchApp: (AppEntry) -> Unit,
+    onDismiss: () -> Unit,
+) {
+    var query by remember { mutableStateOf(initialQuery) }
+    var focusIndex by remember { mutableIntStateOf(-1) }
+
+    val baseApps = remember(allApps, hiddenPackages) {
+        allApps.filter { it.packageName !in hiddenPackages }
+    }
+    val visibleApps = remember(baseApps, query) {
+        if (query.isEmpty()) baseApps
+        else baseApps.filter { it.label.contains(query, ignoreCase = true) }
+    }
+
+    // Alphabet index: letter → first index in baseApps (only used when not searching)
+    val letterIndex: Map<Char, Int> = remember(baseApps) {
+        val map = linkedMapOf<Char, Int>()
+        baseApps.forEachIndexed { idx, app ->
+            val ch = app.label.firstOrNull()?.uppercaseChar() ?: return@forEachIndexed
+            if (!map.containsKey(ch)) map[ch] = idx
+        }
+        map
+    }
+    val presentLetters = remember(letterIndex) { letterIndex.keys.toList() }
+
+    val listState = rememberLazyListState()
+    val scope = rememberCoroutineScope()
+
+    // Entrance animation — fade + slide down from slightly above
+    var visible by remember { mutableStateOf(false) }
+    LaunchedEffect(Unit) { visible = true }
+    val animAlpha by animateFloatAsState(
+        targetValue = if (visible) 1f else 0f,
+        animationSpec = tween(durationMillis = 200),
+        label = "spotlightFade",
+    )
+    val animOffsetY by animateFloatAsState(
+        targetValue = if (visible) 0f else -40f,
+        animationSpec = tween(durationMillis = 220, easing = FastOutSlowInEasing),
+        label = "spotlightSlide",
+    )
+
+    LaunchedEffect(focusIndex, visibleApps.size) {
+        if (focusIndex in visibleApps.indices) listState.animateScrollToItem(focusIndex)
+    }
+    LaunchedEffect(query) { focusIndex = -1 }
+
+    BackHandler(onBack = onDismiss)
+
+    Box(
+        modifier = Modifier
+            .fillMaxSize()
+            .zIndex(500f)
+            // Subtle dark scrim — wallpaper still shows but text is readable
+            .background(Color(0x33000000))
+            .graphicsLayer { alpha = animAlpha; translationY = animOffsetY }
+            .onPreviewKeyEvent { ev ->
+                if (ev.type != KeyEventType.KeyDown) return@onPreviewKeyEvent false
+                when (ev.key) {
+                    Key.DirectionDown -> {
+                        focusIndex = (focusIndex + 1).coerceAtMost(visibleApps.lastIndex)
+                        true
+                    }
+                    Key.DirectionUp -> {
+                        focusIndex = (focusIndex - 1).coerceAtLeast(0)
+                        true
+                    }
+                    Key.Enter, Key.NumPadEnter -> {
+                        if (focusIndex in visibleApps.indices) {
+                            onLaunchApp(visibleApps[focusIndex]); true
+                        } else false
+                    }
+                    Key.Escape, Key.Back -> { onDismiss(); true }
+                    Key.Backspace -> {
+                        if (query.isNotEmpty()) { query = query.dropLast(1); true } else false
+                    }
+                    else -> {
+                        val ch = keyToTypedChar(ev.key)
+                        if (ch != null) { query += ch; true } else false
+                    }
+                }
+            },
+    ) {
+        // Swipe-down to dismiss
+        val swipeDismissModifier = Modifier.pointerInput(Unit) {
+            detectDragGestures(
+                onDragEnd = {},
+                onDrag = { _, dragAmount ->
+                    if (dragAmount.y > 40f) onDismiss()
+                },
+            )
+        }
+
+        Column(
+            modifier = Modifier
+                .fillMaxSize()
+                .statusBarsPadding()
+                .navigationBarsPadding()
+                .then(swipeDismissModifier),
+        ) {
+            Spacer(Modifier.height(16.dp))
+
+            // Centered pill search bar
+            Box(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(horizontal = 24.dp),
+                contentAlignment = Alignment.Center,
+            ) {
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .background(Color(0x99000000), RoundedCornerShape(50))
+                        .padding(horizontal = 16.dp, vertical = 10.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    Icon(
+                        Icons.Outlined.Search,
+                        contentDescription = null,
+                        tint = Color(0xAAFFFFFF),
+                        modifier = Modifier.size(18.dp),
+                    )
+                    Spacer(Modifier.width(10.dp))
+                    if (query.isEmpty()) {
+                        Text(
+                            "Search apps…",
+                            color = Color(0x88FFFFFF),
+                            fontSize = 15.sp,
+                            modifier = Modifier.weight(1f),
+                        )
+                    } else {
+                        Text(
+                            query,
+                            color = Color.White,
+                            fontSize = 15.sp,
+                            modifier = Modifier.weight(1f),
+                        )
+                        Spacer(Modifier.width(8.dp))
+                        Icon(
+                            Icons.Outlined.Close,
+                            contentDescription = "Clear",
+                            tint = Color(0xAAFFFFFF),
+                            modifier = Modifier
+                                .size(16.dp)
+                                .clickable { query = "" },
+                        )
+                    }
+                }
+            }
+
+            Spacer(Modifier.height(12.dp))
+
+            // App list + alphabet sidebar
+            Row(modifier = Modifier.fillMaxSize()) {
+                LazyColumn(
+                    state = listState,
+                    modifier = Modifier.weight(1f).fillMaxHeight(),
+                    contentPadding = PaddingValues(bottom = 24.dp),
+                ) {
+                    items(
+                        items = visibleApps,
+                        key = { app: AppEntry -> app.packageName },
+                    ) { app: AppEntry ->
+                        val idx = visibleApps.indexOf(app)
+                        val isFocused = idx == focusIndex
+                        Row(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .background(
+                                    if (isFocused) Color(0x44FFFFFF)
+                                    else Color.Transparent,
+                                    RoundedCornerShape(12.dp),
+                                )
+                                .clickable { onLaunchApp(app) }
+                                .padding(horizontal = 20.dp, vertical = 9.dp),
+                            verticalAlignment = Alignment.CenterVertically,
+                        ) {
+                            AsyncImage(
+                                model = app.icon,
+                                contentDescription = app.label,
+                                contentScale = ContentScale.Fit,
+                                modifier = Modifier.size(44.dp),
+                            )
+                            Spacer(Modifier.width(14.dp))
+                            Text(
+                                text = app.label,
+                                color = Color.White,
+                                fontSize = 15.sp,
+                                fontWeight = if (isFocused) FontWeight.SemiBold else FontWeight.Normal,
+                                maxLines = 1,
+                                overflow = TextOverflow.Ellipsis,
+                            )
+                        }
+                    }
+                }
+
+                // Right alphabet sidebar — hidden while searching
+                if (query.isEmpty() && presentLetters.isNotEmpty()) {
+                    Column(
+                        modifier = Modifier
+                            .width(22.dp)
+                            .fillMaxHeight()
+                            .padding(vertical = 8.dp),
+                        verticalArrangement = Arrangement.Center,
+                        horizontalAlignment = Alignment.CenterHorizontally,
+                    ) {
+                        presentLetters.forEach { letter ->
+                            Text(
+                                text = letter.toString(),
+                                color = Color(0xCCFFFFFF),
+                                fontSize = 10.sp,
+                                fontWeight = FontWeight.Medium,
+                                textAlign = TextAlign.Center,
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .clickable {
+                                        val targetIdx = letterIndex[letter] ?: return@clickable
+                                        scope.launch { listState.animateScrollToItem(targetIdx) }
+                                    }
+                                    .padding(vertical = 1.5.dp),
+                            )
+                        }
+                    }
+                }
+            }
         }
     }
 }

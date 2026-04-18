@@ -961,6 +961,10 @@ class LauncherViewModel(app: Application) : AndroidViewModel(app) {
         viewModelScope.launch { prefsRepo.setShowAppCardBackground(enabled) }
     }
 
+    fun setSwipeDownAppSpotlight(enabled: Boolean) {
+        viewModelScope.launch { prefsRepo.setSwipeDownAppSpotlight(enabled) }
+    }
+
     fun exportBackupJson(): String = LauncherBackup.toJson(prefs.value)
 
     fun importBackupJson(json: String): Boolean {
