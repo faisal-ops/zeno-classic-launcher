@@ -16,6 +16,9 @@ import org.json.JSONObject
 
 private val Context.dataStore by preferencesDataStore(name = "launcher_prefs")
 
+/** Total fixed slots in the home strip. Each position can hold a shortcut, group, or be empty. */
+const val STRIP_TOTAL_SLOTS = 5
+
 enum class GridPreset(val rows: Int, val cols: Int) {
     R3C5(3, 5),
     R3C4(3, 4),
@@ -105,6 +108,18 @@ data class LauncherPrefs(
     val glanceWeatherManualLongitude: String = "",
     /** At most two home groups (left / right of centre shortcuts). */
     val homeGroups: List<HomeGroup> = emptyList(),
+    /**
+     * Ordered list of home-strip tokens. Each entry is either a shortcut package token
+     * (plain package name or `pkg#shortcutId`) or a HomeGroup id.
+     * Empty = derived automatically from [homeGroups] + [homeShortcutPackages] (migration / first use).
+     */
+    val homeStripOrder: List<String> = emptyList(),
+    /**
+     * Fixed-position slot assignments for the home strip.
+     * Exactly [STRIP_TOTAL_SLOTS] entries; null = empty slot.
+     * Empty = not yet saved, derived via [effectiveHomeStripSlotOrder].
+     */
+    val homeStripSlots: List<String?> = emptyList(),
     /** Double-tap home workspace to lock (lock helper accessibility and/or device admin). Default on. */
     val doubleTapToSleepEnabled: Boolean = true,
     /** Package to launch on swipe-up gesture on home. Empty = disabled. */
@@ -119,6 +134,8 @@ data class LauncherPrefs(
     val showShortcutApps: Boolean = true,
     /** Whether home groups are visible on the home strip. */
     val showHomeGroups: Boolean = true,
+    /** Master on/off for the entire home strip (shortcuts + groups). */
+    val homeStripEnabled: Boolean = true,
     /** Swipe-down custom quick settings overlay on home page. */
     val customQuickSettingsEnabled: Boolean = false,
     /**
@@ -174,6 +191,8 @@ class LauncherPrefsRepository(private val context: Context) {
         val GLANCE_WEATHER_MANUAL_LAT = stringPreferencesKey("glanceWeatherManualLatitude")
         val GLANCE_WEATHER_MANUAL_LON = stringPreferencesKey("glanceWeatherManualLongitude")
         val HOME_GROUPS = stringPreferencesKey("homeGroupsJson")
+        val HOME_STRIP_ORDER = stringPreferencesKey("homeStripOrderCsv")
+    val HOME_STRIP_SLOTS = stringPreferencesKey("homeStripSlotsCsv")
         val DOUBLE_TAP_SLEEP = booleanPreferencesKey("doubleTapToSleepEnabled")
         val SWIPE_UP_PKG = stringPreferencesKey("swipeUpPackage")
         val DOUBLE_TAP_PKG = stringPreferencesKey("doubleTapPackage")
@@ -181,6 +200,7 @@ class LauncherPrefsRepository(private val context: Context) {
         val SHOW_ICON_NOTIF_BADGE = booleanPreferencesKey("showIconNotifBadge")
         val SHOW_SHORTCUT_APPS = booleanPreferencesKey("showShortcutApps")
         val SHOW_HOME_GROUPS = booleanPreferencesKey("showHomeGroups")
+        val HOME_STRIP_ENABLED = booleanPreferencesKey("homeStripEnabled")
         val CUSTOM_QS_ENABLED = booleanPreferencesKey("customQuickSettingsEnabled")
         val CLASSIC_MODE = booleanPreferencesKey("classicMode")
         /** Legacy key from earlier builds; read only for migration. */
@@ -233,6 +253,8 @@ class LauncherPrefsRepository(private val context: Context) {
         val glanceWeatherManualLat = p[Keys.GLANCE_WEATHER_MANUAL_LAT]?.trim() ?: ""
         val glanceWeatherManualLon = p[Keys.GLANCE_WEATHER_MANUAL_LON]?.trim() ?: ""
         val homeGroups = parseHomeGroupsJson(p[Keys.HOME_GROUPS]).normalizedAtMostTwo()
+        val homeStripOrder = parseCsvList(p[Keys.HOME_STRIP_ORDER])
+        val homeStripSlots = parseSlotCsvList(p[Keys.HOME_STRIP_SLOTS])
         val doubleTapSleep = p[Keys.DOUBLE_TAP_SLEEP] ?: DEFAULT_PREFS.doubleTapToSleepEnabled
         val swipeUpPkg = p[Keys.SWIPE_UP_PKG]?.trim() ?: ""
         val doubleTapPkg = p[Keys.DOUBLE_TAP_PKG]?.trim() ?: ""
@@ -240,6 +262,7 @@ class LauncherPrefsRepository(private val context: Context) {
         val showIconNotifBadge = p[Keys.SHOW_ICON_NOTIF_BADGE] ?: DEFAULT_PREFS.showIconNotifBadge
         val showShortcutApps = p[Keys.SHOW_SHORTCUT_APPS] ?: DEFAULT_PREFS.showShortcutApps
         val showHomeGroups = p[Keys.SHOW_HOME_GROUPS] ?: DEFAULT_PREFS.showHomeGroups
+        val homeStripEnabled = p[Keys.HOME_STRIP_ENABLED] ?: DEFAULT_PREFS.homeStripEnabled
         val customQuickSettingsEnabled = p[Keys.CUSTOM_QS_ENABLED] ?: DEFAULT_PREFS.customQuickSettingsEnabled
         val classicMode = p[Keys.CLASSIC_MODE] ?: p[Keys.CLASSIC_MODE_LEGACY] ?: DEFAULT_PREFS.classicMode
         val appIconShape =
@@ -279,6 +302,8 @@ class LauncherPrefsRepository(private val context: Context) {
             glanceWeatherManualLatitude = glanceWeatherManualLat,
             glanceWeatherManualLongitude = glanceWeatherManualLon,
             homeGroups = homeGroups,
+            homeStripOrder = homeStripOrder,
+            homeStripSlots = homeStripSlots,
             doubleTapToSleepEnabled = doubleTapSleep,
             swipeUpPackage = swipeUpPkg,
             doubleTapPackage = doubleTapPkg,
@@ -286,6 +311,7 @@ class LauncherPrefsRepository(private val context: Context) {
             showIconNotifBadge = showIconNotifBadge,
             showShortcutApps = showShortcutApps,
             showHomeGroups = showHomeGroups,
+            homeStripEnabled = homeStripEnabled,
             customQuickSettingsEnabled = customQuickSettingsEnabled,
             classicMode = classicMode,
             appIconShape = appIconShape,
@@ -336,6 +362,17 @@ class LauncherPrefsRepository(private val context: Context) {
 
     suspend fun setDockIconStyle(style: DockIconStyle) {
         context.dataStore.edit { it[Keys.DOCK_ICON_STYLE] = style.name }
+    }
+
+    suspend fun setHomeStripOrder(order: List<String>) {
+        context.dataStore.edit { it[Keys.HOME_STRIP_ORDER] = order.joinToString(",") }
+    }
+
+    /** Saves the fixed-slot assignment. Null entries are stored as empty CSV fields. */
+    suspend fun setHomeStripSlots(slots: List<String?>) {
+        context.dataStore.edit { p ->
+            p[Keys.HOME_STRIP_SLOTS] = slots.joinToString(",") { it ?: "" }
+        }
     }
 
     suspend fun setHomeShortcutPackages(packages: List<String>) {
@@ -495,6 +532,10 @@ class LauncherPrefsRepository(private val context: Context) {
         context.dataStore.edit { it[Keys.SHOW_HOME_GROUPS] = enabled }
     }
 
+    suspend fun setHomeStripEnabled(enabled: Boolean) {
+        context.dataStore.edit { it[Keys.HOME_STRIP_ENABLED] = enabled }
+    }
+
     suspend fun setCustomQuickSettingsEnabled(enabled: Boolean) {
         context.dataStore.edit { it[Keys.CUSTOM_QS_ENABLED] = enabled }
     }
@@ -551,6 +592,7 @@ class LauncherPrefsRepository(private val context: Context) {
             s[Keys.GLANCE_WEATHER_MANUAL_LAT] = prefs.glanceWeatherManualLatitude.trim()
             s[Keys.GLANCE_WEATHER_MANUAL_LON] = prefs.glanceWeatherManualLongitude.trim()
             s[Keys.HOME_GROUPS] = homeGroupsToJson(prefs.homeGroups)
+            s[Keys.HOME_STRIP_ORDER] = prefs.homeStripOrder.joinToString(",")
             s[Keys.DOUBLE_TAP_SLEEP] = prefs.doubleTapToSleepEnabled
             s[Keys.SWIPE_UP_PKG] = prefs.swipeUpPackage
             s[Keys.DOUBLE_TAP_PKG] = prefs.doubleTapPackage
@@ -558,12 +600,78 @@ class LauncherPrefsRepository(private val context: Context) {
             s[Keys.SHOW_ICON_NOTIF_BADGE] = prefs.showIconNotifBadge
             s[Keys.SHOW_SHORTCUT_APPS] = prefs.showShortcutApps
             s[Keys.SHOW_HOME_GROUPS] = prefs.showHomeGroups
+            s[Keys.HOME_STRIP_ENABLED] = prefs.homeStripEnabled
             s[Keys.CUSTOM_QS_ENABLED] = prefs.customQuickSettingsEnabled
             s[Keys.CLASSIC_MODE] = prefs.classicMode
             s.remove(Keys.CLASSIC_MODE_LEGACY)
             s[Keys.APP_ICON_SHAPE] = prefs.appIconShape.name
         }
     }
+}
+
+/**
+ * Canonical ordered list of home-strip tokens for display.
+ *
+ * If [LauncherPrefs.homeStripOrder] is populated it is used as the source of truth, with orphan
+ * tokens (deleted shortcuts / groups) filtered out and any newly-added items appended at the end.
+ * If it is empty (first launch / migration) the order is derived from the legacy side-based layout:
+ * LEFT group → shortcuts → RIGHT group.
+ */
+fun LauncherPrefs.effectiveHomeStripOrder(): List<String> {
+    val allShortcuts = homeShortcutPackages
+    val allGroupIds = homeGroups.map { it.id }
+    val allValid = (allShortcuts + allGroupIds).toSet()
+
+    if (homeStripOrder.isNotEmpty()) {
+        val ordered = homeStripOrder.filter { it in allValid }
+        val missing = allValid - ordered.toSet()
+        // Preserve insertion order for 'missing' by using original list ordering
+        val orderedMissing = (allShortcuts + allGroupIds).filter { it in missing }
+        return ordered + orderedMissing
+    }
+    // No saved order yet — derive from creation order, groups first then shortcuts.
+    // No left/right side pinning; everything is freely rearrangeable.
+    return buildList {
+        addAll(allGroupIds)
+        addAll(allShortcuts)
+    }
+}
+
+/** Parse a slot CSV where empty fields (between commas) represent null/empty slots. */
+private fun parseSlotCsvList(raw: String?): List<String?> {
+    if (raw == null) return emptyList()
+    // Split on comma; empty segment → null (empty slot), non-empty → token
+    return raw.split(",").map { it.trim().ifEmpty { null } }
+}
+
+/**
+ * Returns exactly [STRIP_TOTAL_SLOTS] slot assignments.
+ * Each entry is a token (shortcut or group id) or null (empty slot).
+ * Uses [LauncherPrefs.homeStripSlots] if saved, otherwise derives from existing items.
+ */
+fun LauncherPrefs.effectiveHomeStripSlotOrder(): List<String?> {
+    val allShortcuts = homeShortcutPackages
+    val allGroupIds = homeGroups.map { it.id }
+    val allValid = (allShortcuts + allGroupIds).toSet()
+
+    if (homeStripSlots.isNotEmpty()) {
+        // Map stored slots: keep valid tokens, turn invalid/orphan into null
+        val filtered = homeStripSlots.map { t -> if (t != null && t in allValid) t else null }
+        // Tokens not yet in any slot (newly added items)
+        val assigned = filtered.filterNotNull().toSet()
+        val unassigned = (allGroupIds + allShortcuts).filter { it !in assigned }.toMutableList()
+        // Build result of exactly STRIP_TOTAL_SLOTS, filling empty slots with unassigned items
+        val result = MutableList<String?>(STRIP_TOTAL_SLOTS) { i -> filtered.getOrNull(i) }
+        for (i in result.indices) {
+            if (result[i] == null && unassigned.isNotEmpty()) {
+                result[i] = unassigned.removeFirst()
+            }
+        }
+        return result
+    }
+    // First launch / no slots saved — place items in order, rest null
+    val items = (allGroupIds + allShortcuts).take(STRIP_TOTAL_SLOTS)
+    return List(STRIP_TOTAL_SLOTS) { i -> items.getOrNull(i) }
 }
 
 private fun parseCsvList(raw: String?): List<String> {

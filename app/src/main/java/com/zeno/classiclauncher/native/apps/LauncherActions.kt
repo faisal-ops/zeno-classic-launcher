@@ -104,6 +104,8 @@ class LauncherActions(private val context: Context) {
     }
 
     fun launchMail(): Boolean {
+        // Prefer Zeno Hub when installed — it provides the unified inbox experience.
+        if (launchApp("com.zeno.hub")) return true
         val intent = Intent(Intent.ACTION_SENDTO, Uri.parse("mailto:"))
         val resolved = pm.resolveActivity(intent, PackageManager.MATCH_DEFAULT_ONLY) ?: return false
         return launchApp(resolved.activityInfo.packageName)
