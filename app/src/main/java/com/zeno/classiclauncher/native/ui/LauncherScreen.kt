@@ -263,6 +263,7 @@ import com.zeno.classiclauncher.nlauncher.prefs.HomeGroupSide
 import com.zeno.classiclauncher.nlauncher.prefs.STRIP_TOTAL_SLOTS
 import com.zeno.classiclauncher.nlauncher.prefs.canAddHomeStripItem
 import com.zeno.classiclauncher.nlauncher.prefs.effectiveHomeStripSlotOrder
+import com.zeno.classiclauncher.nlauncher.prefs.moveHomeStripSlot
 import com.zeno.classiclauncher.nlauncher.prefs.LauncherPrefs
 import com.zeno.classiclauncher.nlauncher.prefs.AppIconShape
 import com.zeno.classiclauncher.nlauncher.prefs.DockIconStyle
@@ -6092,6 +6093,7 @@ private fun HomeShortcutStrip(
     val baseSlotTokens = remember(stripSlotTokens) {
         List(STRIP_TOTAL_SLOTS) { i -> stripSlotTokens.getOrNull(i) }
     }
+    var reorderStripDragOffset by remember { mutableStateOf(Offset.Zero) }
 
     val cellLayouts = remember { mutableMapOf<String, LayoutCoordinates>() }
     val originalStripBoundsRef = remember { mutableListOf(emptyMap<String, Rect>()) }
@@ -6118,13 +6120,16 @@ private fun HomeShortcutStrip(
         if (moving == null || hovered == null) baseSlotTokens
         else {
             val fromI = baseSlotTokens.indexOfFirst { it == moving }
-            val toI = baseSlotTokens.indexOfFirst { it == hovered }
+            val toI = when {
+                hovered.startsWith("strip_empty_") -> {
+                    hovered.removePrefix("strip_empty_").toIntOrNull()?.minus(1) ?: -1
+                }
+                else -> baseSlotTokens.indexOfFirst { it == hovered }
+            }
             if (fromI < 0 || toI < 0 || fromI == toI) baseSlotTokens
             else {
                 val m = baseSlotTokens.toMutableList()
-                val tmp = m[fromI]
-                m[fromI] = m[toI]
-                m[toI] = tmp
+                m.moveHomeStripSlot(fromI, toI)
                 m
             }
         }
@@ -6153,11 +6158,6 @@ private fun HomeShortcutStrip(
         label = "homeStripWiggleStr",
     )
 
-    fun resolveDropTarget(hoverKey: String?): String? {
-        if (hoverKey == null || hoverKey.startsWith("strip_empty_")) return null
-        return hoverKey
-    }
-
     fun Modifier.stripDragGesture(slotId: String): Modifier = this.pointerInput(slotId, reorderMode) {
         fun attachedBoundsSnapshot(): Map<String, Rect> =
             cellLayouts.entries
@@ -6178,6 +6178,7 @@ private fun HomeShortcutStrip(
                 onClearStripKeyboardFocus()
                 if (!reorderMode) onEnterReorderMode()
                 doNavFeedback(view, hapticsEnabled, hapticIntensity)
+                reorderStripDragOffset = Offset.Zero
                 onStartStripMove(slotId)
                 hoveredSlotKey = null
                 reorderFingerDragging = true
@@ -6193,6 +6194,7 @@ private fun HomeShortcutStrip(
                 }
             },
             onDrag = { change, dragAmount ->
+                reorderStripDragOffset += dragAmount
                 change.consume()
                 val src = cellLayouts[slotId]
                 dragFingerRoot = if (src != null && src.isAttached) {
@@ -6230,7 +6232,7 @@ private fun HomeShortcutStrip(
                                 androidx.compose.animation.core.animate(
                                     0f,
                                     1f,
-                                    animationSpec = tween(120, easing = FastOutSlowInEasing),
+                                    animationSpec = tween(130, easing = FastOutSlowInEasing),
                                 ) { p, _ ->
                                     dragFingerRoot = Offset(
                                         startPos.x + (targetCenter.x - startPos.x) * p,
@@ -6238,14 +6240,15 @@ private fun HomeShortcutStrip(
                                     )
                                 }
                             }
-                            launch { ghostScaleAnim.animateTo(0f, tween(120, easing = FastOutSlowInEasing)) }
+                            launch { ghostScaleAnim.animateTo(0f, tween(130, easing = FastOutSlowInEasing)) }
                         }
                     } else {
                         ghostScaleAnim.animateTo(0f, tween(80, easing = FastOutSlowInEasing))
                     }
-                    onFinishReorderDrop(resolveDropTarget(hoverKey))
+                    onFinishReorderDrop(hoverKey)
                     ghostScaleAnim.snapTo(1f)
                     ghostVisible = false
+                    reorderStripDragOffset = Offset.Zero
                 }
             },
             onDragCancel = {
@@ -6253,6 +6256,7 @@ private fun HomeShortcutStrip(
                 hoveredSlotKey = null
                 pendingDropMoving = null
                 pendingDropTarget = null
+                reorderStripDragOffset = Offset.Zero
                 scope.launch { ghostScaleAnim.snapTo(1f) }
                 ghostVisible = false
                 onClearMove()
@@ -6330,6 +6334,7 @@ private fun HomeShortcutStrip(
                         ?.let { tid -> homeGroups.find { g -> g.id == tid } }
                     if (visibleTok != null && group != null) {
                         val stripToken = group.id
+                        val isMovingThisGroup = ghostVisible && movingSlotId == stripToken
                         val members =
                             group.packageNames.mapNotNull { pkg -> allApps.find { it.packageName == pkg } }
                         val reorderDragModifier = Modifier.stripDragGesture(stripToken)
@@ -6338,7 +6343,13 @@ private fun HomeShortcutStrip(
                             modifier = Modifier
                                 .weight(1f)
                                 .height(cardH)
-                                .graphicsLayer { rotationZ = wiggleRot * wiggleStr },
+                                .graphicsLayer {
+                                    rotationZ = wiggleRot * wiggleStr
+                                    if (isMovingThisGroup) {
+                                        translationX = reorderStripDragOffset.x
+                                        translationY = reorderStripDragOffset.y
+                                    }
+                                },
                         ) {
                             Column(
                                 horizontalAlignment = Alignment.CenterHorizontally,
@@ -6444,7 +6455,7 @@ private fun HomeShortcutStrip(
                                             themePalette = themePalette,
                                             reorderDragModifier = reorderDragModifier,
                                             isFingerDraggingThisTile = isMovingThis,
-                                            reorderDragOffset = Offset.Zero,
+                                            reorderDragOffset = if (isMovingThis) reorderStripDragOffset else Offset.Zero,
                                             hideSourceWhileFingerDragging = isMovingThis,
                                             usageTimeMs = 0L,
                                             hasNotifBadge = app.packageName in unreadPackages,
@@ -6482,7 +6493,7 @@ private fun HomeShortcutStrip(
                                             themePalette = themePalette,
                                             reorderDragModifier = reorderDragModifier,
                                             isFingerDraggingThisTile = isMovingThis,
-                                            reorderDragOffset = Offset.Zero,
+                                            reorderDragOffset = if (isMovingThis) reorderStripDragOffset else Offset.Zero,
                                             hideSourceWhileFingerDragging = isMovingThis,
                                             onGloballyPositioned = { coords -> cellLayouts[stripToken] = coords },
                                             onClick = {

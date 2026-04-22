@@ -19,6 +19,21 @@ private val Context.dataStore by preferencesDataStore(name = "launcher_prefs")
 /** Total fixed slots in the home strip. Each position can hold a shortcut, group, or be empty. */
 const val STRIP_TOTAL_SLOTS = 5
 
+/**
+ * Moves the entry at [fromIdx] to [toIdx], shifting other slots the same way as drawer grid reorder
+ * (insert path, fixed list length). [fromIdx] must currently hold a non-null token.
+ */
+fun MutableList<String?>.moveHomeStripSlot(fromIdx: Int, toIdx: Int) {
+    if (fromIdx !in indices || toIdx !in indices || fromIdx == toIdx) return
+    val item = this[fromIdx] ?: return
+    if (fromIdx < toIdx) {
+        for (i in fromIdx until toIdx) this[i] = this[i + 1]
+    } else {
+        for (i in fromIdx downTo toIdx + 1) this[i] = this[i - 1]
+    }
+    this[toIdx] = item
+}
+
 enum class GridPreset(val rows: Int, val cols: Int) {
     R3C5(3, 5),
     R3C4(3, 4),

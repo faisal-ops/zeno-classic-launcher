@@ -30,6 +30,7 @@ import com.zeno.classiclauncher.nlauncher.prefs.STRIP_TOTAL_SLOTS
 import com.zeno.classiclauncher.nlauncher.prefs.canAddHomeStripItem
 import com.zeno.classiclauncher.nlauncher.prefs.effectiveHomeStripOrder
 import com.zeno.classiclauncher.nlauncher.prefs.effectiveHomeStripSlotOrder
+import com.zeno.classiclauncher.nlauncher.prefs.moveHomeStripSlot
 import com.zeno.classiclauncher.nlauncher.prefs.MailBadgeCandidates
 import com.zeno.classiclauncher.nlauncher.prefs.SecondShortcutTarget
 import com.zeno.classiclauncher.nlauncher.prefs.DEFAULT_THEME_JSON
@@ -333,7 +334,7 @@ class LauncherViewModel(app: Application) : AndroidViewModel(app) {
 
     private fun finishHomeStripReorderDrop(targetKey: String?) {
         val moving = _movingPackage.value ?: return
-        if (targetKey == null || targetKey == moving || targetKey.startsWith("strip_empty_")) {
+        if (targetKey == null || targetKey == moving) {
             clearMove()
             return
         }
@@ -343,11 +344,16 @@ class LauncherViewModel(app: Application) : AndroidViewModel(app) {
                 val slots = snap.effectiveHomeStripSlotOrder().toMutableList()
                 if (slots.size != STRIP_TOTAL_SLOTS) return@withLock
                 val fromIdx = slots.indexOfFirst { it == moving }
-                val toIdx = slots.indexOfFirst { it == targetKey }
-                if (fromIdx < 0 || toIdx < 0 || fromIdx == toIdx) return@withLock
-                val tmp = slots[fromIdx]
-                slots[fromIdx] = slots[toIdx]
-                slots[toIdx] = tmp
+                if (fromIdx < 0) return@withLock
+                val toIdx = when {
+                    targetKey.startsWith("strip_empty_") -> {
+                        val n = targetKey.removePrefix("strip_empty_").toIntOrNull() ?: return@withLock
+                        (n - 1).coerceIn(0, STRIP_TOTAL_SLOTS - 1)
+                    }
+                    else -> slots.indexOfFirst { it == targetKey }
+                }
+                if (toIdx < 0 || fromIdx == toIdx) return@withLock
+                slots.moveHomeStripSlot(fromIdx, toIdx)
                 prefsRepo.setHomeStripSlots(slots)
                 prefsRepo.setHomeStripOrder(slots.filterNotNull())
             }
