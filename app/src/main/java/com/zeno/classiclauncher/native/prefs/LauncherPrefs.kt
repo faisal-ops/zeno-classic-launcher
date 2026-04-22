@@ -83,8 +83,8 @@ data class LauncherPrefs(
     val folderNames: Map<String, String> = emptyMap(),
     val hiddenPackages: Set<String> = emptySet(),
     /**
-     * Up to 3 entries shown between home groups on the home screen above the dock.
-     * Each string is either a launchable package name or `package#shortcutId` for a pinned dynamic shortcut.
+     * Home-strip shortcut tokens (package or `package#shortcutId`). Combined with [homeGroups],
+     * at most [STRIP_TOTAL_SLOTS] items can appear on the strip (see [canAddHomeStripItem]).
      */
     val homeShortcutPackages: List<String> = emptyList(),
     /** Haptic feedback when navigating with keyboard / trackpad (dock scroll, grid focus, settings list). */
@@ -106,7 +106,7 @@ data class LauncherPrefs(
     val glanceWeatherLocationMode: GlanceWeatherLocationMode = GlanceWeatherLocationMode.DEVICE,
     val glanceWeatherManualLatitude: String = "",
     val glanceWeatherManualLongitude: String = "",
-    /** At most two home groups (left / right of centre shortcuts). */
+    /** Named home-screen app groups; strip layout uses [homeStripSlots] / [effectiveHomeStripSlotOrder]. */
     val homeGroups: List<HomeGroup> = emptyList(),
     /**
      * Ordered list of home-strip tokens. Each entry is either a shortcut package token
@@ -231,7 +231,7 @@ class LauncherPrefsRepository(private val context: Context) {
         val folders = parseFolderContentsJson(p[Keys.FOLDERS])
         val folderNames = parseFolderNamesJson(p[Keys.FOLDER_NAMES])
         val hidden = parseCsvSet(p[Keys.HIDDEN])
-        val homeShortcuts = parseCsvList(p[Keys.HOME_SHORTCUTS]).take(3)
+        val homeShortcuts = parseCsvList(p[Keys.HOME_SHORTCUTS])
         val haptics = p[Keys.HAPTICS] ?: DEFAULT_PREFS.hapticsEnabled
         val hapticIntensity = (p[Keys.HAPTIC_INTENSITY] ?: DEFAULT_PREFS.hapticIntensity).coerceIn(1, 5)
         val notifBadges = p[Keys.NOTIFICATION_BADGES] ?: DEFAULT_PREFS.notificationBadgesEnabled
@@ -252,7 +252,7 @@ class LauncherPrefsRepository(private val context: Context) {
                 ?: DEFAULT_PREFS.glanceWeatherLocationMode
         val glanceWeatherManualLat = p[Keys.GLANCE_WEATHER_MANUAL_LAT]?.trim() ?: ""
         val glanceWeatherManualLon = p[Keys.GLANCE_WEATHER_MANUAL_LON]?.trim() ?: ""
-        val homeGroups = parseHomeGroupsJson(p[Keys.HOME_GROUPS]).normalizedAtMostTwo()
+        val homeGroups = parseHomeGroupsJson(p[Keys.HOME_GROUPS])
         val homeStripOrder = parseCsvList(p[Keys.HOME_STRIP_ORDER])
         val homeStripSlots = parseSlotCsvList(p[Keys.HOME_STRIP_SLOTS])
         val doubleTapSleep = p[Keys.DOUBLE_TAP_SLEEP] ?: DEFAULT_PREFS.doubleTapToSleepEnabled
@@ -376,7 +376,7 @@ class LauncherPrefsRepository(private val context: Context) {
     }
 
     suspend fun setHomeShortcutPackages(packages: List<String>) {
-        val trimmed = packages.map { it.trim() }.filter { it.isNotEmpty() }.distinct().take(3)
+        val trimmed = packages.map { it.trim() }.filter { it.isNotEmpty() }.distinct()
         context.dataStore.edit { it[Keys.HOME_SHORTCUTS] = trimmed.joinToString(",") }
     }
 
@@ -434,7 +434,7 @@ class LauncherPrefsRepository(private val context: Context) {
             s[Keys.ORDER] = orderedPackages.joinToString(",")
             s[Keys.FOLDERS] = folderContentsToJson(folderContents)
             s[Keys.FOLDER_NAMES] = folderNamesToJson(prunedNames)
-            s[Keys.HOME_GROUPS] = homeGroupsToJson(homeGroups.normalizedAtMostTwo())
+            s[Keys.HOME_GROUPS] = homeGroupsToJson(homeGroups)
         }
     }
 
@@ -500,7 +500,7 @@ class LauncherPrefsRepository(private val context: Context) {
 
     suspend fun setHomeGroups(groups: List<HomeGroup>) {
         context.dataStore.edit { s ->
-            s[Keys.HOME_GROUPS] = homeGroupsToJson(groups.normalizedAtMostTwo())
+            s[Keys.HOME_GROUPS] = homeGroupsToJson(groups)
         }
     }
 
@@ -576,7 +576,7 @@ class LauncherPrefsRepository(private val context: Context) {
             s[Keys.FOLDERS] = folderContentsToJson(prefs.folderContents)
             s[Keys.FOLDER_NAMES] = folderNamesToJson(prefs.folderNames.filterKeys { prefs.folderContents.containsKey(it) })
             s[Keys.HIDDEN] = prefs.hiddenPackages.joinToString(",")
-            s[Keys.HOME_SHORTCUTS] = prefs.homeShortcutPackages.take(3).joinToString(",")
+            s[Keys.HOME_SHORTCUTS] = prefs.homeShortcutPackages.joinToString(",")
             s[Keys.HAPTICS] = prefs.hapticsEnabled
             s[Keys.HAPTIC_INTENSITY] = prefs.hapticIntensity.coerceIn(1, 5)
             s[Keys.NOTIFICATION_BADGES] = prefs.notificationBadgesEnabled
@@ -673,6 +673,13 @@ fun LauncherPrefs.effectiveHomeStripSlotOrder(): List<String?> {
     val items = (allGroupIds + allShortcuts).take(STRIP_TOTAL_SLOTS)
     return List(STRIP_TOTAL_SLOTS) { i -> items.getOrNull(i) }
 }
+
+/** Count of strip tokens stored (groups + shortcut entries); strip UI fits at most [STRIP_TOTAL_SLOTS]. */
+fun LauncherPrefs.homeStripItemCount(): Int =
+    homeGroups.size + homeShortcutPackages.size
+
+fun LauncherPrefs.canAddHomeStripItem(): Boolean =
+    homeStripItemCount() < STRIP_TOTAL_SLOTS
 
 private fun parseCsvList(raw: String?): List<String> {
     if (raw.isNullOrBlank()) return emptyList()
@@ -785,7 +792,14 @@ private fun parseHomeGroupsJson(raw: String?): List<HomeGroup> {
                     for (j in 0 until pkgs.length()) add(pkgs.getString(j).trim())
                 }.filter { it.isNotEmpty() }.distinct()
                 val side = HomeGroupSide.fromStored(o.optString("side", "").trim())
-                add(HomeGroup(id = id, title = title, packageNames = names, side = side))
+                add(
+                    HomeGroup(
+                        id = id,
+                        title = title,
+                        packageNames = names,
+                        side = side,
+                    ),
+                )
             }
         }
     }.getOrDefault(emptyList())
@@ -793,7 +807,7 @@ private fun parseHomeGroupsJson(raw: String?): List<HomeGroup> {
 
 private fun homeGroupsToJson(groups: List<HomeGroup>): String {
     val arr = JSONArray()
-    groups.normalizedAtMostTwo().forEach { g ->
+    groups.forEach { g ->
         val o = JSONObject()
         o.put("id", g.id)
         o.put("title", g.title)

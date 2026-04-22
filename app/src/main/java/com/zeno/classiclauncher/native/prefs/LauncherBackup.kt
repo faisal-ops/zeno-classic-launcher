@@ -59,7 +59,7 @@ object LauncherBackup {
         p.put("glanceWeatherManualLatitude", prefs.glanceWeatherManualLatitude)
         p.put("glanceWeatherManualLongitude", prefs.glanceWeatherManualLongitude)
         val homeGroupsArr = JSONArray()
-        prefs.homeGroups.normalizedAtMostTwo().forEach { g ->
+        prefs.homeGroups.forEach { g ->
             val o = JSONObject()
             o.put("id", g.id)
             o.put("title", g.title)
@@ -144,7 +144,7 @@ object LauncherBackup {
         val homeShortcuts = if (homeShortcutArr != null) {
             buildList {
                 for (i in 0 until homeShortcutArr.length()) add(homeShortcutArr.getString(i).trim())
-            }.filter { it.isNotEmpty() }.distinct().take(3)
+            }.filter { it.isNotEmpty() }.distinct()
         } else {
             emptyList()
         }
@@ -199,9 +199,16 @@ object LauncherBackup {
                         for (j in 0 until pkgs.length()) add(pkgs.getString(j).trim())
                     }.filter { it.isNotEmpty() }.distinct()
                     val side = HomeGroupSide.fromStored(o.optString("side", "").trim())
-                    add(HomeGroup(id = id, title = title, packageNames = names, side = side))
+                    add(
+                        HomeGroup(
+                            id = id,
+                            title = title,
+                            packageNames = names,
+                            side = side,
+                        ),
+                    )
                 }
-            }.normalizedAtMostTwo()
+            }
         }
         LauncherThemePalette.fromJson(theme)
         LauncherPrefs(

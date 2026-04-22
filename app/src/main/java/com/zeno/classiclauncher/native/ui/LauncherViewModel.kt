@@ -26,9 +26,10 @@ import com.zeno.classiclauncher.nlauncher.prefs.AppIconShape
 import com.zeno.classiclauncher.nlauncher.prefs.DockIconStyle
 import com.zeno.classiclauncher.nlauncher.prefs.LauncherPrefs
 import com.zeno.classiclauncher.nlauncher.prefs.LauncherPrefsRepository
+import com.zeno.classiclauncher.nlauncher.prefs.STRIP_TOTAL_SLOTS
+import com.zeno.classiclauncher.nlauncher.prefs.canAddHomeStripItem
 import com.zeno.classiclauncher.nlauncher.prefs.effectiveHomeStripOrder
 import com.zeno.classiclauncher.nlauncher.prefs.effectiveHomeStripSlotOrder
-import com.zeno.classiclauncher.nlauncher.prefs.STRIP_TOTAL_SLOTS
 import com.zeno.classiclauncher.nlauncher.prefs.MailBadgeCandidates
 import com.zeno.classiclauncher.nlauncher.prefs.SecondShortcutTarget
 import com.zeno.classiclauncher.nlauncher.prefs.DEFAULT_THEME_JSON
@@ -87,9 +88,6 @@ class LauncherViewModel(app: Application) : AndroidViewModel(app) {
     val searchQuery: StateFlow<String> = _searchQuery.asStateFlow()
     private val _reorderMode = MutableStateFlow(false)
     private val _movingPackage = MutableStateFlow<String?>(null)
-    // Home-strip unified drag — separate from app-drawer reorder state.
-    private val _homeStripMovingToken = MutableStateFlow<String?>(null)
-    val homeStripMovingToken: StateFlow<String?> = _homeStripMovingToken.asStateFlow()
     private val _sortByUsage = MutableStateFlow(false)
     val sortByUsage: StateFlow<Boolean> = _sortByUsage.asStateFlow()
 
@@ -270,20 +268,37 @@ class LauncherViewModel(app: Application) : AndroidViewModel(app) {
     val isReorderMode: StateFlow<Boolean> = _reorderMode.asStateFlow()
     val moving: StateFlow<String?> = _movingPackage.asStateFlow()
 
+    private val _reorderFromHomeStrip = MutableStateFlow(false)
+
     fun toggleReorderMode() {
         _reorderMode.value = !_reorderMode.value
-        if (!_reorderMode.value) _movingPackage.value = null
+        if (!_reorderMode.value) {
+            _movingPackage.value = null
+            _reorderFromHomeStrip.value = false
+        }
     }
 
     fun startMove(packageName: String) {
         _movingPackage.value = packageName
+        _reorderFromHomeStrip.value = false
+    }
+
+    /** Drag/reorder gesture started from the home strip (slot tokens, not drawer grid). */
+    fun startStripMove(token: String) {
+        _movingPackage.value = token
+        _reorderFromHomeStrip.value = true
     }
 
     fun clearMove() {
         _movingPackage.value = null
+        _reorderFromHomeStrip.value = false
     }
 
     fun finishReorderDrop(targetPackage: String?) {
+        if (_reorderFromHomeStrip.value) {
+            finishHomeStripReorderDrop(targetPackage)
+            return
+        }
         val moving = _movingPackage.value ?: return
         if (targetPackage == null || targetPackage == moving) {
             clearMove()
@@ -316,7 +331,32 @@ class LauncherViewModel(app: Application) : AndroidViewModel(app) {
         }
     }
 
+    private fun finishHomeStripReorderDrop(targetKey: String?) {
+        val moving = _movingPackage.value ?: return
+        if (targetKey == null || targetKey == moving || targetKey.startsWith("strip_empty_")) {
+            clearMove()
+            return
+        }
+        viewModelScope.launch {
+            gridHomeMutex.withLock {
+                val snap = prefs.value
+                val slots = snap.effectiveHomeStripSlotOrder().toMutableList()
+                if (slots.size != STRIP_TOTAL_SLOTS) return@withLock
+                val fromIdx = slots.indexOfFirst { it == moving }
+                val toIdx = slots.indexOfFirst { it == targetKey }
+                if (fromIdx < 0 || toIdx < 0 || fromIdx == toIdx) return@withLock
+                val tmp = slots[fromIdx]
+                slots[fromIdx] = slots[toIdx]
+                slots[toIdx] = tmp
+                prefsRepo.setHomeStripSlots(slots)
+                prefsRepo.setHomeStripOrder(slots.filterNotNull())
+            }
+            clearMove()
+        }
+    }
+
     fun moveTo(targetSlotId: String) {
+        if (_reorderFromHomeStrip.value) return
         val moving = _movingPackage.value ?: return
         if (moving == targetSlotId) return
 
@@ -338,39 +378,6 @@ class LauncherViewModel(app: Application) : AndroidViewModel(app) {
                 currentOrder.add(insertIndex.coerceAtMost(currentOrder.size), moving)
                 prefsRepo.setOrderedPackages(currentOrder)
             }
-        }
-    }
-
-    // ── Home-strip unified reorder ────────────────────────────────────────
-
-    fun startHomeStripMove(token: String) { _homeStripMovingToken.value = token }
-    fun clearHomeStripMove() { _homeStripMovingToken.value = null }
-
-    /**
-     * Commits a home-strip drag drop. Uses the same forward/backward insert logic as
-     * [finishReorderDrop] so the saved order matches what [displaySlice] previewed.
-     */
-    fun finishHomeStripDrop(movingToken: String, targetToken: String?) {
-        if (targetToken == movingToken) { clearHomeStripMove(); return }
-        viewModelScope.launch {
-            val snap = prefs.value
-            val slots = snap.effectiveHomeStripSlotOrder().toMutableList()
-            val fromIdx = slots.indexOfFirst { it == movingToken }
-            if (fromIdx < 0) { clearHomeStripMove(); return@launch }
-            // Resolve target slot index: real token → find in slots, empty token → parse index
-            val toIdx = when {
-                targetToken == null -> { clearHomeStripMove(); return@launch }
-                targetToken.startsWith("__empty_") ->
-                    targetToken.removePrefix("__empty_").toIntOrNull() ?: -1
-                else -> slots.indexOfFirst { it == targetToken }
-            }
-            if (toIdx < 0 || toIdx >= STRIP_TOTAL_SLOTS) { clearHomeStripMove(); return@launch }
-            // Swap the two slots (item↔item or item↔empty)
-            val temp = slots[fromIdx]
-            slots[fromIdx] = slots[toIdx]
-            slots[toIdx] = temp
-            prefsRepo.setHomeStripSlots(slots)
-            clearHomeStripMove()
         }
     }
 
@@ -668,7 +675,7 @@ class LauncherViewModel(app: Application) : AndroidViewModel(app) {
     fun createHomeGroup(title: String) {
         viewModelScope.launch {
             gridHomeMutex.withLock {
-            if (prefs.value.homeGroups.size >= 2) return@withLock
+            if (!prefs.value.canAddHomeStripItem()) return@withLock
             val label = title.trim().ifBlank { "Group" }
             val usedSides = prefs.value.homeGroups.map { it.side }.toSet()
             val side = HomeGroupSide.entries.firstOrNull { it !in usedSides } ?: HomeGroupSide.RIGHT
@@ -849,7 +856,7 @@ class LauncherViewModel(app: Application) : AndroidViewModel(app) {
             val pkg = packageName.trim()
             if (pkg.isEmpty()) return@launch
             val cur = snap.homeShortcutPackages
-            if (cur.size >= 3 || pkg in cur) return@launch
+            if (!snap.canAddHomeStripItem() || cur.contains(pkg)) return@launch
             prefsRepo.setHomeShortcutPackages(cur + pkg)
         }
     }
@@ -888,7 +895,7 @@ class LauncherViewModel(app: Application) : AndroidViewModel(app) {
         val info = request.shortcutInfo ?: return false
         val token = homeShortcutStorageToken(info.`package`, info.id)
         val cur = prefs.value.homeShortcutPackages
-        if (cur.size >= 3) return false
+        if (!prefs.value.canAddHomeStripItem()) return false
         if (token in cur) return true
         prefsRepo.setHomeShortcutPackages(cur + token)
         return true
