@@ -96,7 +96,7 @@ fun AppDrawerBadgesOverlay(
                         !notificationAccessReady ->
                             "Requires notification access — enable Unread badges in Permissions first"
                         showIconNotifBadge ->
-                            "On — red dot appears when an app has unread notifications"
+                            "On — red star appears when an app has unread notifications"
                         else -> "Off"
                     },
                     checked = showIconNotifBadge && notificationAccessReady,

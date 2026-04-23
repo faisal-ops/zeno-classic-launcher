@@ -3971,7 +3971,6 @@ private fun HomeActionsSheet(
                 LocalContext.current.getString(R.string.home_menu_settings_title),
                 onOpenSettings,
             )
-            MenuRow(Icons.Rounded.Image, "Set wallpaper", onOpenWallpaperChooser)
             MenuRow(Icons.Rounded.Tune, "System settings", onOpenSystemSettings)
             Spacer(Modifier.height(12.dp))
         }
@@ -8567,13 +8566,13 @@ private fun IconAppearanceSettingsOverlay(
     if (showBadgeSettings) {
         IconPreviewToggleOverlay(
             title = "App icon badges",
-            description = "Preview notification dots on drawer icons.",
+            description = "Preview notification stars on drawer icons.",
             checked = showIconNotifBadge && notificationAccessReady,
             enabled = notificationAccessReady,
             toggleTitle = "Notification badge",
             toggleSubtitle = when {
                 !notificationAccessReady -> "Requires notification access - enable Unread badges in Permissions first"
-                showIconNotifBadge -> "On - red dot appears when an app has unread notifications"
+                showIconNotifBadge -> "On - red star appears when an app has unread notifications"
                 else -> "Off"
             },
             previewApps = previewApps,
@@ -8670,15 +8669,6 @@ private fun IconPreviewToggleOverlay(
                     color = Color.White,
                     style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.SemiBold),
                     modifier = Modifier.weight(1f),
-                )
-                Text(
-                    "SAVE",
-                    color = Color.White,
-                    style = MaterialTheme.typography.titleLarge.copy(fontWeight = FontWeight.SemiBold),
-                    modifier = Modifier
-                        .clip(RoundedCornerShape(6.dp))
-                        .clickable { onDismiss() }
-                        .padding(horizontal = 18.dp, vertical = 12.dp),
                 )
             }
             IconPreviewStrip(
@@ -8832,11 +8822,21 @@ private fun IconPreviewStrip(
                             Box(
                                 modifier = Modifier
                                     .align(Alignment.TopEnd)
-                                    .size(12.dp)
+                                    .size(14.dp)
                                     .clip(CircleShape)
-                                    .background(Color(0xFFE7474D))
-                                    .border(1.5.dp, Color.White, CircleShape),
-                            )
+                                    .background(Color(0xFFD32F2F)),
+                                contentAlignment = Alignment.Center,
+                            ) {
+                                Text(
+                                    text = "\u2731",
+                                    style = MaterialTheme.typography.labelSmall.copy(
+                                        color = Color.White,
+                                        fontSize = 8.sp,
+                                        lineHeight = 8.sp,
+                                        fontWeight = FontWeight.Bold,
+                                    ),
+                                )
+                            }
                         }
                     }
                     Spacer(Modifier.height(6.dp))
@@ -8952,16 +8952,6 @@ private fun IconLayoutSettingsOverlay(
                     fontWeight = FontWeight.SemiBold,
                     modifier = Modifier.weight(1f),
                 )
-                Text(
-                    "SAVE",
-                    color = Color.White,
-                    fontSize = SETTINGS_TITLE_TEXT_SP,
-                    fontWeight = FontWeight.SemiBold,
-                    modifier = Modifier
-                        .clip(RoundedCornerShape(6.dp))
-                        .clickable { onDismiss() }
-                        .padding(horizontal = 18.dp, vertical = 10.dp),
-                )
             }
             Box(
                 modifier = Modifier
@@ -9070,7 +9060,7 @@ private fun IconLayoutSettingsOverlay(
                     verticalAlignment = Alignment.CenterVertically,
                 ) {
                     Text("Small", color = Color(0xFF9EA4A9), fontSize = 12.sp, modifier = Modifier.weight(1f))
-                    Text("Default", color = Color(0xFF00A9E0), fontSize = 12.sp, textAlign = TextAlign.Center, modifier = Modifier.weight(1f))
+                    Spacer(Modifier.weight(1f))
                     Text("Large", color = Color(0xFF9EA4A9), fontSize = 12.sp, textAlign = TextAlign.End, modifier = Modifier.weight(1f))
                 }
                 Spacer(Modifier.height(16.dp))
