@@ -3934,8 +3934,7 @@ private fun AppDrawer(
     val colSpacing = themePalette.appGridColumnSpacingDp.dp
     val rowSpacing = themePalette.appGridRowSpacingDp.dp
     val iconSize = themePalette.appGridIconSizeDp.dp
-    // Keep app/folder labels in strip aligned to group label size.
-    val labelSizeSp = HOME_STRIP_LABEL_FONT_SP.value.roundToInt()
+    val labelSizeSp = themePalette.appCardFontSp.toInt()
 
     val appsPerPage = gridPreset.rows * gridPreset.cols
     val pages = (gridCells.size + appsPerPage - 1) / appsPerPage
