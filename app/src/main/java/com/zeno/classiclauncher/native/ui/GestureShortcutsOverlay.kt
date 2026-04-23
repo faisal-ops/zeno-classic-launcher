@@ -132,7 +132,7 @@ fun GestureShortcutsOverlay(
                                 }
                                 Toast.makeText(
                                     context,
-                                    "Turn on “Zeno Classic lock helper”, or grant device admin in Lock & wake / Permissions.",
+                                    "If lock does not work on this device, enable “Zeno Classic lock helper” in Accessibility.",
                                     Toast.LENGTH_LONG,
                                 ).show()
                             }
@@ -278,7 +278,7 @@ fun GestureShortcutsOverlay(
                     Text(
                         buildString {
                             append("Swipe up on the home wallpaper to open the selected app.\n")
-                            append("Double tap to lock uses the lock helper (Accessibility) when on—same as the power button for face unlock—or device admin as fallback.")
+                            append("Double tap to lock uses the built-in lock path; the lock helper (Accessibility) is optional for devices that need the power-button style lock path for face unlock.")
                             if (customQuickSettingsEnabled) {
                                 append("\nWhen the launcher panel is open, opening the system shade closes it.")
                             }

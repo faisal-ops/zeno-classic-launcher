@@ -63,8 +63,12 @@ object SleepManager {
         }
     }
 
-    fun isDoubleTapLockReady(context: Context): Boolean =
-        isLockAccessibilityEnabled(context) || isAdminActive(context)
+    /**
+     * Release UI treats double-tap lock as available without requiring Device Admin.
+     * Device admin remains implemented below as a future/manual fallback, but it is no longer
+     * promoted as a prerequisite because the primary lock path works on the target build.
+     */
+    fun isDoubleTapLockReady(@Suppress("UNUSED_PARAMETER") context: Context): Boolean = true
 
     /**
      * Best-effort: real power-button sleep reason. Succeeds only if the app holds [DEVICE_POWER]
@@ -112,7 +116,7 @@ object SleepManager {
         if (!dpm.isAdminActive(comp)) {
             showToast(
                 context,
-                "Turn on “Zeno Classic lock helper” in Accessibility, or grant device admin in Lock & wake",
+                "If lock does not work on this device, enable “Zeno Classic lock helper” in Accessibility.",
             )
             return false
         }

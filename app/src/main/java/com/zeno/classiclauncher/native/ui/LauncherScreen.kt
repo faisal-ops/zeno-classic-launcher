@@ -411,7 +411,6 @@ internal fun isNotificationListenerEnabled(context: android.content.Context): Bo
 
 private data class PermRuntime(
     val notificationAccess: Boolean,
-    val deviceAdmin: Boolean,
     val location: Boolean,
     val calendar: Boolean,
 )
@@ -419,7 +418,6 @@ private data class PermRuntime(
 private fun computePermRuntime(context: android.content.Context): PermRuntime =
     PermRuntime(
         notificationAccess = isNotificationListenerEnabled(context),
-        deviceAdmin = SleepManager.isAdminActive(context),
         location = ContextCompat.checkSelfPermission(
             context,
             Manifest.permission.ACCESS_COARSE_LOCATION,
@@ -433,7 +431,6 @@ private fun computePermRuntime(context: android.content.Context): PermRuntime =
 private fun missingPermissionCount(prefs: LauncherPrefs, r: PermRuntime): Int {
     var n = 0
     if (prefs.notificationBadgesEnabled && !r.notificationAccess) n++
-    if (prefs.doubleTapToSleepEnabled && !r.deviceAdmin) n++
     if (prefs.glanceEnabled && !r.location) n++
     if (prefs.glanceEnabled && prefs.glanceShowCalendar && !r.calendar) n++
     return n
@@ -1993,7 +1990,7 @@ fun LauncherScreen(
 
 /**
  * Long-press opens the home actions sheet. Double-tap to lock runs when [doubleTapToSleepEnabled] is on
- * ([SleepManager.lockNow]: accessibility lock helper first, else device admin); child views (glance strip)
+ * ([SleepManager.lockNow]: built-in lock path first, with optional lock-helper/fallback paths); child views (glance strip)
  * consume their own taps first.
  */
 @Composable

@@ -52,12 +52,8 @@ import com.zeno.classiclauncher.nlauncher.prefs.LauncherPrefs
 import com.zeno.classiclauncher.nlauncher.power.SleepManager
 import com.zeno.classiclauncher.nlauncher.theme.LauncherThemePalette
 
-/** System action for the “Device admin apps” screen (documented; not always present on compile SDK stubs). */
-private const val ACTION_DEVICE_ADMIN_SETTINGS = "android.settings.ACTION_DEVICE_ADMIN_SETTINGS"
-
 private data class RuntimePerms(
     val notificationAccess: Boolean,
-    val deviceAdmin: Boolean,
     val lockAccessibility: Boolean,
     val location: Boolean,
     val calendar: Boolean,
@@ -66,7 +62,6 @@ private data class RuntimePerms(
 private fun computeRuntimePerms(context: android.content.Context): RuntimePerms =
     RuntimePerms(
         notificationAccess = isNotificationListenerEnabled(context),
-        deviceAdmin = SleepManager.isAdminActive(context),
         lockAccessibility = SleepManager.isLockAccessibilityEnabled(context),
         location = ContextCompat.checkSelfPermission(
             context,
@@ -103,19 +98,6 @@ fun PermissionsSettingsOverlay(
         }
         lifecycleOwner.lifecycle.addObserver(observer)
         onDispose { lifecycleOwner.lifecycle.removeObserver(observer) }
-    }
-
-    val adminLauncher = rememberLauncherForActivityResult(
-        ActivityResultContracts.StartActivityForResult(),
-    ) {
-        runtime = computeRuntimePerms(context)
-        if (prefs.doubleTapToSleepEnabled && !SleepManager.isDoubleTapLockReady(context)) {
-            Toast.makeText(
-                context,
-                "Double tap won’t lock until lock helper (Accessibility) or device admin is enabled.",
-                Toast.LENGTH_LONG,
-            ).show()
-        }
     }
 
     val locationLauncher = rememberLauncherForActivityResult(
@@ -222,36 +204,20 @@ fun PermissionsSettingsOverlay(
 
                 PermissionSwitchCard(
                     title = "Double tap to lock",
-                    subtitleOff = "Off — lock helper and device admin not required",
+                    subtitleOff = "Off — lock access not required",
                     subtitleOnOk = when {
                         runtime.lockAccessibility -> "On — lock helper (face unlock)"
-                        runtime.deviceAdmin -> "On — device admin fallback"
-                        else -> "On"
+                        else -> "On — built-in lock path"
                     },
-                    subtitleOnMissing = "On — enable lock helper (recommended) or device admin",
+                    subtitleOnMissing = "On — built-in lock path",
                     featureOn = prefs.doubleTapToSleepEnabled,
-                    permissionOk = runtime.deviceAdmin || runtime.lockAccessibility,
+                    permissionOk = true,
                     themePalette = themePalette,
                     onFeatureChange = { on ->
                         onDoubleTapSleepEnabled(on)
-                        if (on && !SleepManager.isDoubleTapLockReady(context)) {
-                            runCatching {
-                                context.startActivity(
-                                    Intent(Settings.ACTION_ACCESSIBILITY_SETTINGS)
-                                        .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK),
-                                )
-                            }
-                            Toast.makeText(
-                                context,
-                                "Turn on “Zeno Classic lock helper”, or use Grant below for device admin.",
-                                Toast.LENGTH_LONG,
-                            ).show()
-                        }
                         runtime = computeRuntimePerms(context)
                     },
-                    showGrant = prefs.doubleTapToSleepEnabled &&
-                        !runtime.deviceAdmin &&
-                        !runtime.lockAccessibility,
+                    showGrant = false,
                     onGrant = {
                         runCatching {
                             context.startActivity(
@@ -261,53 +227,7 @@ fun PermissionsSettingsOverlay(
                         }
                     },
                     grantLabel = "Open Accessibility (lock helper)",
-                    secondaryGrantLabel = "Grant device admin (fallback)",
-                    onSecondaryGrant = { adminLauncher.launch(SleepManager.createEnableAdminIntent(context)) },
-                    openSystemSettingsWhenTurningOff =
-                        if (prefs.doubleTapToSleepEnabled &&
-                            (runtime.deviceAdmin || runtime.lockAccessibility)
-                        ) {
-                            {
-                                if (SleepManager.isLockAccessibilityEnabled(context)) {
-                                    runCatching {
-                                        context.startActivity(
-                                            Intent(Settings.ACTION_ACCESSIBILITY_SETTINGS)
-                                                .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK),
-                                        )
-                                    }
-                                }
-                                if (SleepManager.isAdminActive(context)) {
-                                    runCatching {
-                                        context.startActivity(
-                                            Intent(ACTION_DEVICE_ADMIN_SETTINGS)
-                                                .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK),
-                                        )
-                                    }.onFailure {
-                                        runCatching {
-                                            context.startActivity(
-                                                Intent(Settings.ACTION_SECURITY_SETTINGS)
-                                                    .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK),
-                                            )
-                                        }
-                                    }
-                                }
-                                Toast.makeText(
-                                    context,
-                                    when {
-                                        SleepManager.isLockAccessibilityEnabled(context) &&
-                                            SleepManager.isAdminActive(context) ->
-                                            "Turn off Zeno lock helper and/or device admin if you want them removed."
-                                        SleepManager.isLockAccessibilityEnabled(context) ->
-                                            "Turn off Zeno Classic lock helper, then return."
-                                        else ->
-                                            "Turn off device admin for Zeno Classic, then return."
-                                    },
-                                    Toast.LENGTH_LONG,
-                                ).show()
-                            }
-                        } else {
-                            null
-                        },
+                    openSystemSettingsWhenTurningOff = null,
                 )
 
                 PermissionSwitchCard(
