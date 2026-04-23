@@ -47,6 +47,7 @@ wallpapers/
 docs/NOTES.md
 scripts/
 tmp/
+.local/
 
 # Local media/app dumps kept outside git history
 BB Preloaded Tones/

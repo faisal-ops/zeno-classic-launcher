@@ -143,6 +143,8 @@ import androidx.compose.material.icons.rounded.FilterBAndW
 import androidx.compose.material.icons.rounded.Nfc
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
+import androidx.compose.material3.DropdownMenu
+import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.Text
@@ -184,6 +186,7 @@ import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.ColorFilter
+import androidx.compose.ui.graphics.RectangleShape
 import androidx.compose.ui.graphics.toArgb
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -203,6 +206,7 @@ import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.draw.clip
 import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.foundation.shape.CutCornerShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.focus.FocusRequester
@@ -343,18 +347,36 @@ private val OUTLINE_OFFSETS = arrayOf(
 )
 private val MAIN_SHADOW_OFFSET = Offset(0f, 1.5f)
 
+private val VISIBLE_ICON_SHAPES = listOf(
+    AppIconShape.SQUARE,
+    AppIconShape.SOFT_SQUARE,
+    AppIconShape.SQUIRCLE,
+    AppIconShape.CIRCLE,
+    AppIconShape.CUT_CORNER,
+)
+private const val DEFAULT_APP_ICON_SIZE_DP = 52f
+private const val MIN_APP_ICON_SIZE_DP = 44f
+private const val MAX_APP_ICON_SIZE_DP = 64f
+private val SETTINGS_TITLE_TEXT_SP = 18.sp
+private val SETTINGS_BODY_TEXT_SP = 14.sp
+private val SETTINGS_VALUE_TEXT_SP = 15.sp
+
 private fun iconMaskShape(shape: AppIconShape): Shape = when (shape) {
-    AppIconShape.ROUNDED -> RoundedCornerShape(14.dp)
-    AppIconShape.SQUIRCLE -> RoundedCornerShape(20.dp)
+    AppIconShape.SQUARE -> RectangleShape
+    AppIconShape.ROUNDED -> RoundedCornerShape(9.dp) // Legacy saved value; no longer exposed in settings.
+    AppIconShape.SQUIRCLE -> RoundedCornerShape(18.dp)
     AppIconShape.CIRCLE -> CircleShape
     AppIconShape.SOFT_SQUARE -> RoundedCornerShape(9.dp)
+    AppIconShape.CUT_CORNER -> CutCornerShape(10.dp)
 }
 
 private fun appIconShapeLabel(shape: AppIconShape): String = when (shape) {
-    AppIconShape.ROUNDED -> "Rounded"
+    AppIconShape.SQUARE -> "Square"
+    AppIconShape.ROUNDED -> "Soft square"
     AppIconShape.SQUIRCLE -> "Squircle"
     AppIconShape.CIRCLE -> "Circle"
     AppIconShape.SOFT_SQUARE -> "Soft square"
+    AppIconShape.CUT_CORNER -> "Cut corner"
 }
 
 private fun dockIconStyleLabel(style: DockIconStyle): String = when (style) {
@@ -449,7 +471,7 @@ fun LauncherScreen(
     val hasUnreadSms by vm.hasUnreadSms.collectAsState()
     val hasUnreadWhatsApp by vm.hasUnreadWhatsApp.collectAsState()
     val unreadPackages by vm.packagesWithUnread.collectAsState()
-    val sortByUsage by vm.sortByUsage.collectAsState()
+    val drawerSortMode by vm.drawerSortMode.collectAsState()
     val newAppAddedToast by vm.newAppAddedToast.collectAsState()
     val themePalette = remember(prefs.themeJson) { LauncherThemePalette.fromJson(prefs.themeJson) }
     fun normalizedGroupName(raw: String): String =
@@ -909,11 +931,11 @@ fun LauncherScreen(
                         gridCells = gridCells,
                         unreadPackages = if (prefs.notificationBadgesEnabled) unreadPackages else emptySet(),
                         usageStats = emptyMap(),
-                        sortByUsage = sortByUsage,
+                        drawerSortMode = drawerSortMode,
                         showIconNotifBadge = prefs.showIconNotifBadge,
-                        onToggleSortByUsage = {
-                            if (vm.hasUsagePermission()) {
-                                vm.toggleSortByUsage()
+                        onSortModeSelected = { mode ->
+                            if (mode != DrawerSortMode.MOST_USED || vm.hasUsagePermission()) {
+                                vm.setDrawerSortMode(mode)
                             } else {
                                 Toast.makeText(
                                     context,
@@ -1560,6 +1582,8 @@ fun LauncherScreen(
                 gridPreset = prefs.gridPreset,
                 appIconShape = prefs.appIconShape,
                 showAppCardBackground = prefs.showAppCardBackground,
+                showIconNotifBadge = prefs.showIconNotifBadge,
+                notificationAccessReady = prefs.notificationBadgesEnabled && permRuntime.notificationAccess,
                 previewApps = allApps,
                 drawerBadgesSubtitle = remember(prefs.showIconNotifBadge) {
                     buildList {
@@ -1570,7 +1594,7 @@ fun LauncherScreen(
                 onAppGridIconSize = vm::setAppGridIconSize,
                 onSetAppIconShape = vm::setAppIconShape,
                 onToggleAppCardBackground = { vm.setShowAppCardBackground(!prefs.showAppCardBackground) },
-                onOpenDrawerBadges = { showAppDrawerBadges = true },
+                onShowIconNotifBadgeChange = vm::setShowIconNotifBadge,
                 themePalette = themePalette,
                 onDismiss = { showIconAppearanceSettings = false },
             )
@@ -3949,6 +3973,63 @@ private fun HomeActionsSheet(
     }
 }
 
+private fun drawerSortModeLabel(mode: DrawerSortMode): String = when (mode) {
+    DrawerSortMode.CLASSIC -> "Classic"
+    DrawerSortMode.ALPHABETICAL -> "Alphabetically"
+    DrawerSortMode.MOST_USED -> "Most used"
+}
+
+@Composable
+private fun DrawerSortModeMenu(
+    expanded: Boolean,
+    selected: DrawerSortMode,
+    onDismiss: () -> Unit,
+    onSelect: (DrawerSortMode) -> Unit,
+) {
+    DropdownMenu(
+        expanded = expanded,
+        onDismissRequest = onDismiss,
+        modifier = Modifier
+            .width(214.dp)
+            .background(Color(0xFF1E2430)),
+    ) {
+        listOf(
+            DrawerSortMode.CLASSIC to "Custom drag-drop order",
+            DrawerSortMode.ALPHABETICAL to "A to Z",
+            DrawerSortMode.MOST_USED to "Recent usage",
+        ).forEach { (mode, subtitle) ->
+            DropdownMenuItem(
+                text = {
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        verticalAlignment = Alignment.CenterVertically,
+                    ) {
+                        Column(modifier = Modifier.weight(1f)) {
+                            Text(
+                                drawerSortModeLabel(mode),
+                                color = Color(0xFFE8EEF7),
+                                fontSize = 14.sp,
+                                fontWeight = FontWeight.SemiBold,
+                            )
+                            Text(
+                                subtitle,
+                                color = Color(0xFF9EA4A9),
+                                fontSize = 12.sp,
+                                maxLines = 1,
+                                overflow = TextOverflow.Ellipsis,
+                            )
+                        }
+                        if (mode == selected) {
+                            Text("✓", color = Color(0xFF00C853), fontSize = 15.sp)
+                        }
+                    }
+                },
+                onClick = { onSelect(mode) },
+            )
+        }
+    }
+}
+
 
 @Composable
 private fun AppDrawer(
@@ -3961,9 +4042,9 @@ private fun AppDrawer(
     gridCells: List<DrawerGridCell>,
     unreadPackages: Set<String>,
     usageStats: Map<String, Long>,
-    sortByUsage: Boolean,
+    drawerSortMode: DrawerSortMode,
     showIconNotifBadge: Boolean,
-    onToggleSortByUsage: () -> Unit,
+    onSortModeSelected: (DrawerSortMode) -> Unit,
     requestedPage: Int,
     searchQuery: String,
     onSearchQueryChange: (String) -> Unit,
@@ -4038,6 +4119,7 @@ private fun AppDrawer(
     var pendingDropTarget by remember { mutableStateOf<String?>(null) }
     val drawerContext = LocalContext.current
     val dockKeyNavSize = if (classicDock) 2 else 4
+    var sortMenuExpanded by remember { mutableStateOf(false) }
 
     DisposableEffect(Unit) {
         onDispose {
@@ -4351,7 +4433,7 @@ private fun AppDrawer(
                 }
             }
         }
-        // Sort toggle — hidden while searching, but keep the same vertical slot so the grid stays put.
+        // Sort menu — hidden while searching, but keep the same vertical slot so the grid stays put.
         if (searchQuery.isEmpty()) {
             Row(
                 modifier = Modifier
@@ -4360,22 +4442,38 @@ private fun AppDrawer(
                 horizontalArrangement = androidx.compose.foundation.layout.Arrangement.End,
                 verticalAlignment = Alignment.CenterVertically,
             ) {
-                if (sortByUsage) {
+                Box {
                     Text(
-                        text = "Most used",
+                        text = drawerSortModeLabel(drawerSortMode),
                         fontSize = 11.sp,
                         color = themePalette.settingsMenuBody,
-                        modifier = Modifier.padding(end = 4.dp),
+                        modifier = Modifier
+                            .clip(RoundedCornerShape(8.dp))
+                            .clickable { sortMenuExpanded = true }
+                            .padding(horizontal = 8.dp, vertical = 6.dp),
+                    )
+                    DrawerSortModeMenu(
+                        expanded = sortMenuExpanded,
+                        selected = drawerSortMode,
+                        onDismiss = { sortMenuExpanded = false },
+                        onSelect = { mode ->
+                            sortMenuExpanded = false
+                            onSortModeSelected(mode)
+                        },
                     )
                 }
                 IconButton(
-                    onClick = onToggleSortByUsage,
+                    onClick = { sortMenuExpanded = true },
                     modifier = Modifier.size(28.dp),
                 ) {
                     Icon(
                         imageVector = Icons.Outlined.QueryStats,
-                        contentDescription = "Sort by usage",
-                        tint = if (sortByUsage) themePalette.settingsMenuTitle else themePalette.settingsMenuBody.copy(alpha = 0.5f),
+                        contentDescription = "Choose app sorting",
+                        tint = if (drawerSortMode == DrawerSortMode.MOST_USED) {
+                            themePalette.settingsMenuTitle
+                        } else {
+                            themePalette.settingsMenuBody.copy(alpha = 0.65f)
+                        },
                         modifier = Modifier.size(18.dp),
                     )
                 }
@@ -8265,23 +8363,35 @@ private fun IconAppearanceSettingsOverlay(
     gridPreset: GridPreset,
     appIconShape: AppIconShape,
     showAppCardBackground: Boolean,
+    showIconNotifBadge: Boolean,
+    notificationAccessReady: Boolean,
     previewApps: List<AppEntry>,
     drawerBadgesSubtitle: String,
     onGridPreset: (GridPreset) -> Unit,
     onAppGridIconSize: (Float) -> Unit,
     onSetAppIconShape: (AppIconShape) -> Unit,
     onToggleAppCardBackground: () -> Unit,
-    onOpenDrawerBadges: () -> Unit,
+    onShowIconNotifBadgeChange: (Boolean) -> Unit,
     themePalette: LauncherThemePalette,
     onDismiss: () -> Unit,
 ) {
     val focusRequester = remember { FocusRequester() }
     var selectedIndex by remember { mutableStateOf(0) }
-    val itemCount = 4
+    val itemCount = 3
     val subtitleColor = Color(0xFF8E95A3)
     val cardBg = Color(0xFF1E2430)
     val cardShape = RoundedCornerShape(12.dp)
     var showIconLayoutSettings by remember { mutableStateOf(false) }
+    var showCardBackgroundSettings by remember { mutableStateOf(false) }
+    var showBadgeSettings by remember { mutableStateOf(false) }
+    BackHandler(enabled = true) {
+        when {
+            showIconLayoutSettings -> showIconLayoutSettings = false
+            showCardBackgroundSettings -> showCardBackgroundSettings = false
+            showBadgeSettings -> showBadgeSettings = false
+            else -> onDismiss()
+        }
+    }
     Surface(
         modifier = Modifier
             .fillMaxSize()
@@ -8310,7 +8420,7 @@ private fun IconAppearanceSettingsOverlay(
                     )
                 }
                 Text(
-                    "App icons",
+                    "Icon layout",
                     style = MaterialTheme.typography.headlineMedium.copy(
                         color = themePalette.settingsMenuTitle,
                         fontWeight = FontWeight.Normal,
@@ -8328,7 +8438,12 @@ private fun IconAppearanceSettingsOverlay(
                         val nk = ev.nativeKeyEvent
                         when {
                             ev.key == Key.Back || nk?.keyCode == AndroidKeyEvent.KEYCODE_BACK || ev.isEndCallKey() -> {
-                                if (showIconLayoutSettings) showIconLayoutSettings = false else onDismiss()
+                                when {
+                                    showIconLayoutSettings -> showIconLayoutSettings = false
+                                    showCardBackgroundSettings -> showCardBackgroundSettings = false
+                                    showBadgeSettings -> showBadgeSettings = false
+                                    else -> onDismiss()
+                                }
                                 true
                             }
                             ev.key == Key.DirectionUp || nk?.keyCode == AndroidKeyEvent.KEYCODE_DPAD_UP -> {
@@ -8353,12 +8468,8 @@ private fun IconAppearanceSettingsOverlay(
                                     0 -> {
                                         showIconLayoutSettings = true
                                     }
-                                    1 -> {
-                                        val all = AppIconShape.entries
-                                        onSetAppIconShape(all[(all.indexOf(appIconShape) + 1) % all.size])
-                                    }
-                                    2 -> onToggleAppCardBackground()
-                                    3 -> onOpenDrawerBadges()
+                                    1 -> showCardBackgroundSettings = true
+                                    2 -> showBadgeSettings = true
                                 }
                                 true
                             }
@@ -8386,50 +8497,29 @@ private fun IconAppearanceSettingsOverlay(
                 }
                 SettingsCategoryCard(cardBg = cardBg, cardShape = cardShape, selected = selectedIndex == 1) {
                     SettingsRow(
-                        icon = Icons.Rounded.Apps,
-                        title = "App icon shape",
-                        subtitle = appIconShapeLabel(appIconShape),
+                        icon = Icons.Rounded.GridView,
+                        title = "App card background",
+                        subtitle = if (showAppCardBackground) "Gradient card shown behind each app" else "No background behind app icons",
                         selected = selectedIndex == 1,
                         themePalette = themePalette,
                         subtitleColor = subtitleColor,
                         onClick = {
                             selectedIndex = 1
-                            val all = AppIconShape.entries
-                            onSetAppIconShape(all[(all.indexOf(appIconShape) + 1) % all.size])
+                            showCardBackgroundSettings = true
                         },
                     )
                 }
                 SettingsCategoryCard(cardBg = cardBg, cardShape = cardShape, selected = selectedIndex == 2) {
                     SettingsRow(
-                        icon = Icons.Rounded.GridView,
-                        title = "App card background",
-                        subtitle = if (showAppCardBackground) "Gradient card shown behind each app" else "No background behind app icons",
+                        icon = Icons.Outlined.QueryStats,
+                        title = "App icon badges",
+                        subtitle = drawerBadgesSubtitle,
                         selected = selectedIndex == 2,
                         themePalette = themePalette,
                         subtitleColor = subtitleColor,
                         onClick = {
                             selectedIndex = 2
-                            onToggleAppCardBackground()
-                        },
-                        trailingContent = {
-                            Switch(
-                                checked = showAppCardBackground,
-                                onCheckedChange = { onToggleAppCardBackground() },
-                            )
-                        },
-                    )
-                }
-                SettingsCategoryCard(cardBg = cardBg, cardShape = cardShape, selected = selectedIndex == 3) {
-                    SettingsRow(
-                        icon = Icons.Outlined.QueryStats,
-                        title = "App icon badges",
-                        subtitle = drawerBadgesSubtitle,
-                        selected = selectedIndex == 3,
-                        themePalette = themePalette,
-                        subtitleColor = subtitleColor,
-                        onClick = {
-                            selectedIndex = 3
-                            onOpenDrawerBadges()
+                            showBadgeSettings = true
                         },
                     )
                 }
@@ -8448,6 +8538,314 @@ private fun IconAppearanceSettingsOverlay(
             onDismiss = { showIconLayoutSettings = false },
         )
     }
+    if (showCardBackgroundSettings) {
+        IconPreviewToggleOverlay(
+            title = "App card background",
+            description = "Preview how cards look behind app icons in the drawer.",
+            checked = showAppCardBackground,
+            enabled = true,
+            toggleTitle = "Show card background",
+            toggleSubtitle = if (showAppCardBackground) "On - gradient cards behind icons" else "Off - icons sit directly on wallpaper",
+            previewApps = previewApps,
+            appIconShape = appIconShape,
+            iconSizeDp = themePalette.appGridIconSizeDp,
+            showCardBackground = showAppCardBackground,
+            showBadgePreview = false,
+            themePalette = themePalette,
+            onCheckedChange = { onToggleAppCardBackground() },
+            onDismiss = { showCardBackgroundSettings = false },
+        )
+    }
+    if (showBadgeSettings) {
+        IconPreviewToggleOverlay(
+            title = "App icon badges",
+            description = "Preview notification dots on drawer icons.",
+            checked = showIconNotifBadge && notificationAccessReady,
+            enabled = notificationAccessReady,
+            toggleTitle = "Notification badge",
+            toggleSubtitle = when {
+                !notificationAccessReady -> "Requires notification access - enable Unread badges in Permissions first"
+                showIconNotifBadge -> "On - red dot appears when an app has unread notifications"
+                else -> "Off"
+            },
+            previewApps = previewApps,
+            appIconShape = appIconShape,
+            iconSizeDp = themePalette.appGridIconSizeDp,
+            showCardBackground = showAppCardBackground,
+            showBadgePreview = showIconNotifBadge && notificationAccessReady,
+            themePalette = themePalette,
+            onCheckedChange = onShowIconNotifBadgeChange,
+            onDismiss = { showBadgeSettings = false },
+        )
+    }
+}
+
+@Composable
+private fun IconPreviewToggleOverlay(
+    title: String,
+    description: String,
+    checked: Boolean,
+    enabled: Boolean,
+    toggleTitle: String,
+    toggleSubtitle: String,
+    previewApps: List<AppEntry>,
+    appIconShape: AppIconShape,
+    iconSizeDp: Float,
+    showCardBackground: Boolean,
+    showBadgePreview: Boolean,
+    themePalette: LauncherThemePalette,
+    onCheckedChange: (Boolean) -> Unit,
+    onDismiss: () -> Unit,
+) {
+    val context = LocalContext.current
+    val focusRequester = remember { FocusRequester() }
+    val currentWallpaper = remember {
+        runCatching { WallpaperManager.getInstance(context).drawable }.getOrNull()
+    }
+    val previewItems = remember(previewApps) {
+        previewApps
+            .asSequence()
+            .filter { !it.internal }
+            .take(6)
+            .toList()
+    }
+    BackHandler(enabled = true, onBack = onDismiss)
+    Surface(
+        modifier = Modifier
+            .fillMaxSize()
+            .zIndex(405f),
+        color = Color.Transparent,
+    ) {
+        Column(
+            modifier = Modifier
+                .fillMaxSize()
+                .statusBarsPadding()
+                .focusRequester(focusRequester)
+                .focusable()
+                .onPreviewKeyEvent { ev ->
+                    if (ev.type != KeyEventType.KeyDown) return@onPreviewKeyEvent false
+                    val nk = ev.nativeKeyEvent
+                    when {
+                        ev.key == Key.Back || nk?.keyCode == AndroidKeyEvent.KEYCODE_BACK || ev.isEndCallKey() -> {
+                            onDismiss()
+                            true
+                        }
+                        ev.key == Key.Enter ||
+                            ev.key == Key.NumPadEnter ||
+                            nk?.keyCode == AndroidKeyEvent.KEYCODE_DPAD_CENTER ||
+                            nk?.keyCode == AndroidKeyEvent.KEYCODE_ENTER -> {
+                            if (enabled) onCheckedChange(!checked)
+                            true
+                        }
+                        else -> false
+                    }
+                },
+        ) {
+            LaunchedEffect(Unit) { focusRequester.requestFocus() }
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .height(58.dp)
+                    .background(Color(0xFF292B2B)),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                IconButton(onClick = onDismiss) {
+                    Icon(
+                        Icons.AutoMirrored.Rounded.ArrowBack,
+                        contentDescription = "Back",
+                        tint = Color.White,
+                        modifier = Modifier.size(26.dp),
+                    )
+                }
+                Text(
+                    title,
+                    color = Color.White,
+                    style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.SemiBold),
+                    modifier = Modifier.weight(1f),
+                )
+                Text(
+                    "SAVE",
+                    color = Color.White,
+                    style = MaterialTheme.typography.titleLarge.copy(fontWeight = FontWeight.SemiBold),
+                    modifier = Modifier
+                        .clip(RoundedCornerShape(6.dp))
+                        .clickable { onDismiss() }
+                        .padding(horizontal = 18.dp, vertical = 12.dp),
+                )
+            }
+            IconPreviewStrip(
+                previewApps = previewItems,
+                appIconShape = appIconShape,
+                iconSizeDp = iconSizeDp,
+                showCardBackground = showCardBackground,
+                showBadgePreview = showBadgePreview,
+                currentWallpaper = currentWallpaper,
+                themePalette = themePalette,
+            )
+            Column(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .weight(1f)
+                    .background(Color(0xFF2C2F2F))
+                    .padding(horizontal = 26.dp, vertical = 18.dp),
+            ) {
+                Text(
+                    title,
+                    color = Color.White,
+                    style = MaterialTheme.typography.headlineSmall,
+                )
+                Spacer(Modifier.height(4.dp))
+                Text(
+                    description,
+                    color = Color(0xFF9EA4A9),
+                    style = MaterialTheme.typography.bodyMedium,
+                )
+                Spacer(Modifier.height(22.dp))
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .clip(RoundedCornerShape(12.dp))
+                        .background(Color(0xFF242828))
+                        .clickable(enabled = enabled) { onCheckedChange(!checked) }
+                        .padding(horizontal = 16.dp, vertical = 14.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    Column(modifier = Modifier.weight(1f)) {
+                        Text(
+                            toggleTitle,
+                            color = if (enabled) Color.White else Color(0xFF9EA4A9),
+                            style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.SemiBold),
+                        )
+                        Text(
+                            toggleSubtitle,
+                            color = Color(0xFF9EA4A9),
+                            style = MaterialTheme.typography.bodySmall,
+                        )
+                    }
+                    Switch(
+                        checked = checked,
+                        enabled = enabled,
+                        onCheckedChange = onCheckedChange,
+                        colors = SwitchDefaults.colors(
+                            checkedThumbColor = Color.White,
+                            checkedTrackColor = Color(0xFF4A90D9),
+                            uncheckedThumbColor = Color(0xFF8E95A3),
+                            uncheckedTrackColor = Color(0xFF2E3545),
+                        ),
+                    )
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun IconPreviewStrip(
+    previewApps: List<AppEntry>,
+    appIconShape: AppIconShape,
+    iconSizeDp: Float,
+    showCardBackground: Boolean,
+    showBadgePreview: Boolean,
+    currentWallpaper: Drawable?,
+    themePalette: LauncherThemePalette,
+) {
+    val previewIconSize = iconSizeDp.coerceIn(42f, 64f).dp
+    val itemWidth = if (showCardBackground) 124.dp else 112.dp
+    Box(
+        modifier = Modifier
+            .fillMaxWidth()
+            .height(132.dp),
+    ) {
+        if (currentWallpaper != null) {
+            AsyncImage(
+                model = currentWallpaper,
+                contentDescription = null,
+                contentScale = ContentScale.Crop,
+                modifier = Modifier.fillMaxSize(),
+            )
+        } else {
+            Box(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .background(Color(0xFF202344)),
+            )
+        }
+        Box(
+            modifier = Modifier
+                .fillMaxSize()
+                .background(Color(0x33000000)),
+        )
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .horizontalScroll(rememberScrollState())
+                .padding(horizontal = 14.dp, vertical = 12.dp),
+            horizontalArrangement = Arrangement.spacedBy(8.dp),
+            verticalAlignment = Alignment.Top,
+        ) {
+            previewApps.forEachIndexed { index, app ->
+                val badgeVisible = showBadgePreview && index % 2 == 0
+                Column(
+                    horizontalAlignment = Alignment.CenterHorizontally,
+                    modifier = Modifier
+                        .width(itemWidth)
+                        .then(
+                            if (showCardBackground) {
+                                Modifier
+                                    .clip(RoundedCornerShape(10.dp))
+                                    .background(
+                                        Brush.verticalGradient(
+                                            listOf(themePalette.appCardTop, themePalette.appCardBottom),
+                                        ),
+                                    )
+                                    .border(
+                                        BorderStroke(1.dp, Color.White.copy(alpha = 0.06f)),
+                                        RoundedCornerShape(10.dp),
+                                    )
+                                    .padding(horizontal = 8.dp, vertical = 10.dp)
+                            } else {
+                                Modifier.padding(horizontal = 4.dp, vertical = 8.dp)
+                            },
+                        ),
+                ) {
+                    Box(
+                        modifier = Modifier.size(previewIconSize + 8.dp),
+                        contentAlignment = Alignment.Center,
+                    ) {
+                        AsyncImage(
+                            model = app.icon,
+                            contentDescription = app.label,
+                            contentScale = ContentScale.Fit,
+                            modifier = Modifier
+                                .size(previewIconSize)
+                                .clip(iconMaskShape(appIconShape)),
+                        )
+                        if (badgeVisible) {
+                            Box(
+                                modifier = Modifier
+                                    .align(Alignment.TopEnd)
+                                    .size(12.dp)
+                                    .clip(CircleShape)
+                                    .background(Color(0xFFE7474D))
+                                    .border(1.5.dp, Color.White, CircleShape),
+                            )
+                        }
+                    }
+                    Spacer(Modifier.height(6.dp))
+                    Text(
+                        text = app.label,
+                        color = Color(0xFFE8EEF7),
+                        fontSize = 15.sp,
+                        lineHeight = 17.sp,
+                        maxLines = 2,
+                        overflow = TextOverflow.Ellipsis,
+                        textAlign = TextAlign.Center,
+                        modifier = Modifier.fillMaxWidth(),
+                    )
+                }
+            }
+        }
+    }
 }
 
 @Composable
@@ -8464,8 +8862,9 @@ private fun IconLayoutSettingsOverlay(
     val context = LocalContext.current
     val focusRequester = remember { FocusRequester() }
     var iconSize by remember(themePalette.appGridIconSizeDp) {
-        mutableFloatStateOf(themePalette.appGridIconSizeDp.coerceIn(42f, 64f))
+        mutableFloatStateOf(themePalette.appGridIconSizeDp.coerceIn(MIN_APP_ICON_SIZE_DP, MAX_APP_ICON_SIZE_DP))
     }
+    val currentShape = if (appIconShape == AppIconShape.ROUNDED) AppIconShape.SOFT_SQUARE else appIconShape
     val currentWallpaper = remember {
         runCatching { WallpaperManager.getInstance(context).drawable }.getOrNull()
     }
@@ -8478,6 +8877,11 @@ private fun IconLayoutSettingsOverlay(
     }
     val rowOptions = remember { GridPreset.entries.map { it.rows }.distinct().sorted() }
     val colOptions = remember { GridPreset.entries.map { it.cols }.distinct().sorted() }
+    var columnsMenuExpanded by remember { mutableStateOf(false) }
+    var rowsMenuExpanded by remember { mutableStateOf(false) }
+    fun snapIconSize(value: Float): Float =
+        (MIN_APP_ICON_SIZE_DP + ((value - MIN_APP_ICON_SIZE_DP) / 4f).roundToInt() * 4f)
+            .coerceIn(MIN_APP_ICON_SIZE_DP, MAX_APP_ICON_SIZE_DP)
     fun preferredPresetFor(rows: Int, cols: Int): GridPreset =
         GridPreset.entries.firstOrNull { it.rows == rows && it.cols == cols }
             ?: GridPreset.entries
@@ -8487,18 +8891,11 @@ private fun IconLayoutSettingsOverlay(
                 .filter { it.rows == rows }
                 .minByOrNull { abs(it.cols - cols) }
             ?: gridPreset
-    fun cycleRow() {
-        val next = rowOptions[(rowOptions.indexOf(gridPreset.rows).coerceAtLeast(0) + 1) % rowOptions.size]
-        onGridPreset(preferredPresetFor(next, gridPreset.cols))
-    }
-    fun cycleColumn() {
-        val next = colOptions[(colOptions.indexOf(gridPreset.cols).coerceAtLeast(0) + 1) % colOptions.size]
-        onGridPreset(preferredPresetFor(gridPreset.rows, next))
-    }
     fun cycleShape() {
-        val all = AppIconShape.entries
-        onSetAppIconShape(all[(all.indexOf(appIconShape).coerceAtLeast(0) + 1) % all.size])
+        val currentIndex = VISIBLE_ICON_SHAPES.indexOf(currentShape).coerceAtLeast(0)
+        onSetAppIconShape(VISIBLE_ICON_SHAPES[(currentIndex + 1) % VISIBLE_ICON_SHAPES.size])
     }
+    BackHandler(enabled = true, onBack = onDismiss)
 
     Surface(
         modifier = Modifier
@@ -8528,7 +8925,7 @@ private fun IconLayoutSettingsOverlay(
             Row(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .height(58.dp)
+                    .height(48.dp)
                     .background(Color(0xFF292B2B)),
                 verticalAlignment = Alignment.CenterVertically,
             ) {
@@ -8543,23 +8940,25 @@ private fun IconLayoutSettingsOverlay(
                 Text(
                     "Icon layout",
                     color = Color.White,
-                    style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.SemiBold),
+                    fontSize = SETTINGS_TITLE_TEXT_SP,
+                    fontWeight = FontWeight.SemiBold,
                     modifier = Modifier.weight(1f),
                 )
                 Text(
                     "SAVE",
                     color = Color.White,
-                    style = MaterialTheme.typography.titleLarge.copy(fontWeight = FontWeight.SemiBold),
+                    fontSize = SETTINGS_TITLE_TEXT_SP,
+                    fontWeight = FontWeight.SemiBold,
                     modifier = Modifier
                         .clip(RoundedCornerShape(6.dp))
                         .clickable { onDismiss() }
-                        .padding(horizontal = 18.dp, vertical = 12.dp),
+                        .padding(horizontal = 18.dp, vertical = 10.dp),
                 )
             }
             Box(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .height(132.dp),
+                    .height(136.dp),
             ) {
                 if (currentWallpaper != null) {
                     AsyncImage(
@@ -8568,13 +8967,13 @@ private fun IconLayoutSettingsOverlay(
                         contentScale = ContentScale.Crop,
                         modifier = Modifier
                             .fillMaxWidth()
-                            .height(132.dp),
+                            .height(136.dp),
                     )
                 } else {
                     Box(
                         modifier = Modifier
                             .fillMaxWidth()
-                            .height(132.dp)
+                            .height(136.dp)
                             .background(Color(0xFF202344)),
                     )
                 }
@@ -8593,8 +8992,8 @@ private fun IconLayoutSettingsOverlay(
                         Column(
                             horizontalAlignment = Alignment.CenterHorizontally,
                             modifier = Modifier
-                                .width(120.dp)
-                                .padding(top = 14.dp),
+                                .width(112.dp)
+                                .padding(top = 12.dp),
                         ) {
                             AsyncImage(
                                 model = app.icon,
@@ -8602,13 +9001,13 @@ private fun IconLayoutSettingsOverlay(
                                 contentScale = ContentScale.Fit,
                                 modifier = Modifier
                                     .size(iconSize.dp)
-                                    .clip(iconMaskShape(appIconShape)),
+                                    .clip(iconMaskShape(currentShape)),
                             )
                             Spacer(Modifier.height(6.dp))
                             Text(
                                 text = app.label,
                                 color = Color(0xFFE8EEF7),
-                                fontSize = 15.sp,
+                                fontSize = SETTINGS_VALUE_TEXT_SP,
                                 lineHeight = 18.sp,
                                 maxLines = 2,
                                 overflow = TextOverflow.Ellipsis,
@@ -8624,42 +9023,53 @@ private fun IconLayoutSettingsOverlay(
                     .fillMaxWidth()
                     .weight(1f)
                     .background(Color(0xFF2C2F2F))
-                    .padding(horizontal = 26.dp, vertical = 16.dp),
+                    .padding(horizontal = 26.dp, vertical = 18.dp),
             ) {
-                IconLayoutSectionHeader(
-                    title = "Icon size",
-                    value = "${iconSize.toInt()} dp",
-                    defaultValue = "Default 52 dp",
-                )
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    verticalAlignment = Alignment.Bottom,
+                ) {
+                    Text(
+                        "Icon size",
+                        color = Color.White,
+                        fontSize = SETTINGS_TITLE_TEXT_SP,
+                        fontWeight = FontWeight.Normal,
+                        modifier = Modifier.weight(1f),
+                    )
+                    Text(
+                        "${iconSize.roundToInt()} dp · Default ${DEFAULT_APP_ICON_SIZE_DP.roundToInt()} dp",
+                        color = Color(0xFF9EA4A9),
+                        fontSize = SETTINGS_BODY_TEXT_SP,
+                    )
+                }
                 Slider(
                     value = iconSize,
                     onValueChange = {
-                        iconSize = it
-                        onAppGridIconSize(it)
+                        val snapped = snapIconSize(it)
+                        iconSize = snapped
+                        onAppGridIconSize(snapped)
                     },
-                    valueRange = 42f..64f,
+                    valueRange = MIN_APP_ICON_SIZE_DP..MAX_APP_ICON_SIZE_DP,
                     steps = 4,
                     modifier = Modifier
                         .fillMaxWidth()
-                        .padding(top = 4.dp),
+                        .padding(top = 8.dp),
                 )
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(horizontal = 2.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    Text("Small", color = Color(0xFF9EA4A9), fontSize = 12.sp, modifier = Modifier.weight(1f))
+                    Text("Default", color = Color(0xFF00A9E0), fontSize = 12.sp, textAlign = TextAlign.Center, modifier = Modifier.weight(1f))
+                    Text("Large", color = Color(0xFF9EA4A9), fontSize = 12.sp, textAlign = TextAlign.End, modifier = Modifier.weight(1f))
+                }
                 Spacer(Modifier.height(16.dp))
-                IconLayoutSectionHeader(
-                    title = "Icon shape",
-                    value = appIconShapeLabel(appIconShape),
-                    defaultValue = "Default Rounded",
-                )
-                Spacer(Modifier.height(8.dp))
-                IconLayoutSelector(
-                    text = appIconShapeLabel(appIconShape),
-                    onClick = ::cycleShape,
-                    modifier = Modifier.fillMaxWidth(),
-                )
-                Spacer(Modifier.height(18.dp))
-                IconLayoutSectionHeader(
-                    title = "Grid",
-                    value = "${gridPreset.cols} × ${gridPreset.rows}",
-                    defaultValue = "Default 5 columns · 3 rows",
+                Text(
+                    "Grid",
+                    color = Color.White,
+                    fontSize = SETTINGS_TITLE_TEXT_SP,
                 )
                 Spacer(Modifier.height(8.dp))
                 Row(
@@ -8667,48 +9077,85 @@ private fun IconLayoutSettingsOverlay(
                     horizontalArrangement = Arrangement.spacedBy(14.dp),
                     verticalAlignment = Alignment.CenterVertically,
                 ) {
-                    IconLayoutSelector(
-                        text = "${gridPreset.cols} Columns",
-                        onClick = ::cycleColumn,
-                        modifier = Modifier.weight(1f),
-                    )
-                    IconLayoutSelector(
-                        text = "${gridPreset.rows} Rows",
-                        onClick = ::cycleRow,
-                        modifier = Modifier.weight(1f),
-                    )
+                    Box(modifier = Modifier.weight(1f)) {
+                        IconLayoutSelector(
+                            text = "${gridPreset.cols} Columns",
+                            onClick = { columnsMenuExpanded = true },
+                            modifier = Modifier.fillMaxWidth(),
+                        )
+                        IconLayoutDropdown(
+                            expanded = columnsMenuExpanded,
+                            onDismiss = { columnsMenuExpanded = false },
+                            options = colOptions,
+                            selected = gridPreset.cols,
+                            defaultValue = 5,
+                            suffix = null,
+                            onSelect = { cols ->
+                                columnsMenuExpanded = false
+                                onGridPreset(preferredPresetFor(gridPreset.rows, cols))
+                            },
+                        )
+                    }
+                    Box(modifier = Modifier.weight(1f)) {
+                        IconLayoutSelector(
+                            text = "${gridPreset.rows} Rows",
+                            onClick = { rowsMenuExpanded = true },
+                            modifier = Modifier.fillMaxWidth(),
+                        )
+                        IconLayoutDropdown(
+                            expanded = rowsMenuExpanded,
+                            onDismiss = { rowsMenuExpanded = false },
+                            options = rowOptions,
+                            selected = gridPreset.rows,
+                            defaultValue = 3,
+                            suffix = null,
+                            onSelect = { rows ->
+                                rowsMenuExpanded = false
+                                onGridPreset(preferredPresetFor(rows, gridPreset.cols))
+                            },
+                        )
+                    }
                 }
+                Spacer(Modifier.height(22.dp))
+                IconShapeValueRow(
+                    currentShape = currentShape,
+                    onClick = ::cycleShape,
+                )
             }
         }
     }
 }
 
 @Composable
-private fun IconLayoutSectionHeader(
-    title: String,
-    value: String,
-    defaultValue: String,
+private fun IconShapeValueRow(
+    currentShape: AppIconShape,
+    onClick: () -> Unit,
 ) {
     Row(
-        modifier = Modifier.fillMaxWidth(),
+        modifier = Modifier
+            .fillMaxWidth()
+            .clip(RoundedCornerShape(6.dp))
+            .clickable(onClick = onClick)
+            .padding(vertical = 6.dp),
         verticalAlignment = Alignment.Bottom,
     ) {
         Column(modifier = Modifier.weight(1f)) {
             Text(
-                title,
+                "Icon shape",
                 color = Color.White,
-                style = MaterialTheme.typography.headlineSmall,
+                fontSize = SETTINGS_TITLE_TEXT_SP,
             )
             Text(
-                defaultValue,
+                "Default Soft square",
                 color = Color(0xFF9EA4A9),
-                style = MaterialTheme.typography.bodySmall,
+                fontSize = SETTINGS_BODY_TEXT_SP,
             )
         }
         Text(
-            value,
+            appIconShapeLabel(currentShape),
             color = Color(0xFF00A9E0),
-            style = MaterialTheme.typography.bodyMedium.copy(fontWeight = FontWeight.SemiBold),
+            fontSize = SETTINGS_VALUE_TEXT_SP,
+            fontWeight = FontWeight.SemiBold,
         )
     }
 }
@@ -8729,7 +9176,8 @@ private fun IconLayoutSelector(
         Text(
             text,
             color = Color(0xFF00A9E0),
-            style = MaterialTheme.typography.titleMedium,
+            fontSize = SETTINGS_VALUE_TEXT_SP,
+            fontWeight = FontWeight.SemiBold,
             modifier = Modifier.weight(1f),
         )
         Icon(
@@ -8737,6 +9185,55 @@ private fun IconLayoutSelector(
             contentDescription = null,
             tint = Color(0xFFB7BCC2),
         )
+    }
+}
+
+@Composable
+private fun IconLayoutDropdown(
+    expanded: Boolean,
+    onDismiss: () -> Unit,
+    options: List<Int>,
+    selected: Int,
+    defaultValue: Int,
+    suffix: String?,
+    onSelect: (Int) -> Unit,
+) {
+    DropdownMenu(
+        expanded = expanded,
+        onDismissRequest = onDismiss,
+        modifier = Modifier
+            .width(210.dp)
+            .background(Color(0xFF252828)),
+    ) {
+        options.forEach { option ->
+            DropdownMenuItem(
+                text = {
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        verticalAlignment = Alignment.CenterVertically,
+                    ) {
+                        Text(
+                            text = if (option == defaultValue) {
+                                "Default ($option)"
+                            } else {
+                                suffix?.let { "$option $it" } ?: option.toString()
+                            },
+                            color = Color(0xFFE0E3E6),
+                            fontSize = SETTINGS_VALUE_TEXT_SP,
+                            modifier = Modifier.weight(1f),
+                        )
+                        if (option == selected) {
+                            Text(
+                                text = "✓",
+                                color = Color(0xFF00C853),
+                                fontSize = SETTINGS_VALUE_TEXT_SP,
+                            )
+                        }
+                    }
+                },
+                onClick = { onSelect(option) },
+            )
+        }
     }
 }
 
@@ -8975,8 +9472,8 @@ private fun SettingsScreenOverlay(
                     SettingsCategoryCard(cardBg = cardBg, cardShape = cardShape, selected = selectedIndex == 0) {
                         SettingsRow(
                             icon = Icons.Rounded.Apps,
-                            title = "App icons",
-                            subtitle = "Grid size, icon shape, badges",
+                            title = "Icon layout",
+                            subtitle = "Grid, shape, cards, badges",
                             selected = selectedIndex == 0,
                             themePalette = themePalette,
                             subtitleColor = subtitleColor,

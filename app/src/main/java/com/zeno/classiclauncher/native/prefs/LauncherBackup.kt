@@ -184,7 +184,7 @@ object LauncherBackup {
         }
         val appIconShape =
             p.optString("appIconShape", "").let { name ->
-                AppIconShape.entries.firstOrNull { it.name == name } ?: AppIconShape.ROUNDED
+                AppIconShape.entries.firstOrNull { it.name == name } ?: AppIconShape.SOFT_SQUARE
             }
         val homeGroups = run {
             val arr = p.optJSONArray("homeGroups") ?: return@run emptyList<HomeGroup>()

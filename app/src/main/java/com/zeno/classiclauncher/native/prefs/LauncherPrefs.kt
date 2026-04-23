@@ -48,10 +48,12 @@ enum class SecondShortcutTarget {
 }
 
 enum class AppIconShape {
+    SQUARE,
     ROUNDED,
     SQUIRCLE,
     CIRCLE,
     SOFT_SQUARE,
+    CUT_CORNER,
 }
 
 enum class DockIconStyle {
@@ -161,7 +163,7 @@ data class LauncherPrefs(
      */
     val classicMode: Boolean = false,
     /** Global installed-app icon mask used across launcher surfaces. */
-    val appIconShape: AppIconShape = AppIconShape.ROUNDED,
+    val appIconShape: AppIconShape = AppIconShape.SOFT_SQUARE,
     /** Show a gradient card background behind each app tile in the A-Z drawer. */
     val showAppCardBackground: Boolean = false,
     /** Swipe-down on home opens the App Spotlight overlay instead of the launcher QS panel. */

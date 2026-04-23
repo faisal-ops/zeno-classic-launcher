@@ -62,6 +62,12 @@ private inline fun logHomeStripDnD(message: () -> String) {
     if (BuildConfig.DEBUG) Log.d(HOME_STRIP_DND_TAG, message())
 }
 
+enum class DrawerSortMode {
+    CLASSIC,
+    ALPHABETICAL,
+    MOST_USED,
+}
+
 class LauncherViewModel(app: Application) : AndroidViewModel(app) {
     private val prefsRepo = LauncherPrefsRepository(app.applicationContext)
     private val appsRepo = AppsRepository(app.applicationContext)
@@ -95,18 +101,24 @@ class LauncherViewModel(app: Application) : AndroidViewModel(app) {
     val searchQuery: StateFlow<String> = _searchQuery.asStateFlow()
     private val _reorderMode = MutableStateFlow(false)
     private val _movingPackage = MutableStateFlow<String?>(null)
+    private val _drawerSortMode = MutableStateFlow(DrawerSortMode.ALPHABETICAL)
+    val drawerSortMode: StateFlow<DrawerSortMode> = _drawerSortMode.asStateFlow()
     private val _sortByUsage = MutableStateFlow(false)
     val sortByUsage: StateFlow<Boolean> = _sortByUsage.asStateFlow()
 
-    fun toggleSortByUsage() {
-        val next = !_sortByUsage.value
-        _sortByUsage.value = next
-        if (next) {
+    fun setDrawerSortMode(mode: DrawerSortMode) {
+        _drawerSortMode.value = mode
+        _sortByUsage.value = mode == DrawerSortMode.MOST_USED
+        if (mode == DrawerSortMode.MOST_USED) {
             refreshUsageStats()
         } else {
             // Stop showing usage ordering data when sorting is disabled.
             _usageStats.value = emptyMap()
         }
+    }
+
+    fun toggleSortByUsage() {
+        setDrawerSortMode(if (_drawerSortMode.value == DrawerSortMode.MOST_USED) DrawerSortMode.ALPHABETICAL else DrawerSortMode.MOST_USED)
     }
 
     val apps: StateFlow<List<AppEntry>> =
@@ -118,7 +130,8 @@ class LauncherViewModel(app: Application) : AndroidViewModel(app) {
 
     private val _usageStats = MutableStateFlow<Map<String, Long>>(emptyMap())
     val usageStats: StateFlow<Map<String, Long>> = _usageStats.asStateFlow()
-    private fun isStrictDrawerAlphabeticalMode(): Boolean = !_reorderMode.value && !_sortByUsage.value
+    private fun isStrictDrawerAlphabeticalMode(): Boolean =
+        !_reorderMode.value && _drawerSortMode.value == DrawerSortMode.ALPHABETICAL
 
     /** Force an immediate refresh of usage stats (call after returning from Usage Access settings). */
     fun refreshUsageStats() {
@@ -127,7 +140,7 @@ class LauncherViewModel(app: Application) : AndroidViewModel(app) {
         }
     }
 
-    private val _baseCells = combine(apps, prefs, _searchQuery) { list, pr, q ->
+    private val _baseCells = combine(apps, prefs, _searchQuery, _drawerSortMode) { list, pr, q, sortMode ->
         val query = q.trim()
         val ql = query.lowercase()
         val (privateMode, privateQuery) = when {
@@ -136,9 +149,18 @@ class LauncherViewModel(app: Application) : AndroidViewModel(app) {
             else -> false to ""
         }
         val normalQuery = if (privateMode) "" else query
+        val orderedPackages = if (sortMode == DrawerSortMode.ALPHABETICAL) {
+            strictAlphabeticalDrawerOrder(
+                installed = list,
+                folderContents = pr.folderContents,
+                folderNames = pr.folderNames,
+            )
+        } else {
+            pr.orderedPackages
+        }
         buildDrawerGridCells(
             installed = list,
-            orderedPackages = pr.orderedPackages,
+            orderedPackages = orderedPackages,
             folderContents = pr.folderContents,
             folderNames = pr.folderNames,
             hiddenPackages = pr.hiddenPackages,
@@ -149,9 +171,9 @@ class LauncherViewModel(app: Application) : AndroidViewModel(app) {
     }
 
     val filteredGridCells: StateFlow<List<DrawerGridCell>> =
-        combine(_baseCells, usageStats, _sortByUsage) { cells, usage, sort ->
+        combine(_baseCells, usageStats, _drawerSortMode) { cells, usage, sortMode ->
             pinInternalSettingsFirst(
-                if (sort && usage.isNotEmpty()) {
+                if (sortMode == DrawerSortMode.MOST_USED && usage.isNotEmpty()) {
                     cells.sortedByDescending { cell ->
                         when (cell) {
                             is DrawerGridCell.App -> usage[cell.entry.packageName] ?: 0L
@@ -286,6 +308,9 @@ class LauncherViewModel(app: Application) : AndroidViewModel(app) {
     }
 
     fun startMove(packageName: String) {
+        if (_drawerSortMode.value != DrawerSortMode.CLASSIC) {
+            setDrawerSortMode(DrawerSortMode.CLASSIC)
+        }
         _movingPackage.value = packageName
         _reorderFromHomeStrip.value = false
     }
@@ -424,7 +449,7 @@ class LauncherViewModel(app: Application) : AndroidViewModel(app) {
             val snap = prefs.value
             val installed = apps.value
             val searchRaw = _searchQuery.value
-            val sortUsage = _sortByUsage.value
+            val sortUsage = _drawerSortMode.value == DrawerSortMode.MOST_USED
             val usage = _usageStats.value
 
             val cellsBefore = filteredDrawerCellsSnapshot(
@@ -633,7 +658,7 @@ class LauncherViewModel(app: Application) : AndroidViewModel(app) {
                 prefsRepo.writeGridState(finalOrder, folders, names)
                 return@withLock
             }
-            val usageReorderActive = _sortByUsage.value && _usageStats.value.isNotEmpty()
+            val usageReorderActive = _drawerSortMode.value == DrawerSortMode.MOST_USED && _usageStats.value.isNotEmpty()
             if (usageReorderActive) {
                 order.add(packageName)
             } else {
