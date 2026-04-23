@@ -5448,17 +5448,42 @@ private fun HomeGroupFolderOverlay(
         renameText = groupTitle
     }
     val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
+    val sheetShape = RoundedCornerShape(topStart = 24.dp, topEnd = 24.dp)
+    val gridColumns = 4
+    val gridItemCount = members.size + if (showAddButton && members.isNotEmpty()) 1 else 0
+    val gridRows = ((gridItemCount - 1).coerceAtLeast(0) / gridColumns) + 1
+    val tileIconSize = 50.dp
+    val tileVerticalPadding = 6.dp
+    val iconLabelGap = 5.dp
+    val gridVerticalGap = 10.dp
+    val maxGridHeight = (LocalConfiguration.current.screenHeightDp * 0.42f).dp.coerceAtMost(360.dp)
+    val gridHeight = when (gridRows) {
+        1 -> 108.dp
+        2 -> 226.dp
+        else -> maxGridHeight
+    }.coerceAtMost(maxGridHeight)
     ModalBottomSheet(
         onDismissRequest = onDismiss,
         sheetState = sheetState,
+        shape = sheetShape,
         containerColor = Color(0xFF1A1F28),
         contentColor = HOME_STRIP_LABEL_COLOR,
         tonalElevation = 0.dp,
+        dragHandle = {
+            Box(
+                modifier = Modifier
+                    .padding(top = 10.dp, bottom = 6.dp)
+                    .size(width = 38.dp, height = 3.dp)
+                    .clip(RoundedCornerShape(50))
+                    .background(Color(0xFF6C717C).copy(alpha = 0.72f)),
+            )
+        },
     ) {
         Column(
             modifier = Modifier
                 .fillMaxWidth()
-                .padding(start = 20.dp, end = 20.dp, bottom = 32.dp),
+                .navigationBarsPadding()
+                .padding(start = 20.dp, end = 20.dp, bottom = 14.dp),
         ) {
             // Title row: tap group/folder name to rename.
             Row(
@@ -5471,13 +5496,13 @@ private fun HomeGroupFolderOverlay(
                     style = MaterialTheme.typography.titleMedium.copy(
                         color = HOME_STRIP_LABEL_COLOR,
                         fontWeight = FontWeight.SemiBold,
-                        fontSize = 18.sp,
+                        fontSize = 16.sp,
                     ),
                     modifier = Modifier
                         .weight(1f)
                         .clip(RoundedCornerShape(8.dp))
                         .clickable { renameOpen = true }
-                        .padding(vertical = 4.dp),
+                        .padding(vertical = 1.dp),
                 )
             }
             if (members.isEmpty()) {
@@ -5520,17 +5545,17 @@ private fun HomeGroupFolderOverlay(
                     }
                 }
             } else {
-                Spacer(Modifier.height(16.dp))
+                Spacer(Modifier.height(10.dp))
                 LazyVerticalGrid(
-                    columns = GridCells.Fixed(4),
+                    columns = GridCells.Fixed(gridColumns),
                     modifier = Modifier
                         .fillMaxWidth()
-                        .heightIn(max = 400.dp)
+                        .height(gridHeight)
                         .focusRequester(gridFocusRequester)
                         .focusable()
                         .onPreviewKeyEvent { ev ->
                             if (ev.type != KeyEventType.KeyDown || members.isEmpty()) return@onPreviewKeyEvent false
-                            val cols = 4
+                            val cols = gridColumns
                             val rows = ((members.size - 1) / cols) + 1
                             val row = focusedIndex / cols
                             val col = focusedIndex % cols
@@ -5577,8 +5602,8 @@ private fun HomeGroupFolderOverlay(
                             }
                         },
                     horizontalArrangement = Arrangement.spacedBy(8.dp),
-                    verticalArrangement = Arrangement.spacedBy(16.dp),
-                    contentPadding = PaddingValues(vertical = 4.dp),
+                    verticalArrangement = Arrangement.spacedBy(gridVerticalGap),
+                    contentPadding = PaddingValues(vertical = 2.dp),
                 ) {
                     itemsIndexed(members, key = { idx, it -> "${idx}_${it.packageName}" }) { index, app ->
                         val cardRadius = themePalette.appCardCornerRadiusDp.dp
@@ -5606,7 +5631,7 @@ private fun HomeGroupFolderOverlay(
                                     color = if (isFocused) Color(0x553D4B60) else Color(0x332F3B4F),
                                     shape = cardShape,
                                 )
-                                .padding(top = 8.dp, start = 4.dp, end = 4.dp, bottom = 6.dp)
+                                .padding(top = tileVerticalPadding, start = 4.dp, end = 4.dp, bottom = tileVerticalPadding)
                                 .pointerInput(app.packageName) {
                                     detectTapGestures(
                                         onTap = {
@@ -5622,10 +5647,10 @@ private fun HomeGroupFolderOverlay(
                                 contentDescription = app.label,
                                 contentScale = ContentScale.Fit,
                                 modifier = Modifier
-                                    .size(56.dp)
+                                    .size(tileIconSize)
                                     .clip(iconMaskShape(appIconShape)),
                             )
-                            Spacer(Modifier.height(6.dp))
+                            Spacer(Modifier.height(iconLabelGap))
                             Text(
                                 text = app.label,
                                 color = HOME_STRIP_LABEL_COLOR,
@@ -5650,7 +5675,7 @@ private fun HomeGroupFolderOverlay(
                                     .background(Color(0x1E1E2430))
                                     .border(0.8.dp, Color(0x3B5B9BD5), cardShape)
                                     .clickable { onAddApp() }
-                                    .padding(top = 8.dp, start = 4.dp, end = 4.dp, bottom = 6.dp),
+                                    .padding(top = tileVerticalPadding, start = 4.dp, end = 4.dp, bottom = tileVerticalPadding),
                             ) {
                                 Box(modifier = Modifier.fillMaxWidth()) {
                                     // Keep the previous tile height footprint while centering the "+" box exactly.
@@ -5658,8 +5683,8 @@ private fun HomeGroupFolderOverlay(
                                         horizontalAlignment = Alignment.CenterHorizontally,
                                         modifier = Modifier.fillMaxWidth(),
                                     ) {
-                                        Spacer(Modifier.height(56.dp))
-                                        Spacer(Modifier.height(6.dp))
+                                        Spacer(Modifier.height(tileIconSize))
+                                        Spacer(Modifier.height(iconLabelGap))
                                         Text(
                                             text = "Add app",
                                             color = Color.Transparent,
@@ -5674,16 +5699,16 @@ private fun HomeGroupFolderOverlay(
                                     Box(
                                         modifier = Modifier
                                             .align(Alignment.Center)
-                                            .size(56.dp)
-                                            .clip(RoundedCornerShape(14.dp))
-                                            .border(1.dp, Color(0x595B9BD5), RoundedCornerShape(14.dp)),
+                                            .size(tileIconSize)
+                                            .clip(RoundedCornerShape(13.dp))
+                                            .border(1.dp, Color(0x595B9BD5), RoundedCornerShape(13.dp)),
                                         contentAlignment = Alignment.Center,
                                     ) {
                                         Icon(
                                             imageVector = Icons.Rounded.Add,
                                             contentDescription = "Add app",
                                             tint = Color(0xFF91B3DA),
-                                            modifier = Modifier.size(26.dp),
+                                            modifier = Modifier.size(24.dp),
                                         )
                                     }
                                 }
