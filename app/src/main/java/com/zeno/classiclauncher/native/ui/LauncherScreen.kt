@@ -323,6 +323,8 @@ private fun drawerCellForHomeStripToken(
 private const val HOME_WIDGET_HOST_ID = 7777
 private val HOME_SHORTCUT_ICON_DP = 52.dp
 private val HOME_SHORTCUT_FALLBACK_ICON_DP = 48.dp
+private const val HOME_STRIP_ICON_MIN_DP = 48f
+private const val HOME_STRIP_ICON_MAX_DP = 56f
 private val HOME_STRIP_LABEL_COLOR = Color(0xFFE8EEF7)
 /** Compact strip captions shared by apps, folders, and groups. */
 private val HOME_STRIP_LABEL_FONT_SP = 13.sp
@@ -338,6 +340,9 @@ private const val HOME_STRIP_DND_TAG = "HomeStripDnD"
 private inline fun logHomeStripDnD(message: () -> String) {
     if (BuildConfig.DEBUG) Log.d(HOME_STRIP_DND_TAG, message())
 }
+
+private fun homeStripIconSize(iconSizeDp: Float): Dp =
+    iconSizeDp.coerceIn(HOME_STRIP_ICON_MIN_DP, HOME_STRIP_ICON_MAX_DP).dp
 
 private val OUTLINE_OFFSETS = arrayOf(
     Offset(-0.8f, -0.8f),
@@ -6388,11 +6393,12 @@ private fun HomeGroupStripIcon(
     members: List<AppEntry>,
     appIconShape: AppIconShape,
     hasUnreadBadge: Boolean,
+    tileSize: Dp = HOME_SHORTCUT_ICON_DP,
     gesturesEnabled: Boolean = true,
     onClick: () -> Unit,
     onLongPress: () -> Unit,
 ) {
-    val tile = HOME_SHORTCUT_ICON_DP
+    val tile = tileSize
     val stripCorner = RoundedCornerShape(12.dp)
     val folderBg = Color(0xD9181C24)
     val folderBorderIdle = Color(0x38FFFFFF)
@@ -6568,7 +6574,7 @@ private fun HomeShortcutStrip(
     val view = LocalView.current
     val outerPadH = 22.dp
     val stripColSpacing = HOME_STRIP_SHORTCUT_GAP
-    val iconSize = themePalette.appGridIconSizeDp.dp
+    val iconSize = homeStripIconSize(themePalette.appGridIconSizeDp)
     val labelSizeSp = HOME_STRIP_LABEL_FONT_SP.value.roundToInt()
     val selectorRadius = HOME_STRIP_FOCUS_RADIUS
 
@@ -6961,6 +6967,7 @@ private fun HomeShortcutStrip(
                                                 members = members,
                                                 appIconShape = appIconShape,
                                                 hasUnreadBadge = group.packageNames.any { it in unreadPackages },
+                                                tileSize = iconSize,
                                                 gesturesEnabled = false,
                                                 onClick = {},
                                                 onLongPress = {},
@@ -7214,6 +7221,7 @@ private fun HomeShortcutStrip(
                                         members = members,
                                         appIconShape = appIconShape,
                                         hasUnreadBadge = gg.packageNames.any { it in unreadPackages },
+                                        tileSize = isz,
                                         gesturesEnabled = false,
                                         onClick = {},
                                         onLongPress = {},
