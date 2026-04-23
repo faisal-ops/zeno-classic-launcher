@@ -7,6 +7,7 @@ package com.zeno.classiclauncher.nlauncher.ui
 
 import android.Manifest
 import android.app.Activity
+import android.app.WallpaperManager
 import android.appwidget.AppWidgetHost
 import android.appwidget.AppWidgetHostView
 import android.appwidget.AppWidgetManager
@@ -128,6 +129,7 @@ import androidx.compose.material.icons.rounded.VisibilityOff
 import androidx.compose.material.icons.rounded.Add
 import androidx.compose.material.icons.rounded.BookmarkAdd
 import androidx.compose.material.icons.rounded.AddAlarm
+import androidx.compose.material.icons.rounded.ArrowDropDown
 import androidx.compose.material.icons.rounded.EventBusy
 import androidx.compose.material.icons.rounded.Folder
 import androidx.compose.material.icons.rounded.Lock
@@ -156,6 +158,7 @@ import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.SnackbarHost
 import androidx.compose.material3.SnackbarHostState
+import androidx.compose.material3.SnackbarResult
 import androidx.compose.material3.rememberModalBottomSheetState
 import androidx.activity.compose.BackHandler
 import androidx.activity.compose.rememberLauncherForActivityResult
@@ -252,6 +255,7 @@ import com.zeno.classiclauncher.nlauncher.apps.ToggleResult
 import com.zeno.classiclauncher.nlauncher.apps.parseHomeShortcutToken
 import com.zeno.classiclauncher.native.ui.WallpaperSourceOverlay
 import com.zeno.classiclauncher.native.ui.WallpaperSourceSub
+import com.zeno.classiclauncher.nlauncher.BuildConfig
 import com.zeno.classiclauncher.nlauncher.badges.AppIconWithBadge
 import com.zeno.classiclauncher.nlauncher.badges.BadgeNotificationListener
 import com.zeno.classiclauncher.nlauncher.power.SleepManager
@@ -327,6 +331,9 @@ private val HOME_STRIP_FOCUS_RADIUS = 5.dp
 private val HOME_STRIP_FOCUS_INSET = 2.dp
 private val HOME_STRIP_CONTENT_VERTICAL_INSET = 3.dp
 private const val HOME_STRIP_DND_TAG = "HomeStripDnD"
+private inline fun logHomeStripDnD(message: () -> String) {
+    if (BuildConfig.DEBUG) Log.d(HOME_STRIP_DND_TAG, message())
+}
 
 private val OUTLINE_OFFSETS = arrayOf(
     Offset(-0.8f, -0.8f),
@@ -613,6 +620,31 @@ fun LauncherScreen(
 
     val scope = rememberCoroutineScope()
     val homeStripSnackbarHostState = remember { SnackbarHostState() }
+    fun deleteHomeStripItemWithUndo(
+        label: String,
+        delete: () -> Unit,
+    ) {
+        val shortcutsBefore = prefs.homeShortcutPackages
+        val groupsBefore = prefs.homeGroups
+        val slotsBefore = prefs.homeStripSlots
+        val orderBefore = prefs.homeStripOrder
+        delete()
+        scope.launch {
+            val result = homeStripSnackbarHostState.showSnackbar(
+                message = "$label removed",
+                actionLabel = "Undo",
+                withDismissAction = true,
+            )
+            if (result == SnackbarResult.ActionPerformed) {
+                vm.restoreHomeStripState(
+                    shortcuts = shortcutsBefore,
+                    groups = groupsBefore,
+                    slots = slotsBefore,
+                    order = orderBefore,
+                )
+            }
+        }
+    }
     val homeFocusRequester = remember { FocusRequester() }
     var drawerPageIndex by remember { mutableStateOf(0) }
     var requestedDrawerPage by remember { mutableStateOf(-1) }
@@ -729,6 +761,13 @@ fun LauncherScreen(
     val dismissLauncherQsEvent by vm.dismissLauncherQsEvent.collectAsState()
     androidx.compose.runtime.LaunchedEffect(dismissLauncherQsEvent) {
         if (dismissLauncherQsEvent > 0) showQuickSettingsOverlay = false
+    }
+
+    androidx.compose.runtime.LaunchedEffect(reorderMode, moving) {
+        if (reorderMode && moving == null) {
+            kotlinx.coroutines.delay(10_000L)
+            if (reorderMode && moving == null) vm.toggleReorderMode()
+        }
     }
 
     // Dock shows which app-drawer page is active; trackpad flings can move the outer home/drawer pager
@@ -1044,8 +1083,22 @@ fun LauncherScreen(
                             openFolder = OpenFolderState(cell.id, cell.members, cell.displayTitle)
                         },
                         onShowSettings = { showSettings = true },
-                        onDeleteHomeShortcut = vm::removeHomeShortcutToken,
-                        onDeleteGroup = { g -> vm.deleteHomeGroup(g.id) },
+                        onDeleteHomeShortcut = { token ->
+                            val label = drawerCellForHomeStripToken(token, gridCells, allApps)?.let { cell ->
+                                when (cell) {
+                                    is DrawerGridCell.App -> cell.entry.label
+                                    is DrawerGridCell.Folder -> cell.displayTitle
+                                }
+                            } ?: "Shortcut"
+                            deleteHomeStripItemWithUndo(label) {
+                                vm.removeHomeShortcutToken(token)
+                            }
+                        },
+                        onDeleteGroup = { g ->
+                            deleteHomeStripItemWithUndo(g.title) {
+                                vm.deleteHomeGroup(g.id)
+                            }
+                        },
                         onStripReorderTap = { token ->
                             val m = moving
                             if (m == null) vm.startStripMove(token)
@@ -1432,13 +1485,16 @@ fun LauncherScreen(
                     }
                 },
                 onOpenGlanceSettings = { showGlanceSettings = true },
-                homeGroupsSubtitle = remember(prefs.homeGroups) {
-                    when {
-                        prefs.homeGroups.isEmpty() -> "No groups — long-press apps in drawer to add"
-                        else -> prefs.homeGroups.joinToString(" · ") { it.title }
+                homeGroupsSubtitle = remember(prefs.homeStripEnabled, prefs.homeGroups) {
+                    if (!prefs.homeStripEnabled) {
+                        "Off — hidden from home screen"
+                    } else {
+                        when {
+                            prefs.homeGroups.isEmpty() -> "On — no groups yet"
+                            else -> prefs.homeGroups.joinToString(prefix = "On · ", separator = " · ") { it.title }
+                        }
                     }
                 },
-                onOpenHomeGroupsSettings = { showHomeGroupsSettings = true },
                 permissionsSubtitle = remember(prefs, permRuntime) {
                     val missing = missingPermissionCount(prefs, permRuntime)
                     when {
@@ -1492,6 +1548,8 @@ fun LauncherScreen(
                 onOpenAppearanceSettings = { showIconAppearanceSettings = true },
                 classicMode = prefs.classicMode,
                 onToggleClassicMode = { vm.setClassicMode(!prefs.classicMode) },
+                homeStripEnabled = prefs.homeStripEnabled,
+                onToggleHomeStrip = { vm.setHomeStripEnabled(!prefs.homeStripEnabled) },
                 dockSecondEnabled = prefs.dockSecondEnabled,
                 onToggleDockSecond = { vm.setDockSecondEnabled(!prefs.dockSecondEnabled) },
             )
@@ -1502,12 +1560,14 @@ fun LauncherScreen(
                 gridPreset = prefs.gridPreset,
                 appIconShape = prefs.appIconShape,
                 showAppCardBackground = prefs.showAppCardBackground,
+                previewApps = allApps,
                 drawerBadgesSubtitle = remember(prefs.showIconNotifBadge) {
                     buildList {
                         if (prefs.showIconNotifBadge) add("Notifications")
                     }.let { if (it.isEmpty()) "All off" else it.joinToString(", ") }
                 },
                 onGridPreset = vm::setGridPreset,
+                onAppGridIconSize = vm::setAppGridIconSize,
                 onSetAppIconShape = vm::setAppIconShape,
                 onToggleAppCardBackground = { vm.setShowAppCardBackground(!prefs.showAppCardBackground) },
                 onOpenDrawerBadges = { showAppDrawerBadges = true },
@@ -1603,12 +1663,6 @@ fun LauncherScreen(
                 apps = allApps,
                 themePalette = themePalette,
                 slot = activeDockSlot,
-                currentName = when (activeDockSlot) {
-                    DockSlot.Mail -> prefs.dockMailTitle
-                    DockSlot.Shortcut -> prefs.dockSecondTitle
-                    DockSlot.Camera -> prefs.dockThirdTitle
-                },
-                onNameChange = { vm.setDockSlotTitle(activeDockSlot, it) },
                 onSelect = { pkg ->
                     when (activeDockSlot) {
                         DockSlot.Mail -> vm.setDockMailPackage(pkg)
@@ -6554,15 +6608,15 @@ private fun HomeShortcutStrip(
             onStartStripMove(slotId)
             hoveredSlotKey = null
             reorderFingerDragging = true
-            originalStripBoundsRef[0] = attachedBoundsSnapshot()
             ghostVisible = true
+            // Empty drop slots compose only while dragging, so refresh bounds on the first move.
+            originalStripBoundsRef[0] = emptyMap()
             val src = cellLayouts[slotId]
             if (src != null && src.isAttached) dragFingerRoot = src.localToRoot(startOffset)
-            Log.d(
-                HOME_STRIP_DND_TAG,
+            logHomeStripDnD {
                 "beginDrag slot=$slotId reorderMode=${reorderModeRef.value} " +
-                    "hoverKeys=${stripHoverKeysRef[0].size} bounds=${originalStripBoundsRef[0].size}",
-            )
+                    "hoverKeys=${stripHoverKeysRef[0].size} bounds=${originalStripBoundsRef[0].size}"
+            }
             scope.launch {
                 ghostScaleAnim.animateTo(
                     1.1f,
@@ -6580,7 +6634,10 @@ private fun HomeShortcutStrip(
             } else {
                 Offset(dragFingerRoot.x + dragAmount.x, dragFingerRoot.y + dragAmount.y)
             }
-            if (originalStripBoundsRef[0].isEmpty()) {
+            if (
+                originalStripBoundsRef[0].isEmpty() ||
+                    !originalStripBoundsRef[0].keys.containsAll(stripHoverKeysRef[0])
+            ) {
                 val snap = attachedBoundsSnapshot()
                 if (snap.isNotEmpty()) originalStripBoundsRef[0] = snap
             }
@@ -6593,10 +6650,9 @@ private fun HomeShortcutStrip(
                     // Hysteresis avoids rapid bounce between neighboring slots (most visible on groups).
                     if (nearestDist + hoverSwitchThresholdPx >= currentDist) return
                 }
-                Log.d(
-                    HOME_STRIP_DND_TAG,
-                    "hover slot=$slotId from=$hoveredSlotKey to=$nearest finger=(${dragFingerRoot.x},${dragFingerRoot.y})",
-                )
+                logHomeStripDnD {
+                    "hover slot=$slotId from=$hoveredSlotKey to=$nearest finger=(${dragFingerRoot.x},${dragFingerRoot.y})"
+                }
                 hoveredSlotKey = nearest
             }
         }
@@ -6605,10 +6661,9 @@ private fun HomeShortcutStrip(
             reorderFingerDragging = false
             // Match drawer behavior: only drop when we had an explicit hover target during drag.
             val hoverKey = hoveredSlotKey
-            Log.d(
-                HOME_STRIP_DND_TAG,
-                "finishDrag slot=$slotId hoverKey=$hoverKey pendingBefore=$pendingDropMoving/$pendingDropTarget",
-            )
+            logHomeStripDnD {
+                "finishDrag slot=$slotId hoverKey=$hoverKey pendingBefore=$pendingDropMoving/$pendingDropTarget"
+            }
             if (hoverKey != null && hapticsEnabled) {
                 view.performHapticFeedback(HapticFeedbackConstants.CLOCK_TICK)
             }
@@ -6617,10 +6672,7 @@ private fun HomeShortcutStrip(
             pendingDropSlots = previewHomeStripSlots(baseSlotTokens, slotId, hoverKey)
             hoveredSlotKey = null
             scope.launch {
-                Log.d(
-                    HOME_STRIP_DND_TAG,
-                    "commitDrop slot=$slotId hoverKey=$hoverKey",
-                )
+                logHomeStripDnD { "commitDrop slot=$slotId hoverKey=$hoverKey" }
                 onFinishReorderDrop(hoverKey)
                 // Let the persisted order compose under the lifted ghost before release fade.
                 kotlinx.coroutines.delay(if (hoverKey != null) 45 else 0)
@@ -6638,7 +6690,7 @@ private fun HomeShortcutStrip(
         }
 
         fun cancelDrag() {
-            Log.d(HOME_STRIP_DND_TAG, "cancelDrag slot=$slotId")
+            logHomeStripDnD { "cancelDrag slot=$slotId" }
             reorderFingerDragging = false
             hoveredSlotKey = null
             pendingDropMoving = null
@@ -6716,7 +6768,7 @@ private fun HomeShortcutStrip(
                     else -> if (showShortcutApps) t else null
                 }
             }
-            val showAllStripSlots = reorderMode || ghostVisible || movingSlotId != null
+            val showAllStripSlots = ghostVisible || movingSlotId != null
             val renderedStripSlots: List<Pair<Int, String?>> = if (showAllStripSlots) {
                 List(STRIP_TOTAL_SLOTS) { idx -> idx to resolveVisibleStripToken(displaySlotTokens.getOrNull(idx)) }
             } else {
@@ -6974,6 +7026,17 @@ private fun HomeShortcutStrip(
                             }
                         }
                         } else {
+                        val emptyDropActive = ghostVisible && hoveredSlotKey == emptyKey
+                        val emptyDropAlpha by animateFloatAsState(
+                            targetValue = if (emptyDropActive) 1f else 0.48f,
+                            animationSpec = tween(140),
+                            label = "homeStripEmptyDropAlpha",
+                        )
+                        val emptyDropScale by animateFloatAsState(
+                            targetValue = if (emptyDropActive) 1.06f else 1f,
+                            animationSpec = tween(140, easing = FastOutSlowInEasing),
+                            label = "homeStripEmptyDropScale",
+                        )
                         Box(
                             modifier = Modifier
                                 .width(cardW)
@@ -6984,10 +7047,15 @@ private fun HomeShortcutStrip(
                             Column(horizontalAlignment = Alignment.CenterHorizontally) {
                                 Box(
                                     modifier = Modifier
+                                        .graphicsLayer {
+                                            scaleX = emptyDropScale
+                                            scaleY = emptyDropScale
+                                            alpha = emptyDropAlpha
+                                        }
                                         .size(iconSize + 8.dp)
                                         .border(
-                                            1.5.dp,
-                                            Color(0x55B8C1CE),
+                                            if (emptyDropActive) 2.dp else 1.5.dp,
+                                            if (emptyDropActive) Color(0xCC84D5F6) else Color(0x55B8C1CE),
                                             RoundedCornerShape(12.dp),
                                         ),
                                     contentAlignment = Alignment.Center,
@@ -6995,7 +7063,7 @@ private fun HomeShortcutStrip(
                                     Icon(
                                         Icons.Rounded.Apps,
                                         null,
-                                        tint = Color(0x55B8C1CE),
+                                        tint = if (emptyDropActive) Color(0xCC84D5F6) else Color(0x55B8C1CE),
                                         modifier = Modifier.size(22.dp),
                                     )
                                 }
@@ -7633,8 +7701,6 @@ private fun DockShortcutPickerOverlay(
     apps: List<AppEntry>,
     themePalette: LauncherThemePalette,
     slot: DockSlot,
-    currentName: String,
-    onNameChange: (String) -> Unit,
     onSelect: (String) -> Unit,
     onUseDefault: () -> Unit,
     onDismiss: () -> Unit,
@@ -7642,7 +7708,6 @@ private fun DockShortcutPickerOverlay(
     onToggleDockSecond: () -> Unit = {},
 ) {
     var query by remember { mutableStateOf("") }
-    var name by remember(slot, currentName) { mutableStateOf(currentName) }
     val filtered = remember(apps, query) {
         val q = query.trim().lowercase()
         apps.filter {
@@ -7721,27 +7786,6 @@ private fun DockShortcutPickerOverlay(
                         DockSlot.Camera -> "Use default (camera app)"
                     },
                     color = Color(0xFF84D5F6),
-                )
-            }
-            // Label field — hidden for second shortcut (app label is used directly)
-            if (slot != DockSlot.Shortcut) {
-                OutlinedTextField(
-                    value = name,
-                    onValueChange = {
-                        name = it
-                        onNameChange(it)
-                    },
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .padding(horizontal = 16.dp, vertical = 8.dp),
-                    placeholder = { Text("Shortcut label", color = themePalette.settingsMenuBody) },
-                    singleLine = true,
-                    colors = TextFieldDefaults.colors(
-                        focusedTextColor = themePalette.settingsMenuTitle,
-                        unfocusedTextColor = themePalette.settingsMenuTitle,
-                        focusedContainerColor = Color(0xFF1E2430),
-                        unfocusedContainerColor = Color(0xFF1E2430),
-                    ),
                 )
             }
             OutlinedTextField(
@@ -8221,8 +8265,10 @@ private fun IconAppearanceSettingsOverlay(
     gridPreset: GridPreset,
     appIconShape: AppIconShape,
     showAppCardBackground: Boolean,
+    previewApps: List<AppEntry>,
     drawerBadgesSubtitle: String,
     onGridPreset: (GridPreset) -> Unit,
+    onAppGridIconSize: (Float) -> Unit,
     onSetAppIconShape: (AppIconShape) -> Unit,
     onToggleAppCardBackground: () -> Unit,
     onOpenDrawerBadges: () -> Unit,
@@ -8235,6 +8281,7 @@ private fun IconAppearanceSettingsOverlay(
     val subtitleColor = Color(0xFF8E95A3)
     val cardBg = Color(0xFF1E2430)
     val cardShape = RoundedCornerShape(12.dp)
+    var showIconLayoutSettings by remember { mutableStateOf(false) }
     Surface(
         modifier = Modifier
             .fillMaxSize()
@@ -8281,7 +8328,7 @@ private fun IconAppearanceSettingsOverlay(
                         val nk = ev.nativeKeyEvent
                         when {
                             ev.key == Key.Back || nk?.keyCode == AndroidKeyEvent.KEYCODE_BACK || ev.isEndCallKey() -> {
-                                onDismiss()
+                                if (showIconLayoutSettings) showIconLayoutSettings = false else onDismiss()
                                 true
                             }
                             ev.key == Key.DirectionUp || nk?.keyCode == AndroidKeyEvent.KEYCODE_DPAD_UP -> {
@@ -8304,8 +8351,7 @@ private fun IconAppearanceSettingsOverlay(
                                 nk?.keyCode == AndroidKeyEvent.KEYCODE_ENTER -> {
                                 when (selectedIndex) {
                                     0 -> {
-                                        val all = GridPreset.entries
-                                        onGridPreset(all[(all.indexOf(gridPreset) + 1) % all.size])
+                                        showIconLayoutSettings = true
                                     }
                                     1 -> {
                                         val all = AppIconShape.entries
@@ -8334,8 +8380,7 @@ private fun IconAppearanceSettingsOverlay(
                         subtitleColor = subtitleColor,
                         onClick = {
                             selectedIndex = 0
-                            val all = GridPreset.entries
-                            onGridPreset(all[(all.indexOf(gridPreset) + 1) % all.size])
+                            showIconLayoutSettings = true
                         },
                     )
                 }
@@ -8391,6 +8436,308 @@ private fun IconAppearanceSettingsOverlay(
             }
         }
     }
+    if (showIconLayoutSettings) {
+        IconLayoutSettingsOverlay(
+            gridPreset = gridPreset,
+            previewApps = previewApps,
+            appIconShape = appIconShape,
+            themePalette = themePalette,
+            onGridPreset = onGridPreset,
+            onAppGridIconSize = onAppGridIconSize,
+            onSetAppIconShape = onSetAppIconShape,
+            onDismiss = { showIconLayoutSettings = false },
+        )
+    }
+}
+
+@Composable
+private fun IconLayoutSettingsOverlay(
+    gridPreset: GridPreset,
+    previewApps: List<AppEntry>,
+    appIconShape: AppIconShape,
+    themePalette: LauncherThemePalette,
+    onGridPreset: (GridPreset) -> Unit,
+    onAppGridIconSize: (Float) -> Unit,
+    onSetAppIconShape: (AppIconShape) -> Unit,
+    onDismiss: () -> Unit,
+) {
+    val context = LocalContext.current
+    val focusRequester = remember { FocusRequester() }
+    var iconSize by remember(themePalette.appGridIconSizeDp) {
+        mutableFloatStateOf(themePalette.appGridIconSizeDp.coerceIn(42f, 64f))
+    }
+    val currentWallpaper = remember {
+        runCatching { WallpaperManager.getInstance(context).drawable }.getOrNull()
+    }
+    val previewItems = remember(previewApps) {
+        previewApps
+            .asSequence()
+            .filter { !it.internal }
+            .take(8)
+            .toList()
+    }
+    val rowOptions = remember { GridPreset.entries.map { it.rows }.distinct().sorted() }
+    val colOptions = remember { GridPreset.entries.map { it.cols }.distinct().sorted() }
+    fun preferredPresetFor(rows: Int, cols: Int): GridPreset =
+        GridPreset.entries.firstOrNull { it.rows == rows && it.cols == cols }
+            ?: GridPreset.entries
+                .filter { it.cols == cols }
+                .minByOrNull { abs(it.rows - rows) }
+            ?: GridPreset.entries
+                .filter { it.rows == rows }
+                .minByOrNull { abs(it.cols - cols) }
+            ?: gridPreset
+    fun cycleRow() {
+        val next = rowOptions[(rowOptions.indexOf(gridPreset.rows).coerceAtLeast(0) + 1) % rowOptions.size]
+        onGridPreset(preferredPresetFor(next, gridPreset.cols))
+    }
+    fun cycleColumn() {
+        val next = colOptions[(colOptions.indexOf(gridPreset.cols).coerceAtLeast(0) + 1) % colOptions.size]
+        onGridPreset(preferredPresetFor(gridPreset.rows, next))
+    }
+    fun cycleShape() {
+        val all = AppIconShape.entries
+        onSetAppIconShape(all[(all.indexOf(appIconShape).coerceAtLeast(0) + 1) % all.size])
+    }
+
+    Surface(
+        modifier = Modifier
+            .fillMaxSize()
+            .zIndex(404f),
+        color = Color.Transparent,
+    ) {
+        Column(
+            modifier = Modifier
+                .fillMaxSize()
+                .statusBarsPadding()
+                .focusRequester(focusRequester)
+                .focusable()
+                .onPreviewKeyEvent { ev ->
+                    if (ev.type != KeyEventType.KeyDown) return@onPreviewKeyEvent false
+                    val nk = ev.nativeKeyEvent
+                    when {
+                        ev.key == Key.Back || nk?.keyCode == AndroidKeyEvent.KEYCODE_BACK || ev.isEndCallKey() -> {
+                            onDismiss()
+                            true
+                        }
+                        else -> false
+                    }
+                },
+        ) {
+            LaunchedEffect(Unit) { focusRequester.requestFocus() }
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .height(58.dp)
+                    .background(Color(0xFF292B2B)),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                IconButton(onClick = onDismiss) {
+                    Icon(
+                        Icons.AutoMirrored.Rounded.ArrowBack,
+                        contentDescription = "Back",
+                        tint = Color.White,
+                        modifier = Modifier.size(26.dp),
+                    )
+                }
+                Text(
+                    "Icon layout",
+                    color = Color.White,
+                    style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.SemiBold),
+                    modifier = Modifier.weight(1f),
+                )
+                Text(
+                    "SAVE",
+                    color = Color.White,
+                    style = MaterialTheme.typography.titleLarge.copy(fontWeight = FontWeight.SemiBold),
+                    modifier = Modifier
+                        .clip(RoundedCornerShape(6.dp))
+                        .clickable { onDismiss() }
+                        .padding(horizontal = 18.dp, vertical = 12.dp),
+                )
+            }
+            Box(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .height(132.dp),
+            ) {
+                if (currentWallpaper != null) {
+                    AsyncImage(
+                        model = currentWallpaper,
+                        contentDescription = null,
+                        contentScale = ContentScale.Crop,
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .height(132.dp),
+                    )
+                } else {
+                    Box(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .height(132.dp)
+                            .background(Color(0xFF202344)),
+                    )
+                }
+                Box(
+                    modifier = Modifier
+                        .fillMaxSize()
+                        .background(Color(0x33000000)),
+                )
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .horizontalScroll(rememberScrollState()),
+                    verticalAlignment = Alignment.Top,
+                ) {
+                    previewItems.forEach { app ->
+                        Column(
+                            horizontalAlignment = Alignment.CenterHorizontally,
+                            modifier = Modifier
+                                .width(120.dp)
+                                .padding(top = 14.dp),
+                        ) {
+                            AsyncImage(
+                                model = app.icon,
+                                contentDescription = app.label,
+                                contentScale = ContentScale.Fit,
+                                modifier = Modifier
+                                    .size(iconSize.dp)
+                                    .clip(iconMaskShape(appIconShape)),
+                            )
+                            Spacer(Modifier.height(6.dp))
+                            Text(
+                                text = app.label,
+                                color = Color(0xFFE8EEF7),
+                                fontSize = 15.sp,
+                                lineHeight = 18.sp,
+                                maxLines = 2,
+                                overflow = TextOverflow.Ellipsis,
+                                textAlign = TextAlign.Center,
+                                modifier = Modifier.fillMaxWidth(),
+                            )
+                        }
+                    }
+                }
+            }
+            Column(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .weight(1f)
+                    .background(Color(0xFF2C2F2F))
+                    .padding(horizontal = 26.dp, vertical = 16.dp),
+            ) {
+                IconLayoutSectionHeader(
+                    title = "Icon size",
+                    value = "${iconSize.toInt()} dp",
+                    defaultValue = "Default 52 dp",
+                )
+                Slider(
+                    value = iconSize,
+                    onValueChange = {
+                        iconSize = it
+                        onAppGridIconSize(it)
+                    },
+                    valueRange = 42f..64f,
+                    steps = 4,
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(top = 4.dp),
+                )
+                Spacer(Modifier.height(16.dp))
+                IconLayoutSectionHeader(
+                    title = "Icon shape",
+                    value = appIconShapeLabel(appIconShape),
+                    defaultValue = "Default Rounded",
+                )
+                Spacer(Modifier.height(8.dp))
+                IconLayoutSelector(
+                    text = appIconShapeLabel(appIconShape),
+                    onClick = ::cycleShape,
+                    modifier = Modifier.fillMaxWidth(),
+                )
+                Spacer(Modifier.height(18.dp))
+                IconLayoutSectionHeader(
+                    title = "Grid",
+                    value = "${gridPreset.cols} × ${gridPreset.rows}",
+                    defaultValue = "Default 5 columns · 3 rows",
+                )
+                Spacer(Modifier.height(8.dp))
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(14.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    IconLayoutSelector(
+                        text = "${gridPreset.cols} Columns",
+                        onClick = ::cycleColumn,
+                        modifier = Modifier.weight(1f),
+                    )
+                    IconLayoutSelector(
+                        text = "${gridPreset.rows} Rows",
+                        onClick = ::cycleRow,
+                        modifier = Modifier.weight(1f),
+                    )
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun IconLayoutSectionHeader(
+    title: String,
+    value: String,
+    defaultValue: String,
+) {
+    Row(
+        modifier = Modifier.fillMaxWidth(),
+        verticalAlignment = Alignment.Bottom,
+    ) {
+        Column(modifier = Modifier.weight(1f)) {
+            Text(
+                title,
+                color = Color.White,
+                style = MaterialTheme.typography.headlineSmall,
+            )
+            Text(
+                defaultValue,
+                color = Color(0xFF9EA4A9),
+                style = MaterialTheme.typography.bodySmall,
+            )
+        }
+        Text(
+            value,
+            color = Color(0xFF00A9E0),
+            style = MaterialTheme.typography.bodyMedium.copy(fontWeight = FontWeight.SemiBold),
+        )
+    }
+}
+
+@Composable
+private fun IconLayoutSelector(
+    text: String,
+    onClick: () -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    Row(
+        modifier = modifier
+            .clip(RoundedCornerShape(6.dp))
+            .clickable(onClick = onClick)
+            .padding(vertical = 8.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Text(
+            text,
+            color = Color(0xFF00A9E0),
+            style = MaterialTheme.typography.titleMedium,
+            modifier = Modifier.weight(1f),
+        )
+        Icon(
+            Icons.Rounded.ArrowDropDown,
+            contentDescription = null,
+            tint = Color(0xFFB7BCC2),
+        )
+    }
 }
 
 @Composable
@@ -8412,7 +8759,6 @@ private fun SettingsScreenOverlay(
     onGridPreset: (GridPreset) -> Unit,
     onOpenDockSlotPicker: (DockSlot) -> Unit,
     onOpenGlanceSettings: () -> Unit,
-    onOpenHomeGroupsSettings: () -> Unit,
     permissionsSubtitle: String,
     onOpenPermissionsSettings: () -> Unit,
     onSetWallpaper: () -> Unit,
@@ -8426,6 +8772,8 @@ private fun SettingsScreenOverlay(
     drawerBadgesSubtitle: String,
     classicMode: Boolean,
     onToggleClassicMode: () -> Unit,
+    homeStripEnabled: Boolean,
+    onToggleHomeStrip: () -> Unit,
     dockSecondEnabled: Boolean,
     onToggleDockSecond: () -> Unit,
     appIconShape: AppIconShape,
@@ -8480,7 +8828,7 @@ private fun SettingsScreenOverlay(
             // HOME SCREEN
             0 -> onOpenAppearanceSettings()
             1 -> onToggleClassicMode()
-            2 -> onOpenHomeGroupsSettings()
+            2 -> onToggleHomeStrip()
             3 -> onOpenGestureSettings()
             // DISPLAY
             4 -> onOpenGlanceSettings()
@@ -8651,6 +8999,18 @@ private fun SettingsScreenOverlay(
                             themePalette = themePalette,
                             subtitleColor = subtitleColor,
                             onClick = { activate(1) },
+                            trailingContent = {
+                                Switch(
+                                    checked = classicMode,
+                                    onCheckedChange = { onToggleClassicMode() },
+                                    colors = SwitchDefaults.colors(
+                                        checkedThumbColor = Color.White,
+                                        checkedTrackColor = Color(0xFF4A90D9),
+                                        uncheckedThumbColor = Color(0xFF9AA0A8),
+                                        uncheckedTrackColor = Color(0xFF3A3F4A),
+                                    ),
+                                )
+                            },
                         )
                     }
                 }
@@ -8665,6 +9025,18 @@ private fun SettingsScreenOverlay(
                             themePalette = themePalette,
                             subtitleColor = subtitleColor,
                             onClick = { activate(2) },
+                            trailingContent = {
+                                Switch(
+                                    checked = homeStripEnabled,
+                                    onCheckedChange = { onToggleHomeStrip() },
+                                    colors = SwitchDefaults.colors(
+                                        checkedThumbColor = Color.White,
+                                        checkedTrackColor = Color(0xFF4A90D9),
+                                        uncheckedThumbColor = Color(0xFF9AA0A8),
+                                        uncheckedTrackColor = Color(0xFF3A3F4A),
+                                    ),
+                                )
+                            },
                         )
                     }
                 }

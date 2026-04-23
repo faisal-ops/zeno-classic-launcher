@@ -7,6 +7,7 @@ import android.util.Log
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import android.content.pm.LauncherApps
+import com.zeno.classiclauncher.nlauncher.BuildConfig
 import com.zeno.classiclauncher.nlauncher.apps.AppEntry
 import com.zeno.classiclauncher.nlauncher.apps.AppsRepository
 import com.zeno.classiclauncher.nlauncher.apps.LauncherActions
@@ -57,6 +58,9 @@ import kotlin.math.abs
 
 private val PRIVATE_PREFIX_REGEX = Regex("^private\\s+", RegexOption.IGNORE_CASE)
 private const val HOME_STRIP_DND_TAG = "HomeStripDnD"
+private inline fun logHomeStripDnD(message: () -> String) {
+    if (BuildConfig.DEBUG) Log.d(HOME_STRIP_DND_TAG, message())
+}
 
 class LauncherViewModel(app: Application) : AndroidViewModel(app) {
     private val prefsRepo = LauncherPrefsRepository(app.applicationContext)
@@ -288,7 +292,7 @@ class LauncherViewModel(app: Application) : AndroidViewModel(app) {
 
     /** Drag/reorder gesture started from the home strip (slot tokens, not drawer grid). */
     fun startStripMove(token: String) {
-        Log.d(HOME_STRIP_DND_TAG, "vm.startStripMove token=$token")
+        logHomeStripDnD { "vm.startStripMove token=$token" }
         _movingPackage.value = token
         _reorderFromHomeStrip.value = true
     }
@@ -337,9 +341,9 @@ class LauncherViewModel(app: Application) : AndroidViewModel(app) {
 
     private fun finishHomeStripReorderDrop(targetKey: String?) {
         val moving = _movingPackage.value ?: return
-        Log.d(HOME_STRIP_DND_TAG, "vm.finishHomeStripReorderDrop moving=$moving targetKey=$targetKey")
+        logHomeStripDnD { "vm.finishHomeStripReorderDrop moving=$moving targetKey=$targetKey" }
         if (targetKey == null || targetKey == moving) {
-            Log.d(HOME_STRIP_DND_TAG, "vm.dropIgnored moving=$moving targetKey=$targetKey")
+            logHomeStripDnD { "vm.dropIgnored moving=$moving targetKey=$targetKey" }
             clearMove()
             return
         }
@@ -348,12 +352,12 @@ class LauncherViewModel(app: Application) : AndroidViewModel(app) {
                 val snap = prefs.value
                 val slots = snap.effectiveHomeStripSlotOrder().toMutableList()
                 if (slots.size != STRIP_TOTAL_SLOTS) {
-                    Log.d(HOME_STRIP_DND_TAG, "vm.abort invalidSlotsSize size=${slots.size}")
+                    logHomeStripDnD { "vm.abort invalidSlotsSize size=${slots.size}" }
                     return@withLock
                 }
                 val fromIdx = slots.indexOfFirst { it == moving }
                 if (fromIdx < 0) {
-                    Log.d(HOME_STRIP_DND_TAG, "vm.abort movingNotFound moving=$moving")
+                    logHomeStripDnD { "vm.abort movingNotFound moving=$moving" }
                     return@withLock
                 }
                 val toIdx = when {
@@ -363,15 +367,15 @@ class LauncherViewModel(app: Application) : AndroidViewModel(app) {
                     }
                     else -> slots.indexOfFirst { it == targetKey }
                 }
-                Log.d(HOME_STRIP_DND_TAG, "vm.indices fromIdx=$fromIdx toIdx=$toIdx slots=$slots")
+                logHomeStripDnD { "vm.indices fromIdx=$fromIdx toIdx=$toIdx slots=$slots" }
                 if (toIdx < 0 || fromIdx == toIdx) {
-                    Log.d(HOME_STRIP_DND_TAG, "vm.abort noMove fromIdx=$fromIdx toIdx=$toIdx")
+                    logHomeStripDnD { "vm.abort noMove fromIdx=$fromIdx toIdx=$toIdx" }
                     return@withLock
                 }
                 slots.moveHomeStripSlot(fromIdx, toIdx)
                 prefsRepo.setHomeStripSlots(slots)
                 prefsRepo.setHomeStripOrder(slots.filterNotNull())
-                Log.d(HOME_STRIP_DND_TAG, "vm.persisted slots=$slots")
+                logHomeStripDnD { "vm.persisted slots=$slots" }
             }
             clearMove()
         }
@@ -793,6 +797,15 @@ class LauncherViewModel(app: Application) : AndroidViewModel(app) {
         viewModelScope.launch { prefsRepo.setGridPreset(preset) }
     }
 
+    fun setAppGridIconSize(sizeDp: Float) {
+        viewModelScope.launch {
+            val next = LauncherThemePalette
+                .fromJson(prefs.value.themeJson)
+                .copy(appGridIconSizeDp = sizeDp.coerceIn(42f, 64f))
+            prefsRepo.setThemeJson(LauncherThemePalette.toExportJson(next))
+        }
+    }
+
     fun setSecondShortcutTarget(target: SecondShortcutTarget) {
         viewModelScope.launch { prefsRepo.setSecondShortcutTarget(target) }
     }
@@ -889,6 +902,22 @@ class LauncherViewModel(app: Application) : AndroidViewModel(app) {
             val t = token.trim()
             if (t.isEmpty()) return@launch
             prefsRepo.setHomeShortcutPackages(snap.homeShortcutPackages.filter { it != t })
+        }
+    }
+
+    fun restoreHomeStripState(
+        shortcuts: List<String>,
+        groups: List<HomeGroup>,
+        slots: List<String?>,
+        order: List<String>,
+    ) {
+        viewModelScope.launch {
+            gridHomeMutex.withLock {
+                prefsRepo.setHomeShortcutPackages(shortcuts)
+                prefsRepo.setHomeGroups(groups)
+                prefsRepo.setHomeStripSlots(slots)
+                prefsRepo.setHomeStripOrder(order)
+            }
         }
     }
 

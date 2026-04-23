@@ -38,6 +38,7 @@ enum class GridPreset(val rows: Int, val cols: Int) {
     R3C5(3, 5),
     R3C4(3, 4),
     R4C4(4, 4),
+    R4C6(4, 6),
     R5C5(5, 5),
 }
 
@@ -832,4 +833,3 @@ private fun homeGroupsToJson(groups: List<HomeGroup>): String {
     }
     return arr.toString()
 }
-
