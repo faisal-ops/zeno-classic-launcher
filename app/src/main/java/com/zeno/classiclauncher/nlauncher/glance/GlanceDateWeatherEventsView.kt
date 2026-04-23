@@ -117,6 +117,7 @@ class GlanceDateWeatherEventsView @JvmOverloads constructor(
     private var glanceJob: Job? = null
     private var glanceItems: List<GlanceItem> = emptyList()
     private var currentGlanceIndex = 0
+    private val dataSources = GlanceDataSources(context)
     @Volatile
     private var torchActive = false
     private var glanceBuiltAt = 0L
@@ -481,11 +482,15 @@ class GlanceDateWeatherEventsView @JvmOverloads constructor(
             }
             weatherView.setOnClickListener(null)
             awaitHeavyIoDebounce()
-            val weather = withContext(Dispatchers.IO) { fetchWeather() }
+            val weather = withContext(Dispatchers.IO) {
+                dataSources.fetchWeather(
+                    useDeviceLocation = prefs.weatherUseDeviceLocation,
+                    latitude = prefs.weatherLatitude?.toFloat(),
+                    longitude = prefs.weatherLongitude?.toFloat(),
+                )
+            }
             markHeavyIoDone()
             if (weather != null) {
-                cachedWeather = weather
-                weatherFetchedAt = System.currentTimeMillis()
                 val useF = prefs.weatherUseFahrenheit
                 val tVal = if (useF) cToF(weather.tempC) else weather.tempC
                 val loVal = if (useF) cToF(weather.tempMinC) else weather.tempMinC
@@ -498,10 +503,8 @@ class GlanceDateWeatherEventsView @JvmOverloads constructor(
                 weatherView.text = weatherLine
                 weatherView.isVisible = true
             } else {
-                val cached = cachedWeather
-                if (cached != null &&
-                    System.currentTimeMillis() - weatherFetchedAt < weatherCacheMs
-                ) {
+                val cached = dataSources.cachedWeather()
+                if (cached != null) {
                     val t = if (prefs.weatherUseFahrenheit) {
                         "%.0f\u00B0F".format(cToF(cached.tempC))
                     } else {
@@ -634,8 +637,8 @@ class GlanceDateWeatherEventsView @JvmOverloads constructor(
                     ),
                 )
             } else {
-                for (event in getUpcomingCalendarEvents(prefs.calendarLookAheadDays.coerceIn(1, 7))) {
-                    val timeStr = formatEventTime(event.startTime)
+                for (event in dataSources.getUpcomingCalendarEvents(prefs.calendarLookAheadDays.coerceIn(1, 7))) {
+                    val timeStr = dataSources.formatEventTime(event.startTime)
                     items.add(
                         GlanceItem(
                             text = "\uD83D\uDCC5 ${event.title} · $timeStr",
@@ -648,7 +651,7 @@ class GlanceDateWeatherEventsView @JvmOverloads constructor(
         }
 
         if (prefs.showAlarm) {
-            getNextAlarmInfo()?.let { info ->
+            dataSources.getNextAlarmInfo()?.let { info ->
                 items.add(
                     GlanceItem(
                         text = "\u23F0 $info",
@@ -788,13 +791,13 @@ class GlanceDateWeatherEventsView @JvmOverloads constructor(
 
     // ── Calendar event tap handling ────────────────────────────────────────────
 
-    private fun buildCalendarEventIntent(event: CalendarEvent): Intent =
+    private fun buildCalendarEventIntent(event: GlanceCalendarEvent): Intent =
         Intent(Intent.ACTION_VIEW, ContentUris.withAppendedId(CalendarContract.Events.CONTENT_URI, event.id))
             .putExtra(CalendarContract.EXTRA_EVENT_BEGIN_TIME, event.startTime)
             .putExtra(CalendarContract.EXTRA_EVENT_END_TIME, event.endTime)
             .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
 
-    private fun openCalendarEvent(event: CalendarEvent) {
+    private fun openCalendarEvent(event: GlanceCalendarEvent) {
         Log.d("ZenoCalendar", "tap: title=${event.title} accountType='${event.accountType}'")
         val eventIntent = buildCalendarEventIntent(event)
         // Always open in Google Calendar — works for all event types (Google, Outlook, etc.)

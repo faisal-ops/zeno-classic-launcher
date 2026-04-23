@@ -68,7 +68,7 @@ object SleepManager {
      * Device admin remains implemented below as a future/manual fallback, but it is no longer
      * promoted as a prerequisite because the primary lock path works on the target build.
      */
-    fun isDoubleTapLockReady(@Suppress("UNUSED_PARAMETER") context: Context): Boolean = true
+    fun isDoubleTapLockReady(): Boolean = true
 
     /**
      * Best-effort: real power-button sleep reason. Succeeds only if the app holds [DEVICE_POWER]

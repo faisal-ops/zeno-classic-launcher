@@ -70,7 +70,7 @@ fun AppDrawerBadgesOverlay(
                     )
                 }
                 Text(
-                    "App icon badges",
+                    "App Icon Badges",
                     style = MaterialTheme.typography.headlineMedium.copy(
                         color = themePalette.settingsMenuTitle,
                         fontWeight = FontWeight.Normal,
@@ -88,6 +88,18 @@ fun AppDrawerBadgesOverlay(
                     "Choose what small badges appear on app icons in the drawer.",
                     style = MaterialTheme.typography.bodyMedium,
                     color = subtitleColor,
+                )
+
+                BadgeSwitchRow(
+                    title = "Usage stats badge",
+                    subtitle = if (showUsageStatsBadge) {
+                        "On — screen-time appears on app icons"
+                    } else {
+                        "Off"
+                    },
+                    checked = showUsageStatsBadge,
+                    themePalette = themePalette,
+                    onCheckedChange = onShowUsageStatsBadgeChange,
                 )
 
                 BadgeSwitchRow(

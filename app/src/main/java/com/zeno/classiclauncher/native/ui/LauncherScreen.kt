@@ -257,8 +257,6 @@ import com.zeno.classiclauncher.nlauncher.apps.AppsRepository
 import com.zeno.classiclauncher.nlauncher.apps.LauncherActions
 import com.zeno.classiclauncher.nlauncher.apps.ToggleResult
 import com.zeno.classiclauncher.nlauncher.apps.parseHomeShortcutToken
-import com.zeno.classiclauncher.native.ui.WallpaperSourceOverlay
-import com.zeno.classiclauncher.native.ui.WallpaperSourceSub
 import com.zeno.classiclauncher.nlauncher.BuildConfig
 import com.zeno.classiclauncher.nlauncher.badges.AppIconWithBadge
 import com.zeno.classiclauncher.nlauncher.badges.BadgeNotificationListener
@@ -323,26 +321,24 @@ private fun drawerCellForHomeStripToken(
 private const val HOME_WIDGET_HOST_ID = 7777
 private val HOME_SHORTCUT_ICON_DP = 52.dp
 private val HOME_SHORTCUT_FALLBACK_ICON_DP = 48.dp
-private const val HOME_STRIP_ICON_MIN_DP = 48f
-private const val HOME_STRIP_ICON_MAX_DP = 56f
 private val HOME_STRIP_LABEL_COLOR = Color(0xFFE8EEF7)
 /** Compact strip captions shared by apps, folders, and groups. */
 private val HOME_STRIP_LABEL_FONT_SP = 13.sp
 private val HOME_STRIP_LABEL_LINE_SP = 15.sp
 /** Space between the icon tile and caption across all home-strip item types. */
-private val HOME_STRIP_ICON_LABEL_GAP = 5.dp
+private val HOME_STRIP_ICON_LABEL_GAP = 4.dp
 /** Centre shortcuts: tight fixed gap between slots. */
-private val HOME_STRIP_SHORTCUT_GAP = 6.dp
+private val HOME_STRIP_SHORTCUT_GAP = 4.dp
 private val HOME_STRIP_FOCUS_RADIUS = 5.dp
-private val HOME_STRIP_FOCUS_INSET = 2.dp
-private val HOME_STRIP_CONTENT_VERTICAL_INSET = 3.dp
+private val HOME_STRIP_FOCUS_INSET = 1.dp
+private val HOME_STRIP_CONTENT_VERTICAL_INSET = 2.dp
 private const val HOME_STRIP_DND_TAG = "HomeStripDnD"
 private inline fun logHomeStripDnD(message: () -> String) {
     if (BuildConfig.DEBUG) Log.d(HOME_STRIP_DND_TAG, message())
 }
 
 private fun homeStripIconSize(iconSizeDp: Float): Dp =
-    iconSizeDp.coerceIn(HOME_STRIP_ICON_MIN_DP, HOME_STRIP_ICON_MAX_DP).dp
+    iconSizeDp.dp
 
 private val OUTLINE_OFFSETS = arrayOf(
     Offset(-0.8f, -0.8f),
@@ -568,9 +564,6 @@ fun LauncherScreen(
     var showNewHomeGroupDialog by remember { mutableStateOf(false) }
     var newHomeGroupName by remember { mutableStateOf("") }
     val newHomeGroupFocusRequester = remember { FocusRequester() }
-    /** In-app wallpaper source list (replaces jumping straight to system [Intent.ACTION_SET_WALLPAPER]). */
-    var showWallpaperSourceOverlay by remember { mutableStateOf(false) }
-    var wallpaperSourceSub by remember { mutableStateOf(WallpaperSourceSub.List) }
     var showQuickSettingsOverlay by remember { mutableStateOf(false) }
     var showSpotlightOverlay by remember { mutableStateOf(false) }
     var spotlightInitialQuery by remember { mutableStateOf("") }
@@ -731,15 +724,6 @@ fun LauncherScreen(
     BackHandler(enabled = true) {
         when {
             showQuickSettingsOverlay -> showQuickSettingsOverlay = false
-            showWallpaperSourceOverlay -> {
-                when (wallpaperSourceSub) {
-                    WallpaperSourceSub.ZenoGrid -> wallpaperSourceSub = WallpaperSourceSub.List
-                    WallpaperSourceSub.List -> {
-                        showWallpaperSourceOverlay = false
-                        wallpaperSourceSub = WallpaperSourceSub.List
-                    }
-                }
-            }
             showAppMenu != null -> {
                 showAppMenu = null
                 appMenuFromHomeShortcut = false
@@ -1450,7 +1434,7 @@ fun LauncherScreen(
         // is composed on top (permissions, glance, etc.), do not consume Back there — let BackHandler close the top overlay.
         val settingsStackedOverlayOpen =
             showPermissionsSettings || showGlanceSettings ||
-                showHomeGroupsSettings || showDockSlotPicker != null || showWallpaperSourceOverlay ||
+                showHomeGroupsSettings || showDockSlotPicker != null ||
                 showGestureSettings || showAppDrawerBadges || showIconAppearanceSettings
 
         AnimatedVisibility(
@@ -1529,8 +1513,11 @@ fun LauncherScreen(
                 },
                 onOpenPermissionsSettings = { showPermissionsSettings = true },
                 onSetWallpaper = {
-                    wallpaperSourceSub = WallpaperSourceSub.List
-                    showWallpaperSourceOverlay = true
+                    runCatching {
+                        context.startActivity(
+                            Intent("android.settings.WALLPAPER_SETTINGS").addFlags(Intent.FLAG_ACTIVITY_NEW_TASK),
+                        )
+                    }
                 },
                 onToggleHaptics = { vm.setHapticsEnabled(!prefs.hapticsEnabled) },
                 hapticIntensity = prefs.hapticIntensity,
@@ -1552,8 +1539,8 @@ fun LauncherScreen(
                             add("Swipe up: " + (allApps.find { it.packageName == prefs.swipeUpPackage }?.label ?: prefs.swipeUpPackage))
                         }
                         when {
-                            prefs.doubleTapToSleepEnabled -> add("Double tap: Sleep")
-                            prefs.doubleTapPackage.isNotEmpty() -> add("Double tap: " + (allApps.find { it.packageName == prefs.doubleTapPackage }?.label ?: prefs.doubleTapPackage))
+                            prefs.doubleTapToSleepEnabled -> add("Double Tap: Sleep")
+                            prefs.doubleTapPackage.isNotEmpty() -> add("Double Tap: " + (allApps.find { it.packageName == prefs.doubleTapPackage }?.label ?: prefs.doubleTapPackage))
                         }
                         if (prefs.customQuickSettingsEnabled) add("Swipe-down panel on")
                     }
@@ -1604,12 +1591,12 @@ fun LauncherScreen(
 
         if (showAppDrawerBadges) {
             AppDrawerBadgesOverlay(
-                showUsageStatsBadge = false,
+                showUsageStatsBadge = prefs.showUsageStatsBadge,
                 showIconNotifBadge = prefs.showIconNotifBadge,
                 notificationAccessReady = prefs.notificationBadgesEnabled && permRuntime.notificationAccess,
                 themePalette = themePalette,
                 onDismiss = { showAppDrawerBadges = false },
-                onShowUsageStatsBadgeChange = {},
+                onShowUsageStatsBadgeChange = vm::setShowUsageStatsBadge,
                 onShowIconNotifBadgeChange = vm::setShowIconNotifBadge,
             )
         }
@@ -1803,18 +1790,6 @@ fun LauncherScreen(
             }
         }
 
-        if (showWallpaperSourceOverlay) {
-            WallpaperSourceOverlay(
-                themePalette = themePalette,
-                subView = wallpaperSourceSub,
-                onSubViewChange = { wallpaperSourceSub = it },
-                onDismiss = {
-                    showWallpaperSourceOverlay = false
-                    wallpaperSourceSub = WallpaperSourceSub.List
-                },
-            )
-        }
-
         if (showQuickSettingsOverlay) {
             QuickSettingsOverlay(
                 themePalette = themePalette,
@@ -1875,11 +1850,6 @@ fun LauncherScreen(
                 onOpenSettings = {
                     showHomeActions = false
                     showSettings = true
-                },
-                onOpenWallpaperChooser = {
-                    showHomeActions = false
-                    wallpaperSourceSub = WallpaperSourceSub.List
-                    showWallpaperSourceOverlay = true
                 },
                 onOpenSystemSettings = {
                     showHomeActions = false
@@ -1960,7 +1930,7 @@ fun LauncherScreen(
                             if (groupNameExists(name)) {
                                 Toast.makeText(context, "Groups already exist", Toast.LENGTH_SHORT).show()
                             } else if (!prefs.canAddHomeStripItem()) {
-                                Toast.makeText(context, "Home strip is full (5 items)", Toast.LENGTH_SHORT).show()
+                                Toast.makeText(context, "Home Strip is full (5 items)", Toast.LENGTH_SHORT).show()
                                 showNewHomeGroupDialog = false
                             } else {
                                 vm.createHomeGroup(name)
@@ -3902,7 +3872,6 @@ private fun HomeActionsSheet(
     onAddWidget: () -> Unit,
     onRemoveWidget: () -> Unit,
     onOpenSettings: () -> Unit,
-    onOpenWallpaperChooser: () -> Unit,
     onOpenSystemSettings: () -> Unit,
     onNewHomeGroup: () -> Unit,
     onPinToHomepage: () -> Unit,
@@ -7845,9 +7814,9 @@ private fun DockShortcutPickerOverlay(
                 }
                 Text(
                     when (slot) {
-                        DockSlot.Mail -> "Mail dock shortcut"
-                        DockSlot.Shortcut -> "Second dock shortcut"
-                        DockSlot.Camera -> "Third dock shortcut"
+                        DockSlot.Mail -> "Mail Shortcut"
+                        DockSlot.Shortcut -> "Second Shortcut"
+                        DockSlot.Camera -> "Camera Shortcut"
                     },
                     style = MaterialTheme.typography.titleLarge.copy(
                         color = themePalette.settingsMenuTitle,
@@ -7865,7 +7834,7 @@ private fun DockShortcutPickerOverlay(
                     verticalAlignment = Alignment.CenterVertically,
                 ) {
                     Text(
-                        text = "Show in dock",
+                        text = "Show in Dock",
                         color = themePalette.settingsMenuTitle,
                         fontSize = 15.sp,
                         modifier = Modifier.weight(1f),
@@ -7883,9 +7852,9 @@ private fun DockShortcutPickerOverlay(
             ) {
                 Text(
                     when (slot) {
-                        DockSlot.Mail -> "Use default (mail app)"
-                        DockSlot.Shortcut -> "Use default (messages app)"
-                        DockSlot.Camera -> "Use default (camera app)"
+                        DockSlot.Mail -> "Use Default (Mail App)"
+                        DockSlot.Shortcut -> "Use Default (Messages App)"
+                        DockSlot.Camera -> "Use Default (Camera App)"
                     },
                     color = Color(0xFF84D5F6),
                 )
@@ -8004,7 +7973,7 @@ private fun HomeGroupsSettingsOverlay(
                     )
                 }
                 Text(
-                    "Home strip",
+                    "Home Strip",
                     style = MaterialTheme.typography.headlineMedium.copy(
                         color = themePalette.settingsMenuTitle,
                         fontWeight = FontWeight.Normal,
@@ -8021,7 +7990,7 @@ private fun HomeGroupsSettingsOverlay(
                 verticalArrangement = Arrangement.spacedBy(12.dp),
             ) {
                 Text(
-                    "Groups appear on the home strip. Long-press and drag to rearrange slots. " +
+                    "Groups appear on the Home Strip. Long-press and drag to rearrange slots. " +
                         "Long-press an app in the drawer and use Add to… to include it.",
                     style = MaterialTheme.typography.bodyMedium,
                     color = subtitleColor,
@@ -8039,7 +8008,7 @@ private fun HomeGroupsSettingsOverlay(
                     ) {
                         Column(Modifier.weight(1f)) {
                             Text(
-                                "Show home strip",
+                                "Show Home Strip",
                                 style = MaterialTheme.typography.bodyLarge,
                                 color = themePalette.settingsMenuTitle,
                                 fontWeight = FontWeight.Medium,
@@ -8253,7 +8222,7 @@ private fun GlanceSettingsOverlay(
                     )
                 }
                 Text(
-                    "Glance",
+                    "Glance Strip",
                     style = MaterialTheme.typography.headlineMedium.copy(
                         color = themePalette.settingsMenuTitle,
                         fontWeight = FontWeight.Normal,
@@ -8270,12 +8239,12 @@ private fun GlanceSettingsOverlay(
                 verticalArrangement = androidx.compose.foundation.layout.Arrangement.spacedBy(12.dp),
             ) {
                 Text(
-                    "Home strip: date, weather, and optional alerts. Turn the strip off to hide it completely.",
+                    "Glance Strip: date, weather, and optional alerts. Turn the strip off to hide it completely.",
                     style = MaterialTheme.typography.bodyMedium,
                     color = subtitleColor,
                 )
                 ToggleCard(
-                    title = "Show glance strip",
+                    title = "Show Glance Strip",
                     subtitle = "Master switch for the top-of-home strip",
                     checked = glanceEnabled,
                     onCheckedChange = onGlanceEnabled,
@@ -8283,7 +8252,7 @@ private fun GlanceSettingsOverlay(
                 Surface(shape = cardShape, color = cardBg, modifier = Modifier.fillMaxWidth()) {
                     Column(modifier = Modifier.padding(horizontal = 16.dp, vertical = 12.dp)) {
                         Text(
-                            "Weather unit",
+                            "Weather Unit",
                             style = MaterialTheme.typography.bodyLarge.copy(
                                 color = themePalette.settingsMenuTitle,
                                 fontWeight = FontWeight.Medium,
@@ -8330,28 +8299,28 @@ private fun GlanceSettingsOverlay(
                     }
                 }
                 ToggleCard(
-                    title = "Flashlight on glance",
+                    title = "Flashlight on Glance Strip",
                     subtitle = "Show an alert while the torch is on",
                     checked = glanceShowFlashlight,
                     enabled = glanceEnabled,
                     onCheckedChange = onGlanceShowFlashlight,
                 )
                 ToggleCard(
-                    title = "Calendar on glance",
+                    title = "Calendar on Glance Strip",
                     subtitle = "Upcoming events when permission is granted",
                     checked = glanceShowCalendar,
                     enabled = glanceEnabled,
                     onCheckedChange = onGlanceShowCalendar,
                 )
                 ToggleCard(
-                    title = "Battery on glance",
+                    title = "Battery on Glance Strip",
                     subtitle = "Charging or low-battery hint (when supported)",
                     checked = glanceShowBattery,
                     enabled = glanceEnabled,
                     onCheckedChange = onGlanceShowBattery,
                 )
                 ToggleCard(
-                    title = "Next alarm on glance",
+                    title = "Next Alarm on Glance Strip",
                     subtitle = "Next alarm within 12 hours (when supported)",
                     checked = glanceShowAlarm,
                     enabled = glanceEnabled,
@@ -8424,7 +8393,7 @@ private fun IconAppearanceSettingsOverlay(
                     )
                 }
                 Text(
-                    "Icon layout",
+                    "Icon Layout",
                     style = MaterialTheme.typography.headlineMedium.copy(
                         color = themePalette.settingsMenuTitle,
                         fontWeight = FontWeight.Normal,
@@ -8488,7 +8457,7 @@ private fun IconAppearanceSettingsOverlay(
                 SettingsCategoryCard(cardBg = cardBg, cardShape = cardShape, selected = selectedIndex == 0) {
                     SettingsRow(
                         icon = Icons.Rounded.GridView,
-                        title = "App grid size",
+                        title = "App Grid Size",
                         subtitle = "${gridPreset.rows} × ${gridPreset.cols}",
                         selected = selectedIndex == 0,
                         themePalette = themePalette,
@@ -8502,7 +8471,7 @@ private fun IconAppearanceSettingsOverlay(
                 SettingsCategoryCard(cardBg = cardBg, cardShape = cardShape, selected = selectedIndex == 1) {
                     SettingsRow(
                         icon = Icons.Rounded.GridView,
-                        title = "App card background",
+                        title = "App Card Background",
                         subtitle = if (showAppCardBackground) "Gradient card shown behind each app" else "No background behind app icons",
                         selected = selectedIndex == 1,
                         themePalette = themePalette,
@@ -8516,7 +8485,7 @@ private fun IconAppearanceSettingsOverlay(
                 SettingsCategoryCard(cardBg = cardBg, cardShape = cardShape, selected = selectedIndex == 2) {
                     SettingsRow(
                         icon = Icons.Outlined.QueryStats,
-                        title = "App icon badges",
+                        title = "App Icon Badges",
                         subtitle = drawerBadgesSubtitle,
                         selected = selectedIndex == 2,
                         themePalette = themePalette,
@@ -8544,11 +8513,11 @@ private fun IconAppearanceSettingsOverlay(
     }
     if (showCardBackgroundSettings) {
         IconPreviewToggleOverlay(
-            title = "App card background",
+            title = "App Card Background",
             description = "Preview how cards look behind app icons in the drawer.",
             checked = showAppCardBackground,
             enabled = true,
-            toggleTitle = "Show card background",
+            toggleTitle = "Show Card Background",
             toggleSubtitle = if (showAppCardBackground) "On - gradient cards behind icons" else "Off - icons sit directly on wallpaper",
             previewApps = previewApps,
             appIconShape = appIconShape,
@@ -8562,11 +8531,11 @@ private fun IconAppearanceSettingsOverlay(
     }
     if (showBadgeSettings) {
         IconPreviewToggleOverlay(
-            title = "App icon badges",
+            title = "App Icon Badges",
             description = "Preview notification stars on drawer icons.",
             checked = showIconNotifBadge && notificationAccessReady,
             enabled = notificationAccessReady,
-            toggleTitle = "Notification badge",
+            toggleTitle = "Notification Badge",
             toggleSubtitle = when {
                 !notificationAccessReady -> "Requires notification access - enable Unread badges in Permissions first"
                 showIconNotifBadge -> "On - red star appears when an app has unread notifications"
@@ -8943,7 +8912,7 @@ private fun IconLayoutSettingsOverlay(
                     )
                 }
                 Text(
-                    "Icon layout",
+                    "Icon Layout",
                     color = Color.White,
                     fontSize = SETTINGS_TITLE_TEXT_SP,
                     fontWeight = FontWeight.SemiBold,
@@ -9025,7 +8994,7 @@ private fun IconLayoutSettingsOverlay(
                     verticalAlignment = Alignment.Bottom,
                 ) {
                     Text(
-                        "Icon size",
+                        "Icon Size",
                         color = Color.White,
                         fontSize = SETTINGS_TITLE_TEXT_SP,
                         fontWeight = FontWeight.Normal,
@@ -9135,8 +9104,8 @@ private fun IconShapeValueRow(
         verticalAlignment = Alignment.Bottom,
     ) {
         Column(modifier = Modifier.weight(1f)) {
-            Text(
-                "Icon shape",
+                Text(
+                    "Icon Shape",
                 color = Color.White,
                 fontSize = SETTINGS_TITLE_TEXT_SP,
             )
@@ -9391,7 +9360,7 @@ private fun SettingsScreenOverlay(
                     )
                 }
                 Text(
-                    "Settings",
+                    "Zeno Classic",
                     style = MaterialTheme.typography.headlineMedium.copy(
                         color = themePalette.settingsMenuTitle,
                         fontWeight = FontWeight.Normal,
@@ -9458,7 +9427,7 @@ private fun SettingsScreenOverlay(
             ) {
                 // ── HOME SCREEN ──────────────────────────────────────────
                 Text(
-                    "HOME SCREEN",
+                    "Home Screen",
                     style = MaterialTheme.typography.labelSmall,
                     color = subtitleColor,
                     modifier = Modifier.padding(start = 4.dp, bottom = 6.dp),
@@ -9467,7 +9436,7 @@ private fun SettingsScreenOverlay(
                     SettingsCategoryCard(cardBg = cardBg, cardShape = cardShape, selected = selectedIndex == 0) {
                         SettingsRow(
                             icon = Icons.Rounded.Apps,
-                            title = "Icon layout",
+                            title = "Icon Layout",
                             subtitle = "Grid, shape, cards, badges",
                             selected = selectedIndex == 0,
                             themePalette = themePalette,
@@ -9481,7 +9450,7 @@ private fun SettingsScreenOverlay(
                     SettingsCategoryCard(cardBg = cardBg, cardShape = cardShape, selected = selectedIndex == 1) {
                         SettingsRow(
                             icon = Icons.Outlined.Menu,
-                            title = "Classic mode",
+                            title = "Classic Mode",
                             subtitle = if (classicMode) {
                                 "On — app grid only; compact dock (no home / Messages shortcut); glance off"
                             } else {
@@ -9511,7 +9480,7 @@ private fun SettingsScreenOverlay(
                     SettingsCategoryCard(cardBg = cardBg, cardShape = cardShape, selected = selectedIndex == 2) {
                         SettingsRow(
                             icon = Icons.Rounded.BookmarkAdd,
-                            title = "Home strip",
+                            title = "Home Strip",
                             subtitle = homeGroupsSubtitle,
                             selected = selectedIndex == 2,
                             themePalette = themePalette,
@@ -9537,7 +9506,7 @@ private fun SettingsScreenOverlay(
                     SettingsCategoryCard(cardBg = cardBg, cardShape = cardShape, selected = selectedIndex == 3) {
                         SettingsRow(
                             icon = Icons.Rounded.TouchApp,
-                            title = "Home gestures",
+                            title = "Home Gestures",
                             subtitle = gestureSubtitle,
                             selected = selectedIndex == 3,
                             themePalette = themePalette,
@@ -9553,7 +9522,7 @@ private fun SettingsScreenOverlay(
 
                 // ── DISPLAY ──────────────────────────────────────────────
                 Text(
-                    "DISPLAY",
+                    "Display",
                     style = MaterialTheme.typography.labelSmall,
                     color = subtitleColor,
                     modifier = Modifier.padding(start = 4.dp, bottom = 6.dp),
@@ -9562,7 +9531,7 @@ private fun SettingsScreenOverlay(
                     SettingsCategoryCard(cardBg = cardBg, cardShape = cardShape, selected = selectedIndex == 4) {
                         SettingsRow(
                             icon = Icons.Rounded.WbSunny,
-                            title = "Glance",
+                            title = "Glance Strip",
                             subtitle = glanceSubtitle,
                             selected = selectedIndex == 4,
                             themePalette = themePalette,
@@ -9576,8 +9545,8 @@ private fun SettingsScreenOverlay(
                     SettingsCategoryCard(cardBg = cardBg, cardShape = cardShape, selected = selectedIndex == 5) {
                         SettingsRow(
                             icon = Icons.Rounded.Wallpaper,
-                            title = "Set wallpaper",
-                            subtitle = "Zeno wallpapers or Wallpapers & style",
+                            title = "Wallpaper",
+                            subtitle = "System wallpaper settings",
                             selected = selectedIndex == 5,
                             themePalette = themePalette,
                             subtitleColor = subtitleColor,
@@ -9590,7 +9559,7 @@ private fun SettingsScreenOverlay(
                     SettingsCategoryCard(cardBg = cardBg, cardShape = cardShape, selected = selectedIndex == 6) {
                         SettingsRow(
                             icon = Icons.Rounded.Palette,
-                            title = "Reset theme",
+                            title = "Reset Theme",
                             subtitle = "Restore default launcher colours",
                             selected = selectedIndex == 6,
                             themePalette = themePalette,
@@ -9606,7 +9575,7 @@ private fun SettingsScreenOverlay(
 
                 // ── DOCK ─────────────────────────────────────────────────
                 Text(
-                    "DOCK",
+                    "Dock",
                     style = MaterialTheme.typography.labelSmall,
                     color = subtitleColor,
                     modifier = Modifier.padding(start = 4.dp, bottom = 6.dp),
@@ -9659,7 +9628,7 @@ private fun SettingsScreenOverlay(
 
                 // ── SYSTEM ───────────────────────────────────────────────
                 Text(
-                    "SYSTEM",
+                    "System",
                     style = MaterialTheme.typography.labelSmall,
                     color = subtitleColor,
                     modifier = Modifier.padding(start = 4.dp, bottom = 6.dp),
@@ -9668,7 +9637,7 @@ private fun SettingsScreenOverlay(
                     SettingsCategoryCard(cardBg = cardBg, cardShape = cardShape, selected = selectedIndex == 10) {
                         SettingsRow(
                             icon = Icons.Outlined.Vibration,
-                            title = "Haptic feedback",
+                            title = "Haptic Feedback",
                             subtitle = if (hapticsEnabled) "On (trackpad and keyboard navigation)" else "Off",
                             selected = selectedIndex == 10,
                             themePalette = themePalette,
@@ -9725,7 +9694,7 @@ private fun SettingsScreenOverlay(
 
                 // ── BACKUP ───────────────────────────────────────────────
                 Text(
-                    "BACKUP",
+                    "Backup & Restore",
                     style = MaterialTheme.typography.labelSmall,
                     color = subtitleColor,
                     modifier = Modifier.padding(start = 4.dp, bottom = 6.dp),
@@ -9734,7 +9703,7 @@ private fun SettingsScreenOverlay(
                     SettingsCategoryCard(cardBg = cardBg, cardShape = cardShape, selected = selectedIndex == 12) {
                         SettingsRow(
                             icon = Icons.Rounded.SettingsBackupRestore,
-                            title = "Export backup",
+                            title = "Export Settings",
                             subtitle = "Save settings as JSON file",
                             selected = selectedIndex == 12,
                             themePalette = themePalette,
@@ -9748,7 +9717,7 @@ private fun SettingsScreenOverlay(
                     SettingsCategoryCard(cardBg = cardBg, cardShape = cardShape, selected = selectedIndex == 13) {
                         SettingsRow(
                             icon = Icons.Rounded.SettingsBackupRestore,
-                            title = "Restore from backup",
+                            title = "Import Settings",
                             subtitle = "Pick a backup file from Downloads",
                             selected = selectedIndex == 13,
                             themePalette = themePalette,

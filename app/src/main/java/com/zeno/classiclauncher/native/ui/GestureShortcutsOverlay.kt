@@ -123,7 +123,7 @@ fun GestureShortcutsOverlay(
                         modifier = Modifier.fillMaxWidth().clickable {
                             onDoubleTapSleepChange(true)
                             onSetDoubleTap("")
-                            if (!SleepManager.isDoubleTapLockReady(context)) {
+                            if (!SleepManager.isDoubleTapLockReady()) {
                                 runCatching {
                                     context.startActivity(
                                         Intent(Settings.ACTION_ACCESSIBILITY_SETTINGS)
@@ -193,7 +193,7 @@ fun GestureShortcutsOverlay(
                         Icon(Icons.AutoMirrored.Rounded.ArrowBack, contentDescription = "Back", tint = themePalette.settingsMenuTitle)
                     }
                     Text(
-                        "Home gestures",
+                        "Home Gestures",
                         style = MaterialTheme.typography.titleMedium.copy(color = themePalette.settingsMenuTitle, fontWeight = FontWeight.SemiBold),
                     )
                 }
@@ -220,7 +220,7 @@ fun GestureShortcutsOverlay(
                                 Spacer(Modifier.width(8.dp))
                                 Column(modifier = Modifier.weight(1f)) {
                                     Text(
-                                        "Launcher quick settings",
+                                        "Launcher Quick Settings",
                                         color = themePalette.settingsMenuTitle,
                                         fontSize = 15.sp,
                                         fontWeight = FontWeight.Medium,
@@ -259,10 +259,10 @@ fun GestureShortcutsOverlay(
                         }
                     }
                     Spacer(Modifier.height(10.dp))
-                    // Double tap row
+                    // Double Tap row
                     Surface(modifier = Modifier.fillMaxWidth(), shape = cardShape, color = cardBg) {
                         Column(modifier = Modifier.fillMaxWidth().clickable { activePicker = GesturePicker.DoubleTap }.padding(16.dp)) {
-                            Text("Double tap", color = themePalette.settingsMenuTitle, fontSize = 15.sp, fontWeight = FontWeight.Medium)
+                            Text("Double Tap", color = themePalette.settingsMenuTitle, fontSize = 15.sp, fontWeight = FontWeight.Medium)
                             Spacer(Modifier.height(2.dp))
                             Text(
                                 when {
@@ -278,7 +278,7 @@ fun GestureShortcutsOverlay(
                     Text(
                         buildString {
                             append("Swipe up on the home wallpaper to open the selected app.\n")
-                            append("Double tap to lock uses the built-in lock path; the lock helper (Accessibility) is optional for devices that need the power-button style lock path for face unlock.")
+                            append("Double Tap to Lock uses the built-in lock path; the lock helper (Accessibility) is optional for devices that need the power-button style lock path for face unlock.")
                             if (customQuickSettingsEnabled) {
                                 append("\nWhen the launcher panel is open, opening the system shade closes it.")
                             }

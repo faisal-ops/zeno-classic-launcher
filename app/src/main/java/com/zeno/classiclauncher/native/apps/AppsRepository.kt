@@ -41,6 +41,7 @@ class AppsRepository(private val context: Context) {
         for (ri in resolveInfos) {
             val ai = ri.activityInfo?.applicationInfo ?: continue
             val pkg = ai.packageName ?: continue
+            if (pkg == context.packageName) continue
             if (!seenPackages.add(pkg)) continue  // skip apps with multiple launcher activities
             val label = pm.getApplicationLabel(ai)?.toString() ?: pkg
             installed.add(AppEntry(packageName = pkg, label = label, icon = getCachedIcon(pkg)))
@@ -69,8 +70,12 @@ class AppsRepository(private val context: Context) {
         val receiver = object : BroadcastReceiver() {
             override fun onReceive(c: Context?, i: Intent?) {
                 val pkg = i?.data?.schemeSpecificPart
-                if (pkg != null && i.action == Intent.ACTION_PACKAGE_REMOVED) {
-                    iconCache.remove(pkg)
+                if (pkg != null) {
+                    when (i.action) {
+                        Intent.ACTION_PACKAGE_ADDED,
+                        Intent.ACTION_PACKAGE_REPLACED,
+                        Intent.ACTION_PACKAGE_REMOVED -> iconCache.remove(pkg)
+                    }
                 }
                 launch { emitNow() }
             }

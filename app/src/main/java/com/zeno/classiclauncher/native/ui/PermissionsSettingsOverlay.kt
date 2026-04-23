@@ -203,7 +203,7 @@ fun PermissionsSettingsOverlay(
                 )
 
                 PermissionSwitchCard(
-                    title = "Double tap to lock",
+                    title = "Double Tap to Lock",
                     subtitleOff = "Off — lock access not required",
                     subtitleOnOk = when {
                         runtime.lockAccessibility -> "On — lock helper (face unlock)"
@@ -231,7 +231,7 @@ fun PermissionsSettingsOverlay(
                 )
 
                 PermissionSwitchCard(
-                    title = "Glance strip (date & weather)",
+                    title = "Glance Strip (Date & Weather)",
                     subtitleOff = "Off — location not required for weather",
                     subtitleOnOk = "On — location granted (weather)",
                     subtitleOnMissing = "On — grant location for weather",
@@ -267,7 +267,7 @@ fun PermissionsSettingsOverlay(
                 )
 
                 PermissionSwitchCard(
-                    title = "Calendar events on glance",
+                    title = "Calendar Events on Glance Strip",
                     subtitleOff = "Off — calendar permission not required",
                     subtitleOnOk = "On — calendar access granted",
                     subtitleOnMissing = when {

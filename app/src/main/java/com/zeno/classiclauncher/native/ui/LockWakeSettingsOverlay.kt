@@ -100,7 +100,7 @@ fun LockWakeSettingsOverlay(
                     )
                 }
                 Text(
-                    "Lock & wake",
+                    "Lock & Wake",
                     style = MaterialTheme.typography.headlineMedium.copy(
                         color = themePalette.settingsMenuTitle,
                         fontWeight = FontWeight.Normal,
@@ -115,13 +115,13 @@ fun LockWakeSettingsOverlay(
                 verticalArrangement = Arrangement.spacedBy(16.dp),
             ) {
                 Text(
-                    "Double tap uses the built-in lock path. “Zeno Classic lock helper” in Accessibility remains optional for devices that need the power-button style lock path for face unlock.",
+                    "Double Tap uses the built-in lock path. “Zeno Classic lock helper” in Accessibility remains optional for devices that need the power-button style lock path for face unlock.",
                     style = MaterialTheme.typography.bodyMedium,
                     color = subtitleColor,
                 )
 
                 SettingsSwitchRow(
-                    title = "Double tap to lock",
+                    title = "Double Tap to Lock",
                     subtitle = when {
                         !doubleTapEnabled -> "Off"
                         lockHelperOn -> "On — lock helper (face unlock)"
@@ -142,7 +142,7 @@ fun LockWakeSettingsOverlay(
 
                 if (doubleTapEnabled && !lockHelperOn) {
                     TextButton(onClick = { openAccessibilitySettings() }) {
-                        Text("Enable optional lock helper (Accessibility)", color = themePalette.settingsMenuBody)
+                        Text("Enable Optional Lock Helper (Accessibility)", color = themePalette.settingsMenuBody)
                     }
                 }
 
