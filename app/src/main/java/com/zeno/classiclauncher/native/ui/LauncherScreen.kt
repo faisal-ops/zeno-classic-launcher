@@ -20,6 +20,7 @@ import android.os.Handler
 import android.os.Looper
 import android.os.SystemClock
 import android.provider.Settings
+import android.util.Log
 import android.view.HapticFeedbackConstants
 import android.view.View
 import android.view.KeyEvent as AndroidKeyEvent
@@ -315,13 +316,17 @@ private const val HOME_WIDGET_HOST_ID = 7777
 private val HOME_SHORTCUT_ICON_DP = 52.dp
 private val HOME_SHORTCUT_FALLBACK_ICON_DP = 48.dp
 private val HOME_STRIP_LABEL_COLOR = Color(0xFFE8EEF7)
-/** Strip captions under shortcuts and home groups (was 11sp; +10%). */
-private val HOME_STRIP_LABEL_FONT_SP = 12.5.sp
-private val HOME_STRIP_LABEL_LINE_SP = 16.sp
-/** Space between the 48dp icon tile and the caption (was 4.dp; more readable). */
-private val HOME_STRIP_ICON_LABEL_GAP = 8.dp
-/** Centre shortcuts: gap between tiles (matches last shipped commit). */
-private val HOME_STRIP_SHORTCUT_GAP = 8.dp
+/** Compact strip captions shared by apps, folders, and groups. */
+private val HOME_STRIP_LABEL_FONT_SP = 13.sp
+private val HOME_STRIP_LABEL_LINE_SP = 15.sp
+/** Space between the icon tile and caption across all home-strip item types. */
+private val HOME_STRIP_ICON_LABEL_GAP = 5.dp
+/** Centre shortcuts: tight fixed gap between slots. */
+private val HOME_STRIP_SHORTCUT_GAP = 6.dp
+private val HOME_STRIP_FOCUS_RADIUS = 5.dp
+private val HOME_STRIP_FOCUS_INSET = 2.dp
+private val HOME_STRIP_CONTENT_VERTICAL_INSET = 3.dp
+private const val HOME_STRIP_DND_TAG = "HomeStripDnD"
 
 private val OUTLINE_OFFSETS = arrayOf(
     Offset(-0.8f, -0.8f),
@@ -1427,8 +1432,6 @@ fun LauncherScreen(
                     }
                 },
                 onOpenGlanceSettings = { showGlanceSettings = true },
-                homeStripEnabled = prefs.homeStripEnabled,
-                onToggleHomeStrip = vm::setHomeStripEnabled,
                 homeGroupsSubtitle = remember(prefs.homeGroups) {
                     when {
                         prefs.homeGroups.isEmpty() -> "No groups — long-press apps in drawer to add"
@@ -1579,7 +1582,9 @@ fun LauncherScreen(
             HomeGroupsSettingsOverlay(
                 groups = prefs.homeGroups,
                 allApps = allApps,
+                homeStripEnabled = prefs.homeStripEnabled,
                 themePalette = themePalette,
+                onToggleHomeStrip = vm::setHomeStripEnabled,
                 onCreateGroup = { name ->
                     if (groupNameExists(name)) {
                         Toast.makeText(context, "Groups already exist", Toast.LENGTH_SHORT).show()
@@ -4906,6 +4911,8 @@ private fun FolderTile(
     onClick: () -> Unit,
     onLongPress: () -> Unit,
     focusHorizontalInset: androidx.compose.ui.unit.Dp = 0.dp,
+    contentVerticalInset: androidx.compose.ui.unit.Dp = 0.dp,
+    labelContentAlignment: Alignment = Alignment.TopCenter,
     useOutlinedLabel: Boolean = true,
     /** When true, [reorderDragModifier] owns long-press (e.g. home strip); inner tap must not register long-press. */
     stripOuterDragOwnsLongPress: Boolean = false,
@@ -4936,17 +4943,18 @@ private fun FolderTile(
     val density = LocalDensity.current
     val iconPadTop = 3.dp
     val textPadBottom = 2.dp
+    val contentHeight = (height - contentVerticalInset * 2).coerceAtLeast(iconSize)
     // Keep folder tile vertical geometry in lockstep with AppTile so label baseline matches.
-    val (iconSizeUsed, iconPadBottom) = remember(height, iconSize, labelSizeSp, density) {
+    val (iconSizeUsed, iconPadBottom) = remember(contentHeight, iconSize, labelSizeSp, density) {
         val minLabel = with(density) { (labelSizeSp * 2.55f).sp.toDp() }
         var sz = iconSize
-        var pad = (height - iconPadTop - sz - textPadBottom - minLabel).coerceIn(3.dp, 14.dp)
+        var pad = (contentHeight - iconPadTop - sz - textPadBottom - minLabel).coerceIn(3.dp, 14.dp)
         repeat(10) {
-            val labelSpace = height - iconPadTop - sz - pad - textPadBottom
+            val labelSpace = contentHeight - iconPadTop - sz - pad - textPadBottom
             if (labelSpace >= minLabel) return@remember Pair(sz, pad)
             if (sz <= 40.dp) return@remember Pair(sz, pad)
             sz -= 3.dp
-            pad = (height - iconPadTop - sz - textPadBottom - minLabel).coerceIn(3.dp, 14.dp)
+            pad = (contentHeight - iconPadTop - sz - textPadBottom - minLabel).coerceIn(3.dp, 14.dp)
         }
         Pair(sz.coerceAtLeast(40.dp), pad)
     }
@@ -5020,7 +5028,9 @@ private fun FolderTile(
         }
         Column(
             horizontalAlignment = Alignment.CenterHorizontally,
-            modifier = Modifier.fillMaxSize(),
+            modifier = Modifier
+                .fillMaxSize()
+                .padding(vertical = contentVerticalInset),
         ) {
             Box(
                 modifier = Modifier
@@ -5090,7 +5100,7 @@ private fun FolderTile(
                     .fillMaxWidth()
                     .fillMaxHeight()
                     .padding(bottom = textPadBottom, start = 3.dp, end = 3.dp),
-                contentAlignment = Alignment.TopCenter,
+                contentAlignment = labelContentAlignment,
             ) {
                 if (useOutlinedLabel) {
                     OutlinedLabel(
@@ -5133,6 +5143,8 @@ private fun AppTile(
     onClick: () -> Unit,
     onLongPress: () -> Unit,
     focusHorizontalInset: androidx.compose.ui.unit.Dp = 0.dp,
+    contentVerticalInset: androidx.compose.ui.unit.Dp = 0.dp,
+    labelContentAlignment: Alignment = Alignment.TopCenter,
     useOutlinedLabel: Boolean = true,
     /** When true, [reorderDragModifier] owns long-press (e.g. home strip); inner tap must not register long-press. */
     stripOuterDragOwnsLongPress: Boolean = false,
@@ -5197,16 +5209,17 @@ private fun AppTile(
         // Reserve extra height for two lines (descenders + outline); shrink icon/padding when the cell is short.
         val iconPadTop = 3.dp
         val textPadBottom = 2.dp
-        val (iconSizeUsed, iconPadBottom) = remember(height, iconSize, labelSizeSp, density) {
+        val contentHeight = (height - contentVerticalInset * 2).coerceAtLeast(iconSize)
+        val (iconSizeUsed, iconPadBottom) = remember(contentHeight, iconSize, labelSizeSp, density) {
             val minLabel = with(density) { (labelSizeSp * 2.55f).sp.toDp() }
             var sz = iconSize
-            var pad = (height - iconPadTop - sz - textPadBottom - minLabel).coerceIn(3.dp, 14.dp)
+            var pad = (contentHeight - iconPadTop - sz - textPadBottom - minLabel).coerceIn(3.dp, 14.dp)
             repeat(10) {
-                val labelSpace = height - iconPadTop - sz - pad - textPadBottom
+                val labelSpace = contentHeight - iconPadTop - sz - pad - textPadBottom
                 if (labelSpace >= minLabel) return@remember Pair(sz, pad)
                 if (sz <= 40.dp) return@remember Pair(sz, pad)
                 sz -= 3.dp
-                pad = (height - iconPadTop - sz - textPadBottom - minLabel).coerceIn(3.dp, 14.dp)
+                pad = (contentHeight - iconPadTop - sz - textPadBottom - minLabel).coerceIn(3.dp, 14.dp)
             }
             Pair(sz.coerceAtLeast(40.dp), pad)
         }
@@ -5255,7 +5268,9 @@ private fun AppTile(
         // Mirrors Flutter `app_card.dart`: `appCardIconPadding` + Expanded + `appCardTextPadding`.
         Column(
             horizontalAlignment = Alignment.CenterHorizontally,
-            modifier = Modifier.fillMaxSize(),
+            modifier = Modifier
+                .fillMaxSize()
+                .padding(vertical = contentVerticalInset),
         ) {
             Box(
                 modifier = Modifier
@@ -5315,7 +5330,7 @@ private fun AppTile(
                     .fillMaxWidth()
                     .fillMaxHeight()
                     .padding(bottom = 2.dp, start = 3.dp, end = 3.dp),
-                contentAlignment = Alignment.TopCenter,
+                contentAlignment = labelContentAlignment,
             ) {
                 if (useOutlinedLabel) {
                     OutlinedLabel(
@@ -6376,11 +6391,10 @@ private fun HomeShortcutStrip(
     val density = LocalDensity.current
     val view = LocalView.current
     val outerPadH = 22.dp
-    val colSpacing = themePalette.appGridColumnSpacingDp.dp
-    val stripColSpacing = if (colSpacing > 2.dp) colSpacing - 2.dp else 0.dp
+    val stripColSpacing = HOME_STRIP_SHORTCUT_GAP
     val iconSize = themePalette.appGridIconSizeDp.dp
-    val labelSizeSp = themePalette.appCardFontSp.toInt()
-    val selectorRadius = themePalette.selectorBorderRadiusDp.dp
+    val labelSizeSp = HOME_STRIP_LABEL_FONT_SP.value.roundToInt()
+    val selectorRadius = HOME_STRIP_FOCUS_RADIUS
 
     val baseSlotTokens = remember(stripSlotTokens) {
         List(STRIP_TOTAL_SLOTS) { i -> stripSlotTokens.getOrNull(i) }
@@ -6398,31 +6412,54 @@ private fun HomeShortcutStrip(
     var stripCoords by remember { mutableStateOf<LayoutCoordinates?>(null) }
     var pendingDropMoving by remember { mutableStateOf<String?>(null) }
     var pendingDropTarget by remember { mutableStateOf<String?>(null) }
+    var pendingDropSlots by remember { mutableStateOf<List<String?>?>(null) }
 
-    androidx.compose.runtime.LaunchedEffect(movingSlotId) {
-        if (movingSlotId == null) {
-            pendingDropMoving = null
-            pendingDropTarget = null
+    fun previewHomeStripSlots(
+        source: List<String?>,
+        moving: String?,
+        hovered: String?,
+    ): List<String?> {
+        if (moving == null || hovered == null) return source
+        val fromI = source.indexOfFirst { it == moving }
+        val toI = when {
+            hovered.startsWith("strip_empty_") -> {
+                hovered.removePrefix("strip_empty_").toIntOrNull()?.minus(1) ?: -1
+            }
+            else -> source.indexOfFirst { it == hovered }
+        }
+        if (fromI < 0 || toI < 0 || fromI == toI) return source
+        return source.toMutableList().apply { moveHomeStripSlot(fromI, toI) }
+    }
+    // Mirror drawer behavior: emit a light tick only when hover target changes while actively dragging.
+    androidx.compose.runtime.LaunchedEffect(hoveredSlotKey) {
+        if (hoveredSlotKey != null && reorderFingerDragging && hapticsEnabled) {
+            view.performHapticFeedback(HapticFeedbackConstants.TEXT_HANDLE_MOVE)
         }
     }
 
-    val displaySlotTokens: List<String?> = run {
-        val moving = movingSlotId ?: pendingDropMoving
-        val hovered = hoveredSlotKey ?: pendingDropTarget
-        if (moving == null || hovered == null) baseSlotTokens
-        else {
-            val fromI = baseSlotTokens.indexOfFirst { it == moving }
-            val toI = when {
-                hovered.startsWith("strip_empty_") -> {
-                    hovered.removePrefix("strip_empty_").toIntOrNull()?.minus(1) ?: -1
+    val activeMoving = movingSlotId ?: pendingDropMoving
+    val activeHovered = hoveredSlotKey ?: pendingDropTarget
+    val displaySlotTokens: List<String?> =
+        pendingDropSlots ?: previewHomeStripSlots(baseSlotTokens, activeMoving, activeHovered)
+
+    androidx.compose.runtime.LaunchedEffect(
+        movingSlotId,
+        baseSlotTokens,
+        pendingDropSlots,
+    ) {
+        val pending = pendingDropSlots
+        if (movingSlotId == null && pending != null) {
+            if (baseSlotTokens == pending) {
+                pendingDropMoving = null
+                pendingDropTarget = null
+                pendingDropSlots = null
+            } else {
+                kotlinx.coroutines.delay(250)
+                if (pendingDropSlots == pending) {
+                    pendingDropMoving = null
+                    pendingDropTarget = null
+                    pendingDropSlots = null
                 }
-                else -> baseSlotTokens.indexOfFirst { it == hovered }
-            }
-            if (fromI < 0 || toI < 0 || fromI == toI) baseSlotTokens
-            else {
-                val m = baseSlotTokens.toMutableList()
-                m.moveHomeStripSlot(fromI, toI)
-                m
             }
         }
     }
@@ -6449,8 +6486,14 @@ private fun HomeShortcutStrip(
         animationSpec = tween(180),
         label = "homeStripWiggleStr",
     )
+    val reorderModeRef = rememberUpdatedState(reorderMode)
 
-    fun Modifier.stripDragGesture(slotId: String): Modifier = this.pointerInput(slotId, reorderMode) {
+    fun Modifier.stripDragGesture(slotId: String): Modifier = this.pointerInput(slotId) {
+        val hoverSwitchThresholdPx = if (HomeGroupIds.isHomeGroupId(slotId)) {
+            with(density) { 20.dp.toPx() }
+        } else {
+            with(density) { 10.dp.toPx() }
+        }
         fun attachedBoundsSnapshot(): Map<String, Rect> =
             cellLayouts.entries
                 .filter { it.value.isAttached }
@@ -6460,14 +6503,28 @@ private fun HomeShortcutStrip(
             bounds.entries
                 .asSequence()
                 .filter { (k, _) -> k != source && k in stripHoverKeysRef[0] }
-                .minByOrNull { (_, b) ->
-                    val c = b.center
-                    hypot((c.x - finger.x).toDouble(), (c.y - finger.y).toDouble())
-                }?.key
+                .let { candidates ->
+                    val candidateList = candidates.toList()
+                    val underFinger = candidateList.filter { (_, b) ->
+                        finger.x >= b.left && finger.x <= b.right &&
+                            finger.y >= b.top && finger.y <= b.bottom
+                    }
+                    val pool = if (underFinger.isNotEmpty()) underFinger else candidateList
+                    pool.minByOrNull { (_, b) ->
+                        val c = b.center
+                        hypot((c.x - finger.x).toDouble(), (c.y - finger.y).toDouble())
+                    }?.key
+                }
+        fun hoverDistancePx(key: String?, finger: Offset, bounds: Map<String, Rect>): Float? {
+            if (key == null) return null
+            val rect = bounds[key] ?: return null
+            val c = rect.center
+            return hypot((c.x - finger.x).toDouble(), (c.y - finger.y).toDouble()).toFloat()
+        }
 
-        fun beginDrag(startOffset: Offset, enteringReorderFromLongPress: Boolean) {
+        fun beginDrag(startOffset: Offset) {
             onClearStripKeyboardFocus()
-            if (enteringReorderFromLongPress && !reorderMode) onEnterReorderMode()
+            if (!reorderModeRef.value) onEnterReorderMode()
             doNavFeedback(view, hapticsEnabled, hapticIntensity)
             reorderStripDragOffset = Offset.Zero
             onStartStripMove(slotId)
@@ -6477,10 +6534,15 @@ private fun HomeShortcutStrip(
             ghostVisible = true
             val src = cellLayouts[slotId]
             if (src != null && src.isAttached) dragFingerRoot = src.localToRoot(startOffset)
+            Log.d(
+                HOME_STRIP_DND_TAG,
+                "beginDrag slot=$slotId reorderMode=${reorderModeRef.value} " +
+                    "hoverKeys=${stripHoverKeysRef[0].size} bounds=${originalStripBoundsRef[0].size}",
+            )
             scope.launch {
                 ghostScaleAnim.animateTo(
-                    1.15f,
-                    spring(dampingRatio = Spring.DampingRatioMediumBouncy, stiffness = Spring.StiffnessMedium),
+                    1.1f,
+                    spring(dampingRatio = Spring.DampingRatioNoBouncy, stiffness = Spring.StiffnessMedium),
                 )
             }
         }
@@ -6500,45 +6562,51 @@ private fun HomeShortcutStrip(
             }
             val nearest = nearestStripHover(slotId, dragFingerRoot, originalStripBoundsRef[0])
             if (nearest != hoveredSlotKey) {
-                hoveredSlotKey = nearest
-                if (nearest != null && hapticsEnabled) {
-                    view.performHapticFeedback(HapticFeedbackConstants.TEXT_HANDLE_MOVE)
+                val current = hoveredSlotKey
+                val nearestDist = hoverDistancePx(nearest, dragFingerRoot, originalStripBoundsRef[0])
+                val currentDist = hoverDistancePx(current, dragFingerRoot, originalStripBoundsRef[0])
+                if (nearest != null && current != null && nearestDist != null && currentDist != null) {
+                    // Hysteresis avoids rapid bounce between neighboring slots (most visible on groups).
+                    if (nearestDist + hoverSwitchThresholdPx >= currentDist) return
                 }
+                Log.d(
+                    HOME_STRIP_DND_TAG,
+                    "hover slot=$slotId from=$hoveredSlotKey to=$nearest finger=(${dragFingerRoot.x},${dragFingerRoot.y})",
+                )
+                hoveredSlotKey = nearest
             }
         }
 
         fun finishDrag() {
             reorderFingerDragging = false
-            val hoverKey = hoveredSlotKey ?: nearestStripHover(slotId, dragFingerRoot, originalStripBoundsRef[0])
+            // Match drawer behavior: only drop when we had an explicit hover target during drag.
+            val hoverKey = hoveredSlotKey
+            Log.d(
+                HOME_STRIP_DND_TAG,
+                "finishDrag slot=$slotId hoverKey=$hoverKey pendingBefore=$pendingDropMoving/$pendingDropTarget",
+            )
+            if (hoverKey != null && hapticsEnabled) {
+                view.performHapticFeedback(HapticFeedbackConstants.CLOCK_TICK)
+            }
             pendingDropMoving = slotId
             pendingDropTarget = hoverKey
+            pendingDropSlots = previewHomeStripSlots(baseSlotTokens, slotId, hoverKey)
             hoveredSlotKey = null
             scope.launch {
-                val targetCenter = hoverKey?.let { originalStripBoundsRef[0][it]?.center }
-                if (targetCenter != null && hapticsEnabled) {
-                    view.performHapticFeedback(HapticFeedbackConstants.CLOCK_TICK)
-                }
-                if (targetCenter != null) {
-                    val startPos = dragFingerRoot
-                    kotlinx.coroutines.coroutineScope {
-                        launch {
-                            androidx.compose.animation.core.animate(
-                                0f,
-                                1f,
-                                animationSpec = tween(130, easing = FastOutSlowInEasing),
-                            ) { p, _ ->
-                                dragFingerRoot = Offset(
-                                    startPos.x + (targetCenter.x - startPos.x) * p,
-                                    startPos.y + (targetCenter.y - startPos.y) * p,
-                                )
-                            }
-                        }
-                        launch { ghostScaleAnim.animateTo(0f, tween(130, easing = FastOutSlowInEasing)) }
-                    }
-                } else {
-                    ghostScaleAnim.animateTo(0f, tween(80, easing = FastOutSlowInEasing))
-                }
+                Log.d(
+                    HOME_STRIP_DND_TAG,
+                    "commitDrop slot=$slotId hoverKey=$hoverKey",
+                )
                 onFinishReorderDrop(hoverKey)
+                // Let the persisted order compose under the lifted ghost before release fade.
+                kotlinx.coroutines.delay(if (hoverKey != null) 45 else 0)
+                ghostScaleAnim.animateTo(
+                    0f,
+                    tween(
+                        durationMillis = if (hoverKey != null) 75 else 65,
+                        easing = FastOutSlowInEasing,
+                    ),
+                )
                 ghostScaleAnim.snapTo(1f)
                 ghostVisible = false
                 reorderStripDragOffset = Offset.Zero
@@ -6546,33 +6614,25 @@ private fun HomeShortcutStrip(
         }
 
         fun cancelDrag() {
+            Log.d(HOME_STRIP_DND_TAG, "cancelDrag slot=$slotId")
             reorderFingerDragging = false
             hoveredSlotKey = null
             pendingDropMoving = null
             pendingDropTarget = null
+            pendingDropSlots = null
             reorderStripDragOffset = Offset.Zero
             scope.launch { ghostScaleAnim.snapTo(1f) }
             ghostVisible = false
             onClearMove()
         }
 
-        if (reorderMode) {
-            // In active rearrange mode, match drawer UX: drag starts immediately.
-            detectDragGestures(
-                onDragStart = { beginDrag(it, enteringReorderFromLongPress = false) },
-                onDrag = { change, dragAmount -> updateDrag(change, dragAmount) },
-                onDragEnd = { finishDrag() },
-                onDragCancel = { cancelDrag() },
-            )
-        } else {
-            // Normal mode still requires long-press to enter rearrange.
-            detectDragGesturesAfterLongPress(
-                onDragStart = { beginDrag(it, enteringReorderFromLongPress = true) },
-                onDrag = { change, dragAmount -> updateDrag(change, dragAmount) },
-                onDragEnd = { finishDrag() },
-                onDragCancel = { cancelDrag() },
-            )
-        }
+        // Match drawer reorder UX: long-press pickup while in reorder mode.
+        detectDragGesturesAfterLongPress(
+            onDragStart = { beginDrag(it) },
+            onDrag = { change, dragAmount -> updateDrag(change, dragAmount) },
+            onDragEnd = { finishDrag() },
+            onDragCancel = { cancelDrag() },
+        )
     }
 
     androidx.compose.animation.AnimatedVisibility(
@@ -6617,8 +6677,8 @@ private fun HomeShortcutStrip(
         ) {
             val viewportWidth = maxWidth
             val minLabelBlock = with(density) { (labelSizeSp * 2.55f).sp.toDp() }
-            val minCellHeight = 3.dp + iconSize + 10.dp + 2.dp + minLabelBlock
-            val minCellWidth = iconSize + 14.dp
+            val minCellHeight = 3.dp + iconSize + HOME_STRIP_ICON_LABEL_GAP + 2.dp + minLabelBlock
+            val minCellWidth = iconSize + 10.dp
             val stripCols = 5
             val cardW =
                 ((viewportWidth - stripColSpacing * (stripCols - 1)) / stripCols).coerceAtLeast(minCellWidth)
@@ -6651,17 +6711,20 @@ private fun HomeShortcutStrip(
             ) {
                 for ((col, visibleTok) in renderedStripSlots) {
                     val emptyKey = "strip_empty_${col + 1}"
-                    val selected = focusedIndex == col
-                    val group = visibleTok?.takeIf { HomeGroupIds.isHomeGroupId(it) }
-                        ?.let { tid -> homeGroups.find { g -> g.id == tid } }
-                    if (visibleTok != null && group != null) {
+                    val slotComposeKey = visibleTok ?: emptyKey
+                    androidx.compose.runtime.key(slotComposeKey) {
+                        val selected = focusedIndex == col
+                        val group = visibleTok?.takeIf { HomeGroupIds.isHomeGroupId(it) }
+                            ?.let { tid -> homeGroups.find { g -> g.id == tid } }
+                        if (visibleTok != null && group != null) {
                         val stripToken = group.id
                         val isMovingThisGroup = ghostVisible && movingSlotId == stripToken
                         val groupIconPadTop = 3.dp
                         val groupTextPadBottom = 2.dp
-                        val groupIconBlock = iconSize + 8.dp
+                        val groupIconBlock = iconSize
+                        val groupContentHeight = (cardH - HOME_STRIP_CONTENT_VERTICAL_INSET * 2).coerceAtLeast(iconSize)
                         val groupIconPadBottom =
-                            (cardH - groupIconPadTop - groupIconBlock - groupTextPadBottom - minLabelBlock)
+                            (groupContentHeight - groupIconPadTop - groupIconBlock - groupTextPadBottom - minLabelBlock)
                                 .coerceIn(3.dp, 14.dp)
                         val members =
                             group.packageNames.mapNotNull { pkg -> allApps.find { it.packageName == pkg } }
@@ -6671,19 +6734,18 @@ private fun HomeShortcutStrip(
                             modifier = Modifier
                                 .width(cardW)
                                 .height(cardH)
+                                .onGloballyPositioned { coords -> cellLayouts[stripToken] = coords }
                                 .graphicsLayer {
                                     rotationZ = wiggleRot * wiggleStr
-                                    if (isMovingThisGroup) {
-                                        translationX = reorderStripDragOffset.x
-                                        translationY = reorderStripDragOffset.y
-                                    }
+                                    // While dragging, draw only the shared ghost overlay (same as apps).
+                                    alpha = if (isMovingThisGroup) 0f else 1f
                                 },
                         ) {
                             Column(
                                 horizontalAlignment = Alignment.CenterHorizontally,
                                 modifier = Modifier
                                     .fillMaxSize()
-                                    .padding(horizontal = if (selected) 5.dp else 0.dp)
+                                    .padding(horizontal = if (selected) HOME_STRIP_FOCUS_INSET else 0.dp)
                                     .clip(RoundedCornerShape(selectorRadius))
                                     .background(if (selected) themePalette.selectorBackgroundColour else Color.Transparent)
                                     .border(
@@ -6691,7 +6753,7 @@ private fun HomeShortcutStrip(
                                         color = if (selected) themePalette.selectorBorderColour else Color.Transparent,
                                         shape = RoundedCornerShape(selectorRadius),
                                     )
-                                    .padding(horizontal = 2.dp, vertical = 3.dp)
+                                    .padding(horizontal = 2.dp, vertical = HOME_STRIP_CONTENT_VERTICAL_INSET)
                                     .then(
                                         if (!reorderMode) {
                                             Modifier.pointerInput(group.id) {
@@ -6707,30 +6769,43 @@ private fun HomeShortcutStrip(
                                     )
                                     .then(reorderDragModifier),
                             ) {
-                                Box(
-                                    modifier = Modifier
-                                        .padding(
-                                            top = groupIconPadTop,
-                                            bottom = groupIconPadBottom,
-                                            start = 6.dp,
-                                            end = 6.dp,
-                                        )
-                                        .size(groupIconBlock)
-                                        .onGloballyPositioned { coords -> cellLayouts[stripToken] = coords },
-                                    contentAlignment = Alignment.Center,
-                                ) {
-                                    HomeGroupStripIcon(
-                                        title = group.title,
-                                        members = members,
-                                        appIconShape = appIconShape,
-                                        hasUnreadBadge = group.packageNames.any { it in unreadPackages },
-                                        gesturesEnabled = false,
-                                        onClick = {},
-                                        onLongPress = {},
-                                    )
+                                Box(modifier = Modifier.fillMaxSize()) {
+                                    Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                                        Box(
+                                            modifier = Modifier
+                                                .padding(
+                                                    top = groupIconPadTop,
+                                                    bottom = groupIconPadBottom,
+                                                    start = 7.dp,
+                                                    end = 7.dp,
+                                                )
+                                                .size(groupIconBlock),
+                                            contentAlignment = Alignment.Center,
+                                        ) {
+                                            HomeGroupStripIcon(
+                                                title = group.title,
+                                                members = members,
+                                                appIconShape = appIconShape,
+                                                hasUnreadBadge = group.packageNames.any { it in unreadPackages },
+                                                gesturesEnabled = false,
+                                                onClick = {},
+                                                onLongPress = {},
+                                            )
+                                        }
+                                        Box(
+                                            modifier = Modifier
+                                                .weight(1f)
+                                                .fillMaxWidth()
+                                                .fillMaxHeight()
+                                                .padding(bottom = groupTextPadBottom, start = 3.dp, end = 3.dp),
+                                            contentAlignment = Alignment.BottomCenter,
+                                        ) {
+                                            HomeStripItemLabel(group.title)
+                                        }
+                                    }
                                     androidx.compose.animation.AnimatedVisibility(
                                         visible = reorderMode,
-                                        modifier = Modifier.align(Alignment.TopStart).offset(x = (-4).dp, y = (-4).dp),
+                                        modifier = Modifier.align(Alignment.TopStart).offset(x = 2.dp, y = 2.dp),
                                         enter = androidx.compose.animation.fadeIn(tween(120)) + androidx.compose.animation.scaleIn(tween(120)),
                                         exit = androidx.compose.animation.fadeOut(tween(100)) + androidx.compose.animation.scaleOut(tween(100)),
                                     ) {
@@ -6751,19 +6826,9 @@ private fun HomeShortcutStrip(
                                         }
                                     }
                                 }
-                                Box(
-                                    modifier = Modifier
-                                        .weight(1f)
-                                        .fillMaxWidth()
-                                        .fillMaxHeight()
-                                        .padding(bottom = groupTextPadBottom, start = 3.dp, end = 3.dp),
-                                    contentAlignment = Alignment.TopCenter,
-                                ) {
-                                    HomeStripItemLabel(group.title)
-                                }
                             }
                         }
-                    } else if (visibleTok != null) {
+                        } else if (visibleTok != null) {
                         val stripToken = visibleTok
                         val cell = drawerCellForHomeStripToken(stripToken, gridCells, allApps)
                         if (cell == null) {
@@ -6806,7 +6871,9 @@ private fun HomeShortcutStrip(
                                             hideSourceWhileFingerDragging = isMovingThis,
                                             usageTimeMs = 0L,
                                             hasNotifBadge = app.packageName in unreadPackages,
-                                            focusHorizontalInset = 5.dp,
+                                            focusHorizontalInset = HOME_STRIP_FOCUS_INSET,
+                                            contentVerticalInset = HOME_STRIP_CONTENT_VERTICAL_INSET,
+                                            labelContentAlignment = Alignment.BottomCenter,
                                             useOutlinedLabel = false,
                                             onGloballyPositioned = { coords -> cellLayouts[stripToken] = coords },
                                             onClick = {
@@ -6844,7 +6911,9 @@ private fun HomeShortcutStrip(
                                             isFingerDraggingThisTile = isMovingThis,
                                             reorderDragOffset = if (isMovingThis) reorderStripDragOffset else Offset.Zero,
                                             hideSourceWhileFingerDragging = isMovingThis,
-                                            focusHorizontalInset = 5.dp,
+                                            focusHorizontalInset = HOME_STRIP_FOCUS_INSET,
+                                            contentVerticalInset = HOME_STRIP_CONTENT_VERTICAL_INSET,
+                                            labelContentAlignment = Alignment.BottomCenter,
                                             useOutlinedLabel = false,
                                             onGloballyPositioned = { coords -> cellLayouts[stripToken] = coords },
                                             onClick = {
@@ -6857,7 +6926,7 @@ private fun HomeShortcutStrip(
                                     }
                                 }
                                 androidx.compose.animation.AnimatedVisibility(
-                                    visible = reorderMode && cell is DrawerGridCell.App,
+                                    visible = reorderMode && cell is DrawerGridCell.App && !isMovingThis,
                                     modifier = Modifier.align(Alignment.TopStart).offset(x = 2.dp, y = 2.dp),
                                     enter = androidx.compose.animation.fadeIn(tween(120)) + androidx.compose.animation.scaleIn(tween(120)),
                                     exit = androidx.compose.animation.fadeOut(tween(100)) + androidx.compose.animation.scaleOut(tween(100)),
@@ -6880,7 +6949,7 @@ private fun HomeShortcutStrip(
                                 }
                             }
                         }
-                    } else {
+                        } else {
                         Box(
                             modifier = Modifier
                                 .width(cardW)
@@ -6911,6 +6980,7 @@ private fun HomeShortcutStrip(
                             }
                         }
                     }
+                    }
                 }
             }
 
@@ -6932,6 +7002,7 @@ private fun HomeShortcutStrip(
                         .graphicsLayer {
                             scaleX = ghostScaleAnim.value
                             scaleY = ghostScaleAnim.value
+                            alpha = ghostScaleAnim.value.coerceIn(0f, 1f)
                         },
                 ) {
                     when {
@@ -7726,12 +7797,15 @@ private fun DockShortcutPickerOverlay(
 private fun HomeGroupsSettingsOverlay(
     groups: List<HomeGroup>,
     allApps: List<AppEntry>,
+    homeStripEnabled: Boolean,
     themePalette: LauncherThemePalette,
+    onToggleHomeStrip: (Boolean) -> Unit,
     onCreateGroup: (String) -> Unit,
     onDeleteGroup: (String) -> Unit,
     onDismiss: () -> Unit,
 ) {
     val subtitleColor = Color(0xFF8E95A3)
+    val cardBg = Color(0xFF1E2430)
     var newName by remember { mutableStateOf("") }
     Surface(
         modifier = Modifier
@@ -7782,6 +7856,46 @@ private fun HomeGroupsSettingsOverlay(
                     style = MaterialTheme.typography.bodyMedium,
                     color = subtitleColor,
                 )
+                Surface(
+                    shape = RoundedCornerShape(12.dp),
+                    color = cardBg,
+                    modifier = Modifier.fillMaxWidth(),
+                ) {
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(horizontal = 16.dp, vertical = 12.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                    ) {
+                        Column(Modifier.weight(1f)) {
+                            Text(
+                                "Show home strip",
+                                style = MaterialTheme.typography.bodyLarge,
+                                color = themePalette.settingsMenuTitle,
+                                fontWeight = FontWeight.Medium,
+                            )
+                            Text(
+                                if (homeStripEnabled) {
+                                    "Apps and groups appear above the dock"
+                                } else {
+                                    "Hidden from the home screen"
+                                },
+                                style = MaterialTheme.typography.bodySmall,
+                                color = subtitleColor,
+                            )
+                        }
+                        Switch(
+                            checked = homeStripEnabled,
+                            onCheckedChange = onToggleHomeStrip,
+                            colors = SwitchDefaults.colors(
+                                checkedThumbColor = Color.White,
+                                checkedTrackColor = Color(0xFF4A90D9),
+                                uncheckedThumbColor = Color(0xFF9AA0A8),
+                                uncheckedTrackColor = Color(0xFF3A3F4A),
+                            ),
+                        )
+                    }
+                }
                 // ── Create new group ──────────────────────────────────────
                 Row(
                     verticalAlignment = Alignment.CenterVertically,
@@ -7841,7 +7955,7 @@ private fun HomeGroupsSettingsOverlay(
                 groups.forEach { g ->
                     Surface(
                         shape = RoundedCornerShape(12.dp),
-                        color = Color(0xFF1E2430),
+                        color = cardBg,
                         modifier = Modifier.fillMaxWidth(),
                     ) {
                         Row(
@@ -8274,8 +8388,6 @@ private fun SettingsScreenOverlay(
     onGridPreset: (GridPreset) -> Unit,
     onOpenDockSlotPicker: (DockSlot) -> Unit,
     onOpenGlanceSettings: () -> Unit,
-    homeStripEnabled: Boolean,
-    onToggleHomeStrip: (Boolean) -> Unit,
     onOpenHomeGroupsSettings: () -> Unit,
     permissionsSubtitle: String,
     onOpenPermissionsSettings: () -> Unit,
@@ -8524,23 +8636,11 @@ private fun SettingsScreenOverlay(
                         SettingsRow(
                             icon = Icons.Rounded.BookmarkAdd,
                             title = "Home strip",
-                            subtitle = if (homeStripEnabled) homeGroupsSubtitle else "Off",
+                            subtitle = homeGroupsSubtitle,
                             selected = selectedIndex == 2,
                             themePalette = themePalette,
                             subtitleColor = subtitleColor,
-                            onClick = { if (homeStripEnabled) activate(2) },
-                            trailingContent = {
-                                Switch(
-                                    checked = homeStripEnabled,
-                                    onCheckedChange = onToggleHomeStrip,
-                                    colors = SwitchDefaults.colors(
-                                        checkedThumbColor = Color.White,
-                                        checkedTrackColor = Color(0xFF4A90D9),
-                                        uncheckedThumbColor = Color(0xFF9AA0A8),
-                                        uncheckedTrackColor = Color(0xFF3A3F4A),
-                                    ),
-                                )
-                            },
+                            onClick = { activate(2) },
                         )
                     }
                 }
@@ -9094,4 +9194,3 @@ private tailrec fun android.content.Context.findHostActivity(): Activity? =
         is ContextWrapper -> baseContext.findHostActivity()
         else -> null
     }
-

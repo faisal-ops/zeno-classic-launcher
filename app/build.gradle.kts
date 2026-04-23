@@ -56,6 +56,11 @@ android {
     }
 
     buildTypes {
+        debug {
+            applicationIdSuffix = ".debug"
+            versionNameSuffix = "-debug"
+            resValue("string", "app_name", "Zeno Classic - Debug")
+        }
         release {
             isMinifyEnabled = false
             signingConfig = signingConfigs.getByName("release")
@@ -72,6 +77,7 @@ androidComponents {
             impl.outputFileName.set(
                 when (buildType) {
                     "release" -> "zeno-classic-launcher-v${android.defaultConfig.versionName}.apk"
+                    "debug" -> "zeno-classic-launcher-debug-v${android.defaultConfig.versionName}.apk"
                     else -> "zeno-classic-launcher-$buildType.apk"
                 },
             )
@@ -103,4 +109,3 @@ dependencies {
     debugImplementation("androidx.compose.ui:ui-tooling")
     debugImplementation("androidx.compose.ui:ui-test-manifest")
 }
-

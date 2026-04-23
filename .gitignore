@@ -47,3 +47,8 @@ wallpapers/
 docs/NOTES.md
 scripts/
 tmp/
+
+# Local media/app dumps kept outside git history
+BB Preloaded Tones/
+Blackberry Apps/
+zenowallpapers/

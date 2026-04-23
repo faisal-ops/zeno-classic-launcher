@@ -3,6 +3,7 @@
 package com.zeno.classiclauncher.nlauncher.ui
 
 import android.app.Application
+import android.util.Log
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import android.content.pm.LauncherApps
@@ -55,6 +56,7 @@ import java.util.Locale
 import kotlin.math.abs
 
 private val PRIVATE_PREFIX_REGEX = Regex("^private\\s+", RegexOption.IGNORE_CASE)
+private const val HOME_STRIP_DND_TAG = "HomeStripDnD"
 
 class LauncherViewModel(app: Application) : AndroidViewModel(app) {
     private val prefsRepo = LauncherPrefsRepository(app.applicationContext)
@@ -286,6 +288,7 @@ class LauncherViewModel(app: Application) : AndroidViewModel(app) {
 
     /** Drag/reorder gesture started from the home strip (slot tokens, not drawer grid). */
     fun startStripMove(token: String) {
+        Log.d(HOME_STRIP_DND_TAG, "vm.startStripMove token=$token")
         _movingPackage.value = token
         _reorderFromHomeStrip.value = true
     }
@@ -334,7 +337,9 @@ class LauncherViewModel(app: Application) : AndroidViewModel(app) {
 
     private fun finishHomeStripReorderDrop(targetKey: String?) {
         val moving = _movingPackage.value ?: return
+        Log.d(HOME_STRIP_DND_TAG, "vm.finishHomeStripReorderDrop moving=$moving targetKey=$targetKey")
         if (targetKey == null || targetKey == moving) {
+            Log.d(HOME_STRIP_DND_TAG, "vm.dropIgnored moving=$moving targetKey=$targetKey")
             clearMove()
             return
         }
@@ -342,9 +347,15 @@ class LauncherViewModel(app: Application) : AndroidViewModel(app) {
             gridHomeMutex.withLock {
                 val snap = prefs.value
                 val slots = snap.effectiveHomeStripSlotOrder().toMutableList()
-                if (slots.size != STRIP_TOTAL_SLOTS) return@withLock
+                if (slots.size != STRIP_TOTAL_SLOTS) {
+                    Log.d(HOME_STRIP_DND_TAG, "vm.abort invalidSlotsSize size=${slots.size}")
+                    return@withLock
+                }
                 val fromIdx = slots.indexOfFirst { it == moving }
-                if (fromIdx < 0) return@withLock
+                if (fromIdx < 0) {
+                    Log.d(HOME_STRIP_DND_TAG, "vm.abort movingNotFound moving=$moving")
+                    return@withLock
+                }
                 val toIdx = when {
                     targetKey.startsWith("strip_empty_") -> {
                         val n = targetKey.removePrefix("strip_empty_").toIntOrNull() ?: return@withLock
@@ -352,10 +363,15 @@ class LauncherViewModel(app: Application) : AndroidViewModel(app) {
                     }
                     else -> slots.indexOfFirst { it == targetKey }
                 }
-                if (toIdx < 0 || fromIdx == toIdx) return@withLock
+                Log.d(HOME_STRIP_DND_TAG, "vm.indices fromIdx=$fromIdx toIdx=$toIdx slots=$slots")
+                if (toIdx < 0 || fromIdx == toIdx) {
+                    Log.d(HOME_STRIP_DND_TAG, "vm.abort noMove fromIdx=$fromIdx toIdx=$toIdx")
+                    return@withLock
+                }
                 slots.moveHomeStripSlot(fromIdx, toIdx)
                 prefsRepo.setHomeStripSlots(slots)
                 prefsRepo.setHomeStripOrder(slots.filterNotNull())
+                Log.d(HOME_STRIP_DND_TAG, "vm.persisted slots=$slots")
             }
             clearMove()
         }
