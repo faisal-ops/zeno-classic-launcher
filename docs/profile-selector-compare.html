@@ -1,0 +1,602 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Zeno Classic - Profile Selector Comparison</title>
+  <style>
+    :root {
+      --bg: #0b1020;
+      --panel: #141a2b;
+      --panel-2: #1a2236;
+      --ink: #e8eef8;
+      --muted: #95a0b6;
+      --accent: #57a8ff;
+      --accent-2: #68d0ff;
+      --ring: #f1d24b;
+      --vibrate: #6de39c;
+      --silent: #9fa8bd;
+      --dnd: #8a7cff;
+      --glass: rgba(255,255,255,.08);
+      --shadow: 0 20px 50px rgba(0,0,0,.35);
+      --radius: 34px;
+      --phone-w: 360px;
+      --phone-h: 720px;
+      font-synthesis-weight: none;
+    }
+
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      background:
+        radial-gradient(circle at top, #1f2c57 0, #0b1020 52%),
+        linear-gradient(180deg, #0b1020, #060915);
+      color: var(--ink);
+      font: 15px/1.4 system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+    }
+
+    .wrap {
+      max-width: 1340px;
+      margin: 0 auto;
+      padding: 28px 18px 44px;
+    }
+
+    .hero {
+      display: flex;
+      justify-content: space-between;
+      align-items: end;
+      gap: 16px;
+      margin-bottom: 18px;
+    }
+    .hero h1 {
+      margin: 0;
+      font-size: 30px;
+      letter-spacing: -0.03em;
+    }
+    .hero p {
+      margin: 8px 0 0;
+      color: var(--muted);
+      max-width: 58ch;
+    }
+
+    .legend {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 10px;
+      justify-content: flex-end;
+    }
+    .chip {
+      display: inline-flex;
+      align-items: center;
+      gap: 8px;
+      padding: 8px 12px;
+      border-radius: 999px;
+      background: rgba(255,255,255,.06);
+      color: var(--ink);
+      border: 1px solid rgba(255,255,255,.08);
+      backdrop-filter: blur(14px);
+      box-shadow: var(--shadow);
+      white-space: nowrap;
+      font-size: 13px;
+    }
+    .dot {
+      width: 10px;
+      height: 10px;
+      border-radius: 999px;
+      background: currentColor;
+      box-shadow: 0 0 0 3px rgba(255,255,255,.07);
+    }
+
+    .grid {
+      display: grid;
+      grid-template-columns: repeat(2, minmax(320px, 1fr));
+      gap: 18px;
+      align-items: start;
+    }
+
+    .phone {
+      width: min(100%, var(--phone-w));
+      margin: 0 auto;
+      border-radius: 34px;
+      padding: 12px;
+      background: linear-gradient(180deg, #11182a, #0e1424);
+      border: 1px solid rgba(255,255,255,.08);
+      box-shadow: 0 30px 80px rgba(0,0,0,.42);
+    }
+    .screen {
+      position: relative;
+      height: var(--phone-h);
+      overflow: hidden;
+      border-radius: 26px;
+      background:
+        radial-gradient(circle at 20% 0%, rgba(101,115,255,.16), transparent 26%),
+        linear-gradient(155deg, #2f2f6a 0%, #232a61 28%, #0f152c 62%, #0c1020 100%);
+    }
+    .screen::after {
+      content: "";
+      position: absolute;
+      inset: 0;
+      background:
+        linear-gradient(120deg, rgba(255,255,255,.03) 0 15%, transparent 15% 45%, rgba(255,255,255,.02) 45% 55%, transparent 55% 100%);
+      pointer-events: none;
+      mix-blend-mode: screen;
+      opacity: .65;
+    }
+
+    .status {
+      display: flex;
+      justify-content: space-between;
+      align-items: flex-start;
+      padding: 10px 14px 0;
+      position: relative;
+      z-index: 2;
+      color: #dbe3ff;
+      text-shadow: 0 1px 0 rgba(0,0,0,.15);
+    }
+    .status .small {
+      color: rgba(219,227,255,.72);
+      font-size: 13px;
+    }
+    .status .time {
+      font-size: 16px;
+      font-weight: 700;
+    }
+    .status .right {
+      text-align: right;
+    }
+
+    .glance {
+      position: relative;
+      z-index: 1;
+      height: 168px;
+      padding: 12px 18px 0;
+    }
+    .glance-top {
+      display: flex;
+      justify-content: space-between;
+      align-items: flex-start;
+      gap: 10px;
+      color: rgba(232,238,248,.92);
+      font-size: 18px;
+    }
+    .glance-top .alerts {
+      color: rgba(232,238,248,.55);
+      font-size: 16px;
+      margin-top: 8px;
+    }
+    .glance-top .weather {
+      text-align: right;
+      font-size: 18px;
+      line-height: 1.15;
+    }
+    .glance-top .weather .sub {
+      display: block;
+      margin-top: 6px;
+      font-size: 13px;
+      color: rgba(232,238,248,.75);
+    }
+
+    .mode-row {
+      position: absolute;
+      left: 50%;
+      top: 118px;
+      transform: translateX(-50%);
+      z-index: 3;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      gap: 10px;
+      padding: 7px 14px;
+      border-radius: 999px;
+      background: rgba(12,16,31,.56);
+      border: 1px solid rgba(255,255,255,.14);
+      backdrop-filter: blur(12px);
+      box-shadow: 0 10px 26px rgba(0,0,0,.2);
+    }
+    .mode-row.blackberry {
+      border-radius: 16px;
+      padding-inline: 12px;
+      background: rgba(255,255,255,.06);
+    }
+    .mode-row .icon {
+      width: 20px;
+      height: 20px;
+      display: grid;
+      place-items: center;
+      color: #eff4ff;
+      font-size: 18px;
+      line-height: 1;
+    }
+    .mode-row .divider {
+      width: 1px;
+      height: 18px;
+      background: rgba(255,255,255,.14);
+    }
+    .mode-row .mode {
+      width: 16px;
+      height: 16px;
+      border-radius: 999px;
+      background: var(--ring);
+      box-shadow: 0 0 0 3px rgba(255,255,255,.08), 0 0 14px rgba(241,210,75,.3);
+    }
+    .mode-row.vibrate .mode { background: var(--vibrate); box-shadow: 0 0 0 3px rgba(255,255,255,.08), 0 0 14px rgba(109,227,156,.28); }
+    .mode-row.silent .mode { background: var(--silent); box-shadow: 0 0 0 3px rgba(255,255,255,.08); }
+    .mode-row.dnd .mode { background: var(--dnd); box-shadow: 0 0 0 3px rgba(255,255,255,.08), 0 0 14px rgba(138,124,255,.28); }
+
+    .apps {
+      display: grid;
+      grid-template-columns: repeat(5, 1fr);
+      gap: 18px 10px;
+      padding: 66px 20px 0;
+      position: relative;
+      z-index: 2;
+      color: #eaf0ff;
+    }
+    .app {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      gap: 10px;
+      min-width: 0;
+    }
+    .app .tile {
+      width: 62px;
+      height: 62px;
+      border-radius: 14px;
+      background: rgba(18,24,44,.9);
+      border: 1px solid rgba(255,255,255,.08);
+      display: grid;
+      place-items: center;
+      box-shadow: 0 10px 18px rgba(0,0,0,.18);
+      overflow: hidden;
+    }
+    .app .tile.blue {
+      background: linear-gradient(160deg, #5bc1ea, #2d7ab8);
+    }
+    .app .tile.dark {
+      background: linear-gradient(160deg, #222222, #111111);
+    }
+    .app .tile.orange {
+      background: linear-gradient(160deg, #ff6e1d, #ff5c00);
+    }
+    .app .tile.purple {
+      background: linear-gradient(160deg, #6267ff, #4a4fe3);
+    }
+    .app .name {
+      font-size: 16px;
+      line-height: 1.05;
+      text-align: center;
+      text-shadow: 0 1px 0 rgba(0,0,0,.45);
+      color: rgba(237,242,255,.96);
+      max-width: 76px;
+    }
+
+    .dock {
+      position: absolute;
+      left: 0;
+      right: 0;
+      bottom: 0;
+      padding: 12px 18px 15px;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      z-index: 2;
+    }
+    .dock .slot {
+      width: 54px;
+      height: 54px;
+      border-radius: 50%;
+      display: grid;
+      place-items: center;
+      background: rgba(255,255,255,.04);
+      border: 1px solid rgba(255,255,255,.08);
+      color: #ecf2ff;
+      box-shadow: 0 8px 16px rgba(0,0,0,.2);
+      font-size: 24px;
+    }
+
+    .sheet {
+      position: absolute;
+      inset: auto 14px 72px 14px;
+      border-radius: 22px 22px 16px 16px;
+      background: linear-gradient(180deg, #1b2336, #11172a);
+      border: 1px solid rgba(255,255,255,.08);
+      box-shadow: var(--shadow);
+      padding: 12px;
+      z-index: 6;
+    }
+    .sheet .handle {
+      width: 38px;
+      height: 4px;
+      border-radius: 99px;
+      margin: 2px auto 12px;
+      background: rgba(255,255,255,.24);
+    }
+    .sheet h3 {
+      margin: 0 0 10px;
+      font-size: 15px;
+      color: var(--muted);
+      font-weight: 600;
+      letter-spacing: .02em;
+    }
+    .profile-list {
+      display: grid;
+      gap: 10px;
+    }
+    .profile {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      padding: 11px 12px;
+      border-radius: 14px;
+      background: rgba(255,255,255,.05);
+      border: 1px solid rgba(255,255,255,.07);
+    }
+    .profile.active {
+      background: rgba(87,168,255,.18);
+      border-color: rgba(87,168,255,.28);
+    }
+    .profile .picon {
+      width: 30px;
+      height: 30px;
+      border-radius: 999px;
+      display: grid;
+      place-items: center;
+      font-size: 16px;
+      flex: 0 0 auto;
+      background: rgba(255,255,255,.08);
+    }
+    .profile .label {
+      flex: 1;
+      font-weight: 600;
+    }
+    .profile .sub {
+      color: var(--muted);
+      font-size: 12px;
+    }
+    .profile.active .label { color: #fff; }
+    .profile.active .sub { color: rgba(255,255,255,.7); }
+
+    .blackberry-note {
+      margin-top: 10px;
+      color: var(--muted);
+      font-size: 13px;
+      text-align: center;
+    }
+
+    .label-top {
+      display: inline-flex;
+      align-items: center;
+      gap: 8px;
+      margin: 0 auto 14px;
+      padding: 8px 12px;
+      border-radius: 999px;
+      background: rgba(255,255,255,.06);
+      border: 1px solid rgba(255,255,255,.08);
+      color: var(--ink);
+      font-size: 13px;
+      box-shadow: var(--shadow);
+    }
+
+    .version-title {
+      text-align: center;
+      margin: 10px 0 8px;
+      color: var(--muted);
+      font-size: 12px;
+      text-transform: uppercase;
+      letter-spacing: .18em;
+    }
+
+    @media (max-width: 920px) {
+      .grid { grid-template-columns: 1fr; }
+      .legend { justify-content: flex-start; }
+      .hero { flex-direction: column; align-items: flex-start; }
+    }
+  </style>
+</head>
+<body>
+  <div class="wrap">
+    <div class="hero">
+      <div>
+        <h1>Sound Profile Selector Concepts</h1>
+        <p>Side-by-side mockup for a tiny Q25 header control that switches Ring, Vibrate, Silent, and DND without crowding the glance/events area.</p>
+      </div>
+      <div class="legend">
+        <div class="chip"><span class="dot" style="color: var(--ring)"></span> Ring</div>
+        <div class="chip"><span class="dot" style="color: var(--vibrate)"></span> Vibrate</div>
+        <div class="chip"><span class="dot" style="color: var(--silent)"></span> Silent</div>
+        <div class="chip"><span class="dot" style="color: var(--dnd)"></span> DND</div>
+      </div>
+    </div>
+
+    <div class="grid">
+      <section>
+        <div class="version-title">Blackberry Style</div>
+        <div class="phone">
+          <div class="screen">
+            <div class="status">
+              <div>
+                <div class="time">2:01</div>
+                <div class="small">No alerts</div>
+              </div>
+              <div class="right">
+                <div class="time">Fri, Apr 24</div>
+                <div class="small">41°C Partly cloudy (28–41°)</div>
+              </div>
+            </div>
+
+            <div class="glance"></div>
+
+            <div class="mode-row blackberry dnd" style="top: 126px;">
+              <div class="icon">🔕</div>
+              <div class="divider"></div>
+              <div class="mode"></div>
+            </div>
+
+            <div class="apps">
+              <div class="app">
+                <div class="tile">
+                  <div style="font-size:28px;">🗂️</div>
+                </div>
+                <div class="name">Travel</div>
+              </div>
+              <div class="app">
+                <div class="tile purple"><div style="font-size:30px;">💬</div></div>
+                <div class="name">Discord</div>
+              </div>
+              <div class="app">
+                <div class="tile dark"><div style="font-size:28px;">⬛</div></div>
+                <div class="name">CRED</div>
+              </div>
+              <div class="app">
+                <div class="tile"><div style="font-size:30px;">🦊</div></div>
+                <div class="name">Firefox</div>
+              </div>
+              <div class="app">
+                <div class="tile blue"><div style="font-size:28px;">🧰</div></div>
+                <div class="name">Tools</div>
+              </div>
+            </div>
+
+            <div class="dock">
+              <div class="slot">✉️</div>
+              <div class="slot">⌂</div>
+              <div class="slot">•</div>
+              <div class="slot">☎</div>
+              <div class="slot">♫</div>
+            </div>
+
+            <div class="sheet">
+              <div class="handle"></div>
+              <h3>Profiles</h3>
+              <div class="profile-list">
+                <div class="profile">
+                  <div class="picon" style="color: var(--ring)">🔔</div>
+                  <div>
+                    <div class="label">Ring</div>
+                    <div class="sub">Normal sound profile</div>
+                  </div>
+                </div>
+                <div class="profile">
+                  <div class="picon" style="color: var(--vibrate)">📳</div>
+                  <div>
+                    <div class="label">Vibrate</div>
+                    <div class="sub">Silent alerts with vibration</div>
+                  </div>
+                </div>
+                <div class="profile">
+                  <div class="picon" style="color: var(--silent)">🔕</div>
+                  <div>
+                    <div class="label">Silent</div>
+                    <div class="sub">No sound, no vibration</div>
+                  </div>
+                </div>
+                <div class="profile active">
+                  <div class="picon" style="color: var(--dnd)">🌙</div>
+                  <div>
+                    <div class="label">DND</div>
+                    <div class="sub">Do not disturb enabled</div>
+                  </div>
+                </div>
+              </div>
+              <div class="blackberry-note">Blackberry-style: a little more visual weight, but still compact enough for the Q25 header.</div>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <section>
+        <div class="version-title">Recommended</div>
+        <div class="phone">
+          <div class="screen">
+            <div class="status">
+              <div>
+                <div class="time">2:01</div>
+                <div class="small">No alerts</div>
+              </div>
+              <div class="right">
+                <div class="time">Fri, Apr 24</div>
+                <div class="small">41°C Partly cloudy (28–41°)</div>
+              </div>
+            </div>
+
+            <div class="glance"></div>
+
+            <div class="mode-row silent" style="top: 122px;">
+              <div class="icon">🔕</div>
+              <div class="mode"></div>
+            </div>
+
+            <div class="apps">
+              <div class="app">
+                <div class="tile blue"><div style="font-size:28px;">🗂️</div></div>
+                <div class="name">Travel</div>
+              </div>
+              <div class="app">
+                <div class="tile purple"><div style="font-size:30px;">💬</div></div>
+                <div class="name">Discord</div>
+              </div>
+              <div class="app">
+                <div class="tile dark"><div style="font-size:28px;">⬛</div></div>
+                <div class="name">CRED</div>
+              </div>
+              <div class="app">
+                <div class="tile orange"><div style="font-size:28px;">📢</div></div>
+                <div class="name">Ring</div>
+              </div>
+              <div class="app">
+                <div class="tile blue"><div style="font-size:28px;">🧰</div></div>
+                <div class="name">Tools</div>
+              </div>
+            </div>
+
+            <div class="dock">
+              <div class="slot">✉️</div>
+              <div class="slot">⌂</div>
+              <div class="slot">•</div>
+              <div class="slot">☎</div>
+              <div class="slot">♫</div>
+            </div>
+
+            <div class="sheet">
+              <div class="handle"></div>
+              <h3>Profiles</h3>
+              <div class="profile-list">
+                <div class="profile active">
+                  <div class="picon" style="color: var(--ring)">🔔</div>
+                  <div>
+                    <div class="label">Ring</div>
+                    <div class="sub">Active sound profile</div>
+                  </div>
+                </div>
+                <div class="profile">
+                  <div class="picon" style="color: var(--vibrate)">📳</div>
+                  <div>
+                    <div class="label">Vibrate</div>
+                    <div class="sub">Vibration only</div>
+                  </div>
+                </div>
+                <div class="profile">
+                  <div class="picon" style="color: var(--silent)">🔕</div>
+                  <div>
+                    <div class="label">Silent</div>
+                    <div class="sub">Mute all sounds</div>
+                  </div>
+                </div>
+                <div class="profile">
+                  <div class="picon" style="color: var(--dnd)">🌙</div>
+                  <div>
+                    <div class="label">DND</div>
+                    <div class="sub">Do not disturb</div>
+                  </div>
+                </div>
+              </div>
+              <div class="blackberry-note">Recommendation: minimal icon-only header control, with the active state reflected by the icon itself.</div>
+            </div>
+          </div>
+        </div>
+      </section>
+    </div>
+  </div>
+</body>
+</html>

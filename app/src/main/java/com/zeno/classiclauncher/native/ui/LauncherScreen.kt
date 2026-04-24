@@ -1,6 +1,7 @@
 @file:OptIn(
     androidx.compose.ui.ExperimentalComposeUiApi::class,
     androidx.compose.foundation.ExperimentalFoundationApi::class,
+    androidx.compose.material3.ExperimentalMaterial3Api::class,
 )
 
 package com.zeno.classiclauncher.nlauncher.ui
@@ -109,6 +110,7 @@ import androidx.compose.material.icons.outlined.QueryStats
 import androidx.compose.material.icons.outlined.Search
 import androidx.compose.material.icons.outlined.Menu
 import androidx.compose.material.icons.outlined.MailOutline
+import androidx.compose.material.icons.outlined.Vibration
 import androidx.compose.material.icons.rounded.PhotoCamera
 import androidx.compose.material.icons.rounded.Home
 import androidx.compose.material.icons.rounded.TouchApp
@@ -120,7 +122,6 @@ import androidx.compose.material.icons.rounded.WbSunny
 import androidx.compose.material.icons.rounded.SettingsBackupRestore
 import androidx.compose.material.icons.rounded.Palette
 import androidx.compose.material.icons.rounded.MailOutline
-import androidx.compose.material.icons.outlined.Vibration
 import androidx.compose.material.icons.rounded.TouchApp
 import androidx.compose.material.icons.rounded.Info
 import androidx.compose.material.icons.rounded.SwapVert
@@ -131,6 +132,8 @@ import androidx.compose.material.icons.rounded.BookmarkAdd
 import androidx.compose.material.icons.rounded.AddAlarm
 import androidx.compose.material.icons.rounded.ArrowDropDown
 import androidx.compose.material.icons.rounded.EventBusy
+import androidx.compose.material.icons.rounded.Notifications
+import androidx.compose.material.icons.rounded.NotificationsOff
 import androidx.compose.material.icons.rounded.Folder
 import androidx.compose.material.icons.rounded.Lock
 import androidx.compose.material.icons.rounded.Security
@@ -255,6 +258,7 @@ import com.zeno.classiclauncher.nlauncher.glance.GlanceStripPreferences
 import com.zeno.classiclauncher.nlauncher.apps.AppEntry
 import com.zeno.classiclauncher.nlauncher.apps.AppsRepository
 import com.zeno.classiclauncher.nlauncher.apps.LauncherActions
+import com.zeno.classiclauncher.nlauncher.apps.SoundProfileMode
 import com.zeno.classiclauncher.nlauncher.apps.ToggleResult
 import com.zeno.classiclauncher.nlauncher.apps.parseHomeShortcutToken
 import com.zeno.classiclauncher.nlauncher.BuildConfig
@@ -2015,6 +2019,10 @@ private fun HomePage(
     val context = LocalContext.current
     val appWidgetManager = remember(context) { AppWidgetManager.getInstance(context) }
     val glanceRef = remember { mutableStateOf<GlanceDateWeatherEventsView?>(null) }
+    val actions = remember(context) { LauncherActions(context) }
+    var soundProfile by remember { mutableStateOf(actions.currentSoundProfile()) }
+    var showSoundProfileSheet by remember { mutableStateOf(false) }
+    val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
     DisposableEffect(Unit) {
         onDispose { glanceRef.value?.dispose() }
     }
@@ -2024,6 +2032,14 @@ private fun HomePage(
         if (!glanceEnabled || !homeActive) {
             glanceRef.value?.dispose()
             glanceRef.value = null
+        }
+    }
+    LaunchedEffect(homeActive) {
+        if (homeActive) {
+            while (true) {
+                soundProfile = actions.currentSoundProfile()
+                delay(1500L)
+            }
         }
     }
     val currentOnLongPress = rememberUpdatedState(onLongPress)
@@ -2252,17 +2268,28 @@ private fun HomePage(
                 .padding(start = 8.dp, end = 8.dp, top = 8.dp),
         ) {
             if (glanceEnabled && homeActive) {
-                AndroidView(
-                    factory = { GlanceDateWeatherEventsView(it) },
+                Box(
                     modifier = Modifier
                         .fillMaxWidth()
                         .wrapContentHeight(align = Alignment.Top)
                         .heightIn(max = 200.dp),
-                    update = { v ->
-                        glanceRef.value = v
-                        v.applyStripPreferences(glanceStripPreferences)
-                    },
-                )
+                ) {
+                    AndroidView(
+                        factory = { GlanceDateWeatherEventsView(it) },
+                        modifier = Modifier.fillMaxWidth().wrapContentHeight(align = Alignment.Top),
+                        update = { v ->
+                            glanceRef.value = v
+                            v.applyStripPreferences(glanceStripPreferences)
+                        },
+                    )
+                    SoundProfileHeaderIcon(
+                        profile = soundProfile,
+                        onClick = { showSoundProfileSheet = true },
+                        modifier = Modifier
+                            .align(Alignment.TopCenter)
+                            .offset(y = 70.dp),
+                    )
+                }
             }
             Spacer(Modifier.weight(1f))
             Spacer(Modifier.weight(1f))
@@ -2529,6 +2556,103 @@ private fun HomePage(
                 } // end scrollable results column
             }
         }
+
+        if (showSoundProfileSheet) {
+            ModalBottomSheet(
+                onDismissRequest = { showSoundProfileSheet = false },
+                sheetState = sheetState,
+                dragHandle = {
+                    Box(
+                        modifier = Modifier
+                            .padding(top = 8.dp, bottom = 10.dp)
+                            .size(width = 44.dp, height = 4.dp)
+                            .clip(RoundedCornerShape(999.dp))
+                            .background(Color(0x55FFFFFF)),
+                    )
+                },
+                containerColor = Color(0xFF101523),
+            ) {
+                Column(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .navigationBarsPadding()
+                        .padding(horizontal = 16.dp, vertical = 12.dp),
+                ) {
+                    Text(
+                        text = "Sound profiles",
+                        color = Color(0xFFBFC8DA),
+                        fontSize = 14.sp,
+                        fontWeight = FontWeight.SemiBold,
+                        modifier = Modifier.padding(bottom = 12.dp),
+                    )
+                    SoundProfileSheetItem(
+                        selected = soundProfile == SoundProfileMode.RING,
+                        icon = Icons.Rounded.Notifications,
+                        iconTint = Color(0xFFF6D24C),
+                        label = "Ring",
+                        subtitle = "Normal sound",
+                        onClick = {
+                            if (actions.applySoundProfile(SoundProfileMode.RING)) {
+                                soundProfile = SoundProfileMode.RING
+                                showSoundProfileSheet = false
+                            } else {
+                                Toast.makeText(context, "Unable to switch to Ring", Toast.LENGTH_SHORT).show()
+                            }
+                        },
+                    )
+                    Spacer(Modifier.height(10.dp))
+                    SoundProfileSheetItem(
+                        selected = soundProfile == SoundProfileMode.VIBRATE,
+                        icon = Icons.Outlined.Vibration,
+                        iconTint = Color(0xFF6CD99B),
+                        label = "Vibrate",
+                        subtitle = "Vibrate only",
+                        onClick = {
+                            if (actions.applySoundProfile(SoundProfileMode.VIBRATE)) {
+                                soundProfile = SoundProfileMode.VIBRATE
+                                showSoundProfileSheet = false
+                            } else {
+                                Toast.makeText(context, "Unable to switch to Vibrate", Toast.LENGTH_SHORT).show()
+                            }
+                        },
+                    )
+                    Spacer(Modifier.height(10.dp))
+                    SoundProfileSheetItem(
+                        selected = soundProfile == SoundProfileMode.SILENT,
+                        icon = Icons.Rounded.NotificationsOff,
+                        iconTint = Color(0xFFA5AFC4),
+                        label = "Silent",
+                        subtitle = "No sound",
+                        onClick = {
+                            if (actions.applySoundProfile(SoundProfileMode.SILENT)) {
+                                soundProfile = SoundProfileMode.SILENT
+                                showSoundProfileSheet = false
+                            } else {
+                                Toast.makeText(context, "Unable to switch to Silent", Toast.LENGTH_SHORT).show()
+                            }
+                        },
+                    )
+                    Spacer(Modifier.height(10.dp))
+                    SoundProfileSheetItem(
+                        selected = soundProfile == SoundProfileMode.DND,
+                        icon = Icons.Rounded.EventBusy,
+                        iconTint = Color(0xFF8F83FF),
+                        label = "DND",
+                        subtitle = "Do not disturb",
+                        onClick = {
+                            if (actions.applySoundProfile(SoundProfileMode.DND)) {
+                                soundProfile = SoundProfileMode.DND
+                                showSoundProfileSheet = false
+                            } else {
+                                Toast.makeText(context, "Allow Do Not Disturb access first", Toast.LENGTH_SHORT).show()
+                                actions.openDoNotDisturbSettings()
+                            }
+                        },
+                    )
+                    Spacer(Modifier.height(10.dp))
+                }
+            }
+        }
     }
 }
 
@@ -2543,6 +2667,108 @@ private data class QuickTile(
     val onLongPress: (() -> Boolean)? = null,
     val onTap: () -> Boolean,
 )
+
+@Composable
+private fun SoundProfileHeaderIcon(
+    profile: SoundProfileMode,
+    onClick: () -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    val icon = when (profile) {
+        SoundProfileMode.RING -> Icons.Rounded.Notifications
+        SoundProfileMode.VIBRATE -> Icons.Outlined.Vibration
+        SoundProfileMode.SILENT -> Icons.Rounded.NotificationsOff
+        SoundProfileMode.DND -> Icons.Rounded.EventBusy
+    }
+    val tint = when (profile) {
+        SoundProfileMode.RING -> Color(0xFFF6D24C)
+        SoundProfileMode.VIBRATE -> Color(0xFF6CD99B)
+        SoundProfileMode.SILENT -> Color(0xFFA5AFC4)
+        SoundProfileMode.DND -> Color(0xFF8F83FF)
+    }
+    IconButton(
+        onClick = onClick,
+        modifier = modifier.size(54.dp),
+    ) {
+        Icon(
+            imageVector = icon,
+            contentDescription = "Sound profile",
+            tint = tint,
+            modifier = Modifier.size(30.dp),
+        )
+    }
+}
+
+@Composable
+private fun SoundProfileSheetItem(
+    selected: Boolean,
+    icon: ImageVector,
+    iconTint: Color,
+    label: String,
+    subtitle: String,
+    onClick: () -> Unit,
+) {
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .clip(RoundedCornerShape(18.dp))
+            .background(if (selected) Color(0x2A5EB6FF) else Color(0x14FFFFFF))
+            .border(
+                width = 1.dp,
+                color = if (selected) Color(0x405EB6FF) else Color(0x18FFFFFF),
+                shape = RoundedCornerShape(18.dp),
+            )
+            .clickable(onClick = onClick)
+            .padding(horizontal = 14.dp, vertical = 14.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Box(
+            modifier = Modifier
+                .size(42.dp)
+                .clip(CircleShape)
+                .background(Color(0x1AFFFFFF)),
+            contentAlignment = Alignment.Center,
+        ) {
+            Icon(
+                imageVector = icon,
+                contentDescription = null,
+                tint = iconTint,
+                modifier = Modifier.size(24.dp),
+            )
+        }
+        Spacer(Modifier.width(14.dp))
+        Column(modifier = Modifier.weight(1f)) {
+            Text(
+                text = label,
+                color = Color.White,
+                fontSize = 18.sp,
+                fontWeight = FontWeight.SemiBold,
+            )
+            Spacer(Modifier.height(2.dp))
+            Text(
+                text = subtitle,
+                color = Color(0xFFB7C0D2),
+                fontSize = 13.sp,
+            )
+        }
+        if (selected) {
+            Box(
+                modifier = Modifier
+                    .size(22.dp)
+                    .clip(CircleShape)
+                    .background(Color(0x1F5EB6FF)),
+                contentAlignment = Alignment.Center,
+            ) {
+                Icon(
+                    imageVector = Icons.Rounded.Home,
+                    contentDescription = null,
+                    tint = Color(0xFF5EB6FF),
+                    modifier = Modifier.size(12.dp),
+                )
+            }
+        }
+    }
+}
 
 /**
  * Horizontal padding for QS so tiles line up with the status-bar clock, not with generic "system bar"
@@ -6672,9 +6898,11 @@ private fun HomeShortcutStrip(
         fun beginDrag(startOffset: Offset) {
             onClearStripKeyboardFocus()
             if (!reorderModeRef.value) onEnterReorderMode()
-            doNavFeedback(view, hapticsEnabled, hapticIntensity)
             reorderStripDragOffset = Offset.Zero
             onStartStripMove(slotId)
+            if (hapticsEnabled) {
+                view.performHapticFeedback(HapticFeedbackConstants.LONG_PRESS)
+            }
             hoveredSlotKey = null
             reorderFingerDragging = true
             ghostVisible = true
@@ -6733,7 +6961,7 @@ private fun HomeShortcutStrip(
             logHomeStripDnD {
                 "finishDrag slot=$slotId hoverKey=$hoverKey pendingBefore=$pendingDropMoving/$pendingDropTarget"
             }
-            if (hoverKey != null && hapticsEnabled) {
+            if (hapticsEnabled) {
                 view.performHapticFeedback(HapticFeedbackConstants.CLOCK_TICK)
             }
             pendingDropMoving = slotId

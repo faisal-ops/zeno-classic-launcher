@@ -1,6 +1,7 @@
 package com.zeno.classiclauncher.nlauncher.apps
 
 import android.Manifest
+import android.app.NotificationManager
 import android.bluetooth.BluetoothManager
 import android.app.WallpaperManager
 import android.content.ComponentName
@@ -8,6 +9,7 @@ import android.content.Context
 import android.content.Intent
 import android.content.pm.LauncherApps
 import android.content.pm.PackageManager
+import android.media.AudioManager
 import android.net.ConnectivityManager
 import android.net.NetworkCapabilities
 import android.net.wifi.WifiInfo
@@ -32,6 +34,13 @@ sealed class ToggleResult {
     data class Changed(val enabled: Boolean) : ToggleResult()
     data object PermissionRequired : ToggleResult()
     data object Unsupported : ToggleResult()
+}
+
+enum class SoundProfileMode {
+    RING,
+    VIBRATE,
+    SILENT,
+    DND,
 }
 
 class LauncherActions(private val context: Context) {
@@ -414,6 +423,52 @@ class LauncherActions(private val context: Context) {
     fun openDoNotDisturbSettings(): Boolean =
         startActivityNewTask(Intent("android.settings.ZEN_MODE_SETTINGS")) ||
             openSystemSettings()
+
+    fun hasDoNotDisturbAccess(): Boolean {
+        val nm = context.getSystemService(NotificationManager::class.java) ?: return false
+        return nm.isNotificationPolicyAccessGranted
+    }
+
+    fun currentSoundProfile(): SoundProfileMode {
+        if (isDoNotDisturbEnabled()) {
+            return SoundProfileMode.DND
+        }
+        val am = context.getSystemService(AudioManager::class.java) ?: return SoundProfileMode.RING
+        return when (am.ringerMode) {
+            AudioManager.RINGER_MODE_VIBRATE -> SoundProfileMode.VIBRATE
+            AudioManager.RINGER_MODE_SILENT -> SoundProfileMode.SILENT
+            else -> SoundProfileMode.RING
+        }
+    }
+
+    fun applySoundProfile(mode: SoundProfileMode): Boolean {
+        val am = context.getSystemService(AudioManager::class.java) ?: return false
+        val nm = context.getSystemService(NotificationManager::class.java)
+        return when (mode) {
+            SoundProfileMode.RING -> {
+                runCatching { nm?.setInterruptionFilter(NotificationManager.INTERRUPTION_FILTER_ALL) }
+                runCatching { am.ringerMode = AudioManager.RINGER_MODE_NORMAL }.isSuccess &&
+                    am.ringerMode == AudioManager.RINGER_MODE_NORMAL
+            }
+            SoundProfileMode.VIBRATE -> {
+                runCatching { nm?.setInterruptionFilter(NotificationManager.INTERRUPTION_FILTER_ALL) }
+                runCatching { am.ringerMode = AudioManager.RINGER_MODE_VIBRATE }.isSuccess &&
+                    am.ringerMode == AudioManager.RINGER_MODE_VIBRATE
+            }
+            SoundProfileMode.SILENT -> {
+                runCatching { nm?.setInterruptionFilter(NotificationManager.INTERRUPTION_FILTER_ALL) }
+                runCatching { am.ringerMode = AudioManager.RINGER_MODE_SILENT }.isSuccess &&
+                    am.ringerMode == AudioManager.RINGER_MODE_SILENT
+            }
+            SoundProfileMode.DND -> {
+                if (nm == null || !nm.isNotificationPolicyAccessGranted) return false
+                runCatching {
+                    nm.setInterruptionFilter(NotificationManager.INTERRUPTION_FILTER_NONE)
+                    true
+                }.getOrDefault(false)
+            }
+        }
+    }
 
     fun openBitwardenVault(): Boolean =
         launchApp(bitwardenPackage)

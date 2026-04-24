@@ -1,0 +1,482 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Zeno Classic - Sound Profile Selector Final</title>
+  <style>
+    :root {
+      --bg0: #0d1022;
+      --bg1: #15183b;
+      --bg2: #26286a;
+      --ink: #eef2ff;
+      --muted: rgba(238,242,255,.66);
+      --line: rgba(255,255,255,.12);
+      --glass: rgba(14,18,32,.50);
+      --ring: #f6d24c;
+      --vibrate: #6cd99b;
+      --silent: #a5afc4;
+      --dnd: #8f83ff;
+      --accent: #5eb6ff;
+      --shadow: 0 26px 65px rgba(0,0,0,.38);
+      --phone-w: 1280px;
+      --phone-h: 1280px;
+      font-synthesis-weight: none;
+    }
+
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      color: var(--ink);
+      font: 15px/1.4 system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+      background:
+        radial-gradient(circle at 50% 0%, #272a70 0 28%, #0d1022 62%, #080a12 100%);
+    }
+
+    .wrap {
+      max-width: 1380px;
+      margin: 0 auto;
+      padding: 24px 16px 36px;
+    }
+
+    .title {
+      display: flex;
+      align-items: end;
+      justify-content: space-between;
+      gap: 16px;
+      margin-bottom: 16px;
+    }
+    .title h1 {
+      margin: 0;
+      font-size: 28px;
+      letter-spacing: -0.03em;
+    }
+    .title p {
+      margin: 6px 0 0;
+      color: var(--muted);
+      max-width: 70ch;
+    }
+
+    .phone {
+      width: min(100%, var(--phone-w));
+      margin: 0 auto;
+      padding: 14px;
+      border-radius: 34px;
+      background: linear-gradient(180deg, #101522, #0b0f19);
+      border: 1px solid rgba(255,255,255,.08);
+      box-shadow: var(--shadow);
+    }
+
+    .screen {
+      position: relative;
+      height: var(--phone-h);
+      overflow: hidden;
+      border-radius: 26px;
+      background:
+        linear-gradient(155deg, #201f58 0%, #24275d 30%, #10162d 62%, #0c1021 100%);
+    }
+    .screen::before {
+      content: "";
+      position: absolute;
+      inset: 0;
+      background:
+        linear-gradient(118deg, rgba(255,255,255,.03) 0 18%, transparent 18% 46%, rgba(255,255,255,.02) 46% 56%, transparent 56% 100%);
+      pointer-events: none;
+      mix-blend-mode: screen;
+      opacity: .82;
+    }
+    .screen::after {
+      content: "";
+      position: absolute;
+      inset: 0;
+      background:
+        radial-gradient(circle at 20% 10%, rgba(102,112,255,.18), transparent 24%),
+        radial-gradient(circle at 88% 78%, rgba(58,182,255,.28), transparent 12%);
+      pointer-events: none;
+    }
+
+    .status {
+      position: relative;
+      z-index: 3;
+      display: flex;
+      justify-content: space-between;
+      align-items: flex-start;
+      padding: 10px 16px 0;
+      color: #e9edff;
+    }
+    .status .time {
+      font-weight: 700;
+      font-size: 34px;
+      letter-spacing: -0.03em;
+      line-height: 1;
+    }
+    .status .sub {
+      margin-top: 8px;
+      color: rgba(233,237,255,.62);
+      font-size: 26px;
+      line-height: 1.05;
+    }
+    .status .right {
+      text-align: right;
+    }
+    .status .right .time {
+      font-size: 30px;
+    }
+    .status .right .sub {
+      font-size: 24px;
+      color: rgba(233,237,255,.68);
+    }
+
+    .glance-band {
+      position: absolute;
+      inset: 110px 0 auto;
+      height: 130px;
+      z-index: 2;
+    }
+    .glance-band .left {
+      position: absolute;
+      left: 44px;
+      top: 46px;
+      color: rgba(233,237,255,.55);
+      font-size: 30px;
+      letter-spacing: -0.02em;
+    }
+    .glance-band .right {
+      position: absolute;
+      right: 44px;
+      top: 40px;
+      text-align: right;
+      color: #eef2ff;
+    }
+    .glance-band .right .date {
+      font-size: 34px;
+      letter-spacing: -0.02em;
+    }
+    .glance-band .right .weather {
+      margin-top: 8px;
+      font-size: 26px;
+      color: rgba(233,237,255,.72);
+    }
+
+    .profile-pill {
+      position: absolute;
+      left: 50%;
+      top: 146px;
+      transform: translateX(-50%);
+      z-index: 4;
+      width: 56px;
+      height: 56px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      background: transparent;
+      border: none;
+      box-shadow: none;
+      backdrop-filter: none;
+    }
+    .profile-pill .icon {
+      width: 42px;
+      height: 42px;
+      border-radius: 999px;
+      display: grid;
+      place-items: center;
+      font-size: 28px;
+      background: transparent;
+      border: none;
+      box-shadow: none;
+    }
+
+    .apps {
+      position: absolute;
+      inset: 430px 34px auto;
+      z-index: 2;
+      display: grid;
+      grid-template-columns: repeat(5, 1fr);
+      gap: 22px 18px;
+      align-items: start;
+      color: #f0f4ff;
+    }
+    .app {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      min-width: 0;
+    }
+    .tile {
+      width: 138px;
+      height: 138px;
+      border-radius: 22px;
+      display: grid;
+      place-items: center;
+      border: 1px solid rgba(255,255,255,.10);
+      box-shadow: 0 14px 20px rgba(0,0,0,.18);
+      overflow: hidden;
+    }
+    .tile.dark { background: linear-gradient(160deg, #1f1f23, #0f1116); }
+    .tile.purple { background: linear-gradient(160deg, #5f66ff, #5d5af1); }
+    .tile.orange { background: linear-gradient(160deg, #ff6c24, #ff5401); }
+    .tile.blue { background: linear-gradient(160deg, #4db0df, #2c79ae); }
+    .tile.white { background: linear-gradient(160deg, #eef2f8, #ffffff); color: #0d1022; }
+    .tile .glyph {
+      font-size: 64px;
+      line-height: 1;
+    }
+    .label {
+      margin-top: 18px;
+      font-size: 24px;
+      color: rgba(239,244,255,.96);
+      text-align: center;
+      max-width: 150px;
+      line-height: 1.05;
+      text-shadow: 0 1px 0 rgba(0,0,0,.4);
+    }
+
+    .dock {
+      position: absolute;
+      inset: auto 0 40px;
+      z-index: 2;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      padding: 0 40px;
+    }
+    .dock .slot {
+      width: 104px;
+      height: 104px;
+      border-radius: 30px;
+      display: grid;
+      place-items: center;
+      font-size: 62px;
+      color: #eff4ff;
+      background: rgba(255,255,255,.03);
+      border: 1px solid rgba(255,255,255,.08);
+      box-shadow: 0 12px 18px rgba(0,0,0,.16);
+    }
+
+    .sheet {
+      position: absolute;
+      left: 18px;
+      right: 18px;
+      bottom: 106px;
+      z-index: 6;
+      border-radius: 28px 28px 20px 20px;
+      padding: 14px 16px 18px;
+      background: linear-gradient(180deg, rgba(20,24,35,.97), rgba(12,15,25,.98));
+      border: 1px solid rgba(255,255,255,.08);
+      box-shadow: var(--shadow);
+    }
+    .sheet .handle {
+      width: 44px;
+      height: 5px;
+      margin: 0 auto 16px;
+      border-radius: 999px;
+      background: rgba(255,255,255,.24);
+    }
+    .sheet .title {
+      display: block;
+      margin: 0 0 10px;
+      text-align: left;
+      color: rgba(238,242,255,.72);
+      font-size: 22px;
+      letter-spacing: 0;
+    }
+    .list {
+      display: grid;
+      gap: 10px;
+    }
+    .item {
+      display: grid;
+      grid-template-columns: 54px 1fr auto;
+      align-items: center;
+      gap: 12px;
+      padding: 12px 12px;
+      border-radius: 18px;
+      background: rgba(255,255,255,.05);
+      border: 1px solid rgba(255,255,255,.06);
+    }
+    .item.active {
+      background: rgba(94,182,255,.16);
+      border-color: rgba(94,182,255,.28);
+    }
+    .mini {
+      width: 54px;
+      height: 54px;
+      border-radius: 18px;
+      display: grid;
+      place-items: center;
+      font-size: 30px;
+      background: rgba(255,255,255,.06);
+      border: 1px solid rgba(255,255,255,.08);
+    }
+    .item .name {
+      font-size: 26px;
+      font-weight: 700;
+      letter-spacing: -0.02em;
+    }
+    .item .desc {
+      margin-top: 2px;
+      font-size: 19px;
+      color: rgba(238,242,255,.62);
+    }
+    .check {
+      width: 24px;
+      height: 24px;
+      border-radius: 999px;
+      border: 2px solid rgba(255,255,255,.36);
+      display: grid;
+      place-items: center;
+      font-size: 17px;
+      color: #fff;
+      opacity: 0;
+    }
+    .item.active .check {
+      opacity: 1;
+      border-color: rgba(255,255,255,.72);
+      background: rgba(255,255,255,.14);
+    }
+
+    .footer {
+      margin-top: 14px;
+      color: rgba(238,242,255,.56);
+      text-align: center;
+      font-size: 18px;
+    }
+
+    @media (max-width: 920px) {
+      .title { flex-direction: column; align-items: flex-start; }
+      .screen { height: 1180px; }
+      .glance-band .left, .status .sub, .status .right .sub, .glance-band .right .weather { font-size: 20px; }
+      .status .time { font-size: 28px; }
+      .status .right .time, .glance-band .right .date { font-size: 28px; }
+      .profile-pill { top: 132px; }
+      .apps { inset: 392px 22px auto; gap: 16px 12px; }
+      .tile { width: 108px; height: 108px; }
+      .tile .glyph { font-size: 50px; }
+      .label { font-size: 18px; margin-top: 12px; }
+      .dock { padding: 0 22px; bottom: 32px; }
+      .dock .slot { width: 82px; height: 82px; font-size: 46px; }
+      .sheet { bottom: 96px; }
+      .item .name { font-size: 22px; }
+      .item .desc { font-size: 15px; }
+    }
+  </style>
+</head>
+<body>
+  <div class="wrap">
+    <div class="title">
+      <div>
+        <h1>Final home-header sound selector</h1>
+        <p>Icon-only control centered between glance/events and weather/date. Tap the pill to open the vertical 4-profile picker for Ring, Vibrate, Silent, and DND.</p>
+      </div>
+    </div>
+
+    <div class="phone">
+      <div class="screen">
+        <div class="status">
+          <div>
+            <div class="time">2:01</div>
+            <div class="sub">No alerts</div>
+          </div>
+          <div class="right">
+            <div class="time">Fri, Apr 24</div>
+            <div class="sub">41°C Partly cloudy (28–41°)</div>
+          </div>
+        </div>
+
+        <div class="glance-band">
+          <div class="left">Glance events</div>
+          <div class="right">
+            <div class="date">Fri, Apr 24</div>
+            <div class="weather">41°C Partly cloudy (28–41°)</div>
+          </div>
+        </div>
+
+        <div class="profile-pill dnd" aria-label="Active profile: DND">
+          <div class="icon">🔕</div>
+        </div>
+
+        <div class="apps">
+          <div class="app">
+            <div class="tile dark">
+              <div class="glyph">🗂️</div>
+            </div>
+            <div class="label">Travel</div>
+          </div>
+          <div class="app">
+            <div class="tile purple">
+              <div class="glyph">💬</div>
+            </div>
+            <div class="label">Discord</div>
+          </div>
+          <div class="app">
+            <div class="tile dark">
+              <div class="glyph">⬛</div>
+            </div>
+            <div class="label">CRED</div>
+          </div>
+          <div class="app">
+            <div class="tile orange">
+              <div class="glyph">🦊</div>
+            </div>
+            <div class="label">Firefox</div>
+          </div>
+          <div class="app">
+            <div class="tile blue">
+              <div class="glyph">🧰</div>
+            </div>
+            <div class="label">Tools</div>
+          </div>
+        </div>
+
+        <div class="dock">
+          <div class="slot">✉️</div>
+          <div class="slot">⌂</div>
+          <div class="slot">•</div>
+          <div class="slot">☎</div>
+          <div class="slot">♫</div>
+        </div>
+
+        <div class="sheet">
+          <div class="handle"></div>
+          <div class="title">Sound profiles</div>
+          <div class="list">
+            <div class="item">
+              <div class="mini" style="color: var(--ring);">🔔</div>
+              <div>
+                <div class="name">Ring</div>
+                <div class="desc">Normal sound and alerts</div>
+              </div>
+              <div class="check">✓</div>
+            </div>
+            <div class="item">
+              <div class="mini" style="color: var(--vibrate);">📳</div>
+              <div>
+                <div class="name">Vibrate</div>
+                <div class="desc">Vibrate without ringing</div>
+              </div>
+              <div class="check">✓</div>
+            </div>
+            <div class="item">
+              <div class="mini" style="color: var(--silent);">🔕</div>
+              <div>
+                <div class="name">Silent</div>
+                <div class="desc">No sound or vibration</div>
+              </div>
+              <div class="check">✓</div>
+            </div>
+            <div class="item active">
+              <div class="mini" style="color: var(--dnd);">🌙</div>
+              <div>
+                <div class="name">DND</div>
+                <div class="desc">Do not disturb enabled</div>
+              </div>
+              <div class="check">✓</div>
+            </div>
+          </div>
+          <div class="footer">Final design: a tiny icon-only header control with a compact bottom picker.</div>
+        </div>
+      </div>
+    </div>
+  </div>
+</body>
+</html>
