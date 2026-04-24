@@ -1393,10 +1393,12 @@ fun LauncherScreen(
 
         val homeGroupMenuTarget = showHomeGroupMenu
         if (homeGroupMenuTarget != null) {
+            val groupAlreadyPinned =
+                homeGroupMenuTarget.id in prefs.effectiveHomeStripSlotOrder().filterNotNull().toSet()
             HomeGroupContextMenu(
                 group = homeGroupMenuTarget,
                 otherGroupExists = prefs.homeGroups.size > 1,
-                showPinToHomeStrip = !classicMode && prefs.homeStripEnabled,
+                showPinToHomeStrip = !classicMode && prefs.homeStripEnabled && !groupAlreadyPinned,
                 themePalette = themePalette,
                 onDismiss = { showHomeGroupMenu = null },
                 onOpenGroup = {
