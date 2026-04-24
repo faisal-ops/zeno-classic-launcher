@@ -690,9 +690,11 @@ fun LauncherPrefs.effectiveHomeStripSlotOrder(): List<String?> {
     if (homeStripSlots.isNotEmpty()) {
         // Map stored slots: keep valid tokens, turn invalid/orphan into null
         val filtered = homeStripSlots.map { t -> if (t != null && t in allValid) t else null }
-        // Tokens not yet in any slot (newly added items)
+        // With saved slots, treat the strip layout as the source of truth for home groups.
+        // Shortcuts and pinned folders can still flow into open slots automatically, but
+        // groups should only appear when explicitly placed/pinned there.
         val assigned = filtered.filterNotNull().toSet()
-        val unassigned = (allGroupIds + allShortcuts + allFolderIds).filter { it !in assigned }.toMutableList()
+        val unassigned = (allShortcuts + allFolderIds).filter { it !in assigned }.toMutableList()
         // Build result of exactly STRIP_TOTAL_SLOTS, filling empty slots with unassigned items
         val result = MutableList<String?>(STRIP_TOTAL_SLOTS) { i -> filtered.getOrNull(i) }
         for (i in result.indices) {

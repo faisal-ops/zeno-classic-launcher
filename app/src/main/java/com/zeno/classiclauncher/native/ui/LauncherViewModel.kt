@@ -735,18 +735,27 @@ class LauncherViewModel(app: Application) : AndroidViewModel(app) {
     fun createHomeGroup(title: String) {
         viewModelScope.launch {
             gridHomeMutex.withLock {
-            if (!prefs.value.canAddHomeStripItem()) return@withLock
-            val label = title.trim().ifBlank { "Group" }
-            val usedSides = prefs.value.homeGroups.map { it.side }.toSet()
-            val side = HomeGroupSide.entries.firstOrNull { it !in usedSides } ?: HomeGroupSide.RIGHT
-            val id = HomeGroupIds.newId()
-            val next = prefs.value.homeGroups + HomeGroup(
-                id = id,
-                title = label,
-                packageNames = emptyList(),
-                side = side,
-            )
-            prefsRepo.setHomeGroups(next)
+                val snap = prefs.value
+                if (!snap.canAddHomeStripItem()) return@withLock
+                val label = title.trim().ifBlank { "Group" }
+                val usedSides = snap.homeGroups.map { it.side }.toSet()
+                val side = HomeGroupSide.entries.firstOrNull { it !in usedSides } ?: HomeGroupSide.RIGHT
+                val id = HomeGroupIds.newId()
+                val next = snap.homeGroups + HomeGroup(
+                    id = id,
+                    title = label,
+                    packageNames = emptyList(),
+                    side = side,
+                )
+                prefsRepo.setHomeGroups(next)
+                val slots = snap.effectiveHomeStripSlotOrder().toMutableList()
+                val emptyIdx = slots.indexOfFirst { it == null }
+                if (emptyIdx >= 0) {
+                    slots[emptyIdx] = id
+                    prefsRepo.setHomeStripSlots(slots)
+                    prefsRepo.setHomeStripOrder(slots.filterNotNull())
+                    logHomeStripDnD { "vm.createHomeGroup placed id=$id emptyIdx=$emptyIdx slots=$slots" }
+                }
             }
         }
     }
@@ -788,7 +797,11 @@ class LauncherViewModel(app: Application) : AndroidViewModel(app) {
         if (!HomeGroupIds.isHomeGroupId(groupId)) return
         viewModelScope.launch {
             gridHomeMutex.withLock {
-            prefsRepo.setHomeGroups(prefs.value.homeGroups.filter { it.id != groupId })
+                val snap = prefs.value
+                val slots = snap.effectiveHomeStripSlotOrder().map { tok -> if (tok == groupId) null else tok }.toMutableList()
+                prefsRepo.setHomeGroups(snap.homeGroups.filter { it.id != groupId })
+                prefsRepo.setHomeStripSlots(slots)
+                prefsRepo.setHomeStripOrder(slots.filterNotNull())
             }
         }
     }
@@ -973,17 +986,27 @@ class LauncherViewModel(app: Application) : AndroidViewModel(app) {
 
     fun removeHomeStripToken(token: String) {
         viewModelScope.launch {
-            val snap = prefs.value
-            val t = token.trim()
-            if (t.isEmpty()) return@launch
-            if (HomeGroupIds.isHomeGroupId(t)) {
-                val slots = snap.effectiveHomeStripSlotOrder().map { tok -> if (tok == t) null else tok }.toMutableList()
-                prefsRepo.setHomeStripSlots(slots)
-                prefsRepo.setHomeStripOrder(slots.filterNotNull())
-            } else if (FolderIds.isFolderId(t)) {
-                removePinnedHomeStripFolder(t)
-            } else {
-                prefsRepo.setHomeShortcutPackages(snap.homeShortcutPackages.filter { it != t })
+            gridHomeMutex.withLock {
+                val snap = prefs.value
+                val t = token.trim()
+                if (t.isEmpty()) return@withLock
+                if (HomeGroupIds.isHomeGroupId(t)) {
+                    val slots = snap.effectiveHomeStripSlotOrder().map { tok -> if (tok == t) null else tok }.toMutableList()
+                    prefsRepo.setHomeGroups(snap.homeGroups.filter { it.id != t })
+                    prefsRepo.setHomeStripSlots(slots)
+                    prefsRepo.setHomeStripOrder(slots.filterNotNull())
+                    if (slots.count { it != null } == 0) _reorderMode.value = false
+                    logHomeStripDnD { "vm.removeHomeGroupToken token=$t persistedSlots=$slots removedModel=true" }
+                } else if (FolderIds.isFolderId(t)) {
+                    removePinnedHomeStripFolder(t)
+                    val after = prefs.value.effectiveHomeStripSlotOrder()
+                    if (after.count { it != null } == 0) _reorderMode.value = false
+                } else {
+                    val shortcuts = snap.homeShortcutPackages.filter { it != t }
+                    prefsRepo.setHomeShortcutPackages(shortcuts)
+                    val remainingCount = shortcuts.size + snap.homeGroups.size + snap.homePinnedFolderIds.count { it in snap.folderContents }
+                    if (remainingCount == 0) _reorderMode.value = false
+                }
             }
         }
     }

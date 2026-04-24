@@ -656,6 +656,7 @@ fun LauncherScreen(
     var homeStripFocusIndex by remember { mutableStateOf(0) }
     var homeStripBounds by remember { mutableStateOf<Rect?>(null) }
     var homeStripRemoveBounds by remember { mutableStateOf<Rect?>(null) }
+    var homeStripRemoveVisible by remember { mutableStateOf(false) }
     var homeStripRemoveActive by remember { mutableStateOf(false) }
 
     var permRuntime by remember { mutableStateOf(computePermRuntime(context)) }
@@ -897,6 +898,8 @@ fun LauncherScreen(
                             )
                         },
                         homeStripBounds = homeStripBounds,
+                        removeDropVisible = homeStripRemoveVisible,
+                        onRemoveDropVisibleChanged = { homeStripRemoveVisible = it },
                         onRemoveDropActiveChanged = { homeStripRemoveActive = it },
                         removeDropActive = homeStripRemoveActive,
                         onRemoveDropBoundsChanged = { homeStripRemoveBounds = it },
@@ -1095,6 +1098,7 @@ fun LauncherScreen(
                             homeStripFocusIndex = -1
                         },
                         onStripBoundsChanged = { homeStripBounds = it },
+                        onRemoveDropVisibleChanged = { homeStripRemoveVisible = it },
                         onRemoveDropActiveChanged = { homeStripRemoveActive = it },
                         onRemoveDropBoundsChanged = { homeStripRemoveBounds = it },
                         removeDropBounds = homeStripRemoveBounds,
@@ -2001,7 +2005,9 @@ private fun HomePage(
     glanceEnabled: Boolean,
     glanceStripPreferences: GlanceStripPreferences,
     homeStripBounds: Rect?,
+    removeDropVisible: Boolean,
     removeDropActive: Boolean,
+    onRemoveDropVisibleChanged: (Boolean) -> Unit = {},
     onRemoveDropActiveChanged: (Boolean) -> Unit = {},
     removeDropBounds: Rect? = null,
     onRemoveDropBoundsChanged: (Rect?) -> Unit = {},
@@ -2295,14 +2301,14 @@ private fun HomePage(
                 }
             },
     ) {
-        if (reorderMode) {
+        if (reorderMode && removeDropVisible) {
             val removeBandAlpha by animateFloatAsState(
-                targetValue = if (removeDropActive) 1f else 0.72f,
+                targetValue = if (removeDropActive) 1f else 0.82f,
                 animationSpec = tween(140),
                 label = "removeBandAlpha",
             )
             val removeBandScale by animateFloatAsState(
-                targetValue = if (removeDropActive) 1.01f else 1f,
+                targetValue = if (removeDropActive) 1.02f else 1f,
                 animationSpec = tween(140, easing = FastOutSlowInEasing),
                 label = "removeBandScale",
             )
@@ -2311,27 +2317,27 @@ private fun HomePage(
                     .zIndex(20f)
                     .align(Alignment.TopCenter)
                     .fillMaxWidth()
-                    .height(140.dp)
-                    .background(Color(0xCC060A12))
+                    .height(88.dp)
+                    .background(if (removeDropActive) Color(0xF70A0C13) else Color(0xF1080B12))
                     .onGloballyPositioned { coords ->
                         onRemoveDropBoundsChanged(coords.boundsInRoot())
                     },
-                contentAlignment = Alignment.TopCenter,
+                contentAlignment = Alignment.Center,
             ) {
                 Box(
                     modifier = Modifier
                         .fillMaxWidth()
-                        .height(92.dp)
+                        .fillMaxHeight()
                         .graphicsLayer {
                             scaleX = removeBandScale
                             scaleY = removeBandScale
                             alpha = removeBandAlpha
                         }
-                        .background(if (removeDropActive) Color(0xF00A0D14) else Color(0xEA080C13))
+                        .background(if (removeDropActive) Color(0xFF2B1217) else Color(0xF2090D14))
                         .border(
-                            1.dp,
-                            if (removeDropActive) Color(0x99FFFFFF) else Color(0x55FFFFFF),
-                            RectangleShape,
+                            width = if (removeDropActive) 1.5.dp else 0.dp,
+                            color = if (removeDropActive) Color(0xB8FF6B7A) else Color.Transparent,
+                            shape = RectangleShape,
                         ),
                     contentAlignment = Alignment.Center,
                 ) {
@@ -2343,19 +2349,20 @@ private fun HomePage(
                         Icon(
                             Icons.Outlined.Delete,
                             contentDescription = null,
-                            tint = Color(0xFFEAEFF6),
-                            modifier = Modifier.size(16.dp),
+                            tint = if (removeDropActive) Color(0xFFFFC7CF) else Color(0xFFEAEFF6),
+                            modifier = Modifier.size(17.dp),
                         )
                         Spacer(Modifier.width(8.dp))
                         Text(
                             "Remove",
-                            color = if (removeDropActive) Color.White else Color(0xFFF0F3F8),
+                            color = if (removeDropActive) Color(0xFFFFE7EA) else Color(0xFFF0F3F8),
                             style = MaterialTheme.typography.labelLarge.copy(fontWeight = FontWeight.SemiBold),
                         )
                     }
                 }
             }
         } else {
+            onRemoveDropVisibleChanged(false)
             onRemoveDropActiveChanged(false)
             onRemoveDropBoundsChanged(null)
         }
@@ -5174,17 +5181,6 @@ private fun doNavFeedback(view: android.view.View, hapticsEnabled: Boolean, inte
     }
 }
 
-private fun performRemoveDropHaptic(view: android.view.View): Boolean {
-    return if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.TIRAMISU) {
-        view.performHapticFeedback(
-            HapticFeedbackConstants.LONG_PRESS,
-            HapticFeedbackConstants.FLAG_IGNORE_GLOBAL_SETTING,
-        )
-    } else {
-        view.performHapticFeedback(HapticFeedbackConstants.LONG_PRESS)
-    }
-}
-
 @Composable
 private fun FolderTile(
     displayLabel: String,
@@ -6719,6 +6715,7 @@ private fun HomeShortcutStrip(
     onShowSettings: () -> Unit,
     onStripReorderTap: (String) -> Unit,
     onStripBoundsChanged: (Rect?) -> Unit = {},
+    onRemoveDropVisibleChanged: (Boolean) -> Unit = {},
     onRemoveDropActiveChanged: (Boolean) -> Unit = {},
     onRemoveDropBoundsChanged: (Rect?) -> Unit = {},
     removeDropBounds: Rect? = null,
@@ -6744,6 +6741,7 @@ private fun HomeShortcutStrip(
     var hoveredSlotKey by remember { mutableStateOf<String?>(null) }
     var reorderFingerDragging by remember { mutableStateOf(false) }
     var dragFingerRoot by remember { mutableStateOf(Offset.Zero) }
+    var removeBandVisible by remember { mutableStateOf(false) }
     var removeZoneActive by remember { mutableStateOf(false) }
     var ghostVisible by remember { mutableStateOf(false) }
     val ghostScaleAnim = remember { Animatable(1f) }
@@ -6871,8 +6869,38 @@ private fun HomeShortcutStrip(
             return hypot((c.x - finger.x).toDouble(), (c.y - finger.y).toDouble()).toFloat()
         }
 
-        fun isInsideRemoveZone(finger: Offset): Boolean =
-            removeDropBounds?.contains(finger) == true
+        val removeZoneBottomSlackPx = with(density) { 8.dp.toPx() }
+        val removeZoneTopFallbackPx = with(density) { 116.dp.toPx() }
+        val removeBandRevealGapPx = with(density) { 72.dp.toPx() }
+        val removeBandHideGapPx = with(density) { 40.dp.toPx() }
+
+        fun shouldShowRemoveBand(finger: Offset): Boolean {
+            val stripTop = stripCoords?.takeIf { it.isAttached }?.boundsInRoot()?.top
+                ?: originalStripBoundsRef[0].values.minOfOrNull { it.top }
+                ?: return false
+            val revealThreshold = stripTop - removeBandRevealGapPx
+            val hideThreshold = stripTop - removeBandHideGapPx
+            return if (removeBandVisible) finger.y <= hideThreshold else finger.y <= revealThreshold
+        }
+
+        fun removeZoneMatch(finger: Offset): Pair<Boolean, String> {
+            val bounds = removeDropBounds
+            if (bounds != null) {
+                if (bounds.contains(finger)) return true to "bounds"
+                if (
+                    finger.x >= bounds.left &&
+                    finger.x <= bounds.right &&
+                    finger.y >= bounds.top &&
+                    finger.y <= bounds.bottom + removeZoneBottomSlackPx
+                ) {
+                    return true to "bottomSlack"
+                }
+            }
+            if (finger.y <= removeZoneTopFallbackPx) return true to "topFallback"
+            return false to "none"
+        }
+
+        fun isInsideRemoveZone(finger: Offset): Boolean = removeZoneMatch(finger).first
 
         fun beginDrag(startOffset: Offset) {
             onClearStripKeyboardFocus()
@@ -6883,6 +6911,8 @@ private fun HomeShortcutStrip(
                 view.performHapticFeedback(HapticFeedbackConstants.LONG_PRESS)
             }
             hoveredSlotKey = null
+            removeBandVisible = false
+            onRemoveDropVisibleChanged(false)
             removeZoneActive = false
             onRemoveDropActiveChanged(false)
             reorderFingerDragging = true
@@ -6919,16 +6949,22 @@ private fun HomeShortcutStrip(
                 val snap = attachedBoundsSnapshot()
                 if (snap.isNotEmpty()) originalStripBoundsRef[0] = snap
             }
-            val inRemoveZone = isInsideRemoveZone(dragFingerRoot)
+            val showRemoveBand = shouldShowRemoveBand(dragFingerRoot)
+            if (showRemoveBand != removeBandVisible) {
+                removeBandVisible = showRemoveBand
+                onRemoveDropVisibleChanged(showRemoveBand)
+                logHomeStripDnD {
+                    "removeBandVisible slot=$slotId visible=$showRemoveBand finger=(${dragFingerRoot.x},${dragFingerRoot.y})"
+                }
+            }
+            val (inRemoveZone, removeZoneReason) = removeZoneMatch(dragFingerRoot)
             if (inRemoveZone && !removeZoneActive) {
                 val boundsText = removeDropBounds?.let { "${it.left},${it.top},${it.right},${it.bottom}" } ?: "null"
                 logHomeStripDnD {
-                    "enterRemoveZone slot=$slotId finger=(${dragFingerRoot.x},${dragFingerRoot.y}) bounds=$boundsText"
+                    "enterRemoveZone slot=$slotId finger=(${dragFingerRoot.x},${dragFingerRoot.y}) bounds=$boundsText reason=$removeZoneReason"
                 }
                 removeZoneActive = true
                 onRemoveDropActiveChanged(true)
-                val hapticResult = performRemoveDropHaptic(view)
-                logHomeStripDnD { "enterRemoveZone haptic result=$hapticResult ignoreGlobalSetting=true" }
             } else if (!inRemoveZone && removeZoneActive) {
                 logHomeStripDnD {
                     "exitRemoveZone slot=$slotId finger=(${dragFingerRoot.x},${dragFingerRoot.y})"
@@ -6939,7 +6975,7 @@ private fun HomeShortcutStrip(
             if (inRemoveZone) {
                 if (hoveredSlotKey != removeDropKey) {
                     logHomeStripDnD {
-                        "hover slot=$slotId from=$hoveredSlotKey to=$removeDropKey finger=(${dragFingerRoot.x},${dragFingerRoot.y})"
+                        "hover slot=$slotId from=$hoveredSlotKey to=$removeDropKey finger=(${dragFingerRoot.x},${dragFingerRoot.y}) reason=$removeZoneReason"
                     }
                     hoveredSlotKey = removeDropKey
                 }
@@ -6963,12 +6999,15 @@ private fun HomeShortcutStrip(
 
         fun finishDrag() {
             reorderFingerDragging = false
+            removeBandVisible = false
+            onRemoveDropVisibleChanged(false)
             removeZoneActive = false
             onRemoveDropActiveChanged(false)
             // Match drawer behavior: only drop when we had an explicit hover target during drag.
-            val hoverKey = hoveredSlotKey ?: if (isInsideRemoveZone(dragFingerRoot)) removeDropKey else null
+            val (inRemoveZone, removeZoneReason) = removeZoneMatch(dragFingerRoot)
+            val hoverKey = hoveredSlotKey ?: if (inRemoveZone) removeDropKey else null
             logHomeStripDnD {
-                "finishDrag slot=$slotId hoverKey=$hoverKey pendingBefore=$pendingDropMoving/$pendingDropTarget"
+                "finishDrag slot=$slotId hoverKey=$hoverKey pendingBefore=$pendingDropMoving/$pendingDropTarget removeReason=$removeZoneReason"
             }
             if (hapticsEnabled) {
                 view.performHapticFeedback(HapticFeedbackConstants.CLOCK_TICK)
@@ -6998,6 +7037,8 @@ private fun HomeShortcutStrip(
         fun cancelDrag() {
             logHomeStripDnD { "cancelDrag slot=$slotId" }
             reorderFingerDragging = false
+            removeBandVisible = false
+            onRemoveDropVisibleChanged(false)
             removeZoneActive = false
             onRemoveDropActiveChanged(false)
             hoveredSlotKey = null
