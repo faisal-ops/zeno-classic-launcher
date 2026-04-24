@@ -1,6 +1,7 @@
 package com.zeno.classiclauncher.nlauncher.apps
 
 import android.Manifest
+import android.util.Log
 import android.app.NotificationManager
 import android.bluetooth.BluetoothManager
 import android.app.WallpaperManager
@@ -430,36 +431,37 @@ class LauncherActions(private val context: Context) {
     }
 
     fun currentSoundProfile(): SoundProfileMode {
-        if (isDoNotDisturbEnabled()) {
-            return SoundProfileMode.DND
-        }
+        val nm = context.getSystemService(NotificationManager::class.java)
         val am = context.getSystemService(AudioManager::class.java) ?: return SoundProfileMode.RING
-        return when (am.ringerMode) {
-            AudioManager.RINGER_MODE_VIBRATE -> SoundProfileMode.VIBRATE
+        val ringerMode = am.ringerMode
+        val interruptionFilter = nm?.currentInterruptionFilter ?: -1
+        Log.d("SoundProfile", "POLL — ringerMode=$ringerMode interruptionFilter=$interruptionFilter")
+        return when (ringerMode) {
             AudioManager.RINGER_MODE_SILENT -> SoundProfileMode.SILENT
-            else -> SoundProfileMode.RING
+            AudioManager.RINGER_MODE_VIBRATE -> SoundProfileMode.VIBRATE
+            else -> {
+                if (interruptionFilter == NotificationManager.INTERRUPTION_FILTER_PRIORITY ||
+                    interruptionFilter == NotificationManager.INTERRUPTION_FILTER_NONE ||
+                    interruptionFilter == NotificationManager.INTERRUPTION_FILTER_ALARMS
+                ) SoundProfileMode.DND else SoundProfileMode.RING
+            }
         }
     }
 
     fun applySoundProfile(mode: SoundProfileMode): Boolean {
         val am = context.getSystemService(AudioManager::class.java) ?: return false
         val nm = context.getSystemService(NotificationManager::class.java)
-        return when (mode) {
-            SoundProfileMode.RING -> {
-                runCatching { nm?.setInterruptionFilter(NotificationManager.INTERRUPTION_FILTER_ALL) }
+        Log.d("SoundProfile", "APPLY $mode — ringerBefore=${am.ringerMode} filterBefore=${nm?.currentInterruptionFilter}")
+        val result = when (mode) {
+            SoundProfileMode.RING ->
                 runCatching { am.ringerMode = AudioManager.RINGER_MODE_NORMAL }.isSuccess &&
                     am.ringerMode == AudioManager.RINGER_MODE_NORMAL
-            }
-            SoundProfileMode.VIBRATE -> {
-                runCatching { nm?.setInterruptionFilter(NotificationManager.INTERRUPTION_FILTER_ALL) }
+            SoundProfileMode.VIBRATE ->
                 runCatching { am.ringerMode = AudioManager.RINGER_MODE_VIBRATE }.isSuccess &&
                     am.ringerMode == AudioManager.RINGER_MODE_VIBRATE
-            }
-            SoundProfileMode.SILENT -> {
-                runCatching { nm?.setInterruptionFilter(NotificationManager.INTERRUPTION_FILTER_ALL) }
+            SoundProfileMode.SILENT ->
                 runCatching { am.ringerMode = AudioManager.RINGER_MODE_SILENT }.isSuccess &&
                     am.ringerMode == AudioManager.RINGER_MODE_SILENT
-            }
             SoundProfileMode.DND -> {
                 if (nm == null || !nm.isNotificationPolicyAccessGranted) return false
                 runCatching {
@@ -468,6 +470,8 @@ class LauncherActions(private val context: Context) {
                 }.getOrDefault(false)
             }
         }
+        Log.d("SoundProfile", "APPLY $mode → result=$result ringerAfter=${am.ringerMode} filterAfter=${nm?.currentInterruptionFilter}")
+        return result
     }
 
     fun openBitwardenVault(): Boolean =
