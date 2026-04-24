@@ -58,6 +58,7 @@ import kotlin.math.abs
 
 private val PRIVATE_PREFIX_REGEX = Regex("^private\\s+", RegexOption.IGNORE_CASE)
 private const val HOME_STRIP_DND_TAG = "HomeStripDnD"
+internal const val HOME_STRIP_REMOVE_DROP_KEY = "__home_strip_remove__"
 private inline fun logHomeStripDnD(message: () -> String) {
     if (BuildConfig.DEBUG) Log.d(HOME_STRIP_DND_TAG, message())
 }
@@ -372,6 +373,12 @@ class LauncherViewModel(app: Application) : AndroidViewModel(app) {
             clearMove()
             return
         }
+        if (targetKey == HOME_STRIP_REMOVE_DROP_KEY) {
+            logHomeStripDnD { "vm.removeDrop moving=$moving" }
+            removeHomeStripToken(moving)
+            clearMove()
+            return
+        }
         viewModelScope.launch {
             gridHomeMutex.withLock {
                 val snap = prefs.value
@@ -645,6 +652,7 @@ class LauncherViewModel(app: Application) : AndroidViewModel(app) {
                 folders.remove(folderId)
                 order.removeAll { it == folderId }
                 names = names.filterKeys { it != folderId }
+                removePinnedHomeStripFolder(folderId)
             } else {
                 folders[folderId] = list
             }
@@ -689,6 +697,7 @@ class LauncherViewModel(app: Application) : AndroidViewModel(app) {
             val members = snap.folderContents[folderId] ?: return@withLock
             val folders = snap.folderContents.filterKeys { it != folderId }
             val names = snap.folderNames.filterKeys { folders.containsKey(it) }
+            removePinnedHomeStripFolder(folderId)
             if (isStrictDrawerAlphabeticalMode()) {
                 val finalOrder = strictAlphabeticalDrawerOrder(
                     installed = apps.value,
@@ -921,6 +930,38 @@ class LauncherViewModel(app: Application) : AndroidViewModel(app) {
         }
     }
 
+    suspend fun pinHomeGroupToHomeStrip(groupId: String): Boolean {
+        if (!HomeGroupIds.isHomeGroupId(groupId)) return false
+        return gridHomeMutex.withLock {
+            val snap = prefs.value
+            val slots = snap.effectiveHomeStripSlotOrder().toMutableList()
+            if (groupId in slots) return@withLock false
+            val emptyIdx = slots.indexOfFirst { it == null }
+            if (emptyIdx < 0) return@withLock false
+            slots[emptyIdx] = groupId
+            prefsRepo.setHomeStripSlots(slots)
+            true
+        }
+    }
+
+    suspend fun pinDrawerFolderToHomeStrip(folderId: String): Boolean {
+        if (!FolderIds.isFolderId(folderId)) return false
+        return gridHomeMutex.withLock {
+            val snap = prefs.value
+            if (folderId !in snap.folderContents) return@withLock false
+            val slots = snap.effectiveHomeStripSlotOrder().toMutableList()
+            if (folderId in slots) return@withLock false
+            val emptyIdx = slots.indexOfFirst { it == null }
+            if (emptyIdx < 0) return@withLock false
+            val pinned = snap.homePinnedFolderIds.toMutableList()
+            if (folderId !in pinned) pinned.add(folderId)
+            slots[emptyIdx] = folderId
+            prefsRepo.setHomePinnedFolderIds(pinned)
+            prefsRepo.setHomeStripSlots(slots)
+            true
+        }
+    }
+
     fun removeHomeShortcutToken(token: String) {
         viewModelScope.launch {
             val snap = prefs.value
@@ -928,6 +969,33 @@ class LauncherViewModel(app: Application) : AndroidViewModel(app) {
             if (t.isEmpty()) return@launch
             prefsRepo.setHomeShortcutPackages(snap.homeShortcutPackages.filter { it != t })
         }
+    }
+
+    fun removeHomeStripToken(token: String) {
+        viewModelScope.launch {
+            val snap = prefs.value
+            val t = token.trim()
+            if (t.isEmpty()) return@launch
+            if (HomeGroupIds.isHomeGroupId(t)) {
+                val slots = snap.effectiveHomeStripSlotOrder().map { tok -> if (tok == t) null else tok }.toMutableList()
+                prefsRepo.setHomeStripSlots(slots)
+                prefsRepo.setHomeStripOrder(slots.filterNotNull())
+            } else if (FolderIds.isFolderId(t)) {
+                removePinnedHomeStripFolder(t)
+            } else {
+                prefsRepo.setHomeShortcutPackages(snap.homeShortcutPackages.filter { it != t })
+            }
+        }
+    }
+
+    private suspend fun removePinnedHomeStripFolder(folderId: String) {
+        if (!FolderIds.isFolderId(folderId)) return
+        val snap = prefs.value
+        if (folderId !in snap.homePinnedFolderIds && snap.effectiveHomeStripSlotOrder().none { it == folderId }) return
+        val pinned = snap.homePinnedFolderIds.filterNot { it == folderId }
+        val slots = snap.effectiveHomeStripSlotOrder().map { tok -> if (tok == folderId) null else tok }.toMutableList()
+        prefsRepo.setHomePinnedFolderIds(pinned)
+        prefsRepo.setHomeStripSlots(slots)
     }
 
     fun restoreHomeStripState(

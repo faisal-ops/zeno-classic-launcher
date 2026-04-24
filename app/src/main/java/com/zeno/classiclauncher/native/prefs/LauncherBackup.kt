@@ -13,7 +13,7 @@ object LauncherBackup {
     const val FORMAT_KEY = "format"
     const val FORMAT_VALUE = "classiclauncher_backup"
     const val VERSION_KEY = "version"
-    const val CURRENT_VERSION = 19
+    const val CURRENT_VERSION = 20
 
     fun toJson(prefs: LauncherPrefs): String {
         val root = JSONObject()
@@ -42,6 +42,7 @@ object LauncherBackup {
             if (name.isNotEmpty()) fn.put(id, name)
         }
         p.put("folderNames", fn)
+        p.put("homePinnedFolderIds", JSONArray(prefs.homePinnedFolderIds))
         p.put("hiddenPackages", JSONArray(prefs.hiddenPackages.toList()))
         p.put("homeShortcutPackages", JSONArray(prefs.homeShortcutPackages))
         p.put("hapticsEnabled", prefs.hapticsEnabled)
@@ -148,6 +149,14 @@ object LauncherBackup {
         } else {
             emptyList()
         }
+        val homePinnedFolderArr = p.optJSONArray("homePinnedFolderIds")
+        val homePinnedFolderIds = if (homePinnedFolderArr != null) {
+            buildList {
+                for (i in 0 until homePinnedFolderArr.length()) add(homePinnedFolderArr.getString(i).trim())
+            }.filter { it.isNotEmpty() }.distinct()
+        } else {
+            emptyList()
+        }
         val theme = p.getString("themeJson").trim().ifEmpty { DEFAULT_THEME_JSON }
         val haptics = p.optBoolean("hapticsEnabled", true)
         val hapticIntensity = p.optInt("hapticIntensity", 3).coerceIn(1, 5)
@@ -225,6 +234,7 @@ object LauncherBackup {
             orderedPackages = ordered,
             folderContents = folderContents,
             folderNames = folderNames.filterKeys { folderContents.containsKey(it) },
+            homePinnedFolderIds = homePinnedFolderIds,
             hiddenPackages = hidden,
             homeShortcutPackages = homeShortcuts,
             hapticsEnabled = haptics,

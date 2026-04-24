@@ -564,9 +564,19 @@ class GlanceDateWeatherEventsView @JvmOverloads constructor(
 
     private fun showCurrentGlanceItem() {
         val items = glanceItems
-        val text = items.getOrNull(currentGlanceIndex)?.text
-            ?: context.getString(R.string.glance_no_alerts)
         val isNoAlerts = items.isEmpty()
+        val text = items.getOrNull(currentGlanceIndex)?.text.orEmpty()
+
+        if (isNoAlerts) {
+            carouselText.animate().cancel()
+            carouselText.text = ""
+            carouselText.setOnClickListener(null)
+            carouselText.isVisible = false
+            updateDots(items)
+            return
+        }
+
+        carouselText.isVisible = true
 
         if (carouselText.text == text) {
             updateDots(items)

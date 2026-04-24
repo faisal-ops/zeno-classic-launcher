@@ -30,6 +30,7 @@ import android.provider.AlarmClock
 import android.provider.Settings
 import androidx.core.content.getSystemService
 import androidx.core.content.ContextCompat
+import com.zeno.classiclauncher.nlauncher.BuildConfig
 
 sealed class ToggleResult {
     data class Changed(val enabled: Boolean) : ToggleResult()
@@ -40,7 +41,6 @@ sealed class ToggleResult {
 enum class SoundProfileMode {
     RING,
     VIBRATE,
-    SILENT,
     DND,
 }
 
@@ -61,6 +61,7 @@ class LauncherActions(private val context: Context) {
     private val keyboardModeKey = "KEYBOARD_MODE"
     private val launcherPrefs by lazy { context.getSharedPreferences("launcher_actions", Context.MODE_PRIVATE) }
     private val keyboardModeUiKey = "keyboard_mode_ui"
+    private val soundProfileKey = "sound_profile_mode"
 
     fun launchApp(packageName: String): Boolean {
         // Some dialer apps expose a launcher activity that only shows "set default phone app".
@@ -422,7 +423,8 @@ class LauncherActions(private val context: Context) {
             startActivityNewTask(Intent("android.settings.ZEN_MODE_SETTINGS"))
 
     fun openDoNotDisturbSettings(): Boolean =
-        startActivityNewTask(Intent("android.settings.ZEN_MODE_SETTINGS")) ||
+        startActivityNewTask(Intent(Settings.ACTION_NOTIFICATION_POLICY_ACCESS_SETTINGS)) ||
+            startActivityNewTask(Intent("android.settings.ZEN_MODE_SETTINGS")) ||
             openSystemSettings()
 
     fun hasDoNotDisturbAccess(): Boolean {
@@ -434,34 +436,62 @@ class LauncherActions(private val context: Context) {
         val nm = context.getSystemService(NotificationManager::class.java)
         val am = context.getSystemService(AudioManager::class.java) ?: return SoundProfileMode.RING
         val ringerMode = am.ringerMode
-        val interruptionFilter = nm?.currentInterruptionFilter ?: -1
-        Log.d("SoundProfile", "POLL — ringerMode=$ringerMode interruptionFilter=$interruptionFilter")
-        return when (ringerMode) {
-            AudioManager.RINGER_MODE_SILENT -> SoundProfileMode.SILENT
-            AudioManager.RINGER_MODE_VIBRATE -> SoundProfileMode.VIBRATE
-            else -> {
-                if (interruptionFilter == NotificationManager.INTERRUPTION_FILTER_PRIORITY ||
-                    interruptionFilter == NotificationManager.INTERRUPTION_FILTER_NONE ||
-                    interruptionFilter == NotificationManager.INTERRUPTION_FILTER_ALARMS
-                ) SoundProfileMode.DND else SoundProfileMode.RING
-            }
+        val filter = nm?.currentInterruptionFilter ?: NotificationManager.INTERRUPTION_FILTER_ALL
+        val stored = readSoundProfile()
+        val debugPrefix = "currentSoundProfile"
+        if (BuildConfig.DEBUG) {
+            Log.d(
+                "SoundProfile",
+                "$debugPrefix ringer=$ringerMode filter=$filter stored=${stored?.name ?: "null"} " +
+                    "policyAccess=${nm?.isNotificationPolicyAccessGranted}",
+            )
         }
+        val resolved = when {
+            ringerMode == AudioManager.RINGER_MODE_VIBRATE -> SoundProfileMode.VIBRATE
+            ringerMode == AudioManager.RINGER_MODE_NORMAL &&
+                filter == NotificationManager.INTERRUPTION_FILTER_ALL -> SoundProfileMode.RING
+            filter == NotificationManager.INTERRUPTION_FILTER_NONE ||
+                filter == NotificationManager.INTERRUPTION_FILTER_PRIORITY ||
+                filter == NotificationManager.INTERRUPTION_FILTER_ALARMS ||
+                ringerMode == AudioManager.RINGER_MODE_SILENT -> {
+                if (
+                    filter == NotificationManager.INTERRUPTION_FILTER_PRIORITY ||
+                    filter == NotificationManager.INTERRUPTION_FILTER_ALARMS ||
+                    stored == SoundProfileMode.DND
+                ) SoundProfileMode.DND else SoundProfileMode.VIBRATE
+            }
+            else -> SoundProfileMode.RING
+        }
+        if (BuildConfig.DEBUG) {
+            Log.d("SoundProfile", "$debugPrefix resolved=${resolved.name}")
+        }
+        return resolved
     }
 
     fun applySoundProfile(mode: SoundProfileMode): Boolean {
         val am = context.getSystemService(AudioManager::class.java) ?: return false
         val nm = context.getSystemService(NotificationManager::class.java)
-        Log.d("SoundProfile", "APPLY $mode — ringerBefore=${am.ringerMode} filterBefore=${nm?.currentInterruptionFilter}")
+        if (BuildConfig.DEBUG) {
+            Log.d(
+                "SoundProfile",
+                "APPLY $mode — ringerBefore=${am.ringerMode} filterBefore=${nm?.currentInterruptionFilter} " +
+                    "storedBefore=${readSoundProfile()?.name ?: "null"}",
+            )
+        }
         val result = when (mode) {
-            SoundProfileMode.RING ->
+            SoundProfileMode.RING -> {
+                if (nm?.isNotificationPolicyAccessGranted == true)
+                    runCatching { nm.setInterruptionFilter(NotificationManager.INTERRUPTION_FILTER_ALL) }
                 runCatching { am.ringerMode = AudioManager.RINGER_MODE_NORMAL }.isSuccess &&
                     am.ringerMode == AudioManager.RINGER_MODE_NORMAL
-            SoundProfileMode.VIBRATE ->
+            }
+            SoundProfileMode.VIBRATE -> {
+                if (nm?.isNotificationPolicyAccessGranted == true)
+                    runCatching { nm.setInterruptionFilter(NotificationManager.INTERRUPTION_FILTER_ALL) }
                 runCatching { am.ringerMode = AudioManager.RINGER_MODE_VIBRATE }.isSuccess &&
                     am.ringerMode == AudioManager.RINGER_MODE_VIBRATE
-            SoundProfileMode.SILENT ->
-                runCatching { am.ringerMode = AudioManager.RINGER_MODE_SILENT }.isSuccess &&
-                    am.ringerMode == AudioManager.RINGER_MODE_SILENT
+            }
+            // DND = INTERRUPTION_FILTER_NONE — full Do Not Disturb.
             SoundProfileMode.DND -> {
                 if (nm == null || !nm.isNotificationPolicyAccessGranted) return false
                 runCatching {
@@ -470,8 +500,24 @@ class LauncherActions(private val context: Context) {
                 }.getOrDefault(false)
             }
         }
-        Log.d("SoundProfile", "APPLY $mode → result=$result ringerAfter=${am.ringerMode} filterAfter=${nm?.currentInterruptionFilter}")
+        if (BuildConfig.DEBUG) {
+            Log.d(
+                "SoundProfile",
+                "APPLY $mode → result=$result ringerAfter=${am.ringerMode} " +
+                    "filterAfter=${nm?.currentInterruptionFilter} storedAfter=${if (result) mode.name else readSoundProfile()?.name ?: "null"}",
+            )
+        }
+        if (result) writeSoundProfile(mode)
         return result
+    }
+
+    private fun readSoundProfile(): SoundProfileMode? {
+        val raw = launcherPrefs.getString(soundProfileKey, null) ?: return null
+        return SoundProfileMode.entries.firstOrNull { it.name == raw }
+    }
+
+    private fun writeSoundProfile(mode: SoundProfileMode) {
+        launcherPrefs.edit().putString(soundProfileKey, mode.name).apply()
     }
 
     fun openBitwardenVault(): Boolean =

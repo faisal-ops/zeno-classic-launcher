@@ -7,6 +7,7 @@ import androidx.datastore.preferences.core.edit
 import androidx.datastore.preferences.core.intPreferencesKey
 import androidx.datastore.preferences.core.stringPreferencesKey
 import androidx.datastore.preferences.preferencesDataStore
+import com.zeno.classiclauncher.nlauncher.folders.FolderIds
 import com.zeno.classiclauncher.nlauncher.theme.LauncherThemePalette
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.distinctUntilChanged
@@ -99,6 +100,8 @@ data class LauncherPrefs(
     val folderContents: Map<String, List<String>> = emptyMap(),
     /** Folder slot id → user-visible title. */
     val folderNames: Map<String, String> = emptyMap(),
+    /** Drawer folder ids pinned into the home strip. */
+    val homePinnedFolderIds: List<String> = emptyList(),
     val hiddenPackages: Set<String> = emptySet(),
     /**
      * Home-strip shortcut tokens (package or `package#shortcutId`). Combined with [homeGroups],
@@ -210,7 +213,8 @@ class LauncherPrefsRepository(private val context: Context) {
         val GLANCE_WEATHER_MANUAL_LON = stringPreferencesKey("glanceWeatherManualLongitude")
         val HOME_GROUPS = stringPreferencesKey("homeGroupsJson")
         val HOME_STRIP_ORDER = stringPreferencesKey("homeStripOrderCsv")
-    val HOME_STRIP_SLOTS = stringPreferencesKey("homeStripSlotsCsv")
+        val HOME_STRIP_SLOTS = stringPreferencesKey("homeStripSlotsCsv")
+        val HOME_PINNED_FOLDERS = stringPreferencesKey("homePinnedFoldersCsv")
         val DOUBLE_TAP_SLEEP = booleanPreferencesKey("doubleTapToSleepEnabled")
         val SWIPE_UP_PKG = stringPreferencesKey("swipeUpPackage")
         val DOUBLE_TAP_PKG = stringPreferencesKey("doubleTapPackage")
@@ -273,6 +277,7 @@ class LauncherPrefsRepository(private val context: Context) {
         val homeGroups = parseHomeGroupsJson(p[Keys.HOME_GROUPS])
         val homeStripOrder = parseCsvList(p[Keys.HOME_STRIP_ORDER])
         val homeStripSlots = parseSlotCsvList(p[Keys.HOME_STRIP_SLOTS])
+        val homePinnedFolderIds = parseCsvList(p[Keys.HOME_PINNED_FOLDERS]).filter { FolderIds.isFolderId(it) }
         val doubleTapSleep = p[Keys.DOUBLE_TAP_SLEEP] ?: DEFAULT_PREFS.doubleTapToSleepEnabled
         val swipeUpPkg = p[Keys.SWIPE_UP_PKG]?.trim() ?: ""
         val doubleTapPkg = p[Keys.DOUBLE_TAP_PKG]?.trim() ?: ""
@@ -303,6 +308,7 @@ class LauncherPrefsRepository(private val context: Context) {
             orderedPackages = order,
             folderContents = folders,
             folderNames = folderNames,
+            homePinnedFolderIds = homePinnedFolderIds,
             hiddenPackages = hidden,
             homeShortcutPackages = homeShortcuts,
             hapticsEnabled = haptics,
@@ -391,6 +397,11 @@ class LauncherPrefsRepository(private val context: Context) {
         context.dataStore.edit { p ->
             p[Keys.HOME_STRIP_SLOTS] = slots.joinToString(",") { it ?: "" }
         }
+    }
+
+    suspend fun setHomePinnedFolderIds(folderIds: List<String>) {
+        val trimmed = folderIds.map { it.trim() }.filter { it.isNotEmpty() && it.startsWith("com.zeno.classiclauncher.slot.folder.") }.distinct()
+        context.dataStore.edit { it[Keys.HOME_PINNED_FOLDERS] = trimmed.joinToString(",") }
     }
 
     suspend fun setHomeShortcutPackages(packages: List<String>) {
@@ -593,6 +604,7 @@ class LauncherPrefsRepository(private val context: Context) {
             s[Keys.ORDER] = prefs.orderedPackages.joinToString(",")
             s[Keys.FOLDERS] = folderContentsToJson(prefs.folderContents)
             s[Keys.FOLDER_NAMES] = folderNamesToJson(prefs.folderNames.filterKeys { prefs.folderContents.containsKey(it) })
+            s[Keys.HOME_PINNED_FOLDERS] = prefs.homePinnedFolderIds.joinToString(",")
             s[Keys.HIDDEN] = prefs.hiddenPackages.joinToString(",")
             s[Keys.HOME_SHORTCUTS] = prefs.homeShortcutPackages.joinToString(",")
             s[Keys.HAPTICS] = prefs.hapticsEnabled
@@ -638,13 +650,14 @@ class LauncherPrefsRepository(private val context: Context) {
 fun LauncherPrefs.effectiveHomeStripOrder(): List<String> {
     val allShortcuts = homeShortcutPackages
     val allGroupIds = homeGroups.map { it.id }
-    val allValid = (allShortcuts + allGroupIds).toSet()
+    val allFolderIds = homePinnedFolderIds.filter { it in folderContents }
+    val allValid = (allShortcuts + allGroupIds + allFolderIds).toSet()
 
     if (homeStripOrder.isNotEmpty()) {
         val ordered = homeStripOrder.filter { it in allValid }
         val missing = allValid - ordered.toSet()
         // Preserve insertion order for 'missing' by using original list ordering
-        val orderedMissing = (allShortcuts + allGroupIds).filter { it in missing }
+        val orderedMissing = (allShortcuts + allGroupIds + allFolderIds).filter { it in missing }
         return ordered + orderedMissing
     }
     // No saved order yet — derive from creation order, groups first then shortcuts.
@@ -652,6 +665,7 @@ fun LauncherPrefs.effectiveHomeStripOrder(): List<String> {
     return buildList {
         addAll(allGroupIds)
         addAll(allShortcuts)
+        addAll(allFolderIds)
     }
 }
 
@@ -670,14 +684,15 @@ private fun parseSlotCsvList(raw: String?): List<String?> {
 fun LauncherPrefs.effectiveHomeStripSlotOrder(): List<String?> {
     val allShortcuts = homeShortcutPackages
     val allGroupIds = homeGroups.map { it.id }
-    val allValid = (allShortcuts + allGroupIds).toSet()
+    val allFolderIds = homePinnedFolderIds.filter { it in folderContents }
+    val allValid = (allShortcuts + allGroupIds + allFolderIds).toSet()
 
     if (homeStripSlots.isNotEmpty()) {
         // Map stored slots: keep valid tokens, turn invalid/orphan into null
         val filtered = homeStripSlots.map { t -> if (t != null && t in allValid) t else null }
         // Tokens not yet in any slot (newly added items)
         val assigned = filtered.filterNotNull().toSet()
-        val unassigned = (allGroupIds + allShortcuts).filter { it !in assigned }.toMutableList()
+        val unassigned = (allGroupIds + allShortcuts + allFolderIds).filter { it !in assigned }.toMutableList()
         // Build result of exactly STRIP_TOTAL_SLOTS, filling empty slots with unassigned items
         val result = MutableList<String?>(STRIP_TOTAL_SLOTS) { i -> filtered.getOrNull(i) }
         for (i in result.indices) {
@@ -688,13 +703,13 @@ fun LauncherPrefs.effectiveHomeStripSlotOrder(): List<String?> {
         return result
     }
     // First launch / no slots saved — place items in order, rest null
-    val items = (allGroupIds + allShortcuts).take(STRIP_TOTAL_SLOTS)
+    val items = (allGroupIds + allShortcuts + allFolderIds).take(STRIP_TOTAL_SLOTS)
     return List(STRIP_TOTAL_SLOTS) { i -> items.getOrNull(i) }
 }
 
-/** Count of strip tokens stored (groups + shortcut entries); strip UI fits at most [STRIP_TOTAL_SLOTS]. */
+/** Count of visible strip tokens (groups + shortcut entries + pinned folders). */
 fun LauncherPrefs.homeStripItemCount(): Int =
-    homeGroups.size + homeShortcutPackages.size
+    effectiveHomeStripSlotOrder().count { it != null }
 
 fun LauncherPrefs.canAddHomeStripItem(): Boolean =
     homeStripItemCount() < STRIP_TOTAL_SLOTS
