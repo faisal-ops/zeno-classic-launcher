@@ -20,6 +20,7 @@ import java.io.InputStreamReader
 import java.net.HttpURLConnection
 import java.net.URL
 import java.text.SimpleDateFormat
+import java.util.Calendar
 import java.util.Date
 import java.util.Locale
 import org.json.JSONObject
@@ -36,6 +37,7 @@ internal data class GlanceCalendarEvent(
     val title: String,
     val startTime: Long,
     val endTime: Long,
+    val isAllDay: Boolean = false,
     val calendarId: Long = 0L,
     val accountType: String = "",
 )
@@ -164,7 +166,7 @@ internal class GlanceDataSources(private val context: Context) {
                     CalendarContract.Instances.CALENDAR_ID,
                     CalendarContract.Instances.ALL_DAY,
                 ),
-                "${CalendarContract.Instances.END} >= ? AND ${CalendarContract.Instances.ALL_DAY} = 0",
+                "${CalendarContract.Instances.END} >= ?",
                 arrayOf(now.toString()),
                 "${CalendarContract.Instances.BEGIN} ASC",
             )?.use { cursor ->
@@ -177,6 +179,7 @@ internal class GlanceDataSources(private val context: Context) {
                             title = title,
                             startTime = cursor.getLong(2),
                             endTime = cursor.getLong(3),
+                            isAllDay = cursor.getInt(5) != 0,
                             calendarId = calId,
                         ),
                     )
@@ -227,6 +230,59 @@ internal class GlanceDataSources(private val context: Context) {
             )
             else -> timeFormat.format(Date(startTime))
         }
+    }
+
+    fun formatCalendarEvent(event: GlanceCalendarEvent): String =
+        buildString {
+            append(trimCalendarTitle(event.title))
+            append(" \u00B7 ")
+            append(if (event.isAllDay) "All day" else formatEventTime(event.startTime).uppercase(Locale.getDefault()))
+        }
+
+    private fun trimCalendarTitle(title: String, maxChars: Int = 24): String {
+        val clean = title.replace(Regex("\\s+"), " ").trim()
+        if (clean.length <= maxChars) return clean
+        return clean.take(maxChars).trimEnd() + "\u2026"
+    }
+
+    fun selectRelevantCalendarEvents(
+        events: List<GlanceCalendarEvent>,
+        nowMs: Long = System.currentTimeMillis(),
+    ): List<GlanceCalendarEvent> {
+        if (events.isEmpty()) return emptyList()
+
+        fun isSameLocalDay(a: Long, b: Long): Boolean {
+            val calA = Calendar.getInstance().apply { timeInMillis = a }
+            val calB = Calendar.getInstance().apply { timeInMillis = b }
+            return calA.get(Calendar.ERA) == calB.get(Calendar.ERA) &&
+                calA.get(Calendar.YEAR) == calB.get(Calendar.YEAR) &&
+                calA.get(Calendar.DAY_OF_YEAR) == calB.get(Calendar.DAY_OF_YEAR)
+        }
+
+        val tomorrowMs = Calendar.getInstance().apply {
+            timeInMillis = nowMs
+            add(Calendar.DAY_OF_YEAR, 1)
+        }.timeInMillis
+
+        val ongoing = events.firstOrNull { !it.isAllDay && it.startTime <= nowMs && it.endTime > nowMs }
+        val nextTimedToday = events.firstOrNull { !it.isAllDay && it.startTime > nowMs && isSameLocalDay(it.startTime, nowMs) }
+        val allDayToday = events.firstOrNull { it.isAllDay && isSameLocalDay(it.startTime, nowMs) }
+        val tomorrowFirst = events.firstOrNull { it.startTime > nowMs && isSameLocalDay(it.startTime, tomorrowMs) }
+
+        val ordered = buildList {
+            add(ongoing ?: nextTimedToday ?: allDayToday ?: tomorrowFirst ?: return@buildList)
+            when (firstOrNull()) {
+                ongoing -> add(nextTimedToday ?: allDayToday ?: tomorrowFirst)
+                nextTimedToday -> add(allDayToday ?: tomorrowFirst)
+                allDayToday -> add(tomorrowFirst)
+                else -> Unit
+            }
+        }
+
+        return ordered
+            .filterNotNull()
+            .distinctBy { it.id }
+            .take(2)
     }
 
     private fun weatherCodeToCondition(code: Int): String = when (code) {

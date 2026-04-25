@@ -96,6 +96,7 @@ class GlanceDateWeatherEventsView @JvmOverloads constructor(
         val title: String,
         val startTime: Long,
         val endTime: Long,
+        val isAllDay: Boolean = false,
         val calendarId: Long = 0L,
         val accountType: String = "",
     )
@@ -605,10 +606,11 @@ class GlanceDateWeatherEventsView @JvmOverloads constructor(
     }
 
     private fun updateDots(items: List<GlanceItem>) {
-        if (items.size > 1) {
-            dotsText.text = items.indices.joinToString(" ") { i ->
-                if (i == currentGlanceIndex) "\u25CF" else "\u25CB"
-            }
+        if (items.isNotEmpty()) {
+            val activeIndex = currentGlanceIndex % 3
+            dotsText.text = List(3) { i ->
+                if (i == activeIndex) "\u25CF" else "\u25CB"
+            }.joinToString("\n")
             dotsText.isVisible = true
         } else {
             dotsText.isVisible = false
@@ -647,11 +649,12 @@ class GlanceDateWeatherEventsView @JvmOverloads constructor(
                     ),
                 )
             } else {
-                for (event in dataSources.getUpcomingCalendarEvents(prefs.calendarLookAheadDays.coerceIn(1, 7))) {
-                    val timeStr = dataSources.formatEventTime(event.startTime)
+                for (event in dataSources.selectRelevantCalendarEvents(
+                    dataSources.getUpcomingCalendarEvents(prefs.calendarLookAheadDays.coerceIn(1, 7)),
+                )) {
                     items.add(
                         GlanceItem(
-                            text = "\uD83D\uDCC5 ${event.title} · $timeStr",
+                            text = dataSources.formatCalendarEvent(event),
                             action = { openCalendarEvent(event) },
                             type = GlanceItemType.CALENDAR,
                         ),
@@ -709,7 +712,7 @@ class GlanceDateWeatherEventsView @JvmOverloads constructor(
                 } else {
                     ""
                 }
-                GlanceItem(text = "\u26A1 Charging $level%$suffix", type = GlanceItemType.BATTERY)
+                GlanceItem(text = "Charging $level%$suffix", type = GlanceItemType.BATTERY)
             }
             level <= 15 -> GlanceItem(text = "\uD83D\uDD0B Battery low · $level%", type = GlanceItemType.BATTERY)
             else -> null
@@ -741,7 +744,7 @@ class GlanceDateWeatherEventsView @JvmOverloads constructor(
                     CalendarContract.Instances.ALL_DAY,    // 5
                 ),
                 // Show events not yet finished (includes ongoing events)
-                "${CalendarContract.Instances.END} >= ? AND ${CalendarContract.Instances.ALL_DAY} = 0",
+                "${CalendarContract.Instances.END} >= ?",
                 arrayOf(now.toString()),
                 "${CalendarContract.Instances.BEGIN} ASC",
             )?.use { cursor ->
@@ -754,6 +757,7 @@ class GlanceDateWeatherEventsView @JvmOverloads constructor(
                             title = title,
                             startTime = cursor.getLong(2),
                             endTime = cursor.getLong(3),
+                            isAllDay = cursor.getInt(5) != 0,
                             calendarId = calId,
                         ),
                     )
