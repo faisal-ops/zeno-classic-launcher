@@ -2077,11 +2077,20 @@ private fun HomePage(
 
     var searchFocusIndex by remember { mutableStateOf(-1) }
     val searchResults = remember(searchQuery, allApps, hiddenPackages) {
-        if (searchQuery.isEmpty()) emptyList()
-        else allApps.filter { it.label.contains(searchQuery, ignoreCase = true) && it.packageName !in hiddenPackages }.take(4)
+        rankHomeSearchApps(
+            query = searchQuery,
+            allApps = allApps,
+            hiddenPackages = hiddenPackages,
+        ).take(4)
     }
     val settingsResults = remember(searchQuery) { matchSettingsEntries(searchQuery) }
-    LaunchedEffect(searchQuery) { searchFocusIndex = -1 }
+    LaunchedEffect(searchQuery, searchResults, settingsResults) {
+        searchFocusIndex = when {
+            searchQuery.isEmpty() -> -1
+            searchResults.isNotEmpty() || settingsResults.isNotEmpty() -> 0
+            else -> -1
+        }
+    }
 
     Box(
         modifier = Modifier
@@ -2128,12 +2137,14 @@ private fun HomePage(
                         }
                         (ev.key == Key.Enter || ev.key == Key.NumPadEnter ||
                             nk?.keyCode == android.view.KeyEvent.KEYCODE_DPAD_CENTER ||
-                            nk?.keyCode == android.view.KeyEvent.KEYCODE_ENTER) && searchFocusIndex >= 0 -> {
-                            if (searchFocusIndex < searchResults.size) {
-                                val app = searchResults.getOrNull(searchFocusIndex)
+                            nk?.keyCode == android.view.KeyEvent.KEYCODE_ENTER) -> {
+                            val effectiveSearchIndex =
+                                if (searchFocusIndex >= 0) searchFocusIndex else 0
+                            if (effectiveSearchIndex < searchResults.size) {
+                                val app = searchResults.getOrNull(effectiveSearchIndex)
                                 if (app != null) { onSearchQueryChange(""); onLaunchApp(app.packageName) }
                             } else {
-                                val entry = settingsResults.getOrNull(searchFocusIndex - searchResults.size)
+                                val entry = settingsResults.getOrNull(effectiveSearchIndex - searchResults.size)
                                 if (entry != null) {
                                     onSearchQueryChange("")
                                     val intent = Intent(entry.action).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
@@ -2272,11 +2283,11 @@ private fun HomePage(
                 val threshold = 80.dp.toPx()
                 awaitPointerEventScope {
                     while (true) {
-                        val down = awaitFirstDown(requireUnconsumed = false)
+                        val down = awaitFirstDown(requireUnconsumed = false, pass = PointerEventPass.Final)
                         val startY = down.position.y
                         var triggered = false
                         while (!triggered) {
-                            val event = awaitPointerEvent(PointerEventPass.Initial)
+                            val event = awaitPointerEvent(PointerEventPass.Final)
                             val change = event.changes.firstOrNull() ?: break
                             if (!change.pressed) break
                             val dy = change.position.y - startY
@@ -2293,11 +2304,11 @@ private fun HomePage(
                 val threshold = 72.dp.toPx()
                 awaitPointerEventScope {
                     while (true) {
-                        val down = awaitFirstDown(requireUnconsumed = false)
+                        val down = awaitFirstDown(requireUnconsumed = false, pass = PointerEventPass.Final)
                         val startY = down.position.y
                         var triggered = false
                         while (!triggered) {
-                            val event = awaitPointerEvent(PointerEventPass.Initial)
+                            val event = awaitPointerEvent(PointerEventPass.Final)
                             val change = event.changes.firstOrNull() ?: break
                             if (!change.pressed) break
                             val dy = change.position.y - startY
@@ -5115,6 +5126,35 @@ private fun matchSettingsEntries(query: String): List<SettingsSearchEntry> {
         entry.label.contains(q, ignoreCase = true) ||
             entry.keywords.any { it.contains(q, ignoreCase = true) || q.contains(it, ignoreCase = true) }
     }.take(3)
+}
+
+private fun rankHomeSearchApps(
+    query: String,
+    allApps: List<AppEntry>,
+    hiddenPackages: Set<String>,
+): List<AppEntry> {
+    if (query.isBlank()) return emptyList()
+    val q = query.trim().lowercase()
+    if (q.isEmpty()) return emptyList()
+    return allApps
+        .asSequence()
+        .filter { it.packageName !in hiddenPackages }
+        .mapNotNull { app ->
+            val label = app.label.lowercase()
+            val pkg = app.packageName.lowercase()
+            val score = when {
+                label == q -> 0
+                label.startsWith(q) -> 1
+                label.split(Regex("[\\s._-]+")).any { it.startsWith(q) } -> 2
+                label.contains(q) -> 3
+                pkg.contains(q) -> 4
+                else -> null
+            } ?: return@mapNotNull null
+            Triple(score, app.label.lowercase(), app)
+        }
+        .sortedWith(compareBy<Triple<Int, String, AppEntry>> { it.first }.thenBy { it.second })
+        .map { it.third }
+        .toList()
 }
 
 /** @return new query if key updates search; null if not a text/search key. */
