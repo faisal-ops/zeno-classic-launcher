@@ -7,6 +7,7 @@
 package com.zeno.classiclauncher.nlauncher.ui
 
 import android.Manifest
+import android.annotation.SuppressLint
 import android.app.Activity
 import android.app.WallpaperManager
 import android.appwidget.AppWidgetHost
@@ -140,6 +141,7 @@ import androidx.compose.material.icons.rounded.Notifications
 import androidx.compose.material.icons.rounded.NightlightRound
 import androidx.compose.material.icons.rounded.Folder
 import androidx.compose.material.icons.rounded.Lock
+import androidx.compose.material.icons.rounded.Language
 import androidx.compose.material.icons.rounded.Security
 import androidx.compose.material.icons.rounded.Settings
 import androidx.compose.material.icons.rounded.Tune
@@ -231,6 +233,7 @@ import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalFocusManager
 import androidx.compose.ui.platform.LocalView
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.viewinterop.AndroidView
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
@@ -272,6 +275,7 @@ import com.zeno.classiclauncher.nlauncher.badges.BadgeNotificationListener
 import com.zeno.classiclauncher.nlauncher.power.SleepManager
 import com.zeno.classiclauncher.nlauncher.folders.DrawerGridCell
 import com.zeno.classiclauncher.nlauncher.folders.FolderIds
+import com.zeno.classiclauncher.nlauncher.locale.LauncherLocale
 import com.zeno.classiclauncher.nlauncher.theme.LauncherThemePalette
 import com.zeno.classiclauncher.nlauncher.prefs.GridPreset
 import com.zeno.classiclauncher.nlauncher.prefs.GlanceWeatherUnit
@@ -388,6 +392,10 @@ private fun appIconShapeLabel(shape: AppIconShape): String = when (shape) {
     AppIconShape.SOFT_SQUARE -> "Soft square"
     AppIconShape.CUT_CORNER -> "Cut corner"
 }
+
+@SuppressLint("MissingPermission")
+private fun safeWallpaperDrawable(context: android.content.Context): Drawable? =
+    runCatching { WallpaperManager.getInstance(context).drawable }.getOrNull()
 
 private fun dockIconStyleLabel(style: DockIconStyle): String = when (style) {
     DockIconStyle.MONOCHROME -> "Monochrome dock style"
@@ -566,6 +574,7 @@ fun LauncherScreen(
     var showGlanceSettings by remember { mutableStateOf(false) }
     var showHomeGroupsSettings by remember { mutableStateOf(false) }
     var showGestureSettings by remember { mutableStateOf(false) }
+    var showLanguageSettings by remember { mutableStateOf(false) }
     var showAppDrawerBadges by remember { mutableStateOf(false) }
     var showIconAppearanceSettings by remember { mutableStateOf(false) }
     var showHomeActions by remember { mutableStateOf(false) }
@@ -1454,7 +1463,22 @@ fun LauncherScreen(
         val settingsStackedOverlayOpen =
             showPermissionsSettings || showGlanceSettings ||
                 showHomeGroupsSettings || showDockSlotPicker != null ||
-                showGestureSettings || showAppDrawerBadges || showIconAppearanceSettings
+                showGestureSettings || showLanguageSettings || showAppDrawerBadges || showIconAppearanceSettings
+        val settingsOn = stringResource(R.string.settings_on)
+        val settingsOff = stringResource(R.string.settings_off)
+        val settingsConfigured = stringResource(R.string.settings_configured)
+        val settingsNotConfigured = stringResource(R.string.settings_not_configured)
+        val settingsDefaultApp = stringResource(R.string.settings_default_app)
+        val settingsHidden = stringResource(R.string.settings_hidden)
+        val settingsHiddenClassic = stringResource(R.string.settings_hidden_classic)
+        val settingsPermissionsReady = stringResource(R.string.settings_permissions_ready)
+        val settingsPermissionsMissingOne = stringResource(R.string.settings_permissions_missing_one)
+        val settingsPermissionsMissingMany = stringResource(R.string.settings_permissions_missing_many)
+        val settingsAllOff = stringResource(R.string.settings_all_off)
+        val settingsNotifications = stringResource(R.string.settings_notifications)
+        val dockMailDefaultTitle = stringResource(R.string.dock_mail)
+        val dockMessagesDefaultTitle = stringResource(R.string.dock_messages)
+        val dockCameraDefaultTitle = stringResource(R.string.dock_camera)
 
         AnimatedVisibility(
             visible = showSettings,
@@ -1465,72 +1489,64 @@ fun LauncherScreen(
                 stackedChildOverlayOpen = settingsStackedOverlayOpen,
                 gridPreset = prefs.gridPreset,
                 hapticsEnabled = prefs.hapticsEnabled,
-                dockMailBody = remember(prefs.dockMailPackage, allApps) {
+                dockMailBody = remember(prefs.dockMailPackage, allApps, settingsDefaultApp) {
                     if (prefs.dockMailPackage.isEmpty()) {
-                        "Default app chooser for mail intents."
+                        settingsDefaultApp
                     } else {
                         allApps.find { it.packageName == prefs.dockMailPackage }?.label ?: prefs.dockMailPackage
                     }
                 },
-                dockSecondBody = remember(prefs.dockSecondPackage, allApps) {
+                dockSecondBody = remember(prefs.dockSecondPackage, allApps, settingsDefaultApp) {
                     if (prefs.dockSecondPackage.isEmpty()) {
-                        "Default messaging app."
+                        settingsDefaultApp
                     } else {
                         allApps.find { it.packageName == prefs.dockSecondPackage }?.label ?: prefs.dockSecondPackage
                     }
                 },
-                dockThirdBody = remember(prefs.dockCameraPackage, allApps) {
+                dockThirdBody = remember(prefs.dockCameraPackage, allApps, settingsDefaultApp) {
                     if (prefs.dockCameraPackage.isEmpty()) {
-                        "Default: camera app. Open to choose any installed app."
+                        settingsDefaultApp
                     } else {
                         val label = allApps.find { it.packageName == prefs.dockCameraPackage }?.label
                         label ?: prefs.dockCameraPackage
                     }
                 },
                 onGridPreset = vm::setGridPreset,
-                dockMailTitle = prefs.dockMailTitle,
-                dockSecondTitle = prefs.dockSecondTitle,
-                dockThirdTitle = prefs.dockThirdTitle,
+                dockMailTitle = if (prefs.dockMailTitle == "Mail") dockMailDefaultTitle else prefs.dockMailTitle,
+                dockSecondTitle = if (prefs.dockSecondTitle == "Messages") dockMessagesDefaultTitle else prefs.dockSecondTitle,
+                dockThirdTitle = if (prefs.dockThirdTitle == "Camera") dockCameraDefaultTitle else prefs.dockThirdTitle,
                 onOpenDockSlotPicker = { showDockSlotPicker = it },
                 glanceSubtitle = remember(
                     prefs.glanceEnabled,
-                    prefs.glanceShowCalendar,
-                    prefs.glanceShowFlashlight,
-                    prefs.glanceShowBattery,
-                    prefs.glanceShowAlarm,
+                    settingsOn,
+                    settingsOff,
                 ) {
-                    if (!prefs.glanceEnabled) {
-                        "Off"
-                    } else {
-                        buildList {
-                            add("Date & weather")
-                            if (prefs.glanceShowCalendar) add("calendar")
-                            if (prefs.glanceShowFlashlight) add("flashlight")
-                            if (prefs.glanceShowBattery) add("battery")
-                            if (prefs.glanceShowAlarm) add("alarm")
-                        }.joinToString(prefix = "On · ", separator = ", ")
-                    }
+                    if (prefs.glanceEnabled) settingsOn else settingsOff
                 },
                 onOpenGlanceSettings = { showGlanceSettings = true },
-                homeGroupsSubtitle = remember(prefs.homeStripEnabled, prefs.homeGroups) {
+                homeGroupsSubtitle = remember(prefs.homeStripEnabled, prefs.homeGroups, settingsOn, settingsOff) {
                     if (!prefs.homeStripEnabled) {
-                        "Off — hidden from home screen"
+                        settingsOff
                     } else {
                         when {
-                            prefs.homeGroups.isEmpty() -> "On — no groups yet"
-                            else -> prefs.homeGroups.joinToString(prefix = "On · ", separator = " · ") { it.title }
+                            prefs.homeGroups.isEmpty() -> settingsOn
+                            else -> prefs.homeGroups.joinToString(prefix = "$settingsOn · ", separator = " · ") { it.title }
                         }
                     }
                 },
-                permissionsSubtitle = remember(prefs, permRuntime) {
+                permissionsSubtitle = remember(prefs, permRuntime, settingsPermissionsReady, settingsPermissionsMissingOne, settingsPermissionsMissingMany) {
                     val missing = missingPermissionCount(prefs, permRuntime)
                     when {
-                        missing == 0 -> "All set for enabled features"
-                        missing == 1 -> "1 missing — open to grant or turn off features"
-                        else -> "$missing missing — open to grant or turn off features"
+                        missing == 0 -> settingsPermissionsReady
+                        missing == 1 -> settingsPermissionsMissingOne
+                        else -> settingsPermissionsMissingMany.format(missing)
                     }
                 },
                 onOpenPermissionsSettings = { showPermissionsSettings = true },
+                languageSubtitle = remember(context, prefs.languageCode) {
+                    LauncherLocale.languageTitle(LauncherLocale.currentLanguageCode(context))
+                },
+                onOpenLanguageSettings = { showLanguageSettings = true },
                 onSetWallpaper = {
                     runCatching {
                         context.startActivity(
@@ -1551,25 +1567,24 @@ fun LauncherScreen(
                     prefs.doubleTapPackage,
                     prefs.doubleTapToSleepEnabled,
                     prefs.customQuickSettingsEnabled,
-                    allApps,
+                    settingsConfigured,
+                    settingsNotConfigured,
                 ) {
-                    val parts = buildList {
-                        if (prefs.swipeUpPackage.isNotEmpty()) {
-                            add("Swipe up: " + (allApps.find { it.packageName == prefs.swipeUpPackage }?.label ?: prefs.swipeUpPackage))
-                        }
-                        when {
-                            prefs.doubleTapToSleepEnabled -> add("Double Tap: Sleep")
-                            prefs.doubleTapPackage.isNotEmpty() -> add("Double Tap: " + (allApps.find { it.packageName == prefs.doubleTapPackage }?.label ?: prefs.doubleTapPackage))
-                        }
-                        if (prefs.customQuickSettingsEnabled) add("Swipe-down panel on")
+                    if (prefs.swipeUpPackage.isNotEmpty() ||
+                        prefs.doubleTapToSleepEnabled ||
+                        prefs.doubleTapPackage.isNotEmpty() ||
+                        prefs.customQuickSettingsEnabled
+                    ) {
+                        settingsConfigured
+                    } else {
+                        settingsNotConfigured
                     }
-                    if (parts.isEmpty()) "Not configured" else parts.joinToString(" · ")
                 },
                 onOpenGestureSettings = { showGestureSettings = true },
-                drawerBadgesSubtitle = remember(prefs.showIconNotifBadge) {
+                drawerBadgesSubtitle = remember(prefs.showIconNotifBadge, settingsNotifications, settingsAllOff) {
                     buildList {
-                        if (prefs.showIconNotifBadge) add("Notifications")
-                    }.let { if (it.isEmpty()) "All off" else it.joinToString(", ") }
+                        if (prefs.showIconNotifBadge) add(settingsNotifications)
+                    }.let { if (it.isEmpty()) settingsAllOff else it.joinToString(", ") }
                 },
                 appIconShape = prefs.appIconShape,
                 onSetAppIconShape = vm::setAppIconShape,
@@ -1593,10 +1608,10 @@ fun LauncherScreen(
                 showIconNotifBadge = prefs.showIconNotifBadge,
                 notificationAccessReady = prefs.notificationBadgesEnabled && permRuntime.notificationAccess,
                 previewApps = allApps,
-                drawerBadgesSubtitle = remember(prefs.showIconNotifBadge) {
+                drawerBadgesSubtitle = remember(prefs.showIconNotifBadge, settingsNotifications, settingsAllOff) {
                     buildList {
-                        if (prefs.showIconNotifBadge) add("Notifications")
-                    }.let { if (it.isEmpty()) "All off" else it.joinToString(", ") }
+                        if (prefs.showIconNotifBadge) add(settingsNotifications)
+                    }.let { if (it.isEmpty()) settingsAllOff else it.joinToString(", ") }
                 },
                 onGridPreset = vm::setGridPreset,
                 onAppGridIconSize = vm::setAppGridIconSize,
@@ -1633,6 +1648,19 @@ fun LauncherScreen(
                 onSetDoubleTap = vm::setDoubleTapPackage,
                 onDoubleTapSleepChange = vm::setDoubleTapToSleepEnabled,
                 onCustomQuickSettingsChange = vm::setCustomQuickSettingsEnabled,
+            )
+        }
+
+        if (showLanguageSettings) {
+            LanguageSettingsOverlay(
+                currentLanguageCode = prefs.languageCode,
+                themePalette = themePalette,
+                onLanguageSelected = { code ->
+                    vm.setLanguageCode(code)
+                    showLanguageSettings = false
+                    context.restartHostActivityForLocaleChange()
+                },
+                onDismiss = { showLanguageSettings = false },
             )
         }
 
@@ -2113,6 +2141,7 @@ private fun HomePage(
                 }
             }
             .onPreviewKeyEvent { ev ->
+                if (!homeActive) return@onPreviewKeyEvent false
                 if (ev.type != KeyEventType.KeyDown) return@onPreviewKeyEvent false
                 val newQuery = tryConsumeSearchKey(ev, searchQuery)
                 if (newQuery != null) {
@@ -2512,7 +2541,7 @@ private fun HomePage(
         }
 
         // Home search overlay — compact top card, wallpaper visible below
-        if (searchQuery.isNotEmpty()) {
+        if (homeActive && searchQuery.isNotEmpty()) {
             val allFiltered = remember(searchQuery, allApps, hiddenPackages) {
                 allApps.filter { it.label.contains(searchQuery, ignoreCase = true) && it.packageName !in hiddenPackages }
             }
@@ -4191,10 +4220,11 @@ private fun HomeActionsSheet(
     }
 }
 
+@Composable
 private fun drawerSortModeLabel(mode: DrawerSortMode): String = when (mode) {
-    DrawerSortMode.CLASSIC -> "Classic"
-    DrawerSortMode.ALPHABETICAL -> "Alphabetically"
-    DrawerSortMode.MOST_USED -> "Most used"
+    DrawerSortMode.CLASSIC -> stringResource(R.string.drawer_sort_classic)
+    DrawerSortMode.ALPHABETICAL -> stringResource(R.string.drawer_sort_alphabetical)
+    DrawerSortMode.MOST_USED -> stringResource(R.string.drawer_sort_most_used)
 }
 
 
@@ -4393,7 +4423,7 @@ private fun AppDrawer(
                 if (searchUpdate != null) {
                     onSearchQueryChange(searchUpdate)
                     nav = nav.copy(area = FocusArea.DrawerGrid)
-                        return@onPreviewKeyEvent true
+                    return@onPreviewKeyEvent true
                 }
                 val directional = ev.key == Key.DirectionLeft || ev.key == Key.DirectionRight || ev.key == Key.DirectionUp || ev.key == Key.DirectionDown
                 if (!directional) {
@@ -4569,7 +4599,7 @@ private fun AppDrawer(
             val pq = searchQuery.trim().lowercase()
             if (pq == "private" || pq.startsWith("private ")) {
                 Text(
-                    text = "Hidden apps: keep typing to filter the list, or use Hide in an app’s menu to manage hidden apps.",
+                    text = stringResource(R.string.hidden_apps_hint),
                     style = MaterialTheme.typography.bodySmall,
                     color = privateSearchHintColor(themePalette),
                     modifier = Modifier
@@ -4995,8 +5025,9 @@ private fun AppDrawer(
 
             val dragCell = movingSlotId?.let { id -> gridCells.find { it.slotId == id } }
             val dims = dragOverlayDims
-            if (ghostVisible && dragCell != null && dims != null && pagerContainerCoords != null) {
-                val b = pagerContainerCoords!!.boundsInRoot()
+            val pagerBounds = pagerContainerCoords?.boundsInRoot()
+            if (ghostVisible && dragCell != null && dims != null && pagerBounds != null) {
+                val b = pagerBounds
                 val (cw, ch, isz) = dims
                 val xDp = with(density) { (dragFingerRoot.x - b.left).toDp() } - cw / 2
                 val yDp = with(density) { (dragFingerRoot.y - b.top).toDp() } - ch / 2
@@ -7427,8 +7458,9 @@ private fun HomeShortcutStrip(
             val dragGroupGhost = movingSlotId?.takeIf { HomeGroupIds.isHomeGroupId(it) }?.let { id ->
                 homeGroups.find { it.id == id }
             }
-            if (ghostVisible && stripCoords != null && (dragCell != null || dragGroupGhost != null)) {
-                val b = stripCoords!!.boundsInRoot()
+            val stripBounds = stripCoords?.boundsInRoot()
+            if (ghostVisible && stripBounds != null && (dragCell != null || dragGroupGhost != null)) {
+                val b = stripBounds
                 val (cw, ch, isz) = ghostDims
                 val xDp = with(density) { (dragFingerRoot.x - b.left).toDp() } - cw / 2
                 val yDp = with(density) { (dragFingerRoot.y - b.top).toDp() } - ch / 2
@@ -8093,9 +8125,9 @@ private fun DockShortcutPickerOverlay(
                 }
                 Text(
                     when (slot) {
-                        DockSlot.Mail -> "Mail Shortcut"
-                        DockSlot.Shortcut -> "Second Shortcut"
-                        DockSlot.Camera -> "Camera Shortcut"
+                        DockSlot.Mail -> stringResource(R.string.dock_shortcut_mail_title)
+                        DockSlot.Shortcut -> stringResource(R.string.dock_shortcut_second_title)
+                        DockSlot.Camera -> stringResource(R.string.dock_shortcut_camera_title)
                     },
                     style = MaterialTheme.typography.titleLarge.copy(
                         color = themePalette.settingsMenuTitle,
@@ -8113,7 +8145,7 @@ private fun DockShortcutPickerOverlay(
                     verticalAlignment = Alignment.CenterVertically,
                 ) {
                     Text(
-                        text = "Show in Dock",
+                        text = stringResource(R.string.dock_show_in_dock),
                         color = themePalette.settingsMenuTitle,
                         fontSize = 15.sp,
                         modifier = Modifier.weight(1f),
@@ -8131,9 +8163,9 @@ private fun DockShortcutPickerOverlay(
             ) {
                 Text(
                     when (slot) {
-                        DockSlot.Mail -> "Use Default (Mail App)"
-                        DockSlot.Shortcut -> "Use Default (Messages App)"
-                        DockSlot.Camera -> "Use Default (Camera App)"
+                        DockSlot.Mail -> stringResource(R.string.dock_use_default_mail)
+                        DockSlot.Shortcut -> stringResource(R.string.dock_use_default_messages)
+                        DockSlot.Camera -> stringResource(R.string.dock_use_default_camera)
                     },
                     color = Color(0xFF84D5F6),
                 )
@@ -8144,7 +8176,7 @@ private fun DockShortcutPickerOverlay(
                 modifier = Modifier
                     .fillMaxWidth()
                     .padding(horizontal = 16.dp),
-                placeholder = { Text("Search apps", color = themePalette.settingsMenuBody) },
+                placeholder = { Text(stringResource(R.string.search_apps_hint), color = themePalette.settingsMenuBody) },
                 singleLine = true,
                 colors = TextFieldDefaults.colors(
                     focusedTextColor = themePalette.settingsMenuTitle,
@@ -8501,7 +8533,7 @@ private fun GlanceSettingsOverlay(
                     )
                 }
                 Text(
-                    "Glance Strip",
+                    stringResource(R.string.settings_glance_strip_title),
                     style = MaterialTheme.typography.headlineMedium.copy(
                         color = themePalette.settingsMenuTitle,
                         fontWeight = FontWeight.Normal,
@@ -8518,20 +8550,20 @@ private fun GlanceSettingsOverlay(
                 verticalArrangement = androidx.compose.foundation.layout.Arrangement.spacedBy(12.dp),
             ) {
                 Text(
-                    "Glance Strip: date, weather, and optional alerts. Turn the strip off to hide it completely.",
+                    stringResource(R.string.glance_settings_intro),
                     style = MaterialTheme.typography.bodyMedium,
                     color = subtitleColor,
                 )
                 ToggleCard(
-                    title = "Show Glance Strip",
-                    subtitle = "Master switch for the top-of-home strip",
+                    title = stringResource(R.string.glance_show_title),
+                    subtitle = stringResource(R.string.glance_show_subtitle),
                     checked = glanceEnabled,
                     onCheckedChange = onGlanceEnabled,
                 )
                 Surface(shape = cardShape, color = cardBg, modifier = Modifier.fillMaxWidth()) {
                     Column(modifier = Modifier.padding(horizontal = 16.dp, vertical = 12.dp)) {
                         Text(
-                            "Weather Unit",
+                            stringResource(R.string.glance_weather_unit),
                             style = MaterialTheme.typography.bodyLarge.copy(
                                 color = themePalette.settingsMenuTitle,
                                 fontWeight = FontWeight.Medium,
@@ -8556,7 +8588,7 @@ private fun GlanceSettingsOverlay(
                                 contentAlignment = Alignment.Center,
                             ) {
                                 Text(
-                                    text = "Celsius",
+                                    text = stringResource(R.string.glance_celsius),
                                     color = if (glanceWeatherUnit == GlanceWeatherUnit.CELSIUS) Color.White else subtitleColor,
                                 )
                             }
@@ -8570,7 +8602,7 @@ private fun GlanceSettingsOverlay(
                                 contentAlignment = Alignment.Center,
                             ) {
                                 Text(
-                                    text = "Fahrenheit",
+                                    text = stringResource(R.string.glance_fahrenheit),
                                     color = if (glanceWeatherUnit == GlanceWeatherUnit.FAHRENHEIT) Color.White else subtitleColor,
                                 )
                             }
@@ -8578,29 +8610,29 @@ private fun GlanceSettingsOverlay(
                     }
                 }
                 ToggleCard(
-                    title = "Flashlight on Glance Strip",
-                    subtitle = "Show an alert while the torch is on",
+                    title = stringResource(R.string.glance_flashlight_title),
+                    subtitle = stringResource(R.string.glance_flashlight_subtitle),
                     checked = glanceShowFlashlight,
                     enabled = glanceEnabled,
                     onCheckedChange = onGlanceShowFlashlight,
                 )
                 ToggleCard(
-                    title = "Calendar on Glance Strip",
-                    subtitle = "Upcoming events when permission is granted",
+                    title = stringResource(R.string.glance_calendar_title),
+                    subtitle = stringResource(R.string.glance_calendar_subtitle),
                     checked = glanceShowCalendar,
                     enabled = glanceEnabled,
                     onCheckedChange = onGlanceShowCalendar,
                 )
                 ToggleCard(
-                    title = "Battery on Glance Strip",
-                    subtitle = "Charging or low-battery hint (when supported)",
+                    title = stringResource(R.string.glance_battery_title),
+                    subtitle = stringResource(R.string.glance_battery_subtitle),
                     checked = glanceShowBattery,
                     enabled = glanceEnabled,
                     onCheckedChange = onGlanceShowBattery,
                 )
                 ToggleCard(
-                    title = "Next Alarm on Glance Strip",
-                    subtitle = "Next alarm within 12 hours (when supported)",
+                    title = stringResource(R.string.glance_alarm_title),
+                    subtitle = stringResource(R.string.glance_alarm_subtitle),
                     checked = glanceShowAlarm,
                     enabled = glanceEnabled,
                     onCheckedChange = onGlanceShowAlarm,
@@ -8672,7 +8704,7 @@ private fun IconAppearanceSettingsOverlay(
                     )
                 }
                 Text(
-                    "Icon Layout",
+                    stringResource(R.string.settings_icon_layout_title),
                     style = MaterialTheme.typography.headlineMedium.copy(
                         color = themePalette.settingsMenuTitle,
                         fontWeight = FontWeight.Normal,
@@ -8736,7 +8768,7 @@ private fun IconAppearanceSettingsOverlay(
                 SettingsCategoryCard(cardBg = cardBg, cardShape = cardShape, selected = selectedIndex == 0) {
                     SettingsRow(
                         icon = Icons.Rounded.GridView,
-                        title = "App Grid Size",
+                        title = stringResource(R.string.icon_app_grid_size),
                         subtitle = "${gridPreset.rows} × ${gridPreset.cols}",
                         selected = selectedIndex == 0,
                         themePalette = themePalette,
@@ -8750,8 +8782,8 @@ private fun IconAppearanceSettingsOverlay(
                 SettingsCategoryCard(cardBg = cardBg, cardShape = cardShape, selected = selectedIndex == 1) {
                     SettingsRow(
                         icon = Icons.Rounded.GridView,
-                        title = "App Card Background",
-                        subtitle = if (showAppCardBackground) "Gradient card shown behind each app" else "No background behind app icons",
+                        title = stringResource(R.string.icon_card_background_title),
+                        subtitle = if (showAppCardBackground) stringResource(R.string.icon_card_background_on) else stringResource(R.string.icon_card_background_off),
                         selected = selectedIndex == 1,
                         themePalette = themePalette,
                         subtitleColor = subtitleColor,
@@ -8764,7 +8796,7 @@ private fun IconAppearanceSettingsOverlay(
                 SettingsCategoryCard(cardBg = cardBg, cardShape = cardShape, selected = selectedIndex == 2) {
                     SettingsRow(
                         icon = Icons.Outlined.QueryStats,
-                        title = "App Icon Badges",
+                        title = stringResource(R.string.icon_badges_title),
                         subtitle = drawerBadgesSubtitle,
                         selected = selectedIndex == 2,
                         themePalette = themePalette,
@@ -8792,12 +8824,12 @@ private fun IconAppearanceSettingsOverlay(
     }
     if (showCardBackgroundSettings) {
         IconPreviewToggleOverlay(
-            title = "App Card Background",
-            description = "Preview how cards look behind app icons in the drawer.",
+            title = stringResource(R.string.icon_card_background_title),
+            description = stringResource(R.string.icon_card_background_description),
             checked = showAppCardBackground,
             enabled = true,
-            toggleTitle = "Show Card Background",
-            toggleSubtitle = if (showAppCardBackground) "On - gradient cards behind icons" else "Off - icons sit directly on wallpaper",
+            toggleTitle = stringResource(R.string.icon_card_background_toggle),
+            toggleSubtitle = if (showAppCardBackground) stringResource(R.string.icon_card_background_on) else stringResource(R.string.icon_card_background_off),
             previewApps = previewApps,
             appIconShape = appIconShape,
             iconSizeDp = themePalette.appGridIconSizeDp,
@@ -8810,15 +8842,15 @@ private fun IconAppearanceSettingsOverlay(
     }
     if (showBadgeSettings) {
         IconPreviewToggleOverlay(
-            title = "App Icon Badges",
-            description = "Preview notification stars on drawer icons.",
+            title = stringResource(R.string.icon_badges_title),
+            description = stringResource(R.string.icon_badges_description),
             checked = showIconNotifBadge && notificationAccessReady,
             enabled = notificationAccessReady,
-            toggleTitle = "Notification Badge",
+            toggleTitle = stringResource(R.string.icon_badge_toggle),
             toggleSubtitle = when {
-                !notificationAccessReady -> "Requires notification access - enable Unread badges in Permissions first"
-                showIconNotifBadge -> "On - red star appears when an app has unread notifications"
-                else -> "Off"
+                !notificationAccessReady -> stringResource(R.string.icon_badge_permission_required)
+                showIconNotifBadge -> stringResource(R.string.icon_badge_on)
+                else -> stringResource(R.string.settings_off)
             },
             previewApps = previewApps,
             appIconShape = appIconShape,
@@ -8851,9 +8883,7 @@ private fun IconPreviewToggleOverlay(
 ) {
     val context = LocalContext.current
     val focusRequester = remember { FocusRequester() }
-    val currentWallpaper = remember {
-        runCatching { WallpaperManager.getInstance(context).drawable }.getOrNull()
-    }
+    val currentWallpaper = remember { safeWallpaperDrawable(context) }
     val previewItems = remember(previewApps) {
         previewApps
             .asSequence()
@@ -9118,9 +9148,7 @@ private fun IconLayoutSettingsOverlay(
         mutableFloatStateOf(themePalette.appGridIconSizeDp.coerceIn(MIN_APP_ICON_SIZE_DP, MAX_APP_ICON_SIZE_DP))
     }
     val currentShape = if (appIconShape == AppIconShape.ROUNDED) AppIconShape.SOFT_SQUARE else appIconShape
-    val currentWallpaper = remember {
-        runCatching { WallpaperManager.getInstance(context).drawable }.getOrNull()
-    }
+    val currentWallpaper = remember { safeWallpaperDrawable(context) }
     val previewItems = remember(previewApps) {
         previewApps
             .asSequence()
@@ -9191,7 +9219,7 @@ private fun IconLayoutSettingsOverlay(
                     )
                 }
                 Text(
-                    "Icon Layout",
+                    stringResource(R.string.settings_icon_layout_title),
                     color = Color.White,
                     fontSize = SETTINGS_TITLE_TEXT_SP,
                     fontWeight = FontWeight.SemiBold,
@@ -9266,6 +9294,7 @@ private fun IconLayoutSettingsOverlay(
                     .fillMaxWidth()
                     .weight(1f)
                     .background(Color(0xFF2C2F2F))
+                    .verticalScroll(rememberScrollState())
                     .padding(horizontal = 26.dp, vertical = 18.dp),
             ) {
                 Row(
@@ -9273,14 +9302,18 @@ private fun IconLayoutSettingsOverlay(
                     verticalAlignment = Alignment.Bottom,
                 ) {
                     Text(
-                        "Icon Size",
+                        stringResource(R.string.icon_layout_size),
                         color = Color.White,
                         fontSize = SETTINGS_TITLE_TEXT_SP,
                         fontWeight = FontWeight.Normal,
                         modifier = Modifier.weight(1f),
                     )
                     Text(
-                        "${iconSize.roundToInt()} dp · Default ${DEFAULT_APP_ICON_SIZE_DP.roundToInt()} dp",
+                        stringResource(
+                            R.string.icon_layout_size_value,
+                            iconSize.roundToInt(),
+                            DEFAULT_APP_ICON_SIZE_DP.roundToInt(),
+                        ),
                         color = Color(0xFF9EA4A9),
                         fontSize = SETTINGS_BODY_TEXT_SP,
                     )
@@ -9304,13 +9337,13 @@ private fun IconLayoutSettingsOverlay(
                         .padding(horizontal = 2.dp),
                     verticalAlignment = Alignment.CenterVertically,
                 ) {
-                    Text("Small", color = Color(0xFF9EA4A9), fontSize = 12.sp, modifier = Modifier.weight(1f))
+                    Text(stringResource(R.string.icon_layout_small), color = Color(0xFF9EA4A9), fontSize = 12.sp, modifier = Modifier.weight(1f))
                     Spacer(Modifier.weight(1f))
-                    Text("Large", color = Color(0xFF9EA4A9), fontSize = 12.sp, textAlign = TextAlign.End, modifier = Modifier.weight(1f))
+                    Text(stringResource(R.string.icon_layout_large), color = Color(0xFF9EA4A9), fontSize = 12.sp, textAlign = TextAlign.End, modifier = Modifier.weight(1f))
                 }
                 Spacer(Modifier.height(16.dp))
                 Text(
-                    "Grid",
+                    stringResource(R.string.icon_layout_grid),
                     color = Color.White,
                     fontSize = SETTINGS_TITLE_TEXT_SP,
                 )
@@ -9322,7 +9355,7 @@ private fun IconLayoutSettingsOverlay(
                 ) {
                     Box(modifier = Modifier.weight(1f)) {
                         IconLayoutSelector(
-                            text = "${gridPreset.cols} Columns",
+                            text = stringResource(R.string.icon_layout_columns, gridPreset.cols),
                             onClick = { columnsMenuExpanded = true },
                             modifier = Modifier.fillMaxWidth(),
                         )
@@ -9341,7 +9374,7 @@ private fun IconLayoutSettingsOverlay(
                     }
                     Box(modifier = Modifier.weight(1f)) {
                         IconLayoutSelector(
-                            text = "${gridPreset.rows} Rows",
+                            text = stringResource(R.string.icon_layout_rows, gridPreset.rows),
                             onClick = { rowsMenuExpanded = true },
                             modifier = Modifier.fillMaxWidth(),
                         )
@@ -9384,12 +9417,12 @@ private fun IconShapeValueRow(
     ) {
         Column(modifier = Modifier.weight(1f)) {
                 Text(
-                    "Icon Shape",
+                    stringResource(R.string.icon_layout_shape),
                 color = Color.White,
                 fontSize = SETTINGS_TITLE_TEXT_SP,
             )
             Text(
-                "Default Soft square",
+                stringResource(R.string.icon_layout_shape_default),
                 color = Color(0xFF9EA4A9),
                 fontSize = SETTINGS_BODY_TEXT_SP,
             )
@@ -9501,6 +9534,8 @@ private fun SettingsScreenOverlay(
     onOpenGlanceSettings: () -> Unit,
     permissionsSubtitle: String,
     onOpenPermissionsSettings: () -> Unit,
+    languageSubtitle: String,
+    onOpenLanguageSettings: () -> Unit,
     onSetWallpaper: () -> Unit,
     onToggleHaptics: () -> Unit,
     onExportBackup: () -> String,
@@ -9529,7 +9564,7 @@ private fun SettingsScreenOverlay(
     val scope = rememberCoroutineScope()
     val focusRequester = remember { FocusRequester() }
     var selectedIndex by remember { mutableStateOf(0) }
-    val itemCount = 14
+    val itemCount = 15
 
     val createBackupDocument = rememberLauncherForActivityResult(
         ActivityResultContracts.CreateDocument("application/json")
@@ -9580,13 +9615,14 @@ private fun SettingsScreenOverlay(
             9 -> onOpenDockSlotPicker(DockSlot.Camera)
             // SYSTEM
             10 -> onToggleHaptics()
-            11 -> onOpenPermissionsSettings()
+            11 -> onOpenLanguageSettings()
+            12 -> onOpenPermissionsSettings()
             // BACKUP
-            12 -> {
+            13 -> {
                 val name = "classiclauncher_backup_" + SimpleDateFormat("yyyyMMdd_HHmmss", Locale.US).format(Date()) + ".json"
                 createBackupDocument.launch(name)
             }
-            13 -> openBackupFromDownloads.launch(SettingsDownloads.openBackupJsonPickerIntent())
+            14 -> openBackupFromDownloads.launch(SettingsDownloads.openBackupJsonPickerIntent())
         }
         doNavFeedback(view, hapticsEnabled, hapticIntensity)
         scope.launch { focusRequester.requestFocus() }
@@ -9657,10 +9693,10 @@ private fun SettingsScreenOverlay(
                     .fillMaxWidth()
                     .navigationBarsPadding()
                     .padding(horizontal = 16.dp)
-                .focusRequester(focusRequester)
-                .focusable()
-                .onPreviewKeyEvent { ev ->
-                    if (ev.type != KeyEventType.KeyDown) return@onPreviewKeyEvent false
+                    .focusRequester(focusRequester)
+                    .focusable()
+                    .onPreviewKeyEvent { ev ->
+                        if (ev.type != KeyEventType.KeyDown) return@onPreviewKeyEvent false
                         val nk = ev.nativeKeyEvent
                         when {
                             ev.isEndCallKey() -> {
@@ -9673,40 +9709,40 @@ private fun SettingsScreenOverlay(
                                 true
                             }
                             ev.key == Key.DirectionUp || nk?.keyCode == AndroidKeyEvent.KEYCODE_DPAD_UP -> {
-                            val next = (selectedIndex - 1).coerceAtLeast(0)
-                            if (next != selectedIndex) {
-                                selectedIndex = next
+                                val next = (selectedIndex - 1).coerceAtLeast(0)
+                                if (next != selectedIndex) {
+                                    selectedIndex = next
                                     doNavFeedback(view, hapticsEnabled, hapticIntensity)
+                                }
+                                true
                             }
-                            true
-                        }
                             ev.key == Key.DirectionDown || nk?.keyCode == AndroidKeyEvent.KEYCODE_DPAD_DOWN -> {
                                 val next = (selectedIndex + 1).coerceAtMost(itemCount - 1)
-                            if (next != selectedIndex) {
-                                selectedIndex = next
+                                if (next != selectedIndex) {
+                                    selectedIndex = next
                                     doNavFeedback(view, hapticsEnabled, hapticIntensity)
+                                }
+                                true
                             }
-                            true
-                        }
                             ev.key == Key.Enter ||
                                 ev.key == Key.NumPadEnter ||
                                 nk?.keyCode == AndroidKeyEvent.KEYCODE_ENTER -> {
-                            activate(selectedIndex)
-                            true
-                        }
+                                activate(selectedIndex)
+                                true
+                            }
                             ev.key == Key.Back || nk?.keyCode == AndroidKeyEvent.KEYCODE_BACK -> {
-                            if (stackedChildOverlayOpen) return@onPreviewKeyEvent false
-                            onDismiss()
-                            true
+                                if (stackedChildOverlayOpen) return@onPreviewKeyEvent false
+                                onDismiss()
+                                true
+                            }
+                            else -> false
                         }
-                        else -> false
                     }
-                }
                     .verticalScroll(settingsScrollState),
             ) {
                 // ── HOME SCREEN ──────────────────────────────────────────
                 Text(
-                    "Home Screen",
+                    stringResource(R.string.settings_home_screen),
                     style = MaterialTheme.typography.labelSmall,
                     color = subtitleColor,
                     modifier = Modifier.padding(start = 4.dp, bottom = 6.dp),
@@ -9715,8 +9751,8 @@ private fun SettingsScreenOverlay(
                     SettingsCategoryCard(cardBg = cardBg, cardShape = cardShape, selected = selectedIndex == 0) {
                         SettingsRow(
                             icon = Icons.Rounded.Apps,
-                            title = "Icon Layout",
-                            subtitle = "Grid, shape, cards, badges",
+                            title = stringResource(R.string.settings_icon_layout_title),
+                            subtitle = stringResource(R.string.settings_icon_layout_subtitle),
                             selected = selectedIndex == 0,
                             themePalette = themePalette,
                             subtitleColor = subtitleColor,
@@ -9729,11 +9765,11 @@ private fun SettingsScreenOverlay(
                     SettingsCategoryCard(cardBg = cardBg, cardShape = cardShape, selected = selectedIndex == 1) {
                         SettingsRow(
                             icon = Icons.Outlined.Menu,
-                            title = "Classic Mode",
+                            title = stringResource(R.string.settings_classic_mode_title),
                             subtitle = if (classicMode) {
-                                "On — app grid only; compact dock (no home / Messages shortcut); glance off"
+                                stringResource(R.string.settings_on)
                             } else {
-                                "Off — home page, full dock, and glance strip when enabled"
+                                stringResource(R.string.settings_off)
                             },
                             selected = selectedIndex == 1,
                             themePalette = themePalette,
@@ -9759,7 +9795,7 @@ private fun SettingsScreenOverlay(
                     SettingsCategoryCard(cardBg = cardBg, cardShape = cardShape, selected = selectedIndex == 2) {
                         SettingsRow(
                             icon = Icons.Rounded.BookmarkAdd,
-                            title = "Home Strip",
+                            title = stringResource(R.string.settings_home_strip_title),
                             subtitle = homeGroupsSubtitle,
                             selected = selectedIndex == 2,
                             themePalette = themePalette,
@@ -9785,7 +9821,7 @@ private fun SettingsScreenOverlay(
                     SettingsCategoryCard(cardBg = cardBg, cardShape = cardShape, selected = selectedIndex == 3) {
                         SettingsRow(
                             icon = Icons.Rounded.TouchApp,
-                            title = "Home Gestures",
+                            title = stringResource(R.string.settings_home_gestures_title),
                             subtitle = gestureSubtitle,
                             selected = selectedIndex == 3,
                             themePalette = themePalette,
@@ -9801,7 +9837,7 @@ private fun SettingsScreenOverlay(
 
                 // ── DISPLAY ──────────────────────────────────────────────
                 Text(
-                    "Display",
+                    stringResource(R.string.settings_display),
                     style = MaterialTheme.typography.labelSmall,
                     color = subtitleColor,
                     modifier = Modifier.padding(start = 4.dp, bottom = 6.dp),
@@ -9810,7 +9846,7 @@ private fun SettingsScreenOverlay(
                     SettingsCategoryCard(cardBg = cardBg, cardShape = cardShape, selected = selectedIndex == 4) {
                         SettingsRow(
                             icon = Icons.Rounded.WbSunny,
-                            title = "Glance Strip",
+                            title = stringResource(R.string.settings_glance_strip_title),
                             subtitle = glanceSubtitle,
                             selected = selectedIndex == 4,
                             themePalette = themePalette,
@@ -9824,8 +9860,8 @@ private fun SettingsScreenOverlay(
                     SettingsCategoryCard(cardBg = cardBg, cardShape = cardShape, selected = selectedIndex == 5) {
                         SettingsRow(
                             icon = Icons.Rounded.Wallpaper,
-                            title = "Wallpaper",
-                            subtitle = "System wallpaper settings",
+                            title = stringResource(R.string.settings_wallpaper_title),
+                            subtitle = stringResource(R.string.settings_wallpaper_subtitle),
                             selected = selectedIndex == 5,
                             themePalette = themePalette,
                             subtitleColor = subtitleColor,
@@ -9838,8 +9874,8 @@ private fun SettingsScreenOverlay(
                     SettingsCategoryCard(cardBg = cardBg, cardShape = cardShape, selected = selectedIndex == 6) {
                         SettingsRow(
                             icon = Icons.Rounded.Palette,
-                            title = "Reset Theme",
-                            subtitle = "Restore default launcher colours",
+                            title = stringResource(R.string.settings_reset_theme_title),
+                            subtitle = stringResource(R.string.settings_reset_theme_subtitle),
                             selected = selectedIndex == 6,
                             themePalette = themePalette,
                             subtitleColor = subtitleColor,
@@ -9854,7 +9890,7 @@ private fun SettingsScreenOverlay(
 
                 // ── DOCK ─────────────────────────────────────────────────
                 Text(
-                    "Dock",
+                    stringResource(R.string.settings_dock),
                     style = MaterialTheme.typography.labelSmall,
                     color = subtitleColor,
                     modifier = Modifier.padding(start = 4.dp, bottom = 6.dp),
@@ -9878,7 +9914,11 @@ private fun SettingsScreenOverlay(
                         SettingsRow(
                             icon = Icons.Rounded.TouchApp,
                             title = dockSecondTitle,
-                            subtitle = if (!dockSecondEnabled) "Hidden from dock" else dockSecondBody + if (classicMode) " · hidden in Classic mode" else "",
+                            subtitle = if (!dockSecondEnabled) {
+                                stringResource(R.string.settings_hidden)
+                            } else {
+                                dockSecondBody + if (classicMode) " · " + stringResource(R.string.settings_hidden_classic) else ""
+                            },
                             selected = selectedIndex == 8,
                             themePalette = themePalette,
                             subtitleColor = subtitleColor,
@@ -9907,7 +9947,7 @@ private fun SettingsScreenOverlay(
 
                 // ── SYSTEM ───────────────────────────────────────────────
                 Text(
-                    "System",
+                    stringResource(R.string.settings_system),
                     style = MaterialTheme.typography.labelSmall,
                     color = subtitleColor,
                     modifier = Modifier.padding(start = 4.dp, bottom = 6.dp),
@@ -9916,8 +9956,8 @@ private fun SettingsScreenOverlay(
                     SettingsCategoryCard(cardBg = cardBg, cardShape = cardShape, selected = selectedIndex == 10) {
                         SettingsRow(
                             icon = Icons.Outlined.Vibration,
-                            title = "Haptic Feedback",
-                            subtitle = if (hapticsEnabled) "On (trackpad and keyboard navigation)" else "Off",
+                            title = stringResource(R.string.settings_haptics_title),
+                            subtitle = if (hapticsEnabled) stringResource(R.string.settings_on) else stringResource(R.string.settings_off),
                             selected = selectedIndex == 10,
                             themePalette = themePalette,
                             subtitleColor = subtitleColor,
@@ -9956,20 +9996,27 @@ private fun SettingsScreenOverlay(
                 Column(Modifier.bringIntoViewRequester(rowBringers[11])) {
                     SettingsCategoryCard(cardBg = cardBg, cardShape = cardShape, selected = selectedIndex == 11) {
                         SettingsRow(
-                            icon = Icons.Rounded.Security,
-                            title = "Permissions",
-                            subtitle = permissionsSubtitle,
+                            icon = Icons.Rounded.Language,
+                            title = stringResource(R.string.settings_language_title),
+                            subtitle = languageSubtitle,
                             selected = selectedIndex == 11,
                             themePalette = themePalette,
                             subtitleColor = subtitleColor,
                             onClick = { activate(11) },
-                            trailingContent = {
-                                Text(
-                                    "Open",
-                                    color = Color(0xFF84D5F6),
-                                    fontWeight = FontWeight.SemiBold,
-                                )
-                            },
+                        )
+                    }
+                }
+                Spacer(Modifier.height(8.dp))
+                Column(Modifier.bringIntoViewRequester(rowBringers[12])) {
+                    SettingsCategoryCard(cardBg = cardBg, cardShape = cardShape, selected = selectedIndex == 12) {
+                        SettingsRow(
+                            icon = Icons.Rounded.Security,
+                            title = stringResource(R.string.settings_permissions_title),
+                            subtitle = permissionsSubtitle,
+                            selected = selectedIndex == 12,
+                            themePalette = themePalette,
+                            subtitleColor = subtitleColor,
+                            onClick = { activate(12) },
                         )
                     }
                 }
@@ -9980,31 +10027,17 @@ private fun SettingsScreenOverlay(
 
                 // ── BACKUP ───────────────────────────────────────────────
                 Text(
-                    "Backup & Restore",
+                    stringResource(R.string.settings_backup_restore),
                     style = MaterialTheme.typography.labelSmall,
                     color = subtitleColor,
                     modifier = Modifier.padding(start = 4.dp, bottom = 6.dp),
                 )
-                Column(Modifier.bringIntoViewRequester(rowBringers[12])) {
-                    SettingsCategoryCard(cardBg = cardBg, cardShape = cardShape, selected = selectedIndex == 12) {
-                        SettingsRow(
-                            icon = Icons.Rounded.SettingsBackupRestore,
-                            title = "Export Settings",
-                            subtitle = "Save settings as JSON file",
-                            selected = selectedIndex == 12,
-                            themePalette = themePalette,
-                            subtitleColor = subtitleColor,
-                            onClick = { activate(12) },
-                        )
-                    }
-                }
-                Spacer(Modifier.height(8.dp))
                 Column(Modifier.bringIntoViewRequester(rowBringers[13])) {
                     SettingsCategoryCard(cardBg = cardBg, cardShape = cardShape, selected = selectedIndex == 13) {
                         SettingsRow(
                             icon = Icons.Rounded.SettingsBackupRestore,
-                            title = "Import Settings",
-                            subtitle = "Pick a backup file from Downloads",
+                            title = stringResource(R.string.settings_export_title),
+                            subtitle = stringResource(R.string.settings_export_subtitle),
                             selected = selectedIndex == 13,
                             themePalette = themePalette,
                             subtitleColor = subtitleColor,
@@ -10012,7 +10045,135 @@ private fun SettingsScreenOverlay(
                         )
                     }
                 }
+                Spacer(Modifier.height(8.dp))
+                Column(Modifier.bringIntoViewRequester(rowBringers[14])) {
+                    SettingsCategoryCard(cardBg = cardBg, cardShape = cardShape, selected = selectedIndex == 14) {
+                        SettingsRow(
+                            icon = Icons.Rounded.SettingsBackupRestore,
+                            title = stringResource(R.string.settings_import_title),
+                            subtitle = stringResource(R.string.settings_import_subtitle),
+                            selected = selectedIndex == 14,
+                            themePalette = themePalette,
+                            subtitleColor = subtitleColor,
+                            onClick = { activate(14) },
+                        )
+                    }
+                }
                 Spacer(Modifier.height(24.dp))
+            }
+        }
+    }
+}
+
+@Composable
+private fun LanguageSettingsOverlay(
+    currentLanguageCode: String,
+    themePalette: LauncherThemePalette,
+    onLanguageSelected: (String) -> Unit,
+    onDismiss: () -> Unit,
+) {
+    BackHandler(enabled = true, onBack = onDismiss)
+    val context = LocalContext.current
+    val selectedCode = LauncherLocale.currentLanguageCode(context).ifEmpty {
+        LauncherLocale.normalize(currentLanguageCode)
+    }
+    Surface(
+        modifier = Modifier
+            .fillMaxSize()
+            .zIndex(520f),
+        color = Color.Black.copy(alpha = 0.62f),
+    ) {
+        Box(
+            modifier = Modifier
+                .fillMaxSize()
+                .statusBarsPadding()
+                .navigationBarsPadding()
+                .padding(28.dp),
+            contentAlignment = Alignment.Center,
+        ) {
+            Surface(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .heightIn(max = (LocalConfiguration.current.screenHeightDp * 0.76f).dp),
+                shape = RoundedCornerShape(10.dp),
+                color = Color(0xFF24292E),
+                tonalElevation = 8.dp,
+                shadowElevation = 12.dp,
+            ) {
+                Column(Modifier.fillMaxWidth()) {
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(start = 24.dp, end = 14.dp, top = 18.dp, bottom = 16.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                    ) {
+                        Text(
+                            stringResource(R.string.language_setting_title),
+                            modifier = Modifier.weight(1f),
+                            color = Color.White,
+                            fontSize = 21.sp,
+                            fontWeight = FontWeight.Bold,
+                        )
+                        IconButton(onClick = onDismiss) {
+                            Icon(
+                                Icons.Outlined.Close,
+                                contentDescription = stringResource(R.string.settings_close),
+                                tint = Color.White,
+                                modifier = Modifier.size(30.dp),
+                            )
+                        }
+                    }
+                    HorizontalDivider(color = Color.White.copy(alpha = 0.10f), thickness = 0.5.dp)
+                    LazyColumn(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .heightIn(max = 420.dp),
+                    ) {
+                        items(LauncherLocale.supportedLanguages) { language ->
+                            val selected = language.code == selectedCode
+                            Row(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .clickable { onLanguageSelected(language.code) }
+                                    .padding(horizontal = 24.dp, vertical = 10.dp),
+                                verticalAlignment = Alignment.CenterVertically,
+                            ) {
+                                Column(Modifier.weight(1f)) {
+                                    Text(
+                                        language.title,
+                                        color = if (selected) Color(0xFFFF665C) else Color.White,
+                                        fontSize = 21.sp,
+                                        fontWeight = FontWeight.Medium,
+                                    )
+                                    if (language.subtitle.isNotBlank()) {
+                                        Text(
+                                            language.subtitle,
+                                            color = Color.White.copy(alpha = 0.42f),
+                                            fontSize = 14.sp,
+                                            maxLines = 1,
+                                            overflow = TextOverflow.Ellipsis,
+                                        )
+                                    }
+                                }
+                                if (selected) {
+                                    Icon(
+                                        Icons.Rounded.Check,
+                                        contentDescription = stringResource(R.string.settings_selected),
+                                        tint = Color(0xFFFF665C),
+                                        modifier = Modifier.size(22.dp),
+                                    )
+                                }
+                            }
+                            HorizontalDivider(color = Color.White.copy(alpha = 0.08f), thickness = 0.5.dp)
+                        }
+                    }
+                    Text(
+                        stringResource(R.string.language_setting_restart_note),
+                        modifier = Modifier.padding(horizontal = 24.dp, vertical = 14.dp),
+                        color = Color.White.copy(alpha = 0.46f),
+                        fontSize = 12.sp,
+                    )
+                }
             }
         }
     }
@@ -10337,3 +10498,19 @@ private tailrec fun android.content.Context.findHostActivity(): Activity? =
         is ContextWrapper -> baseContext.findHostActivity()
         else -> null
     }
+
+private fun android.content.Context.restartHostActivityForLocaleChange() {
+    val activity = findHostActivity() ?: return
+    Handler(Looper.getMainLooper()).post {
+        val restartIntent = Intent(activity, activity::class.java).apply {
+            action = activity.intent?.action ?: Intent.ACTION_MAIN
+            addCategory(Intent.CATEGORY_HOME)
+            flags = Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TASK
+        }
+        runCatching {
+            activity.startActivity(restartIntent)
+            activity.overridePendingTransition(0, 0)
+            activity.finish()
+        }
+    }
+}

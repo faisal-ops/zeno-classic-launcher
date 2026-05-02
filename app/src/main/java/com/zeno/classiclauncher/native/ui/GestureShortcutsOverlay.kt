@@ -43,11 +43,13 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.zIndex
 import coil.compose.AsyncImage
+import com.zeno.classiclauncher.nlauncher.R
 import com.zeno.classiclauncher.nlauncher.apps.AppEntry
 import com.zeno.classiclauncher.nlauncher.power.SleepManager
 import com.zeno.classiclauncher.nlauncher.theme.LauncherThemePalette
@@ -80,7 +82,7 @@ fun GestureShortcutsOverlay(
     ) {
         if (activePicker != GesturePicker.None) {
             val isDoubleTap = activePicker == GesturePicker.DoubleTap
-            val title = if (!isDoubleTap) "Swipe-up app" else "Double-tap action"
+            val title = if (!isDoubleTap) stringResource(R.string.gesture_swipe_up_app) else stringResource(R.string.gesture_double_tap_action)
             val current = if (!isDoubleTap) swipeUpPackage else doubleTapPackage
             Column(
                 modifier = Modifier.fillMaxSize().statusBarsPadding().navigationBarsPadding(),
@@ -109,7 +111,7 @@ fun GestureShortcutsOverlay(
                 ) {
                     Icon(Icons.Outlined.Close, contentDescription = null, tint = subtitleColor, modifier = Modifier.size(40.dp).padding(8.dp))
                     Spacer(Modifier.width(12.dp))
-                    Text("None (disabled)", color = subtitleColor, fontSize = 15.sp)
+                    Text(stringResource(R.string.gesture_none_disabled), color = subtitleColor, fontSize = 15.sp)
                     val isNone = if (!isDoubleTap) current.isEmpty() else !doubleTapToSleepEnabled && current.isEmpty()
                     if (isNone) {
                         Spacer(Modifier.weight(1f))
@@ -132,7 +134,7 @@ fun GestureShortcutsOverlay(
                                 }
                                 Toast.makeText(
                                     context,
-                                    "If lock does not work on this device, enable “Zeno Classic lock helper” in Accessibility.",
+                                    context.getString(R.string.gesture_lock_helper_toast),
                                     Toast.LENGTH_LONG,
                                 ).show()
                             }
@@ -142,7 +144,7 @@ fun GestureShortcutsOverlay(
                     ) {
                         Icon(Icons.Rounded.Lock, contentDescription = null, tint = subtitleColor, modifier = Modifier.size(40.dp).padding(8.dp))
                         Spacer(Modifier.width(12.dp))
-                        Text("Sleep (lock screen)", color = themePalette.settingsMenuTitle, fontSize = 15.sp, modifier = Modifier.weight(1f))
+                        Text(stringResource(R.string.gesture_sleep_lock), color = themePalette.settingsMenuTitle, fontSize = 15.sp, modifier = Modifier.weight(1f))
                         if (doubleTapToSleepEnabled) {
                             Text("✓", color = themePalette.settingsMenuBody, fontSize = 15.sp)
                         }
@@ -193,7 +195,7 @@ fun GestureShortcutsOverlay(
                         Icon(Icons.AutoMirrored.Rounded.ArrowBack, contentDescription = "Back", tint = themePalette.settingsMenuTitle)
                     }
                     Text(
-                        "Home Gestures",
+                        stringResource(R.string.settings_home_gestures_title),
                         style = MaterialTheme.typography.titleMedium.copy(color = themePalette.settingsMenuTitle, fontWeight = FontWeight.SemiBold),
                     )
                 }
@@ -220,14 +222,14 @@ fun GestureShortcutsOverlay(
                                 Spacer(Modifier.width(8.dp))
                                 Column(modifier = Modifier.weight(1f)) {
                                     Text(
-                                        "Launcher Quick Settings",
+                                        stringResource(R.string.gesture_quick_settings_title),
                                         color = themePalette.settingsMenuTitle,
                                         fontSize = 15.sp,
                                         fontWeight = FontWeight.Medium,
                                     )
                                     Spacer(Modifier.height(2.dp))
                                     Text(
-                                        "Swipe down on the home wallpaper to open Zeno’s quick settings panel",
+                                        stringResource(R.string.gesture_quick_settings_subtitle),
                                         color = subtitleColor,
                                         fontSize = 13.sp,
                                     )
@@ -249,10 +251,10 @@ fun GestureShortcutsOverlay(
                     // Swipe up row
                     Surface(modifier = Modifier.fillMaxWidth(), shape = cardShape, color = cardBg) {
                         Column(modifier = Modifier.fillMaxWidth().clickable { activePicker = GesturePicker.SwipeUp }.padding(16.dp)) {
-                            Text("Swipe up", color = themePalette.settingsMenuTitle, fontSize = 15.sp, fontWeight = FontWeight.Medium)
+                            Text(stringResource(R.string.gesture_swipe_up), color = themePalette.settingsMenuTitle, fontSize = 15.sp, fontWeight = FontWeight.Medium)
                             Spacer(Modifier.height(2.dp))
                             Text(
-                                if (swipeUpPackage.isEmpty()) "Not set"
+                                if (swipeUpPackage.isEmpty()) stringResource(R.string.settings_not_configured)
                                 else allApps.find { it.packageName == swipeUpPackage }?.label ?: swipeUpPackage,
                                 color = subtitleColor, fontSize = 13.sp,
                             )
@@ -262,13 +264,13 @@ fun GestureShortcutsOverlay(
                     // Double Tap row
                     Surface(modifier = Modifier.fillMaxWidth(), shape = cardShape, color = cardBg) {
                         Column(modifier = Modifier.fillMaxWidth().clickable { activePicker = GesturePicker.DoubleTap }.padding(16.dp)) {
-                            Text("Double Tap", color = themePalette.settingsMenuTitle, fontSize = 15.sp, fontWeight = FontWeight.Medium)
+                            Text(stringResource(R.string.gesture_double_tap), color = themePalette.settingsMenuTitle, fontSize = 15.sp, fontWeight = FontWeight.Medium)
                             Spacer(Modifier.height(2.dp))
                             Text(
                                 when {
-                                    doubleTapToSleepEnabled -> "Sleep (lock screen)"
+                                    doubleTapToSleepEnabled -> stringResource(R.string.gesture_sleep_lock)
                                     doubleTapPackage.isNotEmpty() -> allApps.find { it.packageName == doubleTapPackage }?.label ?: doubleTapPackage
-                                    else -> "Not set"
+                                    else -> stringResource(R.string.settings_not_configured)
                                 },
                                 color = subtitleColor, fontSize = 13.sp,
                             )
@@ -276,13 +278,7 @@ fun GestureShortcutsOverlay(
                     }
                     Spacer(Modifier.height(16.dp))
                     Text(
-                        buildString {
-                            append("Swipe up on the home wallpaper to open the selected app.\n")
-                            append("Double Tap to Lock uses the built-in lock path; the lock helper (Accessibility) is optional for devices that need the power-button style lock path for face unlock.")
-                            if (customQuickSettingsEnabled) {
-                                append("\nWhen the launcher panel is open, opening the system shade closes it.")
-                            }
-                        },
+                        stringResource(R.string.gesture_help_short),
                         color = subtitleColor, fontSize = 12.sp, lineHeight = 18.sp,
                     )
                 }

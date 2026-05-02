@@ -1,0 +1,8 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="glance_no_alerts">通知なし</string>
+    <string name="glance_grant_calendar">カレンダーへのアクセスを許可</string>
+    <string name="glance_event_now">今</string>
+    <string name="glance_event_in_minutes">%1$d分後</string>
+    <string name="glance_tap_weather">📍 天気を設定</string>
+</resources>

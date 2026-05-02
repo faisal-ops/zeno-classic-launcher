@@ -1,6 +1,7 @@
 package com.zeno.classiclauncher.nlauncher.apps
 
 import android.Manifest
+import android.annotation.SuppressLint
 import android.util.Log
 import android.app.NotificationManager
 import android.bluetooth.BluetoothManager
@@ -202,10 +203,11 @@ class LauncherActions(private val context: Context) {
         return if (globalOk) ToggleResult.Changed(targetEnabled) else ToggleResult.Unsupported
     }
 
+    @SuppressLint("MissingPermission")
     fun isMobileDataEnabled(): Boolean? {
         val tm = context.getSystemService(TelephonyManager::class.java)
         val dataEnabled = runCatching {
-            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) tm?.isDataEnabled else null
+            tm?.isDataEnabled
         }.getOrNull()
         if (dataEnabled != null) return dataEnabled
         return runCatching { Settings.Global.getInt(context.contentResolver, "mobile_data") > 0 }.getOrNull()
@@ -634,7 +636,11 @@ class LauncherActions(private val context: Context) {
         if (!onWifi) return "Disconnected"
 
         // Prefer transportInfo on newer APIs; it aligns with current active network.
-        val fromTransport = (caps?.transportInfo as? WifiInfo)?.ssid?.trim().orEmpty()
+        val fromTransport = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+            (caps?.transportInfo as? WifiInfo)?.ssid?.trim().orEmpty()
+        } else {
+            ""
+        }
 
         val wifi = app.getSystemService(WifiManager::class.java)
         @Suppress("DEPRECATION")

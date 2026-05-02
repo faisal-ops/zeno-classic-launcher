@@ -4,7 +4,6 @@ import android.content.Context
 import android.content.Intent
 import android.content.pm.LauncherApps
 import android.content.pm.PackageManager
-import android.os.Build
 import android.os.Bundle
 import android.telecom.TelecomManager
 import android.view.View
@@ -17,19 +16,22 @@ import androidx.lifecycle.lifecycleScope
 import com.zeno.classiclauncher.nlauncher.ui.BbTheme
 import com.zeno.classiclauncher.nlauncher.ui.LauncherScreen
 import com.zeno.classiclauncher.nlauncher.ui.LauncherViewModel
+import com.zeno.classiclauncher.nlauncher.locale.LauncherLocale
 import kotlinx.coroutines.launch
 
 class MainActivity : ComponentActivity() {
 
     private val viewModel: LauncherViewModel by viewModels()
 
+    override fun attachBaseContext(newBase: Context) {
+        super.attachBaseContext(LauncherLocale.apply(newBase))
+    }
+
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         // QS / edge-to-edge experiment: lay out under system bars (status bar stays visible;
         // content can extend behind it). Off by default — flip to true to retest.
-        if (ENABLE_EDGE_TO_EDGE_UNDER_SYSTEM_BARS &&
-            Build.VERSION.SDK_INT >= Build.VERSION_CODES.LOLLIPOP
-        ) {
+        if (ENABLE_EDGE_TO_EDGE_UNDER_SYSTEM_BARS) {
             @Suppress("DEPRECATION")
             window.decorView.systemUiVisibility =
                 View.SYSTEM_UI_FLAG_LAYOUT_STABLE or
@@ -54,6 +56,7 @@ class MainActivity : ComponentActivity() {
 
     /** Catch KEYCODE_ENDCALL at the Activity level — Compose onPreviewKeyEvent may not receive it
      *  if the system (PhoneWindowManager) intercepts or delivers it only on ACTION_UP. */
+    @Suppress("RestrictedApi")
     override fun dispatchKeyEvent(event: android.view.KeyEvent): Boolean {
         if (event.keyCode == android.view.KeyEvent.KEYCODE_CALL &&
             event.action == android.view.KeyEvent.ACTION_UP

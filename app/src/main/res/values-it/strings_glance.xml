@@ -1,0 +1,8 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="glance_no_alerts">Nessun avviso</string>
+    <string name="glance_grant_calendar">Consenti accesso al calendario</string>
+    <string name="glance_event_now">Ora</string>
+    <string name="glance_event_in_minutes">Tra %1$d min</string>
+    <string name="glance_tap_weather">📍 Configura meteo</string>
+</resources>

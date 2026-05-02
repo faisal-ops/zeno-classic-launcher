@@ -1,0 +1,8 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="glance_no_alerts">कोई अलर्ट नहीं</string>
+    <string name="glance_grant_calendar">कैलेंडर एक्सेस की अनुमति दें</string>
+    <string name="glance_event_now">अभी</string>
+    <string name="glance_event_in_minutes">%1$d मिनट में</string>
+    <string name="glance_tap_weather">📍 मौसम सेट करें</string>
+</resources>

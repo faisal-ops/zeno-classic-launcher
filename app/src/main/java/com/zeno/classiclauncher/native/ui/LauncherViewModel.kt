@@ -16,6 +16,7 @@ import com.zeno.classiclauncher.nlauncher.apps.parseHomeShortcutToken
 import com.zeno.classiclauncher.nlauncher.folders.DrawerGridCell
 import com.zeno.classiclauncher.nlauncher.folders.FolderIds
 import com.zeno.classiclauncher.nlauncher.folders.buildDrawerGridCells
+import com.zeno.classiclauncher.nlauncher.locale.LauncherLocale
 import com.zeno.classiclauncher.nlauncher.badges.NotificationRepository
 import com.zeno.classiclauncher.nlauncher.prefs.GridPreset
 import com.zeno.classiclauncher.nlauncher.prefs.GlanceCalendarRange
@@ -1209,6 +1210,12 @@ class LauncherViewModel(app: Application) : AndroidViewModel(app) {
 
     fun setSwipeDownAppSpotlight(enabled: Boolean) {
         viewModelScope.launch { prefsRepo.setSwipeDownAppSpotlight(enabled) }
+    }
+
+    fun setLanguageCode(languageCode: String) {
+        val normalized = LauncherLocale.normalize(languageCode)
+        LauncherLocale.persist(getApplication(), normalized)
+        viewModelScope.launch { prefsRepo.setLanguageCode(normalized) }
     }
 
     fun exportBackupJson(): String = LauncherBackup.toJson(prefs.value)

@@ -1,0 +1,8 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="glance_no_alerts">Keine Hinweise</string>
+    <string name="glance_grant_calendar">Kalenderzugriff erlauben</string>
+    <string name="glance_event_now">Jetzt</string>
+    <string name="glance_event_in_minutes">In %1$d Min.</string>
+    <string name="glance_tap_weather">📍 Wetter einrichten</string>
+</resources>

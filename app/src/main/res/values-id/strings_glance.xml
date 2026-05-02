@@ -1,0 +1,8 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="glance_no_alerts">Tidak ada peringatan</string>
+    <string name="glance_grant_calendar">Izinkan akses Kalender</string>
+    <string name="glance_event_now">Sekarang</string>
+    <string name="glance_event_in_minutes">Dalam %1$d mnt</string>
+    <string name="glance_tap_weather">📍 Atur cuaca</string>
+</resources>

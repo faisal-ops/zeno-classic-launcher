@@ -8,6 +8,7 @@ import androidx.datastore.preferences.core.intPreferencesKey
 import androidx.datastore.preferences.core.stringPreferencesKey
 import androidx.datastore.preferences.preferencesDataStore
 import com.zeno.classiclauncher.nlauncher.folders.FolderIds
+import com.zeno.classiclauncher.nlauncher.locale.LauncherLocale
 import com.zeno.classiclauncher.nlauncher.theme.LauncherThemePalette
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.distinctUntilChanged
@@ -171,6 +172,8 @@ data class LauncherPrefs(
     val showAppCardBackground: Boolean = false,
     /** Swipe-down on home opens the App Spotlight overlay instead of the launcher QS panel. */
     val swipeDownAppSpotlight: Boolean = false,
+    /** BCP-47 app language tag. Empty means follow system language. */
+    val languageCode: String = "",
 )
 
 /** Full nested JSON (Flutter-shaped); legacy flat-only strings still load via [LauncherThemePalette.fromJson]. */
@@ -230,6 +233,7 @@ class LauncherPrefsRepository(private val context: Context) {
         val APP_ICON_SHAPE = stringPreferencesKey("appIconShape")
         val SHOW_APP_CARD_BG = booleanPreferencesKey("showAppCardBackground")
         val SWIPE_DOWN_SPOTLIGHT = booleanPreferencesKey("swipeDownAppSpotlight")
+        val LANGUAGE_CODE = stringPreferencesKey("languageCode")
     }
 
     val prefsFlow: Flow<LauncherPrefs> = context.dataStore.data.map { p ->
@@ -293,6 +297,7 @@ class LauncherPrefsRepository(private val context: Context) {
                 ?: DEFAULT_PREFS.appIconShape
         val showAppCardBackground = p[Keys.SHOW_APP_CARD_BG] ?: DEFAULT_PREFS.showAppCardBackground
         val swipeDownAppSpotlight = p[Keys.SWIPE_DOWN_SPOTLIGHT] ?: DEFAULT_PREFS.swipeDownAppSpotlight
+        val languageCode = p[Keys.LANGUAGE_CODE]?.trim() ?: DEFAULT_PREFS.languageCode
         LauncherPrefs(
             gridPreset = grid,
             secondShortcutTarget = shortcut,
@@ -341,6 +346,7 @@ class LauncherPrefsRepository(private val context: Context) {
             appIconShape = appIconShape,
             showAppCardBackground = showAppCardBackground,
             swipeDownAppSpotlight = swipeDownAppSpotlight,
+            languageCode = languageCode,
         )
     }.distinctUntilChanged()
 
@@ -588,8 +594,15 @@ class LauncherPrefsRepository(private val context: Context) {
         context.dataStore.edit { it[Keys.SWIPE_DOWN_SPOTLIGHT] = enabled }
     }
 
+    suspend fun setLanguageCode(languageCode: String) {
+        val normalized = LauncherLocale.normalize(languageCode)
+        LauncherLocale.persist(context, normalized)
+        context.dataStore.edit { it[Keys.LANGUAGE_CODE] = normalized }
+    }
+
     /** Replaces all launcher preferences in one atomic write (full backup restore). */
     suspend fun applyFullBackup(prefs: LauncherPrefs) {
+        LauncherLocale.persist(context, prefs.languageCode)
         context.dataStore.edit { s ->
             s[Keys.GRID] = prefs.gridPreset.name
             s[Keys.SHORTCUT] = prefs.secondShortcutTarget.name
@@ -635,6 +648,11 @@ class LauncherPrefsRepository(private val context: Context) {
             s[Keys.CLASSIC_MODE] = prefs.classicMode
             s.remove(Keys.CLASSIC_MODE_LEGACY)
             s[Keys.APP_ICON_SHAPE] = prefs.appIconShape.name
+            s[Keys.DOCK_SECOND_ENABLED] = prefs.dockSecondEnabled
+            s[Keys.HOME_STRIP_SLOTS] = prefs.homeStripSlots.joinToString(",") { it ?: "" }
+            s[Keys.SHOW_APP_CARD_BG] = prefs.showAppCardBackground
+            s[Keys.SWIPE_DOWN_SPOTLIGHT] = prefs.swipeDownAppSpotlight
+            s[Keys.LANGUAGE_CODE] = prefs.languageCode
         }
     }
 }

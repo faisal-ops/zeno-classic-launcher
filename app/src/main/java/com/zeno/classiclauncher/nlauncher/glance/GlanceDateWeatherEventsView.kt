@@ -1033,6 +1033,14 @@ class GlanceDateWeatherEventsView @JvmOverloads constructor(
     private fun getLastLocation(): Location? {
         val now = System.currentTimeMillis()
         cachedLocation?.let { if (now - locationFetchedAt < locationCacheMs) return it }
+        if (
+            ContextCompat.checkSelfPermission(context, Manifest.permission.ACCESS_COARSE_LOCATION) !=
+            PackageManager.PERMISSION_GRANTED &&
+            ContextCompat.checkSelfPermission(context, Manifest.permission.ACCESS_FINE_LOCATION) !=
+            PackageManager.PERMISSION_GRANTED
+        ) {
+            return null
+        }
         val lm = context.getSystemService<LocationManager>() ?: return null
         return try {
             listOf(LocationManager.GPS_PROVIDER, LocationManager.NETWORK_PROVIDER)

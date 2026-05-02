@@ -13,7 +13,7 @@ object LauncherBackup {
     const val FORMAT_KEY = "format"
     const val FORMAT_VALUE = "classiclauncher_backup"
     const val VERSION_KEY = "version"
-    const val CURRENT_VERSION = 20
+    const val CURRENT_VERSION = 21
 
     fun toJson(prefs: LauncherPrefs): String {
         val root = JSONObject()
@@ -30,6 +30,7 @@ object LauncherBackup {
         p.put("dockMailTitle", prefs.dockMailTitle)
         p.put("dockSecondTitle", prefs.dockSecondTitle)
         p.put("dockThirdTitle", prefs.dockThirdTitle)
+        p.put("dockSecondEnabled", prefs.dockSecondEnabled)
         p.put("dockIconStyle", prefs.dockIconStyle.name)
         p.put("orderedPackages", JSONArray(prefs.orderedPackages))
         val folders = JSONObject()
@@ -69,6 +70,8 @@ object LauncherBackup {
             homeGroupsArr.put(o)
         }
         p.put("homeGroups", homeGroupsArr)
+        p.put("homeStripOrder", JSONArray(prefs.homeStripOrder))
+        p.put("homeStripSlots", JSONArray(prefs.homeStripSlots.map { it ?: "" }))
         p.put("doubleTapToSleepEnabled", prefs.doubleTapToSleepEnabled)
         p.put("swipeUpPackage", prefs.swipeUpPackage)
         p.put("doubleTapPackage", prefs.doubleTapPackage)
@@ -79,6 +82,9 @@ object LauncherBackup {
         p.put("customQuickSettingsEnabled", prefs.customQuickSettingsEnabled)
         p.put("classicMode", prefs.classicMode)
         p.put("appIconShape", prefs.appIconShape.name)
+        p.put("showAppCardBackground", prefs.showAppCardBackground)
+        p.put("swipeDownAppSpotlight", prefs.swipeDownAppSpotlight)
+        p.put("languageCode", prefs.languageCode)
         root.put("prefs", p)
         return root.toString(2)
     }
@@ -107,6 +113,7 @@ object LauncherBackup {
         val dockMailTitle = p.optString("dockMailTitle", "Mail").trim().ifEmpty { "Mail" }
         val dockSecondTitle = p.optString("dockSecondTitle", "Messages").trim().ifEmpty { "Messages" }
         val dockThirdTitle = p.optString("dockThirdTitle", "Camera").trim().ifEmpty { "Camera" }
+        val dockSecondEnabled = p.optBoolean("dockSecondEnabled", true)
         val dockIconStyle = p.optString("dockIconStyle", "MONOCHROME").let { name ->
             DockIconStyle.entries.firstOrNull { it.name == name } ?: DockIconStyle.MONOCHROME
         }
@@ -195,6 +202,9 @@ object LauncherBackup {
             p.optString("appIconShape", "").let { name ->
                 AppIconShape.entries.firstOrNull { it.name == name } ?: AppIconShape.SOFT_SQUARE
             }
+        val showAppCardBackground = p.optBoolean("showAppCardBackground", false)
+        val swipeDownAppSpotlight = p.optBoolean("swipeDownAppSpotlight", false)
+        val languageCode = p.optString("languageCode", "").trim()
         val homeGroups = run {
             val arr = p.optJSONArray("homeGroups") ?: return@run emptyList<HomeGroup>()
             buildList {
@@ -219,6 +229,19 @@ object LauncherBackup {
                 }
             }
         }
+        val homeStripOrder = p.optJSONArray("homeStripOrder")?.let { arr ->
+            buildList {
+                for (i in 0 until arr.length()) add(arr.optString(i, "").trim())
+            }.filter { it.isNotEmpty() }.distinct()
+        } ?: emptyList()
+        val homeStripSlots = p.optJSONArray("homeStripSlots")?.let { arr ->
+            buildList {
+                for (i in 0 until arr.length()) {
+                    val token = arr.optString(i, "").trim()
+                    add(token.ifEmpty { null })
+                }
+            }
+        } ?: emptyList()
         LauncherThemePalette.fromJson(theme)
         LauncherPrefs(
             gridPreset = grid,
@@ -230,6 +253,7 @@ object LauncherBackup {
             dockMailTitle = dockMailTitle,
             dockSecondTitle = dockSecondTitle,
             dockThirdTitle = dockThirdTitle,
+            dockSecondEnabled = dockSecondEnabled,
             dockIconStyle = dockIconStyle,
             orderedPackages = ordered,
             folderContents = folderContents,
@@ -252,6 +276,8 @@ object LauncherBackup {
             glanceWeatherManualLatitude = glanceWeatherManualLatitude,
             glanceWeatherManualLongitude = glanceWeatherManualLongitude,
             homeGroups = homeGroups,
+            homeStripOrder = homeStripOrder,
+            homeStripSlots = homeStripSlots,
             doubleTapToSleepEnabled = doubleTapSleep,
             swipeUpPackage = swipeUpPackage,
             doubleTapPackage = doubleTapPackage,
@@ -262,6 +288,9 @@ object LauncherBackup {
             customQuickSettingsEnabled = customQuickSettingsEnabled,
             classicMode = classicMode,
             appIconShape = appIconShape,
+            showAppCardBackground = showAppCardBackground,
+            swipeDownAppSpotlight = swipeDownAppSpotlight,
+            languageCode = languageCode,
         )
     }
 }
