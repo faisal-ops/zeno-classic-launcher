@@ -392,10 +392,13 @@ class LauncherActions(private val context: Context) {
 
     fun openStorageSettings(): Boolean =
         startActivityNewTask(Intent("android.settings.INTERNAL_STORAGE_SETTINGS")) ||
-            startActivityNewTask(Intent(Settings.ACTION_MEMORY_CARD_SETTINGS))
+            startActivityNewTask(Intent(Settings.ACTION_MEMORY_CARD_SETTINGS)) ||
+            openSystemSettings()
 
     fun openHotspotSettings(): Boolean =
-        startActivityNewTask(Intent("android.settings.TETHER_SETTINGS"))
+        startActivityNewTask(Intent("android.settings.TETHER_SETTINGS")) ||
+            startActivityNewTask(Intent(Settings.ACTION_WIRELESS_SETTINGS)) ||
+            openSystemSettings()
 
     fun openNightLightSettings(): Boolean =
         startActivityNewTask(Intent("android.settings.NIGHT_DISPLAY_SETTINGS")) ||
@@ -413,8 +416,10 @@ class LauncherActions(private val context: Context) {
             startActivityNewTask(Intent(Settings.ACTION_DISPLAY_SETTINGS))
 
     fun openScreenRecordSettings(): Boolean =
-        startActivityNewTask(Intent("android.settings.SYSTEMUI_QS_TILES_SETTINGS")) ||
-            startActivityNewTask(Intent(Settings.ACTION_SETTINGS))
+        startActivityNewTask(Intent("android.settings.SYSTEMUI_QS_TILES_SETTINGS"))
+
+    fun canOpenScreenRecordSettings(): Boolean =
+        canResolveActivity(Intent("android.settings.SYSTEMUI_QS_TILES_SETTINGS"))
 
     fun openCastSettings(): Boolean =
         startActivityNewTask(Intent(Settings.ACTION_CAST_SETTINGS)) ||
@@ -422,7 +427,9 @@ class LauncherActions(private val context: Context) {
 
     fun openBedtimeSettings(): Boolean =
         startActivityNewTask(Intent("android.settings.BEDTIME_SETTINGS")) ||
-            startActivityNewTask(Intent("android.settings.ZEN_MODE_SETTINGS"))
+            openDigitalWellbeingHome() ||
+            startActivityNewTask(Intent("android.settings.ZEN_MODE_SETTINGS")) ||
+            openSystemSettings()
 
     fun openDoNotDisturbSettings(): Boolean =
         startActivityNewTask(Intent(Settings.ACTION_NOTIFICATION_POLICY_ACCESS_SETTINGS)) ||
@@ -755,6 +762,9 @@ class LauncherActions(private val context: Context) {
             false
         }
     }
+
+    private fun canResolveActivity(intent: Intent): Boolean =
+        pm.resolveActivity(intent, PackageManager.MATCH_DEFAULT_ONLY) != null
 
     private fun launchDefaultDialerTarget(packageName: String): Boolean {
         val telecom = context.getSystemService(TelecomManager::class.java) ?: return false

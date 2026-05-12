@@ -24,6 +24,9 @@
     <string name="dock_messages">Nachrichten</string>
     <string name="dock_camera">Kamera</string>
     <string name="hidden_apps_hint">Ausgeblendete Apps: zum Filtern tippen.</string>
+    <string name="quick_settings_qr_scanner_title">QR-Scanner-App</string>
+    <string name="quick_settings_qr_scanner_subtitle">Wähle die App, die von der QR-Kachel geöffnet wird.</string>
+    <string name="quick_settings_qr_use_default">Integrierten Scanner verwenden</string>
     <string name="gesture_swipe_up_app">App für Wischen nach oben</string>
     <string name="gesture_double_tap_action">Doppeltipp-Aktion</string>
     <string name="gesture_none_disabled">Keine</string>

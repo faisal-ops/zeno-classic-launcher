@@ -24,6 +24,9 @@
     <string name="dock_messages">メッセージ</string>
     <string name="dock_camera">カメラ</string>
     <string name="hidden_apps_hint">非表示アプリ: 入力して絞り込み。</string>
+    <string name="quick_settings_qr_scanner_title">QRスキャナーアプリ</string>
+    <string name="quick_settings_qr_scanner_subtitle">QRタイルから開くアプリを選びます。</string>
+    <string name="quick_settings_qr_use_default">内蔵スキャナーを使う</string>
     <string name="gesture_swipe_up_app">上スワイプのアプリ</string>
     <string name="gesture_double_tap_action">ダブルタップ動作</string>
     <string name="gesture_none_disabled">なし</string>

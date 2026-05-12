@@ -13,7 +13,13 @@ object LauncherBackup {
     const val FORMAT_KEY = "format"
     const val FORMAT_VALUE = "classiclauncher_backup"
     const val VERSION_KEY = "version"
-    const val CURRENT_VERSION = 21
+    const val CURRENT_VERSION = 22
+
+    private object PrefKey {
+        const val CUSTOM_QUICK_SETTINGS_ENABLED = "customQuickSettingsEnabled"
+        const val QUICK_SETTINGS_QR_SCANNER_PACKAGE = "quickSettingsQrScannerPackage"
+        const val QUICK_SETTINGS_TILE_ORDER = "quickSettingsTileOrder"
+    }
 
     fun toJson(prefs: LauncherPrefs): String {
         val root = JSONObject()
@@ -79,7 +85,9 @@ object LauncherBackup {
         p.put("showIconNotifBadge", prefs.showIconNotifBadge)
         p.put("showShortcutApps", prefs.showShortcutApps)
         p.put("showHomeGroups", prefs.showHomeGroups)
-        p.put("customQuickSettingsEnabled", prefs.customQuickSettingsEnabled)
+        p.put(PrefKey.CUSTOM_QUICK_SETTINGS_ENABLED, prefs.customQuickSettingsEnabled)
+        p.put(PrefKey.QUICK_SETTINGS_QR_SCANNER_PACKAGE, prefs.quickSettingsQrScannerPackage)
+        p.put(PrefKey.QUICK_SETTINGS_TILE_ORDER, JSONArray(prefs.quickSettingsTileOrder))
         p.put("classicMode", prefs.classicMode)
         p.put("appIconShape", prefs.appIconShape.name)
         p.put("showAppCardBackground", prefs.showAppCardBackground)
@@ -193,7 +201,13 @@ object LauncherBackup {
         val legacyShowHomeStrip = if (p.has("showHomeStrip")) p.optBoolean("showHomeStrip", true) else null
         val showShortcutApps = p.optBoolean("showShortcutApps", legacyShowHomeStrip ?: true)
         val showHomeGroups = p.optBoolean("showHomeGroups", legacyShowHomeStrip ?: true)
-        val customQuickSettingsEnabled = p.optBoolean("customQuickSettingsEnabled", false)
+        val customQuickSettingsEnabled = p.optBoolean(PrefKey.CUSTOM_QUICK_SETTINGS_ENABLED, false)
+        val quickSettingsQrScannerPackage = p.optString(PrefKey.QUICK_SETTINGS_QR_SCANNER_PACKAGE, "").trim()
+        val quickSettingsTileOrder = p.optJSONArray(PrefKey.QUICK_SETTINGS_TILE_ORDER)?.let { arr ->
+            buildList {
+                for (i in 0 until arr.length()) add(arr.optString(i, "").trim())
+            }.filter { it.isNotEmpty() }.distinct()
+        } ?: emptyList()
         val classicMode = when {
             p.has("classicMode") -> p.optBoolean("classicMode", false)
             else -> p.optBoolean("drawerOnlyMode", false)
@@ -286,6 +300,8 @@ object LauncherBackup {
             showShortcutApps = showShortcutApps,
             showHomeGroups = showHomeGroups,
             customQuickSettingsEnabled = customQuickSettingsEnabled,
+            quickSettingsQrScannerPackage = quickSettingsQrScannerPackage,
+            quickSettingsTileOrder = quickSettingsTileOrder,
             classicMode = classicMode,
             appIconShape = appIconShape,
             showAppCardBackground = showAppCardBackground,

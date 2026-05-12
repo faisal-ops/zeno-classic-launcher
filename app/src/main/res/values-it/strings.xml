@@ -24,6 +24,9 @@
     <string name="dock_messages">Messaggi</string>
     <string name="dock_camera">Fotocamera</string>
     <string name="hidden_apps_hint">App nascoste: digita per filtrare.</string>
+    <string name="quick_settings_qr_scanner_title">App scanner QR</string>
+    <string name="quick_settings_qr_scanner_subtitle">Scegli l\'app aperta dal riquadro QR.</string>
+    <string name="quick_settings_qr_use_default">Usa lo scanner integrato</string>
     <string name="gesture_swipe_up_app">App swipe su</string>
     <string name="gesture_double_tap_action">Azione doppio tocco</string>
     <string name="gesture_none_disabled">Nessuna</string>

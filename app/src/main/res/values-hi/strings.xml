@@ -24,6 +24,9 @@
     <string name="dock_messages">संदेश</string>
     <string name="dock_camera">कैमरा</string>
     <string name="hidden_apps_hint">छिपे ऐप: फ़िल्टर करने के लिए टाइप करें।</string>
+    <string name="quick_settings_qr_scanner_title">QR स्कैनर ऐप</string>
+    <string name="quick_settings_qr_scanner_subtitle">QR टाइल से खुलने वाला ऐप चुनें।</string>
+    <string name="quick_settings_qr_use_default">अंतर्निर्मित स्कैनर उपयोग करें</string>
     <string name="gesture_swipe_up_app">ऊपर स्वाइप ऐप</string>
     <string name="gesture_double_tap_action">डबल टैप क्रिया</string>
     <string name="gesture_none_disabled">कोई नहीं</string>

@@ -45,6 +45,9 @@
     <string name="dock_use_default_messages">기본값 사용 (메시지 앱)</string>
     <string name="dock_use_default_camera">기본값 사용 (카메라 앱)</string>
     <string name="search_apps_hint">앱 검색</string>
+    <string name="quick_settings_qr_scanner_title">QR 스캐너 앱</string>
+    <string name="quick_settings_qr_scanner_subtitle">QR 타일에서 열 앱을 선택하세요.</string>
+    <string name="quick_settings_qr_use_default">기본 스캐너 사용</string>
     <string name="glance_settings_intro">날짜, 날씨, 알림을 표시합니다.</string>
     <string name="glance_show_title">글랜스 스트립 표시</string>
     <string name="glance_show_subtitle">홈 상단 스트립</string>

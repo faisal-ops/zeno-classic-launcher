@@ -1196,6 +1196,14 @@ class LauncherViewModel(app: Application) : AndroidViewModel(app) {
         viewModelScope.launch { prefsRepo.setCustomQuickSettingsEnabled(enabled) }
     }
 
+    fun setQuickSettingsQrScannerPackage(packageName: String) {
+        viewModelScope.launch { prefsRepo.setQuickSettingsQrScannerPackage(packageName) }
+    }
+
+    fun setQuickSettingsTileOrder(tileIds: List<String>) {
+        viewModelScope.launch { prefsRepo.setQuickSettingsTileOrder(tileIds) }
+    }
+
     fun setClassicMode(enabled: Boolean) {
         viewModelScope.launch { prefsRepo.setClassicMode(enabled) }
     }

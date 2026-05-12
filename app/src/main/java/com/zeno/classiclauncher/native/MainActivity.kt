@@ -47,13 +47,6 @@ class MainActivity : ComponentActivity() {
         }
     }
 
-    override fun onWindowFocusChanged(hasFocus: Boolean) {
-        super.onWindowFocusChanged(hasFocus)
-        if (!hasFocus) {
-            viewModel.requestDismissLauncherQuickSettings()
-        }
-    }
-
     /** Catch KEYCODE_ENDCALL at the Activity level — Compose onPreviewKeyEvent may not receive it
      *  if the system (PhoneWindowManager) intercepts or delivers it only on ACTION_UP. */
     @Suppress("RestrictedApi")

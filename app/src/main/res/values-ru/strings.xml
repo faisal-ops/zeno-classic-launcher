@@ -24,6 +24,9 @@
     <string name="dock_messages">Сообщения</string>
     <string name="dock_camera">Камера</string>
     <string name="hidden_apps_hint">Скрытые приложения: введите для фильтра.</string>
+    <string name="quick_settings_qr_scanner_title">Приложение QR-сканера</string>
+    <string name="quick_settings_qr_scanner_subtitle">Выберите приложение, которое открывается из QR-плитки.</string>
+    <string name="quick_settings_qr_use_default">Использовать встроенный сканер</string>
     <string name="gesture_swipe_up_app">Приложение свайпа вверх</string>
     <string name="gesture_double_tap_action">Действие двойного нажатия</string>
     <string name="gesture_none_disabled">Нет</string>

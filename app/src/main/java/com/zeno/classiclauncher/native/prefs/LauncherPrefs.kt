@@ -160,6 +160,10 @@ data class LauncherPrefs(
     val homeStripEnabled: Boolean = true,
     /** Swipe-down custom quick settings overlay on home page. */
     val customQuickSettingsEnabled: Boolean = false,
+    /** Package to launch from the QR scanner quick-settings tile. Empty = built-in scanner. */
+    val quickSettingsQrScannerPackage: String = "",
+    /** Saved order for launcher quick-settings tile ids. Empty = default order. */
+    val quickSettingsTileOrder: List<String> = emptyList(),
     /**
      * Classic mode: app drawer only (no separate home page). Dock is mail + page dots + camera (no home
      * button, no Messages/WhatsApp shortcut). Home glance strip is not composed — no glance coroutines or
@@ -227,6 +231,8 @@ class LauncherPrefsRepository(private val context: Context) {
         val SHOW_HOME_GROUPS = booleanPreferencesKey("showHomeGroups")
         val HOME_STRIP_ENABLED = booleanPreferencesKey("homeStripEnabled")
         val CUSTOM_QS_ENABLED = booleanPreferencesKey("customQuickSettingsEnabled")
+        val QUICK_SETTINGS_QR_SCANNER = stringPreferencesKey("quickSettingsQrScannerPackage")
+        val QUICK_SETTINGS_TILE_ORDER = stringPreferencesKey("quickSettingsTileOrderCsv")
         val CLASSIC_MODE = booleanPreferencesKey("classicMode")
         /** Legacy key from earlier builds; read only for migration. */
         val CLASSIC_MODE_LEGACY = booleanPreferencesKey("drawerOnlyMode")
@@ -291,6 +297,8 @@ class LauncherPrefsRepository(private val context: Context) {
         val showHomeGroups = p[Keys.SHOW_HOME_GROUPS] ?: DEFAULT_PREFS.showHomeGroups
         val homeStripEnabled = p[Keys.HOME_STRIP_ENABLED] ?: DEFAULT_PREFS.homeStripEnabled
         val customQuickSettingsEnabled = p[Keys.CUSTOM_QS_ENABLED] ?: DEFAULT_PREFS.customQuickSettingsEnabled
+        val quickSettingsQrScannerPackage = p[Keys.QUICK_SETTINGS_QR_SCANNER]?.trim() ?: ""
+        val quickSettingsTileOrder = parseCsvList(p[Keys.QUICK_SETTINGS_TILE_ORDER])
         val classicMode = p[Keys.CLASSIC_MODE] ?: p[Keys.CLASSIC_MODE_LEGACY] ?: DEFAULT_PREFS.classicMode
         val appIconShape =
             p[Keys.APP_ICON_SHAPE]?.let { v -> AppIconShape.entries.firstOrNull { it.name == v } }
@@ -342,6 +350,8 @@ class LauncherPrefsRepository(private val context: Context) {
             showHomeGroups = showHomeGroups,
             homeStripEnabled = homeStripEnabled,
             customQuickSettingsEnabled = customQuickSettingsEnabled,
+            quickSettingsQrScannerPackage = quickSettingsQrScannerPackage,
+            quickSettingsTileOrder = quickSettingsTileOrder,
             classicMode = classicMode,
             appIconShape = appIconShape,
             showAppCardBackground = showAppCardBackground,
@@ -575,6 +585,14 @@ class LauncherPrefsRepository(private val context: Context) {
         context.dataStore.edit { it[Keys.CUSTOM_QS_ENABLED] = enabled }
     }
 
+    suspend fun setQuickSettingsQrScannerPackage(packageName: String) {
+        context.dataStore.edit { it[Keys.QUICK_SETTINGS_QR_SCANNER] = packageName.trim() }
+    }
+
+    suspend fun setQuickSettingsTileOrder(tileIds: List<String>) {
+        context.dataStore.edit { it[Keys.QUICK_SETTINGS_TILE_ORDER] = tileIds.distinct().joinToString(",") }
+    }
+
     suspend fun setClassicMode(enabled: Boolean) {
         context.dataStore.edit { s ->
             s[Keys.CLASSIC_MODE] = enabled
@@ -645,6 +663,8 @@ class LauncherPrefsRepository(private val context: Context) {
             s[Keys.SHOW_HOME_GROUPS] = prefs.showHomeGroups
             s[Keys.HOME_STRIP_ENABLED] = prefs.homeStripEnabled
             s[Keys.CUSTOM_QS_ENABLED] = prefs.customQuickSettingsEnabled
+            s[Keys.QUICK_SETTINGS_QR_SCANNER] = prefs.quickSettingsQrScannerPackage.trim()
+            s[Keys.QUICK_SETTINGS_TILE_ORDER] = prefs.quickSettingsTileOrder.distinct().joinToString(",")
             s[Keys.CLASSIC_MODE] = prefs.classicMode
             s.remove(Keys.CLASSIC_MODE_LEGACY)
             s[Keys.APP_ICON_SHAPE] = prefs.appIconShape.name
