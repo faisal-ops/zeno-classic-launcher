@@ -1834,6 +1834,38 @@ fun LauncherScreen(
             )
         }
 
+        if (!prefs.setupComplete) {
+            ZenoSetupOverlay(
+                themePalette = themePalette,
+                onClassic = {
+                    vm.setClassicMode(true)
+                    vm.setGlanceEnabled(false)
+                    vm.setHomeStripEnabled(false)
+                    vm.setCustomQuickSettingsEnabled(false)
+                    vm.setSetupComplete(true)
+                },
+                onSmartHome = {
+                    vm.setClassicMode(false)
+                    vm.setGlanceEnabled(true)
+                    vm.setHomeStripEnabled(true)
+                    vm.setCustomQuickSettingsEnabled(true)
+                    vm.setSetupComplete(true)
+                },
+                onMinimal = {
+                    vm.setClassicMode(false)
+                    vm.setGlanceEnabled(false)
+                    vm.setHomeStripEnabled(true)
+                    vm.setCustomQuickSettingsEnabled(false)
+                    vm.setSetupComplete(true)
+                },
+                onOpenPermissions = {
+                    vm.setSetupComplete(true)
+                    showPermissionsSettings = true
+                },
+                onSkip = { vm.setSetupComplete(true) },
+            )
+        }
+
         if (showGlanceSettings) {
             GlanceSettingsOverlay(
                 glanceEnabled = prefs.glanceEnabled,
@@ -2379,11 +2411,27 @@ private fun HomeGridCanvas(
                         factory = { ctx ->
                             appWidgetHost.createView(ctx, widgetId, info).apply {
                                 setAppWidget(widgetId, info)
+                                isLongClickable = true
+                                setOnLongClickListener {
+                                    if (!currentReorderMode.value) currentOnEnterReorderMode.value()
+                                    if (hapticsEnabled) {
+                                        view.performHapticFeedback(HapticFeedbackConstants.LONG_PRESS)
+                                    }
+                                    true
+                                }
                             }
                         },
                         update = { hostView ->
                             if (hostView is AppWidgetHostView) {
                                 hostView.setAppWidget(widgetId, info)
+                                hostView.isLongClickable = true
+                                hostView.setOnLongClickListener {
+                                    if (!currentReorderMode.value) currentOnEnterReorderMode.value()
+                                    if (hapticsEnabled) {
+                                        view.performHapticFeedback(HapticFeedbackConstants.LONG_PRESS)
+                                    }
+                                    true
+                                }
                                 hostView.updateAppWidgetSize(
                                     null,
                                     widgetWidthDp,
@@ -2395,65 +2443,66 @@ private fun HomeGridCanvas(
                         },
                         modifier = Modifier.fillMaxSize(),
                     )
-                    Box(
-                        modifier = Modifier
-                            .matchParentSize()
-                            .pointerInput(widgetId) {
-                                detectDragGesturesAfterLongPress(
-                                    onDragStart = { start ->
-                                        widgetDragging = true
-                                        widgetDragOffset = Offset.Zero
-                                        widgetRemoveActive = false
-                                        currentOnWidgetDragActiveChanged.value(true)
-                                        if (!currentReorderMode.value) currentOnEnterReorderMode.value()
-                                        currentOnRemoveDropVisibleChanged.value(true)
-                                        currentOnRemoveDropActiveChanged.value(false)
-                                        if (hapticsEnabled) {
-                                            view.performHapticFeedback(HapticFeedbackConstants.LONG_PRESS)
-                                        }
-                                        widgetFingerRoot = widgetCoords
-                                            ?.takeIf { it.isAttached }
-                                            ?.localToRoot(start)
-                                            ?: Offset.Zero
-                                        updateWidgetRemoveTarget(widgetFingerRoot)
-                                    },
-                                    onDrag = { change, dragAmount ->
-                                        widgetDragOffset += dragAmount
-                                        widgetFingerRoot += dragAmount
-                                        change.consume()
-                                        updateWidgetRemoveTarget(widgetFingerRoot)
-                                    },
-                                    onDragEnd = {
-                                        val shouldRemove = widgetDragging && widgetRemoveActive
-                                        if (!shouldRemove) {
-                                            val grid = gridCoords?.takeIf { it.isAttached }
-                                            val widget = widgetCoords?.takeIf { it.isAttached }
-                                            if (grid != null && widget != null) {
-                                                val gridBounds = grid.boundsInRoot()
-                                                val widgetTopLeft = widget.boundsInRoot().topLeft + widgetDragOffset
-                                                val cellWpx = with(density) { (cellW + gap).toPx() }
-                                                val cellHpx = with(density) { (cellH + gap).toPx() }
-                                                val nextCol = ((widgetTopLeft.x - gridBounds.left) / cellWpx)
-                                                    .roundToInt()
-                                                    .coerceIn(0, HOME_GRID_COLS - span.cols)
-                                                val nextRow = ((widgetTopLeft.y - gridBounds.top) / cellHpx)
-                                                    .roundToInt()
-                                                    .coerceIn(0, HOME_GRID_ROWS - span.rows)
-                                                currentOnUpdateHomeWidget.value(span.copy(col = nextCol, row = nextRow))
+                    if (reorderMode) {
+                        Box(
+                            modifier = Modifier
+                                .matchParentSize()
+                                .pointerInput(widgetId, reorderMode) {
+                                    detectDragGesturesAfterLongPress(
+                                        onDragStart = { start ->
+                                            widgetDragging = true
+                                            widgetDragOffset = Offset.Zero
+                                            widgetRemoveActive = false
+                                            currentOnWidgetDragActiveChanged.value(true)
+                                            currentOnRemoveDropVisibleChanged.value(true)
+                                            currentOnRemoveDropActiveChanged.value(false)
+                                            if (hapticsEnabled) {
+                                                view.performHapticFeedback(HapticFeedbackConstants.LONG_PRESS)
                                             }
-                                        }
-                                        resetWidgetDrag()
-                                        if (shouldRemove) {
-                                            if (hapticsEnabled) view.performHapticFeedback(HapticFeedbackConstants.CLOCK_TICK)
-                                            currentOnRemoveWidget.value()
-                                        }
-                                    },
-                                    onDragCancel = {
-                                        resetWidgetDrag()
-                                    },
-                                )
-                            },
-                    )
+                                            widgetFingerRoot = widgetCoords
+                                                ?.takeIf { it.isAttached }
+                                                ?.localToRoot(start)
+                                                ?: Offset.Zero
+                                            updateWidgetRemoveTarget(widgetFingerRoot)
+                                        },
+                                        onDrag = { change, dragAmount ->
+                                            widgetDragOffset += dragAmount
+                                            widgetFingerRoot += dragAmount
+                                            change.consume()
+                                            updateWidgetRemoveTarget(widgetFingerRoot)
+                                        },
+                                        onDragEnd = {
+                                            val shouldRemove = widgetDragging && widgetRemoveActive
+                                            if (!shouldRemove) {
+                                                val grid = gridCoords?.takeIf { it.isAttached }
+                                                val widget = widgetCoords?.takeIf { it.isAttached }
+                                                if (grid != null && widget != null) {
+                                                    val gridBounds = grid.boundsInRoot()
+                                                    val widgetTopLeft = widget.boundsInRoot().topLeft + widgetDragOffset
+                                                    val cellWpx = with(density) { (cellW + gap).toPx() }
+                                                    val cellHpx = with(density) { (cellH + gap).toPx() }
+                                                    val nextCol = ((widgetTopLeft.x - gridBounds.left) / cellWpx)
+                                                        .roundToInt()
+                                                        .coerceIn(0, HOME_GRID_COLS - span.cols)
+                                                    val nextRow = ((widgetTopLeft.y - gridBounds.top) / cellHpx)
+                                                        .roundToInt()
+                                                        .coerceIn(0, HOME_GRID_ROWS - span.rows)
+                                                    currentOnUpdateHomeWidget.value(span.copy(col = nextCol, row = nextRow))
+                                                }
+                                            }
+                                            resetWidgetDrag()
+                                            if (shouldRemove) {
+                                                if (hapticsEnabled) view.performHapticFeedback(HapticFeedbackConstants.CLOCK_TICK)
+                                                currentOnRemoveWidget.value()
+                                            }
+                                        },
+                                        onDragCancel = {
+                                            resetWidgetDrag()
+                                        },
+                                    )
+                                },
+                        )
+                    }
                 }
             }
             AnimatedVisibility(
@@ -2806,15 +2855,50 @@ private fun HomePage(
             }
             .pointerInput(doubleTapToSleepEnabled, doubleTapPackage, searchQuery, homeWidgetBounds, homePageBounds) {
                 if (reorderMode) return@pointerInput
-                detectTapGestures(
-                    onLongPress = { position ->
-                        if (searchQuery.isNotEmpty()) return@detectTapGestures
-                        if (isInsideHomeWidget(position)) return@detectTapGestures
+                val longPressMs = android.view.ViewConfiguration.getLongPressTimeout().toLong()
+                val doubleTapMs = android.view.ViewConfiguration.getDoubleTapTimeout().toLong()
+                val touchSlop = android.view.ViewConfiguration.get(context).scaledTouchSlop.toFloat()
+                var lastTapMs = 0L
+                awaitEachGesture {
+                    val down = awaitFirstDown(requireUnconsumed = false, pass = PointerEventPass.Initial)
+                    if (isInsideHomeWidget(down.position)) {
+                        // Do not observe, consume, or compete with AppWidgetHostView. Widgets own
+                        // normal taps so playback buttons, launch areas, checkboxes, etc. work.
+                        return@awaitEachGesture
+                    }
+                    if (searchQuery.isNotEmpty()) {
+                        waitForUpOrCancellation(pass = PointerEventPass.Initial)
+                        return@awaitEachGesture
+                    }
+                    var cancelledByMove = false
+                    var releasedBeforeLongPress = false
+                    withTimeoutOrNull(longPressMs) {
+                        while (true) {
+                            val event = awaitPointerEvent(PointerEventPass.Initial)
+                            val change = event.changes.firstOrNull() ?: continue
+                            if (!change.pressed) {
+                                releasedBeforeLongPress = true
+                                return@withTimeoutOrNull
+                            }
+                            if ((change.position - down.position).getDistance() > touchSlop) {
+                                cancelledByMove = true
+                                return@withTimeoutOrNull
+                            }
+                        }
+                    }
+                    if (cancelledByMove) {
+                        waitForUpOrCancellation(pass = PointerEventPass.Initial)
+                        return@awaitEachGesture
+                    }
+                    if (!releasedBeforeLongPress) {
                         currentOnLongPress.value()
-                    },
-                    onDoubleTap = { position ->
-                        if (isInsideHomeWidget(position)) return@detectTapGestures
-                        if (searchQuery.isEmpty()) when {
+                        waitForUpOrCancellation(pass = PointerEventPass.Initial)
+                        return@awaitEachGesture
+                    }
+                    val now = SystemClock.uptimeMillis()
+                    if (now - lastTapMs <= doubleTapMs) {
+                        lastTapMs = 0L
+                        when {
                             doubleTapToSleepEnabled -> {
                                 view.performHapticFeedback(HapticFeedbackConstants.CLOCK_TICK)
                                 SleepManager.lockNow(context)
@@ -2824,8 +2908,10 @@ private fun HomePage(
                                 onLaunchApp(doubleTapPackage)
                             }
                         }
-                    },
-                )
+                    } else {
+                        lastTapMs = now
+                    }
+                }
             }
             .pointerInput(swipeUpPackage, searchQuery, homeWidgetBounds, homePageBounds, reorderMode) {
                 if (reorderMode) return@pointerInput
@@ -3304,6 +3390,7 @@ private data class QuickTile(
     val subtitle: String,
     val highlighted: Boolean = false,
     val showChevron: Boolean = false,
+    val actionLabel: String = "",
     val closeOnSuccess: Boolean = true,
     val onLongPress: (() -> Boolean)? = null,
     val onTap: () -> Boolean,
@@ -3547,6 +3634,7 @@ private fun QuickSettingsOverlay(
                 highlighted = true,
                 closeOnSuccess = false,
                 showChevron = true,
+                actionLabel = "Mode",
                 onLongPress = actions::openKeyboardSettings,
                 onTap = {
                     val currentMode = actions.currentKeyboardMode() ?: keyboardMode
@@ -3593,6 +3681,7 @@ private fun QuickSettingsOverlay(
                 highlighted = internetHighlighted,
                 closeOnSuccess = false,
                 showChevron = true,
+                actionLabel = "Panel",
                 onLongPress = actions::openInternetSettings,
                 onTap = actions::openInternetPanel,
             ),
@@ -3605,6 +3694,7 @@ private fun QuickSettingsOverlay(
                 subtitle = btSubtitle,
                 highlighted = bluetoothEnabled == true,
                 closeOnSuccess = false,
+                actionLabel = "Toggle",
                 onLongPress = actions::openBluetoothSettings,
                 onTap = {
                     when (val r = actions.toggleBluetooth()) {
@@ -3639,6 +3729,7 @@ private fun QuickSettingsOverlay(
                 subtitle = "",
                 showChevron = true,
                 closeOnSuccess = false,
+                actionLabel = "App",
                 onLongPress = {
                     showQrScannerPicker = true
                     true
@@ -3654,6 +3745,7 @@ private fun QuickSettingsOverlay(
                 subtitle = if (wirelessDebugOn) quickSettingsOn else quickSettingsOff,
                 highlighted = wirelessDebugOn,
                 closeOnSuccess = false,
+                actionLabel = "Settings",
                 onLongPress = actions::openWirelessDebuggingSettings,
                 onTap = actions::openWirelessDebuggingSettings,
             ),
@@ -3673,6 +3765,7 @@ private fun QuickSettingsOverlay(
                 highlighted = batterySaverOn,
                 closeOnSuccess = false,
                 showChevron = true,
+                actionLabel = "Details",
                 onLongPress = actions::openBatterySaverSettings,
                 onTap = actions::openBatteryUsageSummary,
             ),
@@ -3686,6 +3779,7 @@ private fun QuickSettingsOverlay(
                     subtitle = "",
                     showChevron = true,
                     closeOnSuccess = false,
+                    actionLabel = "App",
                     onLongPress = actions::openBitwardenVault,
                     onTap = actions::openBitwardenVault,
                 ),
@@ -3698,6 +3792,7 @@ private fun QuickSettingsOverlay(
                 title = quickSettingsAeroplaneModeTitle,
                 subtitle = if (airplaneOn) quickSettingsOn else quickSettingsOff,
                 highlighted = airplaneOn,
+                actionLabel = "Settings",
                 onLongPress = actions::openAirplaneModeSettings,
                 onTap = actions::openAirplaneModeSettings,
             ),
@@ -3710,6 +3805,7 @@ private fun QuickSettingsOverlay(
                 subtitle = if (torchOn) quickSettingsOn else quickSettingsOff,
                 highlighted = torchOn,
                 closeOnSuccess = false,
+                actionLabel = "Toggle",
                 onLongPress = actions::openDisplaySettings,
                 onTap = {
                     if (ContextCompat.checkSelfPermission(context, Manifest.permission.CAMERA) != PackageManager.PERMISSION_GRANTED) {
@@ -3742,6 +3838,7 @@ private fun QuickSettingsOverlay(
                 title = quickSettingsDndTitle,
                 subtitle = if (dndOn) quickSettingsOn else quickSettingsOff,
                 highlighted = dndOn,
+                actionLabel = "Settings",
                 onLongPress = actions::openDoNotDisturbSettings,
                 onTap = actions::openDoNotDisturbSettings,
             ),
@@ -3753,6 +3850,7 @@ private fun QuickSettingsOverlay(
                 title = quickSettingsStorageTitle,
                 subtitle = "",
                 showChevron = true,
+                actionLabel = "Details",
                 onLongPress = actions::openStorageSettings,
                 onTap = actions::openStorageSettings,
             ),
@@ -3764,6 +3862,7 @@ private fun QuickSettingsOverlay(
                 title = quickSettingsHotspotTitle,
                 subtitle = if (hotspotOn) quickSettingsOn else quickSettingsOff,
                 highlighted = hotspotOn,
+                actionLabel = "Settings",
                 onLongPress = actions::openHotspotSettings,
                 onTap = actions::openHotspotSettings,
             ),
@@ -3775,6 +3874,7 @@ private fun QuickSettingsOverlay(
                 title = quickSettingsNightLightTitle,
                 subtitle = if (nightLightOn) quickSettingsOn else quickSettingsOff,
                 highlighted = nightLightOn,
+                actionLabel = "Settings",
                 onLongPress = actions::openNightLightSettings,
                 onTap = actions::openNightLightSettings,
             ),
@@ -3786,6 +3886,7 @@ private fun QuickSettingsOverlay(
                 title = quickSettingsAutoRotateTitle,
                 subtitle = if (autoRotateOn) quickSettingsOn else quickSettingsOff,
                 highlighted = autoRotateOn,
+                actionLabel = "Toggle",
                 onLongPress = actions::openDisplaySettings,
                 onTap = {
                     when (val r = actions.toggleAutoRotate()) {
@@ -3815,6 +3916,7 @@ private fun QuickSettingsOverlay(
                 subtitle = if (nfcOn) quickSettingsOn else quickSettingsOff,
                 highlighted = nfcOn,
                 closeOnSuccess = false,
+                actionLabel = "Toggle",
                 onLongPress = actions::openNfcSettings,
                 onTap = {
                     when (val r = actions.toggleNfc()) {
@@ -3837,6 +3939,7 @@ private fun QuickSettingsOverlay(
                 title = quickSettingsExtraDimTitle,
                 subtitle = if (extraDimOn) quickSettingsOn else quickSettingsOff,
                 highlighted = extraDimOn,
+                actionLabel = "Settings",
                 onLongPress = actions::openExtraDimSettings,
                 onTap = actions::openExtraDimSettings,
             ),
@@ -3849,6 +3952,7 @@ private fun QuickSettingsOverlay(
                     title = quickSettingsScreenRecordTitle,
                     subtitle = quickSettingsStart,
                     showChevron = true,
+                    actionLabel = "Settings",
                     onLongPress = actions::openScreenRecordSettings,
                     onTap = actions::openScreenRecordSettings,
                 ),
@@ -3861,6 +3965,7 @@ private fun QuickSettingsOverlay(
                 title = quickSettingsScreenCastTitle,
                 subtitle = quickSettingsOff,
                 showChevron = true,
+                actionLabel = "Settings",
                 onLongPress = actions::openCastSettings,
                 onTap = actions::openCastSettings,
             ),
@@ -3874,6 +3979,7 @@ private fun QuickSettingsOverlay(
                     subtitle = "",
                     showChevron = true,
                     closeOnSuccess = false,
+                    actionLabel = "App",
                     onLongPress = actions::openDigitalWellbeingHome,
                     onTap = actions::openDigitalWellbeingHome,
                 ),
@@ -3885,6 +3991,7 @@ private fun QuickSettingsOverlay(
                     icon = Icons.Rounded.AddAlarm,
                     title = quickSettingsBedtimeTitle,
                     subtitle = quickSettingsOff,
+                    actionLabel = "Settings",
                     onLongPress = actions::openBedtimeSettings,
                     onTap = actions::openBedtimeSettings,
                 ),
@@ -4590,17 +4697,37 @@ private fun ClassicQuickTile(
             verticalAlignment = Alignment.CenterVertically,
         ) {
             Column(modifier = Modifier.weight(1f)) {
-                Text(
-                    tile.title,
-                    color = Color(0xFFEAF0F6),
-                    style = MaterialTheme.typography.titleMedium.copy(
-                        fontWeight = FontWeight.SemiBold,
-                        fontSize = 15.sp,
-                        lineHeight = 16.sp,
-                    ),
-                    maxLines = 1,
-                    overflow = TextOverflow.Ellipsis,
-                )
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Text(
+                        tile.title,
+                        color = Color(0xFFEAF0F6),
+                        style = MaterialTheme.typography.titleMedium.copy(
+                            fontWeight = FontWeight.SemiBold,
+                            fontSize = 15.sp,
+                            lineHeight = 16.sp,
+                        ),
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis,
+                        modifier = Modifier.weight(1f, fill = false),
+                    )
+                    if (tile.actionLabel.isNotBlank()) {
+                        Spacer(Modifier.width(6.dp))
+                        Text(
+                            tile.actionLabel,
+                            color = if (tile.highlighted) Color(0xFFBDEFFF) else Color(0xFF8EA0AA),
+                            style = MaterialTheme.typography.labelSmall.copy(
+                                fontSize = 9.sp,
+                                lineHeight = 10.sp,
+                                fontWeight = FontWeight.SemiBold,
+                            ),
+                            maxLines = 1,
+                            modifier = Modifier
+                                .clip(RoundedCornerShape(7.dp))
+                                .background(if (tile.highlighted) Color(0x3327BDEB) else Color(0x33242C33))
+                                .padding(horizontal = 5.dp, vertical = 2.dp),
+                        )
+                    }
+                }
                 if (tile.subtitle.isNotBlank()) {
                     Text(
                         tile.subtitle,
@@ -4853,6 +4980,164 @@ private fun AddAppToContainerSheet(
                 }
             }
             Spacer(Modifier.height(12.dp))
+        }
+    }
+}
+
+@Composable
+private fun ZenoSetupOverlay(
+    themePalette: LauncherThemePalette,
+    onClassic: () -> Unit,
+    onSmartHome: () -> Unit,
+    onMinimal: () -> Unit,
+    onOpenPermissions: () -> Unit,
+    onSkip: () -> Unit,
+) {
+    BackHandler(onBack = onSkip)
+    Surface(
+        modifier = Modifier
+            .fillMaxSize()
+            .zIndex(700f),
+        color = Color(0xF4090D12),
+    ) {
+        Column(
+            modifier = Modifier
+                .fillMaxSize()
+                .statusBarsPadding()
+                .navigationBarsPadding()
+                .padding(horizontal = 18.dp, vertical = 16.dp),
+        ) {
+            Text(
+                "Set up Zeno",
+                color = Color(0xFFEAF2F8),
+                style = MaterialTheme.typography.headlineMedium.copy(fontWeight = FontWeight.SemiBold),
+            )
+            Spacer(Modifier.height(4.dp))
+            Text(
+                "Pick a starting layout. You can change everything later from Settings.",
+                color = Color(0xFF9EADB8),
+                style = MaterialTheme.typography.bodyMedium,
+            )
+            Spacer(Modifier.height(18.dp))
+            SetupModeCard(
+                icon = Icons.Rounded.GridView,
+                title = "Classic BlackBerry",
+                subtitle = "Drawer-first, compact pages, dock-focused navigation.",
+                selectedTone = Color(0xFF84D5F6),
+                onClick = onClassic,
+            )
+            Spacer(Modifier.height(10.dp))
+            SetupModeCard(
+                icon = Icons.Rounded.WbSunny,
+                title = "Smart Home",
+                subtitle = "Home strip, Glance, and launcher Quick Settings enabled.",
+                selectedTone = Color(0xFF84D5F6),
+                onClick = onSmartHome,
+            )
+            Spacer(Modifier.height(10.dp))
+            SetupModeCard(
+                icon = Icons.Rounded.FilterBAndW,
+                title = "Minimal",
+                subtitle = "Clean home screen with only essentials visible.",
+                selectedTone = Color(0xFF84D5F6),
+                onClick = onMinimal,
+            )
+            Spacer(Modifier.weight(1f))
+            Surface(
+                shape = RoundedCornerShape(18.dp),
+                color = Color(0xFF111820),
+                border = BorderStroke(0.7.dp, Color.White.copy(alpha = 0.10f)),
+            ) {
+                Column(Modifier.padding(14.dp)) {
+                    Text(
+                        "Recommended permissions",
+                        color = Color(0xFFEAF2F8),
+                        style = MaterialTheme.typography.titleSmall.copy(fontWeight = FontWeight.SemiBold),
+                    )
+                    Spacer(Modifier.height(4.dp))
+                    Text(
+                        "Enable only what you use: badges, calendar, weather, sleep helper, and usage sorting.",
+                        color = Color(0xFF9EADB8),
+                        style = MaterialTheme.typography.bodySmall,
+                    )
+                    Spacer(Modifier.height(10.dp))
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .clip(RoundedCornerShape(13.dp))
+                            .background(Color(0xFF1B2630))
+                            .clickable(onClick = onOpenPermissions)
+                            .padding(horizontal = 12.dp, vertical = 11.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                    ) {
+                        Icon(Icons.Rounded.Security, contentDescription = null, tint = Color(0xFF84D5F6), modifier = Modifier.size(19.dp))
+                        Spacer(Modifier.width(10.dp))
+                        Text(
+                            "Review permissions",
+                            color = Color(0xFFEAF2F8),
+                            style = MaterialTheme.typography.labelLarge.copy(fontWeight = FontWeight.SemiBold),
+                            modifier = Modifier.weight(1f),
+                        )
+                        Icon(Icons.AutoMirrored.Rounded.ArrowForward, contentDescription = null, tint = Color(0xFF84D5F6), modifier = Modifier.size(18.dp))
+                    }
+                }
+            }
+            Spacer(Modifier.height(10.dp))
+            TextButton(
+                onClick = onSkip,
+                modifier = Modifier.align(Alignment.CenterHorizontally),
+            ) {
+                Text("Skip for now", color = themePalette.settingsMenuBody)
+            }
+        }
+    }
+}
+
+@Composable
+private fun SetupModeCard(
+    icon: ImageVector,
+    title: String,
+    subtitle: String,
+    selectedTone: Color,
+    onClick: () -> Unit,
+) {
+    Surface(
+        modifier = Modifier
+            .fillMaxWidth()
+            .clickable(onClick = onClick),
+        shape = RoundedCornerShape(18.dp),
+        color = Color(0xFF111820),
+        border = BorderStroke(0.8.dp, Color.White.copy(alpha = 0.10f)),
+    ) {
+        Row(
+            modifier = Modifier.padding(horizontal = 14.dp, vertical = 14.dp),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Box(
+                modifier = Modifier
+                    .size(42.dp)
+                    .clip(RoundedCornerShape(14.dp))
+                    .background(selectedTone.copy(alpha = 0.16f)),
+                contentAlignment = Alignment.Center,
+            ) {
+                Icon(icon, contentDescription = null, tint = selectedTone, modifier = Modifier.size(22.dp))
+            }
+            Spacer(Modifier.width(13.dp))
+            Column(Modifier.weight(1f)) {
+                Text(
+                    title,
+                    color = Color(0xFFEAF2F8),
+                    style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.SemiBold),
+                )
+                Text(
+                    subtitle,
+                    color = Color(0xFF9EADB8),
+                    style = MaterialTheme.typography.bodySmall,
+                    maxLines = 2,
+                    overflow = TextOverflow.Ellipsis,
+                )
+            }
+            Icon(Icons.AutoMirrored.Rounded.ArrowForward, contentDescription = null, tint = selectedTone, modifier = Modifier.size(18.dp))
         }
     }
 }
@@ -5267,7 +5552,7 @@ private fun HomeActionsSheet(
         Column(
             modifier = Modifier
                 .fillMaxWidth()
-                .padding(horizontal = 16.dp, vertical = 8.dp),
+                .padding(horizontal = 16.dp, vertical = 10.dp),
         ) {
             Text(
                 "Home",
@@ -5275,50 +5560,81 @@ private fun HomeActionsSheet(
                 color = labelColor,
                 modifier = Modifier.fillMaxWidth(),
             )
-            Spacer(Modifier.height(8.dp))
+            Text(
+                if (hasWidget) "Arrange apps, groups, and widgets from one edit mode." else "Add widgets, groups, and shortcuts to your Zeno home.",
+                style = MaterialTheme.typography.bodySmall,
+                color = Color(0xFF9EADB8),
+                modifier = Modifier.padding(top = 2.dp, bottom = 10.dp),
+            )
             HorizontalDivider(color = Color(0xFF2C3340))
             Spacer(Modifier.height(4.dp))
 
             @Composable
-            fun MenuRow(icon: ImageVector, label: String, onClick: () -> Unit) {
+            fun MenuRow(icon: ImageVector, label: String, helper: String = "", danger: Boolean = false, onClick: () -> Unit) {
                 Row(
                     modifier = Modifier
                         .fillMaxWidth()
-                        .clip(RoundedCornerShape(10.dp))
+                        .clip(RoundedCornerShape(14.dp))
+                        .background(if (danger) Color(0x221F0E12) else Color.Transparent)
                         .clickable(onClick = onClick)
-                        .padding(horizontal = 12.dp, vertical = 14.dp),
+                        .padding(horizontal = 12.dp, vertical = 12.dp),
                     verticalAlignment = Alignment.CenterVertically,
                 ) {
-                    Icon(icon, contentDescription = null, tint = iconTint, modifier = Modifier.size(22.dp))
-                    Spacer(Modifier.width(16.dp))
-                    Text(
-                        label,
-                        style = MaterialTheme.typography.bodyLarge,
-                        color = labelColor,
-                    )
+                    Box(
+                        modifier = Modifier
+                            .size(36.dp)
+                            .clip(RoundedCornerShape(12.dp))
+                            .background(if (danger) Color(0x332B1217) else Color(0xFF1B2630)),
+                        contentAlignment = Alignment.Center,
+                    ) {
+                        Icon(
+                            icon,
+                            contentDescription = null,
+                            tint = if (danger) Color(0xFFFF9EAA) else iconTint,
+                            modifier = Modifier.size(20.dp),
+                        )
+                    }
+                    Spacer(Modifier.width(13.dp))
+                    Column(Modifier.weight(1f)) {
+                        Text(
+                            label,
+                            style = MaterialTheme.typography.bodyLarge.copy(fontWeight = FontWeight.Medium),
+                            color = if (danger) Color(0xFFFFCED5) else labelColor,
+                        )
+                        if (helper.isNotBlank()) {
+                            Text(
+                                helper,
+                                style = MaterialTheme.typography.bodySmall,
+                                color = Color(0xFF8E95A3),
+                                maxLines = 1,
+                                overflow = TextOverflow.Ellipsis,
+                            )
+                        }
+                    }
                 }
             }
 
             if (hasWidget) {
-                MenuRow(Icons.Rounded.AspectRatio, "Resize widget", onResizeWidget)
-                MenuRow(Icons.Rounded.AddAlarm, "Replace widget", onReplaceWidget)
-                MenuRow(Icons.Rounded.Settings, "Widget settings", onConfigureWidget)
-                MenuRow(Icons.Rounded.EventBusy, "Remove widget", onRemoveWidget)
+                MenuRow(Icons.Rounded.AspectRatio, "Resize widget", "Choose a Zeno grid span", onClick = onResizeWidget)
+                MenuRow(Icons.Rounded.AddAlarm, "Replace widget", "Open the visual widget picker", onClick = onReplaceWidget)
+                MenuRow(Icons.Rounded.Settings, "Widget settings", "Use the provider's configuration screen", onClick = onConfigureWidget)
+                MenuRow(Icons.Rounded.EventBusy, "Remove widget", "Delete it from the home grid", danger = true, onClick = onRemoveWidget)
             } else {
-                MenuRow(Icons.Rounded.AddAlarm, "Add system widget", onAddWidget)
+                MenuRow(Icons.Rounded.AddAlarm, "Add system widget", "Pick a preview and place it on the grid", onClick = onAddWidget)
             }
             if (newHomeGroupEnabled) {
-                MenuRow(Icons.Rounded.Folder, "New group", onClick = onNewHomeGroup)
+                MenuRow(Icons.Rounded.Folder, "New group", "Create a compact home folder", onClick = onNewHomeGroup)
             }
             if (pinToHomepageEnabled) {
-                MenuRow(Icons.AutoMirrored.Rounded.PlaylistAdd, "Pin to Home Strip", onClick = onPinToHomeStrip)
+                MenuRow(Icons.AutoMirrored.Rounded.PlaylistAdd, "Pin to Home Strip", "Add an app shortcut to the bottom row", onClick = onPinToHomeStrip)
             }
             MenuRow(
                 Icons.Rounded.Settings,
                 LocalContext.current.getString(R.string.home_menu_settings_title),
-                onOpenSettings,
+                "Customize Zeno Classic",
+                onClick = onOpenSettings,
             )
-            MenuRow(Icons.Rounded.Tune, "System settings", onOpenSystemSettings)
+            MenuRow(Icons.Rounded.Tune, "System settings", "Open Android settings", onClick = onOpenSystemSettings)
             Spacer(Modifier.height(12.dp))
         }
     }
@@ -8300,7 +8616,7 @@ private fun HomeShortcutStrip(
             verticalAlignment = Alignment.CenterVertically,
         ) {
             Text(
-                "Hold & drag to reorder",
+                "Drag apps, groups, or widgets to arrange",
                 style = MaterialTheme.typography.labelMedium,
                 color = Color(0xFFB8C1CE),
             )
@@ -10446,7 +10762,7 @@ private fun IconLayoutSettingsOverlay(
         previewApps
             .asSequence()
             .filter { !it.internal }
-            .take(8)
+            .take(6)
             .toList()
     }
     val rowOptions = remember { GridPreset.entries.map { it.rows }.distinct().sorted() }
@@ -10522,7 +10838,7 @@ private fun IconLayoutSettingsOverlay(
             Box(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .height(136.dp),
+                    .height(88.dp),
             ) {
                 if (currentWallpaper != null) {
                     AsyncImage(
@@ -10531,13 +10847,13 @@ private fun IconLayoutSettingsOverlay(
                         contentScale = ContentScale.Crop,
                         modifier = Modifier
                             .fillMaxWidth()
-                            .height(136.dp),
+                            .height(88.dp),
                     )
                 } else {
                     Box(
                         modifier = Modifier
                             .fillMaxWidth()
-                            .height(136.dp)
+                            .height(88.dp)
                             .background(Color(0xFF202344)),
                     )
                 }
@@ -10556,25 +10872,25 @@ private fun IconLayoutSettingsOverlay(
                         Column(
                             horizontalAlignment = Alignment.CenterHorizontally,
                             modifier = Modifier
-                                .width(112.dp)
-                                .padding(top = 12.dp),
+                                .width(96.dp)
+                                .padding(top = 8.dp),
                         ) {
                             AsyncImage(
                                 model = app.icon,
                                 contentDescription = app.label,
                                 contentScale = ContentScale.Fit,
                                 modifier = Modifier
-                                    .size(iconSize.dp)
+                                    .size(iconSize.coerceIn(38f, 48f).dp)
                                     .clip(iconMaskShape(currentShape)),
                             )
-                            Spacer(Modifier.height(6.dp))
+                            Spacer(Modifier.height(4.dp))
                             Text(
                                 text = app.label,
                                 style = compactAppLabelStyle(
-                                    fontSizeSp = SETTINGS_VALUE_TEXT_SP.value.toInt(),
+                                    fontSizeSp = 12,
                                     textColor = Color(0xFFE8EEF7),
                                 ),
-                                maxLines = 2,
+                                maxLines = 1,
                                 overflow = TextOverflow.Ellipsis,
                                 textAlign = TextAlign.Center,
                                 modifier = Modifier.fillMaxWidth(),
@@ -10589,11 +10905,11 @@ private fun IconLayoutSettingsOverlay(
                     .weight(1f)
                     .background(Color(0xFF2C2F2F))
                     .verticalScroll(rememberScrollState())
-                    .padding(horizontal = 26.dp, vertical = 18.dp),
+                    .padding(horizontal = 24.dp, vertical = 10.dp),
             ) {
                 Row(
                     modifier = Modifier.fillMaxWidth(),
-                    verticalAlignment = Alignment.Bottom,
+                    verticalAlignment = Alignment.CenterVertically,
                 ) {
                     Text(
                         stringResource(R.string.icon_layout_size),
@@ -10623,7 +10939,8 @@ private fun IconLayoutSettingsOverlay(
                     steps = 4,
                     modifier = Modifier
                         .fillMaxWidth()
-                        .padding(top = 8.dp),
+                        .height(42.dp)
+                        .padding(top = 2.dp),
                 )
                 Row(
                     modifier = Modifier
@@ -10635,13 +10952,13 @@ private fun IconLayoutSettingsOverlay(
                     Spacer(Modifier.weight(1f))
                     Text(stringResource(R.string.icon_layout_large), color = Color(0xFF9EA4A9), fontSize = 12.sp, textAlign = TextAlign.End, modifier = Modifier.weight(1f))
                 }
-                Spacer(Modifier.height(16.dp))
+                Spacer(Modifier.height(10.dp))
                 Text(
                     stringResource(R.string.icon_layout_grid),
                     color = Color.White,
                     fontSize = SETTINGS_TITLE_TEXT_SP,
                 )
-                Spacer(Modifier.height(8.dp))
+                Spacer(Modifier.height(2.dp))
                 Row(
                     modifier = Modifier.fillMaxWidth(),
                     horizontalArrangement = Arrangement.spacedBy(14.dp),
@@ -10686,7 +11003,7 @@ private fun IconLayoutSettingsOverlay(
                         )
                     }
                 }
-                Spacer(Modifier.height(22.dp))
+                Spacer(Modifier.height(10.dp))
                 IconShapeValueRow(
                     currentShape = currentShape,
                     onClick = ::cycleShape,
@@ -10706,8 +11023,8 @@ private fun IconShapeValueRow(
             .fillMaxWidth()
             .clip(RoundedCornerShape(6.dp))
             .clickable(onClick = onClick)
-            .padding(vertical = 6.dp),
-        verticalAlignment = Alignment.Bottom,
+            .padding(vertical = 4.dp),
+        verticalAlignment = Alignment.CenterVertically,
     ) {
         Column(modifier = Modifier.weight(1f)) {
                 Text(
@@ -10718,7 +11035,9 @@ private fun IconShapeValueRow(
             Text(
                 stringResource(R.string.icon_layout_shape_default),
                 color = Color(0xFF9EA4A9),
-                fontSize = SETTINGS_BODY_TEXT_SP,
+                fontSize = 13.sp,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
             )
         }
         Text(
@@ -11177,6 +11496,13 @@ private fun SettingsScreenOverlay(
                             subtitleColor = subtitleColor,
                             onClick = { activate(6) },
                         )
+                        AnimatedVisibility(visible = selectedIndex == 6) {
+                            ZenoFlipClockSettingsPreview(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .padding(start = 16.dp, end = 16.dp, bottom = 12.dp),
+                            )
+                        }
                     }
                 }
                 Spacer(Modifier.height(8.dp))
@@ -11564,6 +11890,81 @@ private fun SettingsRow(
             Spacer(Modifier.width(8.dp))
             trailingContent()
         }
+    }
+}
+
+@Composable
+private fun ZenoFlipClockSettingsPreview(modifier: Modifier = Modifier) {
+    Surface(
+        modifier = modifier,
+        shape = RoundedCornerShape(18.dp),
+        color = Color.Black,
+        border = BorderStroke(0.7.dp, Color.White.copy(alpha = 0.10f)),
+    ) {
+        Column(
+            modifier = Modifier.padding(horizontal = 14.dp, vertical = 12.dp),
+            horizontalAlignment = Alignment.CenterHorizontally,
+        ) {
+            Row(
+                horizontalArrangement = Arrangement.spacedBy(7.dp),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                listOf("09", "58").forEachIndexed { index, value ->
+                    FlipPreviewTile(value, showPeriod = index == 0)
+                }
+            }
+            Spacer(Modifier.height(9.dp))
+            Text(
+                "Minute-based screen saver · no seconds",
+                color = Color(0xFF8E95A3),
+                style = MaterialTheme.typography.labelSmall.copy(
+                    fontWeight = FontWeight.Medium,
+                    letterSpacing = 1.1.sp,
+                ),
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+            )
+        }
+    }
+}
+
+@Composable
+private fun FlipPreviewTile(value: String, showPeriod: Boolean) {
+    Box(
+        modifier = Modifier
+            .width(82.dp)
+            .height(74.dp)
+            .clip(RoundedCornerShape(13.dp))
+            .background(
+                Brush.verticalGradient(
+                    listOf(Color(0xFF222222), Color(0xFF111111)),
+                ),
+            )
+            .border(0.6.dp, Color.White.copy(alpha = 0.08f), RoundedCornerShape(13.dp)),
+        contentAlignment = Alignment.Center,
+    ) {
+        Box(
+            modifier = Modifier
+                .align(Alignment.Center)
+                .fillMaxWidth()
+                .height(1.dp)
+                .background(Color.Black.copy(alpha = 0.72f)),
+        )
+        if (showPeriod) {
+            Text(
+                "PM",
+                color = Color(0xFF8E8E8E),
+                style = MaterialTheme.typography.labelSmall.copy(letterSpacing = 1.sp),
+                modifier = Modifier
+                    .align(Alignment.TopStart)
+                    .padding(start = 8.dp, top = 7.dp),
+            )
+        }
+        Text(
+            value,
+            color = Color(0xFFE6E6E6),
+            style = MaterialTheme.typography.displayMedium.copy(fontWeight = FontWeight.Bold),
+        )
     }
 }
 

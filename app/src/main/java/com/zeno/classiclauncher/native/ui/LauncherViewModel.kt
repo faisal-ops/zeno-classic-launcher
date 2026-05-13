@@ -1193,6 +1193,10 @@ class LauncherViewModel(app: Application) : AndroidViewModel(app) {
         viewModelScope.launch { prefsRepo.setHomeStripEnabled(enabled) }
     }
 
+    fun setSetupComplete(complete: Boolean) {
+        viewModelScope.launch { prefsRepo.setSetupComplete(complete) }
+    }
+
     fun setHomeWidget(config: HomeWidgetConfig) {
         viewModelScope.launch { prefsRepo.setHomeWidget(config) }
     }

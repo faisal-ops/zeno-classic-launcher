@@ -80,7 +80,7 @@
     <string name="quick_settings_camera_permission_denied">Camera permission denied for torch</string>
     <string name="quick_settings_keyboard_mode_permission_prompt">Allow Modify system settings, then tap keyboard tile again.</string>
     <string name="quick_settings_keyboard_mode_failed">Could not apply keyboard mode change. Long-press opens settings.</string>
-    <string name="quick_settings_bluetooth_blocked">Bluetooth toggle blocked. Long-press opens settings, or grant all toggles in system settings.</string>
+    <string name="quick_settings_bluetooth_blocked">Android blocked direct Bluetooth toggling. Long-press this tile to open Bluetooth settings.</string>
     <string name="glance_settings_intro">Date, weather, and alerts.</string>
     <string name="glance_show_title">Show Glance Strip</string>
     <string name="glance_show_subtitle">Top strip on home</string>
@@ -120,7 +120,7 @@
     <string name="settings_wallpaper_title">Wallpaper</string>
     <string name="settings_wallpaper_subtitle">System wallpaper settings</string>
     <string name="settings_flip_clock_title">Zeno Flip Clock</string>
-    <string name="settings_flip_clock_subtitle">Open Android screen saver settings</string>
+    <string name="settings_flip_clock_subtitle">Preview and enable the minute-based screen saver</string>
     <string name="settings_reset_theme_title">Reset Theme</string>
     <string name="settings_reset_theme_subtitle">Restore default launcher colours</string>
     <string name="settings_haptics_title">Haptic Feedback</string>

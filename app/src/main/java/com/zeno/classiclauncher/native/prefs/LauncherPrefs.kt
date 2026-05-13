@@ -91,6 +91,8 @@ data class HomeWidgetConfig(
 }
 
 data class LauncherPrefs(
+    /** False until the first-run product setup has been completed or skipped. */
+    val setupComplete: Boolean = false,
     val gridPreset: GridPreset = GridPreset.R3C5,
     val secondShortcutTarget: SecondShortcutTarget = SecondShortcutTarget.MESSAGES,
     /** Empty = auto (heuristic). Otherwise badge count for this package only. */
@@ -203,6 +205,7 @@ private val DEFAULT_PREFS = LauncherPrefs()
 class LauncherPrefsRepository(private val context: Context) {
     private object Keys {
         val GRID = stringPreferencesKey("gridPreset")
+        val SETUP_COMPLETE = booleanPreferencesKey("setupComplete")
         val SHORTCUT = stringPreferencesKey("secondShortcut")
         val MAIL_BADGE = stringPreferencesKey("mailBadgePackage")
         val DOCK_MAIL = stringPreferencesKey("dockMailPackage")
@@ -264,6 +267,9 @@ class LauncherPrefsRepository(private val context: Context) {
     }
 
     val prefsFlow: Flow<LauncherPrefs> = context.dataStore.data.map { p ->
+        // Existing installs already made their setup choices through Settings; do not interrupt them
+        // after an update just because this key is new. Fresh installs have an empty DataStore.
+        val setupComplete = p[Keys.SETUP_COMPLETE] ?: p.asMap().isNotEmpty()
         val grid = p[Keys.GRID]?.let { v -> GridPreset.entries.firstOrNull { it.name == v } } ?: DEFAULT_PREFS.gridPreset
         val shortcut =
             p[Keys.SHORTCUT]?.let { v -> SecondShortcutTarget.entries.firstOrNull { it.name == v } } ?: DEFAULT_PREFS.secondShortcutTarget
@@ -342,6 +348,7 @@ class LauncherPrefsRepository(private val context: Context) {
         val swipeDownAppSpotlight = p[Keys.SWIPE_DOWN_SPOTLIGHT] ?: DEFAULT_PREFS.swipeDownAppSpotlight
         val languageCode = p[Keys.LANGUAGE_CODE]?.trim() ?: DEFAULT_PREFS.languageCode
         LauncherPrefs(
+            setupComplete = setupComplete,
             gridPreset = grid,
             secondShortcutTarget = shortcut,
             mailBadgePackage = mailBadge,
@@ -398,6 +405,10 @@ class LauncherPrefsRepository(private val context: Context) {
 
     suspend fun setGridPreset(preset: GridPreset) {
         context.dataStore.edit { it[Keys.GRID] = preset.name }
+    }
+
+    suspend fun setSetupComplete(complete: Boolean) {
+        context.dataStore.edit { it[Keys.SETUP_COMPLETE] = complete }
     }
 
     suspend fun setSecondShortcutTarget(target: SecondShortcutTarget) {
