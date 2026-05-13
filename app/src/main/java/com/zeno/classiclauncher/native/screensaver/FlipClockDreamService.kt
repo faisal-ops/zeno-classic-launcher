@@ -96,8 +96,10 @@ private class FlipClockDreamView(context: Context) : View(context) {
             if (h == 0) 12 else h
         }
         val minute = now.minute
+        val second = now.second
         val hourText = hour.toString().padStart(2, '0')
         val minuteText = minute.toString().padStart(2, '0')
+        val secondText = second.toString().padStart(2, '0')
         val period = if (use24h) "" else if (hourRaw < 12) "AM" else "PM"
 
         val drift = burnInDrift(now)
@@ -107,21 +109,18 @@ private class FlipClockDreamView(context: Context) : View(context) {
         val w = width.toFloat()
         val h = height.toFloat()
         val landscape = w > h
-        val tileGap = if (landscape) w * 0.035f else w * 0.045f
-        val totalWidth = if (landscape) w * 0.56f else w * 0.82f
-        val tileWidth = (totalWidth - tileGap) / 2f
+
+        // 3 equal tiles: HH MM SS all in a row within screen bounds
+        val tileGap = if (landscape) w * 0.025f else w * 0.030f
+        val totalWidth = if (landscape) w * 0.84f else w * 0.92f
+        val tileWidth = (totalWidth - 2f * tileGap) / 3f
         val tileHeight = min(if (landscape) h * 0.46f else h * 0.25f, tileWidth * 0.78f)
         val startX = (w - totalWidth) / 2f
         val startY = if (landscape) h * 0.27f else h * 0.30f
-        val radius = tileHeight * 0.09f
 
         drawFlipTile(canvas, RectF(startX, startY, startX + tileWidth, startY + tileHeight), hourText, period)
-        drawFlipTile(
-            canvas,
-            RectF(startX + tileWidth + tileGap, startY, startX + totalWidth, startY + tileHeight),
-            minuteText,
-            "",
-        )
+        drawFlipTile(canvas, RectF(startX + tileWidth + tileGap, startY, startX + 2f * tileWidth + tileGap, startY + tileHeight), minuteText, "")
+        drawFlipTile(canvas, RectF(startX + 2f * tileWidth + 2f * tileGap, startY, startX + totalWidth, startY + tileHeight), secondText, "")
 
         smallPaint.textSize = min(tileHeight * 0.13f, 28f)
         val dateText = now.format(dateFormatter).uppercase(Locale.getDefault()).replace(",", "")
