@@ -11,6 +11,7 @@ import android.graphics.Shader
 import android.service.dreams.DreamService
 import android.text.format.DateFormat
 import android.view.View
+import android.view.WindowManager
 import java.time.LocalDateTime
 import java.time.format.DateTimeFormatter
 import java.util.Locale
@@ -21,6 +22,7 @@ class FlipClockDreamService : DreamService() {
 
     override fun onAttachedToWindow() {
         super.onAttachedToWindow()
+        window?.addFlags(WindowManager.LayoutParams.FLAG_SHOW_WHEN_LOCKED)
         setInteractive(false)
         setFullscreen(true)
         setScreenBright(false)
