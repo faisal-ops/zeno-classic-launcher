@@ -13,7 +13,7 @@ object LauncherBackup {
     const val FORMAT_KEY = "format"
     const val FORMAT_VALUE = "classiclauncher_backup"
     const val VERSION_KEY = "version"
-    const val CURRENT_VERSION = 22
+    const val CURRENT_VERSION = 23
 
     private object PrefKey {
         const val CUSTOM_QUICK_SETTINGS_ENABLED = "customQuickSettingsEnabled"
@@ -78,6 +78,15 @@ object LauncherBackup {
         p.put("homeGroups", homeGroupsArr)
         p.put("homeStripOrder", JSONArray(prefs.homeStripOrder))
         p.put("homeStripSlots", JSONArray(prefs.homeStripSlots.map { it ?: "" }))
+        JSONObject().also { w ->
+            w.put("providerPackage", prefs.homeWidget.providerPackage)
+            w.put("providerClass", prefs.homeWidget.providerClass)
+            w.put("row", prefs.homeWidget.row)
+            w.put("col", prefs.homeWidget.col)
+            w.put("cols", prefs.homeWidget.cols)
+            w.put("rows", prefs.homeWidget.rows)
+            p.put("homeWidget", w)
+        }
         p.put("doubleTapToSleepEnabled", prefs.doubleTapToSleepEnabled)
         p.put("swipeUpPackage", prefs.swipeUpPackage)
         p.put("doubleTapPackage", prefs.doubleTapPackage)
@@ -256,6 +265,22 @@ object LauncherBackup {
                 }
             }
         } ?: emptyList()
+        val homeWidget = p.optJSONObject("homeWidget")?.let { w ->
+            HomeWidgetConfig(
+                appWidgetId = -1,
+                providerPackage = w.optString("providerPackage", "").trim(),
+                providerClass = w.optString("providerClass", "").trim(),
+                row = w.optInt("row", 1).coerceIn(0, 3),
+                col = w.optInt("col", 0).coerceIn(0, 3),
+                cols = w.optInt("cols", 4).coerceIn(1, 4),
+                rows = w.optInt("rows", 2).coerceIn(1, 4),
+            ).let { cfg ->
+                cfg.copy(
+                    row = cfg.row.coerceAtMost(4 - cfg.rows),
+                    col = cfg.col.coerceAtMost(4 - cfg.cols),
+                )
+            }
+        } ?: HomeWidgetConfig()
         LauncherThemePalette.fromJson(theme)
         LauncherPrefs(
             gridPreset = grid,
@@ -292,6 +317,7 @@ object LauncherBackup {
             homeGroups = homeGroups,
             homeStripOrder = homeStripOrder,
             homeStripSlots = homeStripSlots,
+            homeWidget = homeWidget,
             doubleTapToSleepEnabled = doubleTapSleep,
             swipeUpPackage = swipeUpPackage,
             doubleTapPackage = doubleTapPackage,

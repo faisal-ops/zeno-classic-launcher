@@ -78,6 +78,18 @@ enum class GlanceWeatherLocationMode {
     MANUAL,
 }
 
+data class HomeWidgetConfig(
+    val appWidgetId: Int = -1,
+    val providerPackage: String = "",
+    val providerClass: String = "",
+    val row: Int = 1,
+    val col: Int = 0,
+    val cols: Int = 4,
+    val rows: Int = 2,
+) {
+    val hasWidget: Boolean get() = appWidgetId > 0
+}
+
 data class LauncherPrefs(
     val gridPreset: GridPreset = GridPreset.R3C5,
     val secondShortcutTarget: SecondShortcutTarget = SecondShortcutTarget.MESSAGES,
@@ -158,6 +170,8 @@ data class LauncherPrefs(
     val showHomeGroups: Boolean = true,
     /** Master on/off for the entire home strip (shortcuts + groups). */
     val homeStripEnabled: Boolean = true,
+    /** Current single home widget plus its 4x4 grid placement/span. */
+    val homeWidget: HomeWidgetConfig = HomeWidgetConfig(),
     /** Swipe-down custom quick settings overlay on home page. */
     val customQuickSettingsEnabled: Boolean = false,
     /** Package to launch from the QR scanner quick-settings tile. Empty = built-in scanner. */
@@ -222,6 +236,13 @@ class LauncherPrefsRepository(private val context: Context) {
         val HOME_STRIP_ORDER = stringPreferencesKey("homeStripOrderCsv")
         val HOME_STRIP_SLOTS = stringPreferencesKey("homeStripSlotsCsv")
         val HOME_PINNED_FOLDERS = stringPreferencesKey("homePinnedFoldersCsv")
+        val HOME_WIDGET_ID = intPreferencesKey("homeWidgetId")
+        val HOME_WIDGET_PROVIDER_PKG = stringPreferencesKey("homeWidgetProviderPackage")
+        val HOME_WIDGET_PROVIDER_CLASS = stringPreferencesKey("homeWidgetProviderClass")
+        val HOME_WIDGET_ROW = intPreferencesKey("homeWidgetRow")
+        val HOME_WIDGET_COL = intPreferencesKey("homeWidgetCol")
+        val HOME_WIDGET_COLS = intPreferencesKey("homeWidgetCols")
+        val HOME_WIDGET_ROWS = intPreferencesKey("homeWidgetRows")
         val DOUBLE_TAP_SLEEP = booleanPreferencesKey("doubleTapToSleepEnabled")
         val SWIPE_UP_PKG = stringPreferencesKey("swipeUpPackage")
         val DOUBLE_TAP_PKG = stringPreferencesKey("doubleTapPackage")
@@ -288,6 +309,20 @@ class LauncherPrefsRepository(private val context: Context) {
         val homeStripOrder = parseCsvList(p[Keys.HOME_STRIP_ORDER])
         val homeStripSlots = parseSlotCsvList(p[Keys.HOME_STRIP_SLOTS])
         val homePinnedFolderIds = parseCsvList(p[Keys.HOME_PINNED_FOLDERS]).filter { FolderIds.isFolderId(it) }
+        val homeWidget = HomeWidgetConfig(
+            appWidgetId = p[Keys.HOME_WIDGET_ID] ?: -1,
+            providerPackage = p[Keys.HOME_WIDGET_PROVIDER_PKG]?.trim() ?: "",
+            providerClass = p[Keys.HOME_WIDGET_PROVIDER_CLASS]?.trim() ?: "",
+            row = (p[Keys.HOME_WIDGET_ROW] ?: DEFAULT_PREFS.homeWidget.row).coerceIn(0, 3),
+            col = (p[Keys.HOME_WIDGET_COL] ?: DEFAULT_PREFS.homeWidget.col).coerceIn(0, 3),
+            cols = (p[Keys.HOME_WIDGET_COLS] ?: DEFAULT_PREFS.homeWidget.cols).coerceIn(1, 4),
+            rows = (p[Keys.HOME_WIDGET_ROWS] ?: DEFAULT_PREFS.homeWidget.rows).coerceIn(1, 4),
+        ).let { cfg ->
+            cfg.copy(
+                col = cfg.col.coerceAtMost(4 - cfg.cols),
+                row = cfg.row.coerceAtMost(4 - cfg.rows),
+            )
+        }
         val doubleTapSleep = p[Keys.DOUBLE_TAP_SLEEP] ?: DEFAULT_PREFS.doubleTapToSleepEnabled
         val swipeUpPkg = p[Keys.SWIPE_UP_PKG]?.trim() ?: ""
         val doubleTapPkg = p[Keys.DOUBLE_TAP_PKG]?.trim() ?: ""
@@ -341,6 +376,7 @@ class LauncherPrefsRepository(private val context: Context) {
             homeGroups = homeGroups,
             homeStripOrder = homeStripOrder,
             homeStripSlots = homeStripSlots,
+            homeWidget = homeWidget,
             doubleTapToSleepEnabled = doubleTapSleep,
             swipeUpPackage = swipeUpPkg,
             doubleTapPackage = doubleTapPkg,
@@ -412,6 +448,32 @@ class LauncherPrefsRepository(private val context: Context) {
     suspend fun setHomeStripSlots(slots: List<String?>) {
         context.dataStore.edit { p ->
             p[Keys.HOME_STRIP_SLOTS] = slots.joinToString(",") { it ?: "" }
+        }
+    }
+
+    suspend fun setHomeWidget(config: HomeWidgetConfig) {
+        val cols = config.cols.coerceIn(1, 4)
+        val rows = config.rows.coerceIn(1, 4)
+        context.dataStore.edit { p ->
+            p[Keys.HOME_WIDGET_ID] = config.appWidgetId
+            p[Keys.HOME_WIDGET_PROVIDER_PKG] = config.providerPackage.trim()
+            p[Keys.HOME_WIDGET_PROVIDER_CLASS] = config.providerClass.trim()
+            p[Keys.HOME_WIDGET_COLS] = cols
+            p[Keys.HOME_WIDGET_ROWS] = rows
+            p[Keys.HOME_WIDGET_COL] = config.col.coerceIn(0, 4 - cols)
+            p[Keys.HOME_WIDGET_ROW] = config.row.coerceIn(0, 4 - rows)
+        }
+    }
+
+    suspend fun clearHomeWidget() {
+        context.dataStore.edit { p ->
+            p.remove(Keys.HOME_WIDGET_ID)
+            p.remove(Keys.HOME_WIDGET_PROVIDER_PKG)
+            p.remove(Keys.HOME_WIDGET_PROVIDER_CLASS)
+            p.remove(Keys.HOME_WIDGET_ROW)
+            p.remove(Keys.HOME_WIDGET_COL)
+            p.remove(Keys.HOME_WIDGET_COLS)
+            p.remove(Keys.HOME_WIDGET_ROWS)
         }
     }
 
@@ -654,6 +716,13 @@ class LauncherPrefsRepository(private val context: Context) {
             s[Keys.GLANCE_WEATHER_MANUAL_LON] = prefs.glanceWeatherManualLongitude.trim()
             s[Keys.HOME_GROUPS] = homeGroupsToJson(prefs.homeGroups)
             s[Keys.HOME_STRIP_ORDER] = prefs.homeStripOrder.joinToString(",")
+            s[Keys.HOME_WIDGET_ID] = prefs.homeWidget.appWidgetId
+            s[Keys.HOME_WIDGET_PROVIDER_PKG] = prefs.homeWidget.providerPackage
+            s[Keys.HOME_WIDGET_PROVIDER_CLASS] = prefs.homeWidget.providerClass
+            s[Keys.HOME_WIDGET_ROW] = prefs.homeWidget.row.coerceIn(0, 3)
+            s[Keys.HOME_WIDGET_COL] = prefs.homeWidget.col.coerceIn(0, 3)
+            s[Keys.HOME_WIDGET_COLS] = prefs.homeWidget.cols.coerceIn(1, 4)
+            s[Keys.HOME_WIDGET_ROWS] = prefs.homeWidget.rows.coerceIn(1, 4)
             s[Keys.DOUBLE_TAP_SLEEP] = prefs.doubleTapToSleepEnabled
             s[Keys.SWIPE_UP_PKG] = prefs.swipeUpPackage
             s[Keys.DOUBLE_TAP_PKG] = prefs.doubleTapPackage

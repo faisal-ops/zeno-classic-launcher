@@ -25,6 +25,7 @@ import com.zeno.classiclauncher.nlauncher.prefs.GlanceWeatherUnit
 import com.zeno.classiclauncher.nlauncher.prefs.HomeGroup
 import com.zeno.classiclauncher.nlauncher.prefs.HomeGroupIds
 import com.zeno.classiclauncher.nlauncher.prefs.HomeGroupSide
+import com.zeno.classiclauncher.nlauncher.prefs.HomeWidgetConfig
 import com.zeno.classiclauncher.nlauncher.prefs.AppIconShape
 import com.zeno.classiclauncher.nlauncher.prefs.DockIconStyle
 import com.zeno.classiclauncher.nlauncher.prefs.LauncherPrefs
@@ -1190,6 +1191,14 @@ class LauncherViewModel(app: Application) : AndroidViewModel(app) {
 
     fun setHomeStripEnabled(enabled: Boolean) {
         viewModelScope.launch { prefsRepo.setHomeStripEnabled(enabled) }
+    }
+
+    fun setHomeWidget(config: HomeWidgetConfig) {
+        viewModelScope.launch { prefsRepo.setHomeWidget(config) }
+    }
+
+    fun clearHomeWidget() {
+        viewModelScope.launch { prefsRepo.clearHomeWidget() }
     }
 
     fun setCustomQuickSettingsEnabled(enabled: Boolean) {

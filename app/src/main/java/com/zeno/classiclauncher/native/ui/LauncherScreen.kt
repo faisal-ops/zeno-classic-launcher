@@ -13,6 +13,7 @@ import android.app.WallpaperManager
 import android.appwidget.AppWidgetHost
 import android.appwidget.AppWidgetHostView
 import android.appwidget.AppWidgetManager
+import android.appwidget.AppWidgetProviderInfo
 import android.content.ComponentName
 import android.content.ContextWrapper
 import android.content.Intent
@@ -21,13 +22,13 @@ import android.net.Uri
 import android.os.Build
 import android.os.Handler
 import android.os.Looper
+import android.os.Process
 import android.os.SystemClock
 import android.provider.Settings
 import android.util.Log
 import android.view.HapticFeedbackConstants
 import android.view.View
 import android.view.KeyEvent as AndroidKeyEvent
-import android.view.MotionEvent
 import android.widget.Toast
 import android.graphics.drawable.Drawable
 import androidx.compose.foundation.BorderStroke
@@ -137,6 +138,7 @@ import androidx.compose.material.icons.rounded.BookmarkAdd
 import androidx.compose.material.icons.rounded.AddAlarm
 import androidx.compose.material.icons.rounded.ArrowDropDown
 import androidx.compose.material.icons.rounded.EventBusy
+import androidx.compose.material.icons.rounded.AspectRatio
 import androidx.compose.material.icons.rounded.Notifications
 import androidx.compose.material.icons.rounded.NightlightRound
 import androidx.compose.material.icons.rounded.Folder
@@ -283,6 +285,7 @@ import com.zeno.classiclauncher.nlauncher.prefs.GlanceWeatherUnit
 import com.zeno.classiclauncher.nlauncher.prefs.HomeGroup
 import com.zeno.classiclauncher.nlauncher.prefs.HomeGroupIds
 import com.zeno.classiclauncher.nlauncher.prefs.HomeGroupSide
+import com.zeno.classiclauncher.nlauncher.prefs.HomeWidgetConfig
 import com.zeno.classiclauncher.nlauncher.prefs.STRIP_TOTAL_SLOTS
 import com.zeno.classiclauncher.nlauncher.prefs.canAddHomeStripItem
 import com.zeno.classiclauncher.nlauncher.prefs.effectiveHomeStripSlotOrder
@@ -333,6 +336,8 @@ private fun drawerCellForHomeStripToken(
 }
 
 private const val HOME_WIDGET_HOST_ID = 7777
+private const val HOME_GRID_COLS = 4
+private const val HOME_GRID_ROWS = 4
 private val HOME_SHORTCUT_ICON_DP = 52.dp
 private val HOME_SHORTCUT_FALLBACK_ICON_DP = 48.dp
 private val HOME_STRIP_LABEL_COLOR = Color(0xFFE8EEF7)
@@ -466,6 +471,74 @@ private data class OpenFolderState(
     val title: String,
 )
 
+private data class HomeWidgetSpan(val cols: Int, val rows: Int)
+
+private data class HomeWidgetSizeOption(
+    val label: String,
+    val span: HomeWidgetSpan,
+    val recommended: Boolean = false,
+)
+
+private fun estimateHomeWidgetSpan(info: AppWidgetProviderInfo): HomeWidgetSpan {
+    val minWidth = listOf(info.minResizeWidth, info.minWidth).filter { it > 0 }.minOrNull() ?: info.minWidth
+    val minHeight = listOf(info.minResizeHeight, info.minHeight).filter { it > 0 }.minOrNull() ?: info.minHeight
+    val cols = when {
+        minWidth <= 96 -> 1
+        minWidth <= 180 -> 2
+        minWidth <= 270 -> 3
+        else -> 4
+    }
+    val rows = when {
+        minHeight <= 88 -> 1
+        minHeight <= 180 -> 2
+        minHeight <= 270 -> 3
+        else -> 4
+    }
+    return HomeWidgetSpan(
+        cols = cols.coerceIn(1, HOME_GRID_COLS),
+        rows = rows.coerceIn(1, HOME_GRID_ROWS),
+    )
+}
+
+private fun homeWidgetSizeOptions(info: AppWidgetProviderInfo): List<HomeWidgetSizeOption> {
+    val min = estimateHomeWidgetSpan(info)
+    val candidates = listOf(
+        HomeWidgetSizeOption("Compact", min),
+        HomeWidgetSizeOption(
+            "Standard",
+            HomeWidgetSpan(
+                cols = maxOf(min.cols, min.cols.coerceAtLeast(2)).coerceAtMost(HOME_GRID_COLS),
+                rows = maxOf(min.rows, min.rows.coerceAtLeast(2)).coerceAtMost(HOME_GRID_ROWS),
+            ),
+            recommended = true,
+        ),
+        HomeWidgetSizeOption(
+            "Expanded",
+            HomeWidgetSpan(
+                cols = HOME_GRID_COLS,
+                rows = maxOf(min.rows, (min.rows + 1).coerceAtLeast(2)).coerceAtMost(HOME_GRID_ROWS),
+            ),
+        ),
+    )
+    return candidates.distinctBy { "${it.span.cols}x${it.span.rows}" }.take(3)
+}
+
+private fun normalizedHomeWidgetConfig(
+    config: HomeWidgetConfig,
+    fallback: HomeWidgetSpan = HomeWidgetSpan(4, 2),
+): HomeWidgetConfig {
+    val cols = config.cols.takeIf { it > 0 } ?: fallback.cols
+    val rows = config.rows.takeIf { it > 0 } ?: fallback.rows
+    val c = cols.coerceIn(1, HOME_GRID_COLS)
+    val r = rows.coerceIn(1, HOME_GRID_ROWS)
+    return config.copy(
+        cols = c,
+        rows = r,
+        col = config.col.coerceIn(0, HOME_GRID_COLS - c),
+        row = config.row.coerceIn(0, HOME_GRID_ROWS - r),
+    )
+}
+
 private data class AddToContainerTarget(
     val id: String,
     val title: String,
@@ -584,6 +657,8 @@ fun LauncherScreen(
     var showIconAppearanceSettings by remember { mutableStateOf(false) }
     var showHomeActions by remember { mutableStateOf(false) }
     var showPinAppToHome by remember { mutableStateOf(false) }
+    var showWidgetPicker by remember { mutableStateOf(false) }
+    var showWidgetResizeSheet by remember { mutableStateOf(false) }
     var showNewHomeGroupDialog by remember { mutableStateOf(false) }
     var newHomeGroupName by remember { mutableStateOf("") }
     val newHomeGroupFocusRequester = remember { FocusRequester() }
@@ -593,6 +668,30 @@ fun LauncherScreen(
     val appWidgetHost = remember(context) { AppWidgetHost(context, HOME_WIDGET_HOST_ID) }
     var homeWidgetId by remember { mutableStateOf<Int?>(null) }
     var pendingWidgetId by remember { mutableStateOf<Int?>(null) }
+    var pendingWidgetProvider by remember { mutableStateOf<AppWidgetProviderInfo?>(null) }
+    val appWidgetManager = remember(context) { AppWidgetManager.getInstance(context) }
+    fun commitHomeWidget(widgetId: Int) {
+        val info = appWidgetManager.getAppWidgetInfo(widgetId)
+        val span = info?.let(::estimateHomeWidgetSpan) ?: HomeWidgetSpan(4, 2)
+        homeWidgetId?.let { oldId ->
+            if (oldId != widgetId) runCatching { appWidgetHost.deleteAppWidgetId(oldId) }
+        }
+        homeWidgetId = widgetId
+        vm.setHomeWidget(
+            HomeWidgetConfig(
+                appWidgetId = widgetId,
+                providerPackage = info?.provider?.packageName.orEmpty(),
+                providerClass = info?.provider?.className.orEmpty(),
+                row = (HOME_GRID_ROWS - span.rows) / 2,
+                col = (HOME_GRID_COLS - span.cols) / 2,
+                cols = span.cols,
+                rows = span.rows,
+            ),
+        )
+        pendingWidgetId = null
+        pendingWidgetProvider = null
+        showWidgetPicker = false
+    }
     DisposableEffect(appWidgetHost) {
         appWidgetHost.startListening()
         onDispose { runCatching { appWidgetHost.stopListening() } }
@@ -606,10 +705,73 @@ fun LauncherScreen(
             if (widgetId != -1) runCatching { appWidgetHost.deleteAppWidgetId(widgetId) }
             return@rememberLauncherForActivityResult
         }
-        homeWidgetId?.let { oldId ->
-            if (oldId != widgetId) runCatching { appWidgetHost.deleteAppWidgetId(oldId) }
+        commitHomeWidget(widgetId)
+    }
+    val configureWidgetLauncher = rememberLauncherForActivityResult(ActivityResultContracts.StartActivityForResult()) {
+        val widgetId = pendingWidgetId
+        if (widgetId != null && appWidgetManager.getAppWidgetInfo(widgetId) != null) {
+            if (widgetId == homeWidgetId) {
+                pendingWidgetId = null
+                pendingWidgetProvider = null
+            } else {
+                commitHomeWidget(widgetId)
+            }
+        } else {
+            pendingWidgetId = null
+            pendingWidgetProvider = null
         }
-        homeWidgetId = widgetId
+    }
+    val bindWidgetLauncher = rememberLauncherForActivityResult(ActivityResultContracts.StartActivityForResult()) { result ->
+        val widgetId = pendingWidgetId
+        val provider = pendingWidgetProvider
+        if (result.resultCode != Activity.RESULT_OK || widgetId == null || provider == null) {
+            widgetId?.let { runCatching { appWidgetHost.deleteAppWidgetId(it) } }
+            pendingWidgetId = null
+            pendingWidgetProvider = null
+            return@rememberLauncherForActivityResult
+        }
+        val configure = provider.configure
+        if (configure != null) {
+            configureWidgetLauncher.launch(
+                Intent(AppWidgetManager.ACTION_APPWIDGET_CONFIGURE).apply {
+                    component = configure
+                    putExtra(AppWidgetManager.EXTRA_APPWIDGET_ID, widgetId)
+                },
+            )
+        } else {
+            commitHomeWidget(widgetId)
+        }
+    }
+    fun addWidgetFromProvider(provider: AppWidgetProviderInfo) {
+        val id = appWidgetHost.allocateAppWidgetId()
+        pendingWidgetId = id
+        pendingWidgetProvider = provider
+        val bound = runCatching {
+            appWidgetManager.bindAppWidgetIdIfAllowed(id, provider.provider)
+        }.getOrDefault(false)
+        if (bound) {
+            val configure = provider.configure
+            if (configure != null) {
+                configureWidgetLauncher.launch(
+                    Intent(AppWidgetManager.ACTION_APPWIDGET_CONFIGURE).apply {
+                        component = configure
+                        putExtra(AppWidgetManager.EXTRA_APPWIDGET_ID, id)
+                    },
+                )
+            } else {
+                commitHomeWidget(id)
+            }
+        } else {
+            bindWidgetLauncher.launch(
+                Intent(AppWidgetManager.ACTION_APPWIDGET_BIND).apply {
+                    putExtra(AppWidgetManager.EXTRA_APPWIDGET_ID, id)
+                    putExtra(AppWidgetManager.EXTRA_APPWIDGET_PROVIDER, provider.provider)
+                },
+            )
+        }
+    }
+    LaunchedEffect(prefs.homeWidget.appWidgetId) {
+        homeWidgetId = prefs.homeWidget.appWidgetId.takeIf { it > 0 }
     }
     var showAppMenu by remember { mutableStateOf<AppEntry?>(null) }
     /** Storage token (`pkg` or `pkg#id`) when the app menu was opened from the home shortcut strip. */
@@ -783,6 +945,7 @@ fun LauncherScreen(
                             scope.launch { pagerState.animateScrollToPage(1) }
                         },
                         reorderMode = reorderMode,
+                        onEnterReorderMode = { if (!reorderMode) vm.toggleReorderMode() },
                         onExitReorderMode = { if (reorderMode) vm.toggleReorderMode() },
                         homeStripCount = if (homeStripNavEligible) STRIP_TOTAL_SLOTS else 0,
                         onActivateHomeStripIndex = { idx ->
@@ -855,7 +1018,14 @@ fun LauncherScreen(
                         hapticsEnabled = prefs.hapticsEnabled,
                         hapticIntensity = prefs.hapticIntensity,
                         homeWidgetId = homeWidgetId,
+                        homeWidgetConfig = prefs.homeWidget,
                         appWidgetHost = appWidgetHost,
+                        onUpdateHomeWidget = vm::setHomeWidget,
+                        onRemoveWidget = {
+                            homeWidgetId?.let { runCatching { appWidgetHost.deleteAppWidgetId(it) } }
+                            homeWidgetId = null
+                            vm.clearHomeWidget()
+                        },
                         onLongPress = { showHomeActions = true },
                         doubleTapToSleepEnabled = prefs.doubleTapToSleepEnabled,
                         searchQuery = searchQuery,
@@ -1855,18 +2025,37 @@ fun LauncherScreen(
                 hasWidget = homeWidgetId != null,
                 newHomeGroupEnabled = !classicMode && prefs.homeStripEnabled && prefs.canAddHomeStripItem(),
                 pinToHomepageEnabled = pinToHomepageEnabled,
-                onAddWidget = {
-                    val id = appWidgetHost.allocateAppWidgetId()
-                    pendingWidgetId = id
-                    val pickIntent = Intent(AppWidgetManager.ACTION_APPWIDGET_PICK).apply {
-                        putExtra(AppWidgetManager.EXTRA_APPWIDGET_ID, id)
-                    }
-                    pickWidgetLauncher.launch(pickIntent)
+                onResizeWidget = {
                     showHomeActions = false
+                    showWidgetResizeSheet = true
+                },
+                onReplaceWidget = {
+                    showHomeActions = false
+                    showWidgetPicker = true
+                },
+                onAddWidget = {
+                    showHomeActions = false
+                    showWidgetPicker = true
+                },
+                onConfigureWidget = {
+                    showHomeActions = false
+                    val widgetId = homeWidgetId
+                    val info = widgetId?.let { appWidgetManager.getAppWidgetInfo(it) }
+                    if (widgetId != null && info?.configure != null) {
+                        pendingWidgetId = widgetId
+                        pendingWidgetProvider = info
+                        configureWidgetLauncher.launch(
+                            Intent(AppWidgetManager.ACTION_APPWIDGET_CONFIGURE).apply {
+                                component = info.configure
+                                putExtra(AppWidgetManager.EXTRA_APPWIDGET_ID, widgetId)
+                            },
+                        )
+                    }
                 },
                 onRemoveWidget = {
                     homeWidgetId?.let { runCatching { appWidgetHost.deleteAppWidgetId(it) } }
                     homeWidgetId = null
+                    vm.clearHomeWidget()
                     showHomeActions = false
                 },
                 onOpenSettings = {
@@ -1891,6 +2080,46 @@ fun LauncherScreen(
                     showPinAppToHome = true
                 },
                 onDismiss = { showHomeActions = false },
+            )
+        }
+
+        homeWidgetId?.takeIf { showWidgetResizeSheet }?.let { widgetId ->
+            val info = appWidgetManager.getAppWidgetInfo(widgetId)
+            if (info != null) {
+                HomeWidgetResizeSheet(
+                    info = info,
+                    currentConfig = prefs.homeWidget,
+                    onSelect = { span ->
+                        vm.setHomeWidget(
+                            normalizedHomeWidgetConfig(
+                                prefs.homeWidget.copy(cols = span.cols, rows = span.rows),
+                                span,
+                            ),
+                        )
+                        showWidgetResizeSheet = false
+                    },
+                    onDismiss = { showWidgetResizeSheet = false },
+                )
+            } else {
+                showWidgetResizeSheet = false
+            }
+        }
+
+        if (showWidgetPicker) {
+            HomeWidgetPickerSheet(
+                appWidgetManager = appWidgetManager,
+                themePalette = themePalette,
+                onSelectWidget = ::addWidgetFromProvider,
+                onOpenSystemPicker = {
+                    val id = appWidgetHost.allocateAppWidgetId()
+                    pendingWidgetId = id
+                    val pickIntent = Intent(AppWidgetManager.ACTION_APPWIDGET_PICK).apply {
+                        putExtra(AppWidgetManager.EXTRA_APPWIDGET_ID, id)
+                    }
+                    pickWidgetLauncher.launch(pickIntent)
+                    showWidgetPicker = false
+                },
+                onDismiss = { showWidgetPicker = false },
             )
         }
 
@@ -1986,6 +2215,221 @@ fun LauncherScreen(
  * consume their own taps first.
  */
 @Composable
+private fun HomeGridCanvas(
+    homeWidgetId: Int?,
+    homeWidgetConfig: HomeWidgetConfig,
+    appWidgetHost: AppWidgetHost,
+    appWidgetManager: AppWidgetManager,
+    reorderMode: Boolean,
+    onEnterReorderMode: () -> Unit,
+    hapticsEnabled: Boolean,
+    removeDropBounds: Rect?,
+    onRemoveDropVisibleChanged: (Boolean) -> Unit,
+    onRemoveDropActiveChanged: (Boolean) -> Unit,
+    onRemoveWidget: () -> Unit,
+    onUpdateHomeWidget: (HomeWidgetConfig) -> Unit,
+    onWidgetBoundsChanged: (Rect?) -> Unit,
+    onWidgetDragActiveChanged: (Boolean) -> Unit,
+) {
+    val view = LocalView.current
+    val density = LocalDensity.current
+    val currentReorderMode = rememberUpdatedState(reorderMode)
+    val currentRemoveDropBounds = rememberUpdatedState(removeDropBounds)
+    val currentOnEnterReorderMode = rememberUpdatedState(onEnterReorderMode)
+    val currentOnRemoveDropVisibleChanged = rememberUpdatedState(onRemoveDropVisibleChanged)
+    val currentOnRemoveDropActiveChanged = rememberUpdatedState(onRemoveDropActiveChanged)
+    val currentOnRemoveWidget = rememberUpdatedState(onRemoveWidget)
+    val currentOnUpdateHomeWidget = rememberUpdatedState(onUpdateHomeWidget)
+    val currentOnWidgetDragActiveChanged = rememberUpdatedState(onWidgetDragActiveChanged)
+    val removeFallbackTopPx = with(density) { 116.dp.toPx() }
+    val widgetInfo = remember(homeWidgetId) {
+        homeWidgetId?.let { appWidgetManager.getAppWidgetInfo(it) }
+    }
+    LaunchedEffect(widgetInfo) {
+        if (widgetInfo == null) onWidgetBoundsChanged(null)
+    }
+    var widgetDragOffset by remember { mutableStateOf(Offset.Zero) }
+    var widgetDragging by remember { mutableStateOf(false) }
+    var widgetRemoveActive by remember { mutableStateOf(false) }
+    var widgetFingerRoot by remember { mutableStateOf(Offset.Zero) }
+    var widgetCoords by remember { mutableStateOf<LayoutCoordinates?>(null) }
+    var gridCoords by remember { mutableStateOf<LayoutCoordinates?>(null) }
+    fun resetWidgetDrag() {
+        widgetDragging = false
+        widgetDragOffset = Offset.Zero
+        widgetRemoveActive = false
+        widgetFingerRoot = Offset.Zero
+        currentOnWidgetDragActiveChanged.value(false)
+        currentOnRemoveDropVisibleChanged.value(false)
+        currentOnRemoveDropActiveChanged.value(false)
+    }
+    fun updateWidgetRemoveTarget(fingerRoot: Offset) {
+        val inRemove = currentRemoveDropBounds.value?.contains(fingerRoot) == true || fingerRoot.y <= removeFallbackTopPx
+        if (inRemove != widgetRemoveActive) {
+            widgetRemoveActive = inRemove
+            currentOnRemoveDropActiveChanged.value(inRemove)
+            if (inRemove && hapticsEnabled) {
+                view.performHapticFeedback(HapticFeedbackConstants.TEXT_HANDLE_MOVE)
+            }
+        }
+    }
+    LaunchedEffect(reorderMode) {
+        if (!reorderMode && widgetDragging) resetWidgetDrag()
+    }
+    BoxWithConstraints(
+        modifier = Modifier
+            .fillMaxSize()
+            .onGloballyPositioned { gridCoords = it },
+    ) {
+        val gap = 8.dp
+        val cellW = ((maxWidth - gap * (HOME_GRID_COLS - 1)) / HOME_GRID_COLS)
+            .coerceAtLeast(54.dp)
+        val cellH = ((maxHeight - gap * (HOME_GRID_ROWS - 1)) / HOME_GRID_ROWS)
+            .coerceAtLeast(54.dp)
+
+        widgetInfo?.let { info ->
+            val widgetId = homeWidgetId ?: return@let
+            val span = normalizedHomeWidgetConfig(homeWidgetConfig, estimateHomeWidgetSpan(info))
+            val providerMinWidth = maxOf(info.minWidth, info.minResizeWidth).takeIf { it > 0 }?.dp ?: 0.dp
+            val providerMinHeight = maxOf(info.minHeight, info.minResizeHeight).takeIf { it > 0 }?.dp ?: 0.dp
+            val width = (cellW * span.cols + gap * (span.cols - 1))
+                .coerceAtLeast(providerMinWidth)
+                .coerceAtMost(maxWidth)
+            val height = (cellH * span.rows + gap * (span.rows - 1))
+                .coerceAtLeast(providerMinHeight)
+                .coerceAtMost(maxHeight)
+            val baseX = (cellW + gap) * span.col
+            val baseY = (cellH + gap) * span.row
+            val widgetWidthDp = width.value.roundToInt().coerceAtLeast(1)
+            val widgetHeightDp = height.value.roundToInt().coerceAtLeast(1)
+            val widgetHeightPx = with(density) { height.toPx() }
+            val removeHoverOffset = currentRemoveDropBounds.value
+                ?.takeIf { widgetDragging && widgetRemoveActive }
+                ?.let { bounds ->
+                    val coords = widgetCoords?.takeIf { it.isAttached } ?: return@let widgetDragOffset
+                    val topAtFinger = coords.boundsInRoot().top + widgetDragOffset.y
+                    val clampedTop = bounds.bottom - widgetHeightPx * 0.42f
+                    if (topAtFinger < clampedTop) {
+                        Offset(widgetDragOffset.x, widgetDragOffset.y + (clampedTop - topAtFinger))
+                    } else {
+                        widgetDragOffset
+                    }
+                }
+                ?: widgetDragOffset
+            Box(
+                modifier = Modifier
+                    .align(Alignment.TopStart)
+                    .offset(x = baseX, y = baseY)
+                    .width(width)
+                    .height(height)
+                    .onGloballyPositioned {
+                        widgetCoords = it
+                        onWidgetBoundsChanged(it.boundsInRoot())
+                    }
+                    .graphicsLayer {
+                        translationX = removeHoverOffset.x
+                        translationY = removeHoverOffset.y
+                        scaleX = when {
+                            widgetDragging && widgetRemoveActive -> 1.02f
+                            widgetDragging -> 1.04f
+                            else -> 1f
+                        }
+                        scaleY = when {
+                            widgetDragging && widgetRemoveActive -> 1.02f
+                            widgetDragging -> 1.04f
+                            else -> 1f
+                        }
+                        alpha = if (widgetDragging) 0.96f else 1f
+                        shadowElevation = if (widgetDragging) 16f else 0f
+                    },
+            ) {
+                Box(Modifier.fillMaxSize()) {
+                    AndroidView(
+                        factory = { ctx ->
+                            appWidgetHost.createView(ctx, widgetId, info).apply {
+                                setAppWidget(widgetId, info)
+                            }
+                        },
+                        update = { hostView ->
+                            if (hostView is AppWidgetHostView) {
+                                hostView.setAppWidget(widgetId, info)
+                                hostView.updateAppWidgetSize(
+                                    null,
+                                    widgetWidthDp,
+                                    widgetHeightDp,
+                                    widgetWidthDp,
+                                    widgetHeightDp,
+                                )
+                            }
+                        },
+                        modifier = Modifier.fillMaxSize(),
+                    )
+                    Box(
+                        modifier = Modifier
+                            .matchParentSize()
+                            .pointerInput(widgetId) {
+                                detectDragGesturesAfterLongPress(
+                                    onDragStart = { start ->
+                                        widgetDragging = true
+                                        widgetDragOffset = Offset.Zero
+                                        widgetRemoveActive = false
+                                        currentOnWidgetDragActiveChanged.value(true)
+                                        if (!currentReorderMode.value) currentOnEnterReorderMode.value()
+                                        currentOnRemoveDropVisibleChanged.value(true)
+                                        currentOnRemoveDropActiveChanged.value(false)
+                                        if (hapticsEnabled) {
+                                            view.performHapticFeedback(HapticFeedbackConstants.LONG_PRESS)
+                                        }
+                                        widgetFingerRoot = widgetCoords
+                                            ?.takeIf { it.isAttached }
+                                            ?.localToRoot(start)
+                                            ?: Offset.Zero
+                                        updateWidgetRemoveTarget(widgetFingerRoot)
+                                    },
+                                    onDrag = { change, dragAmount ->
+                                        widgetDragOffset += dragAmount
+                                        widgetFingerRoot += dragAmount
+                                        change.consume()
+                                        updateWidgetRemoveTarget(widgetFingerRoot)
+                                    },
+                                    onDragEnd = {
+                                        val shouldRemove = widgetDragging && widgetRemoveActive
+                                        if (!shouldRemove) {
+                                            val grid = gridCoords?.takeIf { it.isAttached }
+                                            val widget = widgetCoords?.takeIf { it.isAttached }
+                                            if (grid != null && widget != null) {
+                                                val gridBounds = grid.boundsInRoot()
+                                                val widgetTopLeft = widget.boundsInRoot().topLeft + widgetDragOffset
+                                                val cellWpx = with(density) { (cellW + gap).toPx() }
+                                                val cellHpx = with(density) { (cellH + gap).toPx() }
+                                                val nextCol = ((widgetTopLeft.x - gridBounds.left) / cellWpx)
+                                                    .roundToInt()
+                                                    .coerceIn(0, HOME_GRID_COLS - span.cols)
+                                                val nextRow = ((widgetTopLeft.y - gridBounds.top) / cellHpx)
+                                                    .roundToInt()
+                                                    .coerceIn(0, HOME_GRID_ROWS - span.rows)
+                                                currentOnUpdateHomeWidget.value(span.copy(col = nextCol, row = nextRow))
+                                            }
+                                        }
+                                        resetWidgetDrag()
+                                        if (shouldRemove) {
+                                            if (hapticsEnabled) view.performHapticFeedback(HapticFeedbackConstants.CLOCK_TICK)
+                                            currentOnRemoveWidget.value()
+                                        }
+                                    },
+                                    onDragCancel = {
+                                        resetWidgetDrag()
+                                    },
+                                )
+                            },
+                    )
+                }
+            }
+        }
+    }
+}
+
+@Composable
 private fun HomePage(
     focusRequester: FocusRequester,
     homeActive: Boolean,
@@ -1998,6 +2442,7 @@ private fun HomePage(
     onHomeDockActivate: (Int) -> Unit,
     classicMode: Boolean,
     reorderMode: Boolean,
+    onEnterReorderMode: () -> Unit,
     onExitReorderMode: () -> Unit,
     allApps: List<AppEntry>,
     hiddenPackages: Set<String>,
@@ -2007,7 +2452,10 @@ private fun HomePage(
     hapticsEnabled: Boolean,
     hapticIntensity: Int,
     homeWidgetId: Int?,
+    homeWidgetConfig: HomeWidgetConfig,
     appWidgetHost: AppWidgetHost,
+    onUpdateHomeWidget: (HomeWidgetConfig) -> Unit,
+    onRemoveWidget: () -> Unit,
     onLongPress: () -> Unit,
     doubleTapToSleepEnabled: Boolean,
     searchQuery: String,
@@ -2030,6 +2478,16 @@ private fun HomePage(
     var dockIndex by remember { mutableStateOf(0) }
     val dockSize = if (classicMode) 2 else 4
     var homePageBounds by remember { mutableStateOf<Rect?>(null) }
+    var homeWidgetBounds by remember { mutableStateOf<Rect?>(null) }
+    var homeWidgetDragActive by remember { mutableStateOf(false) }
+    LaunchedEffect(reorderMode) {
+        if (!reorderMode) {
+            homeWidgetDragActive = false
+            onRemoveDropVisibleChanged(false)
+            onRemoveDropActiveChanged(false)
+            onRemoveDropBoundsChanged(null)
+        }
+    }
     LaunchedEffect(homeActive) {
         if (!homeActive) {
             navArea = HomeNavArea.Strip
@@ -2077,6 +2535,11 @@ private fun HomePage(
         }
     }
     val currentOnLongPress = rememberUpdatedState(onLongPress)
+    fun isInsideHomeWidget(localPosition: Offset): Boolean {
+        val pageBounds = homePageBounds ?: return false
+        val widgetBounds = homeWidgetBounds ?: return false
+        return widgetBounds.contains(pageBounds.topLeft + localPosition)
+    }
 
     var searchFocusIndex by remember { mutableStateOf(-1) }
     val searchResults = remember(searchQuery, allApps, hiddenPackages) {
@@ -2101,14 +2564,18 @@ private fun HomePage(
             .focusRequester(focusRequester)
             .focusable()
             .onGloballyPositioned { homePageBounds = it.boundsInRoot() }
-            .pointerInput(reorderMode, searchQuery, homeStripBounds, homePageBounds) {
+            .pointerInput(reorderMode, searchQuery, homeStripBounds, homeWidgetBounds, homePageBounds, homeWidgetDragActive) {
                 if (!reorderMode || searchQuery.isNotEmpty()) return@pointerInput
                 awaitEachGesture {
                     val down = awaitFirstDown(requireUnconsumed = false, pass = PointerEventPass.Initial)
                     val up = waitForUpOrCancellation(pass = PointerEventPass.Initial) ?: return@awaitEachGesture
                     val pageBounds = homePageBounds ?: return@awaitEachGesture
                     val tapRoot = pageBounds.topLeft + up.position
-                    if (homeStripBounds?.contains(tapRoot) != true) {
+                    if (
+                        homeStripBounds?.contains(tapRoot) != true &&
+                        homeWidgetBounds?.contains(tapRoot) != true &&
+                        !homeWidgetDragActive
+                    ) {
                         onExitReorderMode()
                     }
                     down.consume()
@@ -2264,11 +2731,16 @@ private fun HomePage(
                     else -> false
                 }
             }
-            .pointerInput(doubleTapToSleepEnabled, doubleTapPackage, searchQuery) {
+            .pointerInput(doubleTapToSleepEnabled, doubleTapPackage, searchQuery, homeWidgetBounds, homePageBounds) {
                 if (reorderMode) return@pointerInput
                 detectTapGestures(
-                    onLongPress = { if (searchQuery.isEmpty()) currentOnLongPress.value() },
-                    onDoubleTap = {
+                    onLongPress = { position ->
+                        if (searchQuery.isNotEmpty()) return@detectTapGestures
+                        if (isInsideHomeWidget(position)) return@detectTapGestures
+                        currentOnLongPress.value()
+                    },
+                    onDoubleTap = { position ->
+                        if (isInsideHomeWidget(position)) return@detectTapGestures
                         if (searchQuery.isEmpty()) when {
                             doubleTapToSleepEnabled -> {
                                 view.performHapticFeedback(HapticFeedbackConstants.CLOCK_TICK)
@@ -2282,12 +2754,16 @@ private fun HomePage(
                     },
                 )
             }
-            .pointerInput(swipeUpPackage, searchQuery) {
+            .pointerInput(swipeUpPackage, searchQuery, homeWidgetBounds, homePageBounds, reorderMode) {
                 if (reorderMode) return@pointerInput
                 val threshold = 80.dp.toPx()
                 awaitPointerEventScope {
                     while (true) {
                         val down = awaitFirstDown(requireUnconsumed = false, pass = PointerEventPass.Final)
+                        if (isInsideHomeWidget(down.position)) {
+                            waitForUpOrCancellation(pass = PointerEventPass.Final)
+                            continue
+                        }
                         val startY = down.position.y
                         var triggered = false
                         while (!triggered) {
@@ -2303,12 +2779,16 @@ private fun HomePage(
                     }
                 }
             }
-            .pointerInput(searchQuery) {
+            .pointerInput(searchQuery, homeWidgetBounds, homePageBounds, reorderMode) {
                 if (reorderMode) return@pointerInput
                 val threshold = 72.dp.toPx()
                 awaitPointerEventScope {
                     while (true) {
                         val down = awaitFirstDown(requireUnconsumed = false, pass = PointerEventPass.Final)
+                        if (isInsideHomeWidget(down.position)) {
+                            waitForUpOrCancellation(pass = PointerEventPass.Final)
+                            continue
+                        }
                         val startY = down.position.y
                         var triggered = false
                         while (!triggered) {
@@ -2385,14 +2865,11 @@ private fun HomePage(
                     }
                 }
             }
-        } else {
-            onRemoveDropVisibleChanged(false)
-            onRemoveDropActiveChanged(false)
-            onRemoveDropBoundsChanged(null)
         }
         Column(
             modifier = Modifier
                 .fillMaxSize()
+                .zIndex(if (homeWidgetDragActive) 30f else 0f)
                 .statusBarsPadding()
                 .padding(start = 8.dp, end = 8.dp, top = 8.dp),
         ) {
@@ -2483,34 +2960,27 @@ private fun HomePage(
                     }
                 }
             }
-            Spacer(Modifier.weight(1f))
-            Spacer(Modifier.weight(1f))
-        }
-        if (homeWidgetId != null && appWidgetManager.getAppWidgetInfo(homeWidgetId) != null) {
             Box(
                 modifier = Modifier
-                    .fillMaxSize()
-                    .padding(horizontal = 8.dp, vertical = 72.dp),
-                contentAlignment = Alignment.Center,
+                    .fillMaxWidth()
+                    .weight(1f)
+                    .padding(horizontal = 6.dp, vertical = 8.dp),
             ) {
-                AndroidView(
-                    factory = { ctx ->
-                        val hostView = appWidgetHost.createView(
-                            ctx,
-                            homeWidgetId,
-                            appWidgetManager.getAppWidgetInfo(homeWidgetId),
-                        )
-                        hostView.setAppWidget(homeWidgetId, appWidgetManager.getAppWidgetInfo(homeWidgetId))
-                        hostView
-                    },
-                    update = { hostView ->
-                        if (hostView is AppWidgetHostView) {
-                            hostView.setAppWidget(homeWidgetId, appWidgetManager.getAppWidgetInfo(homeWidgetId))
-                        }
-                    },
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .heightIn(min = 70.dp, max = 180.dp),
+                HomeGridCanvas(
+                    homeWidgetId = homeWidgetId,
+                    homeWidgetConfig = homeWidgetConfig,
+                    appWidgetHost = appWidgetHost,
+                    appWidgetManager = appWidgetManager,
+                    reorderMode = reorderMode,
+                    onEnterReorderMode = onEnterReorderMode,
+                    hapticsEnabled = hapticsEnabled,
+                    removeDropBounds = removeDropBounds,
+                    onRemoveDropVisibleChanged = onRemoveDropVisibleChanged,
+                    onRemoveDropActiveChanged = onRemoveDropActiveChanged,
+                    onRemoveWidget = onRemoveWidget,
+                    onUpdateHomeWidget = onUpdateHomeWidget,
+                    onWidgetBoundsChanged = { homeWidgetBounds = it },
+                    onWidgetDragActiveChanged = { homeWidgetDragActive = it },
                 )
             }
         }
@@ -4314,12 +4784,362 @@ private fun AddAppToContainerSheet(
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
+private fun HomeWidgetPickerSheet(
+    appWidgetManager: AppWidgetManager,
+    themePalette: LauncherThemePalette,
+    onSelectWidget: (AppWidgetProviderInfo) -> Unit,
+    onOpenSystemPicker: () -> Unit,
+    onDismiss: () -> Unit,
+) {
+    BackHandler(onBack = onDismiss)
+    val context = LocalContext.current
+    val pm = context.packageManager
+    val searchFocusRequester = remember { FocusRequester() }
+    var query by remember { mutableStateOf("") }
+    LaunchedEffect(Unit) {
+        searchFocusRequester.requestFocus()
+    }
+    val providers = remember {
+        runCatching {
+            appWidgetManager
+                .getInstalledProvidersForProfile(Process.myUserHandle())
+                .sortedWith(
+                    compareBy<AppWidgetProviderInfo>(
+                        { runCatching { it.loadLabel(pm)?.toString().orEmpty().lowercase(Locale.getDefault()) }.getOrDefault("") },
+                        { it.provider.packageName },
+                    ),
+                )
+        }.getOrDefault(emptyList())
+    }
+    val filtered = remember(providers, query) {
+        val q = query.trim()
+        if (q.isEmpty()) {
+            providers
+        } else {
+            providers.filter { info ->
+                val label = runCatching { info.loadLabel(pm)?.toString().orEmpty() }.getOrDefault("")
+                val appLabel = runCatching {
+                    pm.getApplicationLabel(pm.getApplicationInfo(info.provider.packageName, 0)).toString()
+                }.getOrDefault(info.provider.packageName)
+                label.contains(q, ignoreCase = true) ||
+                    appLabel.contains(q, ignoreCase = true) ||
+                    info.provider.packageName.contains(q, ignoreCase = true)
+            }
+        }
+    }
+    fun widgetAppLabel(info: AppWidgetProviderInfo): String =
+        runCatching {
+            pm.getApplicationLabel(pm.getApplicationInfo(info.provider.packageName, 0)).toString()
+        }.getOrDefault(info.provider.packageName)
+    val grouped = remember(filtered) {
+        filtered
+            .groupBy { widgetAppLabel(it) }
+            .toSortedMap(compareBy(String.CASE_INSENSITIVE_ORDER) { it })
+    }
+
+    @Composable
+    fun WidgetPreviewCard(info: AppWidgetProviderInfo) {
+        val label = runCatching { info.loadLabel(pm)?.toString().orEmpty() }.getOrDefault("")
+            .ifEmpty { info.provider.shortClassName.substringAfterLast('.') }
+        val appLabel = widgetAppLabel(info)
+        val span = estimateHomeWidgetSpan(info)
+        val sizeOptions = remember(info.provider) { homeWidgetSizeOptions(info) }
+        val preview = remember(info.provider) {
+            runCatching { info.loadPreviewImage(context, 0) }.getOrNull()
+        }
+        val icon = remember(info.provider) {
+            runCatching { info.loadIcon(context, 0) }.getOrNull()
+        }
+        val cardHeight = when {
+            span.rows >= 3 -> 300.dp
+            span.rows >= 2 -> 248.dp
+            span.cols >= 3 -> 168.dp
+            else -> 178.dp
+        }
+
+        Surface(
+            modifier = Modifier
+                .fillMaxWidth()
+                .height(cardHeight)
+                .clickable { onSelectWidget(info) },
+            shape = RoundedCornerShape(2.dp),
+            color = Color(0xFF203236),
+            border = BorderStroke(0.6.dp, Color.Black.copy(alpha = 0.28f)),
+        ) {
+            Column {
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .background(Color(0xFF34464A))
+                        .padding(horizontal = 10.dp, vertical = 8.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    Text(
+                        label,
+                        color = Color(0xFFEAF2F8),
+                        fontSize = 17.sp,
+                        fontWeight = FontWeight.Normal,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis,
+                        modifier = Modifier.weight(1f),
+                    )
+                    Text(
+                        "${span.cols} × ${span.rows}",
+                        color = Color(0xFFEAF2F8),
+                        fontSize = 16.sp,
+                        fontWeight = FontWeight.SemiBold,
+                    )
+                }
+                if (sizeOptions.size > 1) {
+                    Text(
+                        "${sizeOptions.size} sizes available",
+                        color = Color(0xFF9DB1B8),
+                        fontSize = 11.sp,
+                        maxLines = 1,
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .background(Color(0xFF2A3A3D))
+                            .padding(horizontal = 10.dp, vertical = 3.dp),
+                    )
+                }
+                Box(
+                    modifier = Modifier
+                        .fillMaxSize()
+                        .padding(14.dp),
+                    contentAlignment = Alignment.Center,
+                ) {
+                    if (preview != null) {
+                        AsyncImage(
+                            model = preview,
+                            contentDescription = label,
+                            contentScale = ContentScale.Fit,
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .fillMaxHeight(),
+                        )
+                    } else {
+                        Surface(
+                            shape = RoundedCornerShape(16.dp),
+                            color = Color(0xFF11191D),
+                            border = BorderStroke(0.5.dp, Color.White.copy(alpha = 0.08f)),
+                            modifier = Modifier
+                                .fillMaxWidth(0.86f)
+                                .heightIn(min = 72.dp, max = 108.dp),
+                        ) {
+                            Row(
+                                modifier = Modifier.padding(12.dp),
+                                verticalAlignment = Alignment.CenterVertically,
+                            ) {
+                                AsyncImage(
+                                    model = icon,
+                                    contentDescription = null,
+                                    modifier = Modifier
+                                        .size(42.dp)
+                                        .clip(RoundedCornerShape(10.dp)),
+                                )
+                                Spacer(Modifier.width(10.dp))
+                                Column(Modifier.weight(1f)) {
+                                    Text(
+                                        appLabel,
+                                        color = Color(0xFFDCE5EC),
+                                        fontSize = 13.sp,
+                                        maxLines = 1,
+                                        overflow = TextOverflow.Ellipsis,
+                                    )
+                                    Text(
+                                        "Preview unavailable",
+                                        color = Color(0xFF90A0AA),
+                                        fontSize = 11.sp,
+                                        maxLines = 1,
+                                        overflow = TextOverflow.Ellipsis,
+                                    )
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    Surface(
+        modifier = Modifier
+            .fillMaxSize()
+            .zIndex(560f),
+        color = Color(0xF21D2022),
+    ) {
+        Column(
+            modifier = Modifier
+                .fillMaxSize()
+                .statusBarsPadding()
+                .navigationBarsPadding()
+                .padding(horizontal = 10.dp, vertical = 8.dp),
+        ) {
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .height(54.dp),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                Icon(Icons.Outlined.Search, contentDescription = null, tint = Color(0xFFB7BCC3), modifier = Modifier.size(27.dp))
+                Spacer(Modifier.width(8.dp))
+                OutlinedTextField(
+                    value = query,
+                    onValueChange = { query = it },
+                    singleLine = true,
+                    placeholder = {
+                        Text("Search apps, widgets and shortcuts", color = Color(0xFFB7BCC3), fontSize = 20.sp)
+                    },
+                    colors = TextFieldDefaults.colors(
+                        focusedTextColor = Color(0xFFEAF1FB),
+                        unfocusedTextColor = Color(0xFFEAF1FB),
+                        focusedContainerColor = Color.Transparent,
+                        unfocusedContainerColor = Color.Transparent,
+                        focusedIndicatorColor = Color.Transparent,
+                        unfocusedIndicatorColor = Color.Transparent,
+                        cursorColor = Color(0xFF00A6D6),
+                    ),
+                    modifier = Modifier
+                        .weight(1f)
+                        .focusRequester(searchFocusRequester)
+                        .onPreviewKeyEvent { ev ->
+                            val native = ev.nativeKeyEvent ?: return@onPreviewKeyEvent false
+                            ev.type == KeyEventType.KeyDown &&
+                                native.repeatCount > 0 &&
+                                native.unicodeChar != 0
+                        },
+                )
+            }
+            Spacer(Modifier.height(8.dp))
+
+            Column(
+                modifier = Modifier
+                    .weight(1f)
+                    .verticalScroll(rememberScrollState()),
+            ) {
+                grouped.forEach { (appLabel, widgets) ->
+                    Text(
+                        appLabel,
+                        color = Color(0xFFB9C7CB),
+                        fontSize = 13.sp,
+                        fontWeight = FontWeight.SemiBold,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis,
+                        modifier = Modifier.padding(horizontal = 2.dp, vertical = 8.dp),
+                    )
+                    val leftColumn = widgets.filterIndexed { index, _ -> index % 2 == 0 }
+                    val rightColumn = widgets.filterIndexed { index, _ -> index % 2 == 1 }
+                    Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                        Column(
+                            modifier = Modifier.weight(1f),
+                            verticalArrangement = Arrangement.spacedBy(10.dp),
+                        ) {
+                            leftColumn.forEach { info ->
+                                WidgetPreviewCard(info)
+                            }
+                        }
+                        Column(
+                            modifier = Modifier.weight(1f),
+                            verticalArrangement = Arrangement.spacedBy(10.dp),
+                        ) {
+                            rightColumn.forEach { info ->
+                                WidgetPreviewCard(info)
+                            }
+                        }
+                    }
+                    Spacer(Modifier.height(8.dp))
+                }
+                Spacer(Modifier.height(12.dp))
+            }
+        }
+    }
+}
+
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+private fun HomeWidgetResizeSheet(
+    info: AppWidgetProviderInfo,
+    currentConfig: HomeWidgetConfig,
+    onSelect: (HomeWidgetSpan) -> Unit,
+    onDismiss: () -> Unit,
+) {
+    val state = rememberModalBottomSheetState(skipPartiallyExpanded = true)
+    val options = remember(info.provider) { homeWidgetSizeOptions(info) }
+    ModalBottomSheet(
+        onDismissRequest = onDismiss,
+        sheetState = state,
+        containerColor = Color(0xFF111820),
+        contentColor = Color(0xFFEAF2F8),
+    ) {
+        Column(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(horizontal = 18.dp, vertical = 10.dp),
+        ) {
+            Text(
+                "Resize widget",
+                style = MaterialTheme.typography.titleLarge.copy(fontWeight = FontWeight.SemiBold),
+                color = Color(0xFFEAF2F8),
+            )
+            Spacer(Modifier.height(4.dp))
+            Text(
+                "Choose a supported home-grid size for this widget.",
+                style = MaterialTheme.typography.bodyMedium,
+                color = Color(0xFFB7C2CF),
+            )
+            Spacer(Modifier.height(12.dp))
+            options.forEach { option ->
+                val selected = currentConfig.cols == option.span.cols && currentConfig.rows == option.span.rows
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .clip(RoundedCornerShape(14.dp))
+                        .background(if (selected) Color(0xFF203746) else Color.Transparent)
+                        .clickable { onSelect(option.span) }
+                        .padding(horizontal = 12.dp, vertical = 13.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    Icon(
+                        Icons.Rounded.GridView,
+                        contentDescription = null,
+                        tint = if (selected) Color(0xFF84D5F6) else Color(0xFFD7E2EC),
+                        modifier = Modifier.size(22.dp),
+                    )
+                    Spacer(Modifier.width(14.dp))
+                    Column(Modifier.weight(1f)) {
+                        Text(
+                            option.label,
+                            color = if (selected) Color(0xFF9AE2FF) else Color(0xFFEAF2F8),
+                            style = MaterialTheme.typography.bodyLarge.copy(fontWeight = FontWeight.SemiBold),
+                        )
+                        Text(
+                            "${option.span.cols} x ${option.span.rows}" +
+                                if (option.recommended) " recommended" else "",
+                            color = Color(0xFFB7C2CF),
+                            style = MaterialTheme.typography.bodySmall,
+                        )
+                    }
+                    if (selected) {
+                        Icon(Icons.Rounded.Check, contentDescription = null, tint = Color(0xFF84D5F6))
+                    }
+                }
+            }
+            Spacer(Modifier.height(16.dp))
+        }
+    }
+}
+
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
 private fun HomeActionsSheet(
     themePalette: LauncherThemePalette,
     hasWidget: Boolean,
     newHomeGroupEnabled: Boolean,
     pinToHomepageEnabled: Boolean,
+    onResizeWidget: () -> Unit,
+    onReplaceWidget: () -> Unit,
     onAddWidget: () -> Unit,
+    onConfigureWidget: () -> Unit,
     onRemoveWidget: () -> Unit,
     onOpenSettings: () -> Unit,
     onOpenSystemSettings: () -> Unit,
@@ -4372,6 +5192,9 @@ private fun HomeActionsSheet(
             }
 
             if (hasWidget) {
+                MenuRow(Icons.Rounded.AspectRatio, "Resize widget", onResizeWidget)
+                MenuRow(Icons.Rounded.AddAlarm, "Replace widget", onReplaceWidget)
+                MenuRow(Icons.Rounded.Settings, "Widget settings", onConfigureWidget)
                 MenuRow(Icons.Rounded.EventBusy, "Remove widget", onRemoveWidget)
             } else {
                 MenuRow(Icons.Rounded.AddAlarm, "Add system widget", onAddWidget)

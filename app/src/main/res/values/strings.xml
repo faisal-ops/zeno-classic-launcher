@@ -138,5 +138,6 @@
     <string name="icon_layout_shape_default">Default Soft square</string>
     <string name="device_admin_explanation">Optional fallback: lock the screen when double-tap is on and the lock helper (Accessibility) is not enabled.</string>
     <string name="lock_accessibility_service_label">Zeno Classic lock helper</string>
+    <string name="flip_clock_dream_label">Zeno Flip Clock</string>
     <string name="lock_accessibility_service_description">Locks the screen when you double-tap the home workspace—the same as the power button so face unlock works. Only window events from Zeno Classic are observed; screen content is not read.</string>
 </resources>
