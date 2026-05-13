@@ -119,6 +119,8 @@
     <string name="settings_glance_strip_title">Glance Strip</string>
     <string name="settings_wallpaper_title">Wallpaper</string>
     <string name="settings_wallpaper_subtitle">System wallpaper settings</string>
+    <string name="settings_flip_clock_title">Zeno Flip Clock</string>
+    <string name="settings_flip_clock_subtitle">Open Android screen saver settings</string>
     <string name="settings_reset_theme_title">Reset Theme</string>
     <string name="settings_reset_theme_subtitle">Restore default launcher colours</string>
     <string name="settings_haptics_title">Haptic Feedback</string>

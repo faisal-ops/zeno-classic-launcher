@@ -53,6 +53,7 @@ import androidx.compose.animation.fadeOut
 import androidx.compose.animation.shrinkVertically
 import androidx.compose.animation.core.Animatable
 import androidx.compose.animation.core.animate
+import androidx.compose.animation.core.animateDpAsState
 import androidx.compose.animation.core.FastOutSlowInEasing
 import androidx.compose.animation.core.LinearEasing
 import androidx.compose.animation.core.RepeatMode
@@ -1021,6 +1022,8 @@ fun LauncherScreen(
                         homeWidgetConfig = prefs.homeWidget,
                         appWidgetHost = appWidgetHost,
                         onUpdateHomeWidget = vm::setHomeWidget,
+                        onResizeWidget = { showWidgetResizeSheet = true },
+                        onReplaceWidget = { showWidgetPicker = true },
                         onRemoveWidget = {
                             homeWidgetId?.let { runCatching { appWidgetHost.deleteAppWidgetId(it) } }
                             homeWidgetId = null
@@ -1720,6 +1723,19 @@ fun LauncherScreen(
                     }
                 },
                 onOpenGestureSettings = { showGestureSettings = true },
+                onOpenScreenSaverSettings = {
+                    runCatching {
+                        context.startActivity(
+                            Intent(Settings.ACTION_DREAM_SETTINGS).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK),
+                        )
+                    }.onFailure {
+                        runCatching {
+                            context.startActivity(
+                                Intent(Settings.ACTION_DISPLAY_SETTINGS).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK),
+                            )
+                        }
+                    }
+                },
                 drawerBadgesSubtitle = remember(prefs.showIconNotifBadge, settingsNotifications, settingsAllOff) {
                     buildList {
                         if (prefs.showIconNotifBadge) add(settingsNotifications)
@@ -2226,6 +2242,8 @@ private fun HomeGridCanvas(
     removeDropBounds: Rect?,
     onRemoveDropVisibleChanged: (Boolean) -> Unit,
     onRemoveDropActiveChanged: (Boolean) -> Unit,
+    onResizeWidget: () -> Unit,
+    onReplaceWidget: () -> Unit,
     onRemoveWidget: () -> Unit,
     onUpdateHomeWidget: (HomeWidgetConfig) -> Unit,
     onWidgetBoundsChanged: (Rect?) -> Unit,
@@ -2300,6 +2318,16 @@ private fun HomeGridCanvas(
                 .coerceAtMost(maxHeight)
             val baseX = (cellW + gap) * span.col
             val baseY = (cellH + gap) * span.row
+            val animatedBaseX by animateDpAsState(
+                targetValue = baseX,
+                animationSpec = tween(180, easing = FastOutSlowInEasing),
+                label = "homeWidgetSnapX",
+            )
+            val animatedBaseY by animateDpAsState(
+                targetValue = baseY,
+                animationSpec = tween(180, easing = FastOutSlowInEasing),
+                label = "homeWidgetSnapY",
+            )
             val widgetWidthDp = width.value.roundToInt().coerceAtLeast(1)
             val widgetHeightDp = height.value.roundToInt().coerceAtLeast(1)
             val widgetHeightPx = with(density) { height.toPx() }
@@ -2319,7 +2347,10 @@ private fun HomeGridCanvas(
             Box(
                 modifier = Modifier
                     .align(Alignment.TopStart)
-                    .offset(x = baseX, y = baseY)
+                    .offset(
+                        x = if (widgetDragging) baseX else animatedBaseX,
+                        y = if (widgetDragging) baseY else animatedBaseY,
+                    )
                     .width(width)
                     .height(height)
                     .onGloballyPositioned {
@@ -2425,8 +2456,48 @@ private fun HomeGridCanvas(
                     )
                 }
             }
+            AnimatedVisibility(
+                visible = reorderMode && !widgetDragging,
+                modifier = Modifier
+                    .align(Alignment.BottomCenter)
+                    .zIndex(8f),
+                enter = fadeIn() + expandVertically(),
+                exit = fadeOut() + shrinkVertically(),
+            ) {
+                Row(
+                    modifier = Modifier
+                        .clip(RoundedCornerShape(18.dp))
+                        .background(Color(0xE6111720))
+                        .border(0.6.dp, Color.White.copy(alpha = 0.10f), RoundedCornerShape(18.dp))
+                        .padding(horizontal = 8.dp, vertical = 6.dp),
+                    horizontalArrangement = Arrangement.spacedBy(6.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    WidgetEditChip("Resize", onResizeWidget)
+                    WidgetEditChip("Replace", onReplaceWidget)
+                    WidgetEditChip("Remove", onRemoveWidget, danger = true)
+                }
+            }
         }
     }
+}
+
+@Composable
+private fun WidgetEditChip(
+    label: String,
+    onClick: () -> Unit,
+    danger: Boolean = false,
+) {
+    Text(
+        text = label,
+        color = if (danger) Color(0xFFFFCED5) else Color(0xFFEAF2F8),
+        style = MaterialTheme.typography.labelMedium.copy(fontWeight = FontWeight.SemiBold),
+        modifier = Modifier
+            .clip(RoundedCornerShape(13.dp))
+            .background(if (danger) Color(0x662B1217) else Color(0xFF202B36))
+            .clickable(onClick = onClick)
+            .padding(horizontal = 10.dp, vertical = 7.dp),
+    )
 }
 
 @Composable
@@ -2455,6 +2526,8 @@ private fun HomePage(
     homeWidgetConfig: HomeWidgetConfig,
     appWidgetHost: AppWidgetHost,
     onUpdateHomeWidget: (HomeWidgetConfig) -> Unit,
+    onResizeWidget: () -> Unit,
+    onReplaceWidget: () -> Unit,
     onRemoveWidget: () -> Unit,
     onLongPress: () -> Unit,
     doubleTapToSleepEnabled: Boolean,
@@ -2977,6 +3050,8 @@ private fun HomePage(
                     removeDropBounds = removeDropBounds,
                     onRemoveDropVisibleChanged = onRemoveDropVisibleChanged,
                     onRemoveDropActiveChanged = onRemoveDropActiveChanged,
+                    onResizeWidget = onResizeWidget,
+                    onReplaceWidget = onReplaceWidget,
                     onRemoveWidget = onRemoveWidget,
                     onUpdateHomeWidget = onUpdateHomeWidget,
                     onWidgetBoundsChanged = { homeWidgetBounds = it },
@@ -5017,6 +5092,39 @@ private fun HomeWidgetPickerSheet(
                     .weight(1f)
                     .verticalScroll(rememberScrollState()),
             ) {
+                if (grouped.isEmpty()) {
+                    Box(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .height(260.dp),
+                        contentAlignment = Alignment.Center,
+                    ) {
+                        Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                            Icon(
+                                Icons.Rounded.Apps,
+                                contentDescription = null,
+                                tint = Color(0xFF6F7D84),
+                                modifier = Modifier.size(34.dp),
+                            )
+                            Spacer(Modifier.height(10.dp))
+                            Text(
+                                if (query.isBlank()) "No widgets available" else "No widgets found",
+                                color = Color(0xFFD4DEE4),
+                                fontSize = 18.sp,
+                                fontWeight = FontWeight.SemiBold,
+                            )
+                            Text(
+                                if (query.isBlank()) {
+                                    "Installed apps have not exposed widgets."
+                                } else {
+                                    "Try a different app or widget name."
+                                },
+                                color = Color(0xFF8FA0A8),
+                                fontSize = 13.sp,
+                            )
+                        }
+                    }
+                }
                 grouped.forEach { (appLabel, widgets) ->
                     Text(
                         appLabel,
@@ -10730,6 +10838,7 @@ private fun SettingsScreenOverlay(
     onResetTheme: () -> Unit,
     gestureSubtitle: String,
     onOpenGestureSettings: () -> Unit,
+    onOpenScreenSaverSettings: () -> Unit,
     drawerBadgesSubtitle: String,
     classicMode: Boolean,
     onToggleClassicMode: () -> Unit,
@@ -10750,7 +10859,7 @@ private fun SettingsScreenOverlay(
     val scope = rememberCoroutineScope()
     val focusRequester = remember { FocusRequester() }
     var selectedIndex by remember { mutableStateOf(0) }
-    val itemCount = 15
+    val itemCount = 16
 
     val createBackupDocument = rememberLauncherForActivityResult(
         ActivityResultContracts.CreateDocument("application/json")
@@ -10794,21 +10903,22 @@ private fun SettingsScreenOverlay(
             // DISPLAY
             4 -> onOpenGlanceSettings()
             5 -> onSetWallpaper()
-            6 -> onResetTheme()
+            6 -> onOpenScreenSaverSettings()
+            7 -> onResetTheme()
             // DOCK
-            7 -> onOpenDockSlotPicker(DockSlot.Mail)
-            8 -> onOpenDockSlotPicker(DockSlot.Shortcut)
-            9 -> onOpenDockSlotPicker(DockSlot.Camera)
+            8 -> onOpenDockSlotPicker(DockSlot.Mail)
+            9 -> onOpenDockSlotPicker(DockSlot.Shortcut)
+            10 -> onOpenDockSlotPicker(DockSlot.Camera)
             // SYSTEM
-            10 -> onToggleHaptics()
-            11 -> onOpenLanguageSettings()
-            12 -> onOpenPermissionsSettings()
+            11 -> onToggleHaptics()
+            12 -> onOpenLanguageSettings()
+            13 -> onOpenPermissionsSettings()
             // BACKUP
-            13 -> {
+            14 -> {
                 val name = "classiclauncher_backup_" + SimpleDateFormat("yyyyMMdd_HHmmss", Locale.US).format(Date()) + ".json"
                 createBackupDocument.launch(name)
             }
-            14 -> openBackupFromDownloads.launch(SettingsDownloads.openBackupJsonPickerIntent())
+            15 -> openBackupFromDownloads.launch(SettingsDownloads.openBackupJsonPickerIntent())
         }
         doNavFeedback(view, hapticsEnabled, hapticIntensity)
         scope.launch { focusRequester.requestFocus() }
@@ -11059,13 +11169,27 @@ private fun SettingsScreenOverlay(
                 Column(Modifier.bringIntoViewRequester(rowBringers[6])) {
                     SettingsCategoryCard(cardBg = cardBg, cardShape = cardShape, selected = selectedIndex == 6) {
                         SettingsRow(
-                            icon = Icons.Rounded.Palette,
-                            title = stringResource(R.string.settings_reset_theme_title),
-                            subtitle = stringResource(R.string.settings_reset_theme_subtitle),
+                            icon = Icons.Rounded.WbSunny,
+                            title = stringResource(R.string.settings_flip_clock_title),
+                            subtitle = stringResource(R.string.settings_flip_clock_subtitle),
                             selected = selectedIndex == 6,
                             themePalette = themePalette,
                             subtitleColor = subtitleColor,
                             onClick = { activate(6) },
+                        )
+                    }
+                }
+                Spacer(Modifier.height(8.dp))
+                Column(Modifier.bringIntoViewRequester(rowBringers[7])) {
+                    SettingsCategoryCard(cardBg = cardBg, cardShape = cardShape, selected = selectedIndex == 7) {
+                        SettingsRow(
+                            icon = Icons.Rounded.Palette,
+                            title = stringResource(R.string.settings_reset_theme_title),
+                            subtitle = stringResource(R.string.settings_reset_theme_subtitle),
+                            selected = selectedIndex == 7,
+                            themePalette = themePalette,
+                            subtitleColor = subtitleColor,
+                            onClick = { activate(7) },
                         )
                     }
                 }
@@ -11081,22 +11205,22 @@ private fun SettingsScreenOverlay(
                     color = subtitleColor,
                     modifier = Modifier.padding(start = 4.dp, bottom = 6.dp),
                 )
-                Column(Modifier.bringIntoViewRequester(rowBringers[7])) {
-                    SettingsCategoryCard(cardBg = cardBg, cardShape = cardShape, selected = selectedIndex == 7) {
+                Column(Modifier.bringIntoViewRequester(rowBringers[8])) {
+                    SettingsCategoryCard(cardBg = cardBg, cardShape = cardShape, selected = selectedIndex == 8) {
                         SettingsRow(
                             icon = Icons.Rounded.MailOutline,
                             title = dockMailTitle,
                             subtitle = dockMailBody,
-                            selected = selectedIndex == 7,
+                            selected = selectedIndex == 8,
                             themePalette = themePalette,
                             subtitleColor = subtitleColor,
-                            onClick = { activate(7) },
+                            onClick = { activate(8) },
                         )
                     }
                 }
                 Spacer(Modifier.height(8.dp))
-                Column(Modifier.bringIntoViewRequester(rowBringers[8])) {
-                    SettingsCategoryCard(cardBg = cardBg, cardShape = cardShape, selected = selectedIndex == 8) {
+                Column(Modifier.bringIntoViewRequester(rowBringers[9])) {
+                    SettingsCategoryCard(cardBg = cardBg, cardShape = cardShape, selected = selectedIndex == 9) {
                         SettingsRow(
                             icon = Icons.Rounded.TouchApp,
                             title = dockSecondTitle,
@@ -11105,24 +11229,24 @@ private fun SettingsScreenOverlay(
                             } else {
                                 dockSecondBody + if (classicMode) " · " + stringResource(R.string.settings_hidden_classic) else ""
                             },
-                            selected = selectedIndex == 8,
+                            selected = selectedIndex == 9,
                             themePalette = themePalette,
                             subtitleColor = subtitleColor,
-                            onClick = { selectedIndex = 8; activate(8) },
+                            onClick = { selectedIndex = 9; activate(9) },
                         )
                     }
                 }
                 Spacer(Modifier.height(8.dp))
-                Column(Modifier.bringIntoViewRequester(rowBringers[9])) {
-                    SettingsCategoryCard(cardBg = cardBg, cardShape = cardShape, selected = selectedIndex == 9) {
+                Column(Modifier.bringIntoViewRequester(rowBringers[10])) {
+                    SettingsCategoryCard(cardBg = cardBg, cardShape = cardShape, selected = selectedIndex == 10) {
                         SettingsRow(
                             icon = Icons.Rounded.Apps,
                             title = dockThirdTitle,
                             subtitle = dockThirdBody,
-                            selected = selectedIndex == 9,
+                            selected = selectedIndex == 10,
                             themePalette = themePalette,
                             subtitleColor = subtitleColor,
-                            onClick = { activate(9) },
+                            onClick = { activate(10) },
                         )
                     }
                 }
@@ -11138,16 +11262,16 @@ private fun SettingsScreenOverlay(
                     color = subtitleColor,
                     modifier = Modifier.padding(start = 4.dp, bottom = 6.dp),
                 )
-                Column(Modifier.bringIntoViewRequester(rowBringers[10])) {
-                    SettingsCategoryCard(cardBg = cardBg, cardShape = cardShape, selected = selectedIndex == 10) {
+                Column(Modifier.bringIntoViewRequester(rowBringers[11])) {
+                    SettingsCategoryCard(cardBg = cardBg, cardShape = cardShape, selected = selectedIndex == 11) {
                         SettingsRow(
                             icon = Icons.Outlined.Vibration,
                             title = stringResource(R.string.settings_haptics_title),
                             subtitle = if (hapticsEnabled) stringResource(R.string.settings_on) else stringResource(R.string.settings_off),
-                            selected = selectedIndex == 10,
+                            selected = selectedIndex == 11,
                             themePalette = themePalette,
                             subtitleColor = subtitleColor,
-                            onClick = { activate(10) },
+                            onClick = { activate(11) },
                         )
                         AnimatedVisibility(
                             visible = hapticsEnabled,
@@ -11179,30 +11303,30 @@ private fun SettingsScreenOverlay(
                     }
                 }
                 Spacer(Modifier.height(8.dp))
-                Column(Modifier.bringIntoViewRequester(rowBringers[11])) {
-                    SettingsCategoryCard(cardBg = cardBg, cardShape = cardShape, selected = selectedIndex == 11) {
+                Column(Modifier.bringIntoViewRequester(rowBringers[12])) {
+                    SettingsCategoryCard(cardBg = cardBg, cardShape = cardShape, selected = selectedIndex == 12) {
                         SettingsRow(
                             icon = Icons.Rounded.Language,
                             title = stringResource(R.string.settings_language_title),
                             subtitle = languageSubtitle,
-                            selected = selectedIndex == 11,
-                            themePalette = themePalette,
-                            subtitleColor = subtitleColor,
-                            onClick = { activate(11) },
-                        )
-                    }
-                }
-                Spacer(Modifier.height(8.dp))
-                Column(Modifier.bringIntoViewRequester(rowBringers[12])) {
-                    SettingsCategoryCard(cardBg = cardBg, cardShape = cardShape, selected = selectedIndex == 12) {
-                        SettingsRow(
-                            icon = Icons.Rounded.Security,
-                            title = stringResource(R.string.settings_permissions_title),
-                            subtitle = permissionsSubtitle,
                             selected = selectedIndex == 12,
                             themePalette = themePalette,
                             subtitleColor = subtitleColor,
                             onClick = { activate(12) },
+                        )
+                    }
+                }
+                Spacer(Modifier.height(8.dp))
+                Column(Modifier.bringIntoViewRequester(rowBringers[13])) {
+                    SettingsCategoryCard(cardBg = cardBg, cardShape = cardShape, selected = selectedIndex == 13) {
+                        SettingsRow(
+                            icon = Icons.Rounded.Security,
+                            title = stringResource(R.string.settings_permissions_title),
+                            subtitle = permissionsSubtitle,
+                            selected = selectedIndex == 13,
+                            themePalette = themePalette,
+                            subtitleColor = subtitleColor,
+                            onClick = { activate(13) },
                         )
                     }
                 }
@@ -11218,30 +11342,30 @@ private fun SettingsScreenOverlay(
                     color = subtitleColor,
                     modifier = Modifier.padding(start = 4.dp, bottom = 6.dp),
                 )
-                Column(Modifier.bringIntoViewRequester(rowBringers[13])) {
-                    SettingsCategoryCard(cardBg = cardBg, cardShape = cardShape, selected = selectedIndex == 13) {
-                        SettingsRow(
-                            icon = Icons.Rounded.SettingsBackupRestore,
-                            title = stringResource(R.string.settings_export_title),
-                            subtitle = stringResource(R.string.settings_export_subtitle),
-                            selected = selectedIndex == 13,
-                            themePalette = themePalette,
-                            subtitleColor = subtitleColor,
-                            onClick = { activate(13) },
-                        )
-                    }
-                }
-                Spacer(Modifier.height(8.dp))
                 Column(Modifier.bringIntoViewRequester(rowBringers[14])) {
                     SettingsCategoryCard(cardBg = cardBg, cardShape = cardShape, selected = selectedIndex == 14) {
                         SettingsRow(
                             icon = Icons.Rounded.SettingsBackupRestore,
-                            title = stringResource(R.string.settings_import_title),
-                            subtitle = stringResource(R.string.settings_import_subtitle),
+                            title = stringResource(R.string.settings_export_title),
+                            subtitle = stringResource(R.string.settings_export_subtitle),
                             selected = selectedIndex == 14,
                             themePalette = themePalette,
                             subtitleColor = subtitleColor,
                             onClick = { activate(14) },
+                        )
+                    }
+                }
+                Spacer(Modifier.height(8.dp))
+                Column(Modifier.bringIntoViewRequester(rowBringers[15])) {
+                    SettingsCategoryCard(cardBg = cardBg, cardShape = cardShape, selected = selectedIndex == 15) {
+                        SettingsRow(
+                            icon = Icons.Rounded.SettingsBackupRestore,
+                            title = stringResource(R.string.settings_import_title),
+                            subtitle = stringResource(R.string.settings_import_subtitle),
+                            selected = selectedIndex == 15,
+                            themePalette = themePalette,
+                            subtitleColor = subtitleColor,
+                            onClick = { activate(15) },
                         )
                     }
                 }
