@@ -631,12 +631,13 @@ fun LauncherScreen(
     }
     val dockMiddleIconModel = remember(prefs.dockSecondPackage, allApps) {
         val pkg = prefs.dockSecondPackage.trim()
-        if (keepEnvelopeForSecondShortcut(pkg) || pkg == "com.apple.android.music") null else appIconFor(pkg)
+        if (keepEnvelopeForSecondShortcut(pkg) || pkg == "com.apple.android.music" || pkg == "com.zeno.pulse") null else appIconFor(pkg)
     }
     val secondDockFallbackResId = remember(prefs.dockSecondPackage, prefs.secondShortcutTarget) {
         val pkg = prefs.dockSecondPackage.trim()
         when {
             pkg == "com.apple.android.music" -> R.drawable.ic_dock_apple_music
+            pkg == "com.zeno.pulse" -> R.drawable.ic_dock_pulse
             pkg == "com.whatsapp" || (pkg.isEmpty() && prefs.secondShortcutTarget == SecondShortcutTarget.WHATSAPP) -> R.drawable.ic_dock_whatsapp
             else -> null
         }
@@ -646,6 +647,7 @@ fun LauncherScreen(
             "com.spotify.music" -> R.drawable.ic_dock_spotify
             "us.zoom.videomeetings" -> R.drawable.ic_dock_zoom
             "com.apple.android.music" -> R.drawable.ic_dock_apple_music
+            "com.zeno.pulse" -> R.drawable.ic_dock_pulse
             else -> null
         }
     }
