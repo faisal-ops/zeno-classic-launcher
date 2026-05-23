@@ -1,24 +1,24 @@
 # Project structure (Kotlin / Compose)
 
-Sources live under `app/src/main/java/`. **Physical folders** use `native/…` and `nlauncher/…`, but many files declare **`com.zeno.classiclauncher.nlauncher`** packages (e.g. `native/ui/*.kt` → `com.zeno.classiclauncher.nlauncher.ui`). Other code uses **`com.zeno.classiclauncher.native.*`** (prefs, apps, badges). The **`namespace`** and **`applicationId`** are both `com.zeno.classiclauncher.nlauncher`.
+Sources live under `app/src/main/java/`. Physical folders now match the declared **`com.zeno.classiclauncher.nlauncher`** package tree. The **`namespace`** and **`applicationId`** are both `com.zeno.classiclauncher.nlauncher`.
 
 ## Entry & composition
 
 | Area | Path / types |
 |------|----------------|
-| Activity | `native/MainActivity.kt` — package `com.zeno.classiclauncher.nlauncher` |
+| Activity | `nlauncher/MainActivity.kt` |
 | Application | `nlauncher/LauncherApplication.kt` |
-| Root UI | `native/ui/LauncherScreen.kt` — package `…nlauncher.ui` |
-| ViewModel | `native/ui/LauncherViewModel.kt` — package `…nlauncher.ui` |
-| Theme wrapper | `native/ui/UiTheme.kt` (`BbTheme`) — package `…nlauncher.ui` |
+| Root UI | `nlauncher/ui/LauncherScreen.kt` |
+| ViewModel | `nlauncher/ui/LauncherViewModel.kt` |
+| Theme wrapper | `nlauncher/ui/UiTheme.kt` (`BbTheme`) |
 
 ## Data & persistence
 
 | Area | Path |
 |------|------|
-| Preferences (DataStore) | `native/prefs/LauncherPrefs.kt`, `LauncherPrefsRepository` (in same file) |
-| Backup JSON | `native/prefs/LauncherBackup.kt` |
-| App list | `native/apps/AppsRepository.kt`, `AppEntry.kt`, `LauncherActions.kt` |
+| Preferences (DataStore) | `nlauncher/prefs/LauncherPrefs.kt`, `LauncherPrefsRepository` (in same file) |
+| Backup JSON | `nlauncher/prefs/LauncherBackup.kt` |
+| App list | `nlauncher/apps/AppsRepository.kt`, `AppEntry.kt`, `LauncherActions.kt` |
 
 ## Drawer & grid
 
@@ -28,7 +28,7 @@ Sources live under `app/src/main/java/`. **Physical folders** use `native/…` a
 
 ## Overlays & secondary screens
 
-Composable overlays live under **`native/ui/`** (package **`com.zeno.classiclauncher.nlauncher.ui`** unless noted):
+Composable overlays live under **`nlauncher/ui/`**:
 
 - `LauncherScreen.kt` — home, drawer, dock, settings host, search, modals  
 - `AppDrawerBadgesOverlay.kt`, `GestureShortcutsOverlay.kt`, `PermissionsSettingsOverlay.kt`  
@@ -44,7 +44,7 @@ Glance (home strip):
 
 | Area | Path |
 |------|------|
-| Notification badges | `native/badges/BadgeNotificationListener.kt`, `NotificationRepository.kt` |
+| Notification badges | `nlauncher/badges/BadgeNotificationListener.kt`, `NotificationRepository.kt` |
 | Sleep / device admin | `nlauncher/power/SleepManager.kt`, `LauncherDeviceAdminReceiver.kt` |
 | Usage stats (optional sort) | `nlauncher/usage/UsageStatsRepository.kt` |
 
@@ -61,4 +61,4 @@ Glance (home strip):
 
 ## Tests
 
-Add instrumented / unit tests under `app/src/test` and `app/src/androidTest` when introduced; this tree may be minimal until expanded.
+Unit tests live under `app/src/test`; add instrumented tests under `app/src/androidTest` for device-only flows.

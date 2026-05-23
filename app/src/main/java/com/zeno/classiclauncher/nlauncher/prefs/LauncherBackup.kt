@@ -13,7 +13,7 @@ object LauncherBackup {
     const val FORMAT_KEY = "format"
     const val FORMAT_VALUE = "classiclauncher_backup"
     const val VERSION_KEY = "version"
-    const val CURRENT_VERSION = 23
+    const val CURRENT_VERSION = 24
 
     private object PrefKey {
         const val CUSTOM_QUICK_SETTINGS_ENABLED = "customQuickSettingsEnabled"
@@ -99,6 +99,7 @@ object LauncherBackup {
         p.put(PrefKey.QUICK_SETTINGS_TILE_ORDER, JSONArray(prefs.quickSettingsTileOrder))
         p.put("classicMode", prefs.classicMode)
         p.put("appIconShape", prefs.appIconShape.name)
+        p.put("iconPackPackage", prefs.iconPackPackage)
         p.put("showAppCardBackground", prefs.showAppCardBackground)
         p.put("swipeDownAppSpotlight", prefs.swipeDownAppSpotlight)
         p.put("languageCode", prefs.languageCode)
@@ -225,6 +226,7 @@ object LauncherBackup {
             p.optString("appIconShape", "").let { name ->
                 AppIconShape.entries.firstOrNull { it.name == name } ?: AppIconShape.SOFT_SQUARE
             }
+        val iconPackPackage = p.optString("iconPackPackage", "").trim()
         val showAppCardBackground = p.optBoolean("showAppCardBackground", false)
         val swipeDownAppSpotlight = p.optBoolean("swipeDownAppSpotlight", false)
         val languageCode = p.optString("languageCode", "").trim()
@@ -330,6 +332,7 @@ object LauncherBackup {
             quickSettingsTileOrder = quickSettingsTileOrder,
             classicMode = classicMode,
             appIconShape = appIconShape,
+            iconPackPackage = iconPackPackage,
             showAppCardBackground = showAppCardBackground,
             swipeDownAppSpotlight = swipeDownAppSpotlight,
             languageCode = languageCode,

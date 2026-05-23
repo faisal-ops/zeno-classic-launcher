@@ -10,6 +10,7 @@ import android.content.pm.LauncherApps
 import com.zeno.classiclauncher.nlauncher.BuildConfig
 import com.zeno.classiclauncher.nlauncher.apps.AppEntry
 import com.zeno.classiclauncher.nlauncher.apps.AppsRepository
+import com.zeno.classiclauncher.nlauncher.apps.IconPackRepository
 import com.zeno.classiclauncher.nlauncher.apps.LauncherActions
 import com.zeno.classiclauncher.nlauncher.apps.homeShortcutStorageToken
 import com.zeno.classiclauncher.nlauncher.apps.parseHomeShortcutToken
@@ -60,6 +61,7 @@ import kotlin.math.abs
 
 private val PRIVATE_PREFIX_REGEX = Regex("^private\\s+", RegexOption.IGNORE_CASE)
 private const val HOME_STRIP_DND_TAG = "HomeStripDnD"
+private val VIEWMODEL_SHARING = SharingStarted.WhileSubscribed(stopTimeoutMillis = 5_000)
 internal const val HOME_STRIP_REMOVE_DROP_KEY = "__home_strip_remove__"
 private inline fun logHomeStripDnD(message: () -> String) {
     if (BuildConfig.DEBUG) Log.d(HOME_STRIP_DND_TAG, message())
@@ -74,12 +76,13 @@ enum class DrawerSortMode {
 class LauncherViewModel(app: Application) : AndroidViewModel(app) {
     private val prefsRepo = LauncherPrefsRepository(app.applicationContext)
     private val appsRepo = AppsRepository(app.applicationContext)
+    private val iconPackRepo = IconPackRepository(app.applicationContext)
     private val actions = LauncherActions(app.applicationContext)
 
     val prefs: StateFlow<LauncherPrefs> =
         prefsRepo.prefsFlow
             .distinctUntilChanged()
-            .stateIn(viewModelScope, SharingStarted.Eagerly, LauncherPrefs())
+            .stateIn(viewModelScope, VIEWMODEL_SHARING, LauncherPrefs())
 
     /** Incremented each time the end-call / red button is pressed — UI observes and navigates home. */
     private val _navigateHomeEvent = MutableStateFlow(0)
@@ -124,10 +127,15 @@ class LauncherViewModel(app: Application) : AndroidViewModel(app) {
         setDrawerSortMode(if (_drawerSortMode.value == DrawerSortMode.MOST_USED) DrawerSortMode.ALPHABETICAL else DrawerSortMode.MOST_USED)
     }
 
-    val apps: StateFlow<List<AppEntry>> =
+    private val rawApps: StateFlow<List<AppEntry>> =
         appsRepo.appsFlow()
             .distinctUntilChanged()
-            .stateIn(viewModelScope, SharingStarted.Eagerly, emptyList())
+            .stateIn(viewModelScope, VIEWMODEL_SHARING, emptyList())
+
+    val apps: StateFlow<List<AppEntry>> =
+        combine(rawApps, prefs) { list, pr ->
+            iconPackRepo.applyIconPack(list, pr.iconPackPackage)
+        }.stateIn(viewModelScope, VIEWMODEL_SHARING, emptyList())
 
     fun hasUsagePermission(): Boolean = UsageStatsRepository.hasPermission(getApplication())
 
@@ -187,7 +195,7 @@ class LauncherViewModel(app: Application) : AndroidViewModel(app) {
                     cells
                 },
             )
-        }.stateIn(viewModelScope, SharingStarted.Eagerly, emptyList())
+        }.stateIn(viewModelScope, VIEWMODEL_SHARING, emptyList())
 
     val hasUnreadMail: StateFlow<Boolean> = NotificationRepository.hasUnreadMail
     val hasUnreadSms: StateFlow<Boolean> = NotificationRepository.hasUnreadSms
@@ -1198,11 +1206,25 @@ class LauncherViewModel(app: Application) : AndroidViewModel(app) {
     }
 
     fun setHomeWidget(config: HomeWidgetConfig) {
-        viewModelScope.launch { prefsRepo.setHomeWidget(config) }
+        setHomeWidget(config, onComplete = null)
+    }
+
+    fun setHomeWidget(config: HomeWidgetConfig, onComplete: ((Throwable?) -> Unit)?) {
+        viewModelScope.launch {
+            val result = runCatching { prefsRepo.setHomeWidget(config) }
+            onComplete?.invoke(result.exceptionOrNull())
+        }
     }
 
     fun clearHomeWidget() {
-        viewModelScope.launch { prefsRepo.clearHomeWidget() }
+        clearHomeWidget(onComplete = null)
+    }
+
+    fun clearHomeWidget(onComplete: ((Throwable?) -> Unit)?) {
+        viewModelScope.launch {
+            val result = runCatching { prefsRepo.clearHomeWidget() }
+            onComplete?.invoke(result.exceptionOrNull())
+        }
     }
 
     fun setCustomQuickSettingsEnabled(enabled: Boolean) {
@@ -1223,6 +1245,10 @@ class LauncherViewModel(app: Application) : AndroidViewModel(app) {
 
     fun setAppIconShape(shape: AppIconShape) {
         viewModelScope.launch { prefsRepo.setAppIconShape(shape) }
+    }
+
+    fun setIconPackPackage(packageName: String) {
+        viewModelScope.launch { prefsRepo.setIconPackPackage(packageName) }
     }
 
     fun setShowAppCardBackground(enabled: Boolean) {

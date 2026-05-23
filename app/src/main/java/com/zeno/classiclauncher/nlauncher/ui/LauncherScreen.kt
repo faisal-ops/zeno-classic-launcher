@@ -93,6 +93,7 @@ import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.lazy.grid.GridCells
+import androidx.compose.foundation.lazy.grid.GridItemSpan
 import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
 import androidx.compose.foundation.lazy.grid.items
 import androidx.compose.foundation.lazy.grid.itemsIndexed
@@ -178,7 +179,6 @@ import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import com.zeno.classiclauncher.nlauncher.backup.SettingsDownloads
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.mutableStateListOf
@@ -263,12 +263,15 @@ import androidx.compose.ui.text.input.KeyboardCapitalization
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleEventObserver
 import androidx.lifecycle.compose.LocalLifecycleOwner
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
 import coil.compose.AsyncImage
 import com.zeno.classiclauncher.nlauncher.glance.GlanceDateWeatherEventsView
 import com.zeno.classiclauncher.nlauncher.glance.GlanceStripPreferences
 import com.zeno.classiclauncher.nlauncher.apps.AppEntry
 import com.zeno.classiclauncher.nlauncher.apps.AppsRepository
+import com.zeno.classiclauncher.nlauncher.apps.IconPackEntry
+import com.zeno.classiclauncher.nlauncher.apps.IconPackRepository
 import com.zeno.classiclauncher.nlauncher.apps.LauncherActions
 import com.zeno.classiclauncher.nlauncher.apps.SoundProfileMode
 import com.zeno.classiclauncher.nlauncher.apps.ToggleResult
@@ -356,6 +359,12 @@ private const val HOME_STRIP_DND_TAG = "HomeStripDnD"
 private inline fun logHomeStripDnD(message: () -> String) {
     if (BuildConfig.DEBUG) Log.d(HOME_STRIP_DND_TAG, message())
 }
+private val textHandleMoveFeedback: Int
+    get() = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O_MR1) {
+        HapticFeedbackConstants.TEXT_HANDLE_MOVE
+    } else {
+        HapticFeedbackConstants.CLOCK_TICK
+    }
 private const val QS_DEBUG_TAG = "QuickSettings"
 private inline fun logQuickSettings(message: () -> String) {
     if (BuildConfig.DEBUG) Log.d(QS_DEBUG_TAG, message())
@@ -382,6 +391,10 @@ private val VISIBLE_ICON_SHAPES = listOf(
 private const val DEFAULT_APP_ICON_SIZE_DP = 52f
 private const val MIN_APP_ICON_SIZE_DP = 44f
 private const val MAX_APP_ICON_SIZE_DP = 64f
+private val ICON_SETTINGS_PREVIEW_HEIGHT = 88.dp
+private val ICON_SETTINGS_PREVIEW_CELL_WIDTH = 96.dp
+private val ICON_SETTINGS_PREVIEW_LABEL_SP = 12
+private val ICON_SETTINGS_PREVIEW_CARD_SHAPE = RoundedCornerShape(10.dp)
 private val SETTINGS_TITLE_TEXT_SP = 18.sp
 private val SETTINGS_BODY_TEXT_SP = 14.sp
 private val SETTINGS_VALUE_TEXT_SP = 15.sp
@@ -568,18 +581,18 @@ fun LauncherScreen(
 ) {
     val context = LocalContext.current
     val rootView = LocalView.current
-    val prefs by vm.prefs.collectAsState()
-    val allApps by vm.apps.collectAsState()
-    val gridCells by vm.filteredGridCells.collectAsState()
-    val searchQuery by vm.searchQuery.collectAsState()
-    val reorderMode by vm.isReorderMode.collectAsState()
-    val moving by vm.moving.collectAsState()
-    val hasUnreadMail by vm.hasUnreadMail.collectAsState()
-    val hasUnreadSms by vm.hasUnreadSms.collectAsState()
-    val hasUnreadWhatsApp by vm.hasUnreadWhatsApp.collectAsState()
-    val unreadPackages by vm.packagesWithUnread.collectAsState()
-    val drawerSortMode by vm.drawerSortMode.collectAsState()
-    val newAppAddedToast by vm.newAppAddedToast.collectAsState()
+    val prefs by vm.prefs.collectAsStateWithLifecycle()
+    val allApps by vm.apps.collectAsStateWithLifecycle()
+    val gridCells by vm.filteredGridCells.collectAsStateWithLifecycle()
+    val searchQuery by vm.searchQuery.collectAsStateWithLifecycle()
+    val reorderMode by vm.isReorderMode.collectAsStateWithLifecycle()
+    val moving by vm.moving.collectAsStateWithLifecycle()
+    val hasUnreadMail by vm.hasUnreadMail.collectAsStateWithLifecycle()
+    val hasUnreadSms by vm.hasUnreadSms.collectAsStateWithLifecycle()
+    val hasUnreadWhatsApp by vm.hasUnreadWhatsApp.collectAsStateWithLifecycle()
+    val unreadPackages by vm.packagesWithUnread.collectAsStateWithLifecycle()
+    val drawerSortMode by vm.drawerSortMode.collectAsStateWithLifecycle()
+    val newAppAddedToast by vm.newAppAddedToast.collectAsStateWithLifecycle()
     val themePalette = remember(prefs.themeJson) { LauncherThemePalette.fromJson(prefs.themeJson) }
     fun normalizedGroupName(raw: String): String =
         raw.trim().ifBlank { "Group" }.lowercase(Locale.getDefault())
@@ -691,11 +704,8 @@ fun LauncherScreen(
     fun commitHomeWidget(widgetId: Int) {
         val info = appWidgetManager.getAppWidgetInfo(widgetId)
         val span = info?.let(::estimateHomeWidgetSpan) ?: HomeWidgetSpan(4, 2)
-        homeWidgetId?.let { oldId ->
-            if (oldId != widgetId) runCatching { appWidgetHost.deleteAppWidgetId(oldId) }
-        }
-        homeWidgetId = widgetId
-        vm.setHomeWidget(
+        val previousWidgetId = homeWidgetId
+        val nextConfig =
             HomeWidgetConfig(
                 appWidgetId = widgetId,
                 providerPackage = info?.provider?.packageName.orEmpty(),
@@ -704,18 +714,37 @@ fun LauncherScreen(
                 col = (HOME_GRID_COLS - span.cols) / 2,
                 cols = span.cols,
                 rows = span.rows,
-            ),
+            )
+        vm.setHomeWidget(
+            nextConfig,
+            onComplete = { error ->
+                if (error == null) {
+                    previousWidgetId?.let { oldId ->
+                        if (oldId != widgetId) runCatching { appWidgetHost.deleteAppWidgetId(oldId) }
+                    }
+                    homeWidgetId = widgetId
+                    pendingWidgetId = null
+                    pendingWidgetProvider = null
+                    showWidgetPicker = false
+                } else {
+                    runCatching { appWidgetHost.deleteAppWidgetId(widgetId) }
+                    Toast.makeText(context, "Could not save widget", Toast.LENGTH_SHORT).show()
+                }
+            },
         )
-        pendingWidgetId = null
-        pendingWidgetProvider = null
-        showWidgetPicker = false
     }
     fun removeHomeWidget() {
-        homeWidgetId?.let { runCatching { appWidgetHost.deleteAppWidgetId(it) } }
-        homeWidgetId = null
-        showWidgetConfigMode = false
-        showRemoveWidgetConfirm = false
-        vm.clearHomeWidget()
+        val widgetId = homeWidgetId
+        vm.clearHomeWidget { error ->
+            if (error == null) {
+                widgetId?.let { runCatching { appWidgetHost.deleteAppWidgetId(it) } }
+                homeWidgetId = null
+                showWidgetConfigMode = false
+                showRemoveWidgetConfirm = false
+            } else {
+                Toast.makeText(context, "Could not remove widget", Toast.LENGTH_SHORT).show()
+            }
+        }
     }
     DisposableEffect(appWidgetHost) {
         appWidgetHost.startListening()
@@ -915,12 +944,12 @@ fun LauncherScreen(
     }
 
     // End-call / red button: navigated via Activity dispatchKeyEvent → ViewModel → here.
-    val navigateHomeEvent by vm.navigateHomeEvent.collectAsState()
+    val navigateHomeEvent by vm.navigateHomeEvent.collectAsStateWithLifecycle()
     androidx.compose.runtime.LaunchedEffect(navigateHomeEvent) {
         if (navigateHomeEvent > 0) pagerState.animateScrollToPage(0)
     }
 
-    val dismissLauncherQsEvent by vm.dismissLauncherQsEvent.collectAsState()
+    val dismissLauncherQsEvent by vm.dismissLauncherQsEvent.collectAsStateWithLifecycle()
     androidx.compose.runtime.LaunchedEffect(dismissLauncherQsEvent) {
         if (dismissLauncherQsEvent > 0) showQuickSettingsOverlay = false
     }
@@ -1730,9 +1759,7 @@ fun LauncherScreen(
                 onOpenLanguageSettings = { showLanguageSettings = true },
                 onSetWallpaper = {
                     runCatching {
-                        context.startActivity(
-                            Intent("android.settings.WALLPAPER_SETTINGS").addFlags(Intent.FLAG_ACTIVITY_NEW_TASK),
-                        )
+                        context.startActivity(Intent("android.settings.WALLPAPER_SETTINGS").addFlags(Intent.FLAG_ACTIVITY_NEW_TASK))
                     }
                 },
                 onToggleHaptics = { vm.setHapticsEnabled(!prefs.hapticsEnabled) },
@@ -1764,14 +1791,10 @@ fun LauncherScreen(
                 onOpenGestureSettings = { showGestureSettings = true },
                 onOpenScreenSaverSettings = {
                     runCatching {
-                        context.startActivity(
-                            Intent(Settings.ACTION_DREAM_SETTINGS).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK),
-                        )
+                        context.startActivity(Intent(Settings.ACTION_DREAM_SETTINGS).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK))
                     }.onFailure {
                         runCatching {
-                            context.startActivity(
-                                Intent(Settings.ACTION_DISPLAY_SETTINGS).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK),
-                            )
+                            context.startActivity(Intent(Settings.ACTION_DISPLAY_SETTINGS).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK))
                         }
                     }
                 },
@@ -1798,6 +1821,7 @@ fun LauncherScreen(
             IconAppearanceSettingsOverlay(
                 gridPreset = prefs.gridPreset,
                 appIconShape = prefs.appIconShape,
+                iconPackPackage = prefs.iconPackPackage,
                 showAppCardBackground = prefs.showAppCardBackground,
                 showIconNotifBadge = prefs.showIconNotifBadge,
                 notificationAccessReady = prefs.notificationBadgesEnabled && permRuntime.notificationAccess,
@@ -1810,6 +1834,7 @@ fun LauncherScreen(
                 onGridPreset = vm::setGridPreset,
                 onAppGridIconSize = vm::setAppGridIconSize,
                 onSetAppIconShape = vm::setAppIconShape,
+                onSetIconPackPackage = vm::setIconPackPackage,
                 onToggleAppCardBackground = { vm.setShowAppCardBackground(!prefs.showAppCardBackground) },
                 onShowIconNotifBadgeChange = vm::setShowIconNotifBadge,
                 themePalette = themePalette,
@@ -2364,7 +2389,7 @@ private fun HomeGridCanvas(
             widgetRemoveActive = inRemove
             currentOnRemoveDropActiveChanged.value(inRemove)
             if (inRemove && hapticsEnabled) {
-                view.performHapticFeedback(HapticFeedbackConstants.TEXT_HANDLE_MOVE)
+                view.performHapticFeedback(textHandleMoveFeedback)
             }
         }
     }
@@ -3880,7 +3905,9 @@ private fun QuickSettingsOverlay(
                             true
                         }
                         ToggleResult.PermissionRequired -> {
-                            btPermissionLauncher.launch(Manifest.permission.BLUETOOTH_CONNECT)
+                            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
+                                btPermissionLauncher.launch(Manifest.permission.BLUETOOTH_CONNECT)
+                            }
                             true
                         }
                         ToggleResult.Unsupported -> {
@@ -4705,7 +4732,7 @@ private fun QuickSettingsTileEditorOverlay(
                             )
                             .zIndex(if (isDragging) 1f else 0f)
                             .onSizeChanged { tileSize = it }
-                                    .graphicsLayer {
+                            .graphicsLayer {
                                 translationX = if (isDragging) dragX else 0f
                                 translationY = if (isDragging) dragY else 0f
                                 val scale = liftScale * targetScale
@@ -4715,21 +4742,21 @@ private fun QuickSettingsTileEditorOverlay(
                                     alpha = 0.94f
                                     shadowElevation = 16f
                                 }
-                                    }
+                            }
                             .pointerInput(tile.id, tiles.size, tileSize) {
                                 val gapPx = 8.dp.toPx()
-                                        detectDragGesturesAfterLongPress(
+                                detectDragGesturesAfterLongPress(
                                     onDragStart = { startOffset ->
                                         val latestTiles = currentTiles.value
                                         val startIndex = latestTiles.indexOfFirst { it.id == tile.id }
                                         if (startIndex < 0) return@detectDragGesturesAfterLongPress
-                                                draggingTileId = tile.id
+                                        draggingTileId = tile.id
                                         dragStartIndex = startIndex
                                         dragTargetIndex = startIndex
-                                                editorView.performHapticFeedback(HapticFeedbackConstants.CLOCK_TICK)
-                                                logQuickSettings { "editorDragStart id=${tile.id} index=$startIndex startOffset=$startOffset" }
-                                            },
-                                            onDragEnd = {
+                                        editorView.performHapticFeedback(HapticFeedbackConstants.CLOCK_TICK)
+                                        logQuickSettings { "editorDragStart id=${tile.id} index=$startIndex startOffset=$startOffset" }
+                                    },
+                                    onDragEnd = {
                                         val latestTiles = currentTiles.value
                                         val from = latestTiles.indexOfFirst { it.id == tile.id }
                                         val to = dragTargetIndex.coerceIn(0, latestTiles.lastIndex)
@@ -4737,24 +4764,24 @@ private fun QuickSettingsTileEditorOverlay(
                                         if (from >= 0 && to >= 0 && from != to) {
                                             onMove(from, to)
                                         }
-                                                draggingTileId = null
+                                        draggingTileId = null
                                         dragStartIndex = -1
                                         dragTargetIndex = -1
-                                                dragX = 0f
-                                                dragY = 0f
-                                            },
-                                            onDragCancel = {
-                                                logQuickSettings { "editorDragCancel id=${tile.id}" }
-                                                draggingTileId = null
+                                        dragX = 0f
+                                        dragY = 0f
+                                    },
+                                    onDragCancel = {
+                                        logQuickSettings { "editorDragCancel id=${tile.id}" }
+                                        draggingTileId = null
                                         dragStartIndex = -1
                                         dragTargetIndex = -1
-                                                dragX = 0f
-                                                dragY = 0f
-                                            },
-                                            onDrag = { change, amount ->
-                                                change.consume()
-                                                dragX += amount.x
-                                                dragY += amount.y
+                                        dragX = 0f
+                                        dragY = 0f
+                                    },
+                                    onDrag = { change, amount ->
+                                        change.consume()
+                                        dragX += amount.x
+                                        dragY += amount.y
                                         val target = qsEditorTargetIndexFromDrag(
                                             startIndex = dragStartIndex,
                                             dragX = dragX,
@@ -4764,15 +4791,15 @@ private fun QuickSettingsTileEditorOverlay(
                                             itemCount = currentTiles.value.size,
                                         )
                                         if (target >= 0 && target != dragTargetIndex) {
-                                                    logQuickSettings {
+                                            logQuickSettings {
                                                 "editorPreviewMove id=${tile.id} from=$dragTargetIndex to=$target start=$dragStartIndex drag=($dragX,$dragY)"
-                                                    }
+                                            }
                                             dragTargetIndex = target
-                                                    editorView.performHapticFeedback(HapticFeedbackConstants.CLOCK_TICK)
-                                                }
-                                            },
-                                        )
+                                            editorView.performHapticFeedback(HapticFeedbackConstants.CLOCK_TICK)
+                                        }
                                     },
+                                )
+                            },
                             ) {
                                 ClassicQuickTile(
                                     tile = tile,
@@ -5546,77 +5573,71 @@ private fun HomeWidgetPickerSheet(
             }
             Spacer(Modifier.height(8.dp))
 
-            Column(
+            LazyVerticalGrid(
+                columns = GridCells.Fixed(2),
                 modifier = Modifier
-                    .weight(1f)
-                    .verticalScroll(rememberScrollState()),
+                    .weight(1f),
+                contentPadding = PaddingValues(bottom = 12.dp),
+                horizontalArrangement = Arrangement.spacedBy(10.dp),
+                verticalArrangement = Arrangement.spacedBy(10.dp),
             ) {
                 if (grouped.isEmpty()) {
-                    Box(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .height(260.dp),
-                        contentAlignment = Alignment.Center,
-                    ) {
-                        Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                            Icon(
-                                Icons.Rounded.Apps,
-                                contentDescription = null,
-                                tint = Color(0xFF6F7D84),
-                                modifier = Modifier.size(34.dp),
-                            )
-                            Spacer(Modifier.height(10.dp))
-                            Text(
-                                if (query.isBlank()) "No widgets available" else "No widgets found",
-                                color = Color(0xFFD4DEE4),
-                                fontSize = 18.sp,
-                                fontWeight = FontWeight.SemiBold,
-                            )
-                            Text(
-                                if (query.isBlank()) {
-                                    "Installed apps have not exposed widgets."
-                                } else {
-                                    "Try a different app or widget name."
-                                },
-                                color = Color(0xFF8FA0A8),
-                                fontSize = 13.sp,
-                            )
+                    item(span = { GridItemSpan(maxLineSpan) }) {
+                        Box(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .height(260.dp),
+                            contentAlignment = Alignment.Center,
+                        ) {
+                            Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                                Icon(
+                                    Icons.Rounded.Apps,
+                                    contentDescription = null,
+                                    tint = Color(0xFF6F7D84),
+                                    modifier = Modifier.size(34.dp),
+                                )
+                                Spacer(Modifier.height(10.dp))
+                                Text(
+                                    if (query.isBlank()) "No widgets available" else "No widgets found",
+                                    color = Color(0xFFD4DEE4),
+                                    fontSize = 18.sp,
+                                    fontWeight = FontWeight.SemiBold,
+                                )
+                                Text(
+                                    if (query.isBlank()) {
+                                        "Installed apps have not exposed widgets."
+                                    } else {
+                                        "Try a different app or widget name."
+                                    },
+                                    color = Color(0xFF8FA0A8),
+                                    fontSize = 13.sp,
+                                )
+                            }
                         }
                     }
                 }
                 grouped.forEach { (appLabel, widgets) ->
-                    Text(
-                        appLabel,
-                        color = Color(0xFFB9C7CB),
-                        fontSize = 13.sp,
-                        fontWeight = FontWeight.SemiBold,
-                        maxLines = 1,
-                        overflow = TextOverflow.Ellipsis,
-                        modifier = Modifier.padding(horizontal = 2.dp, vertical = 8.dp),
-                    )
-                    val leftColumn = widgets.filterIndexed { index, _ -> index % 2 == 0 }
-                    val rightColumn = widgets.filterIndexed { index, _ -> index % 2 == 1 }
-                    Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-                        Column(
-                            modifier = Modifier.weight(1f),
-                            verticalArrangement = Arrangement.spacedBy(10.dp),
-                        ) {
-                            leftColumn.forEach { info ->
-                                WidgetPreviewCard(info)
-                            }
-                        }
-                        Column(
-                            modifier = Modifier.weight(1f),
-                            verticalArrangement = Arrangement.spacedBy(10.dp),
-                        ) {
-                            rightColumn.forEach { info ->
-                                WidgetPreviewCard(info)
-                            }
-                        }
+                    item(
+                        key = "header:$appLabel",
+                        span = { GridItemSpan(maxLineSpan) },
+                    ) {
+                        Text(
+                            appLabel,
+                            color = Color(0xFFB9C7CB),
+                            fontSize = 13.sp,
+                            fontWeight = FontWeight.SemiBold,
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis,
+                            modifier = Modifier.padding(horizontal = 2.dp, vertical = 8.dp),
+                        )
                     }
-                    Spacer(Modifier.height(8.dp))
+                    items(
+                        items = widgets,
+                        key = { it.provider.flattenToString() },
+                    ) { info ->
+                        WidgetPreviewCard(info)
+                    }
                 }
-                Spacer(Modifier.height(12.dp))
             }
         }
     }
@@ -5995,7 +6016,7 @@ private fun AppDrawer(
     // gives tactile confirmation that an item has shifted under the finger.
     androidx.compose.runtime.LaunchedEffect(hoveredSlotId) {
         if (hoveredSlotId != null && reorderFingerDragging && hapticsEnabled) {
-            view.performHapticFeedback(HapticFeedbackConstants.TEXT_HANDLE_MOVE)
+            view.performHapticFeedback(textHandleMoveFeedback)
         }
     }
     // Haptic on entering rearrange mode; hard-reset drag state when exiting so that
@@ -8519,7 +8540,7 @@ private fun HomeShortcutStrip(
         if (hoveredSlotKey == removeDropKey) {
             logHomeStripDnD { "hover removeZone slot=$hoveredSlotKey dragging=$reorderFingerDragging" }
         } else if (hapticsEnabled) {
-            view.performHapticFeedback(HapticFeedbackConstants.TEXT_HANDLE_MOVE)
+            view.performHapticFeedback(textHandleMoveFeedback)
         }
     }
 
@@ -9448,7 +9469,11 @@ private fun Dock(
                     iconModel = dockMiddleIconModel,
                     fallbackIcon = if (secondDockFallbackResId != null) Icons.Rounded.Apps else Icons.Outlined.MailOutline,
                     fallbackResId = secondDockFallbackResId,
-                    fallbackScale = if (secondDockFallbackResId == R.drawable.ic_dock_whatsapp) 0.76f else 0.84f,
+                    fallbackScale = when (secondDockFallbackResId) {
+                        R.drawable.ic_dock_whatsapp -> 0.76f
+                        R.drawable.ic_dock_pulse -> 1.06f
+                        else -> 0.84f
+                    },
                     appIconShape = appIconShape,
                     onClick = onShortcut,
                     onLongPress = onLongPressShortcut,
@@ -9468,7 +9493,7 @@ private fun Dock(
                 iconModel = dockEndIconModel,
                 fallbackIcon = Icons.Rounded.PhotoCamera,
                 fallbackResId = thirdDockFallbackResId,
-                fallbackScale = 0.84f,
+                fallbackScale = if (thirdDockFallbackResId == R.drawable.ic_dock_pulse) 1.06f else 0.84f,
                 appIconShape = appIconShape,
                 onClick = onCamera,
                 onLongPress = onLongPressCamera,
@@ -10457,6 +10482,7 @@ private fun GlanceSettingsOverlay(
 private fun IconAppearanceSettingsOverlay(
     gridPreset: GridPreset,
     appIconShape: AppIconShape,
+    iconPackPackage: String,
     showAppCardBackground: Boolean,
     showIconNotifBadge: Boolean,
     notificationAccessReady: Boolean,
@@ -10465,6 +10491,7 @@ private fun IconAppearanceSettingsOverlay(
     onGridPreset: (GridPreset) -> Unit,
     onAppGridIconSize: (Float) -> Unit,
     onSetAppIconShape: (AppIconShape) -> Unit,
+    onSetIconPackPackage: (String) -> Unit,
     onToggleAppCardBackground: () -> Unit,
     onShowIconNotifBadgeChange: (Boolean) -> Unit,
     themePalette: LauncherThemePalette,
@@ -10630,6 +10657,8 @@ private fun IconAppearanceSettingsOverlay(
             onGridPreset = onGridPreset,
             onAppGridIconSize = onAppGridIconSize,
             onSetAppIconShape = onSetAppIconShape,
+            iconPackPackage = iconPackPackage,
+            onSetIconPackPackage = onSetIconPackPackage,
             onDismiss = { showIconLayoutSettings = false },
         )
     }
@@ -10833,12 +10862,11 @@ private fun IconPreviewStrip(
     currentWallpaper: Drawable?,
     themePalette: LauncherThemePalette,
 ) {
-    val previewIconSize = iconSizeDp.coerceIn(42f, 64f).dp
-    val itemWidth = if (showCardBackground) 124.dp else 112.dp
+    val previewIconSize = iconSettingsPreviewIconSize(iconSizeDp)
     Box(
         modifier = Modifier
             .fillMaxWidth()
-            .height(132.dp),
+            .height(ICON_SETTINGS_PREVIEW_HEIGHT),
     ) {
         if (currentWallpaper != null) {
             AsyncImage(
@@ -10863,83 +10891,107 @@ private fun IconPreviewStrip(
             modifier = Modifier
                 .fillMaxWidth()
                 .horizontalScroll(rememberScrollState())
-                .padding(horizontal = 14.dp, vertical = 12.dp),
-            horizontalArrangement = Arrangement.spacedBy(8.dp),
+                .padding(horizontal = 0.dp),
+            horizontalArrangement = Arrangement.spacedBy(0.dp),
             verticalAlignment = Alignment.Top,
         ) {
             previewApps.forEachIndexed { index, app ->
                 val badgeVisible = showBadgePreview && index % 2 == 0
-                Column(
-                    horizontalAlignment = Alignment.CenterHorizontally,
-                    modifier = Modifier
-                        .width(itemWidth)
-                        .then(
-                            if (showCardBackground) {
-                                Modifier
-                                    .clip(RoundedCornerShape(10.dp))
-                                    .background(
-                                        Brush.verticalGradient(
-                                            listOf(themePalette.appCardTop, themePalette.appCardBottom),
-                                        ),
-                                    )
-                                    .border(
-                                        BorderStroke(1.dp, Color.White.copy(alpha = 0.06f)),
-                                        RoundedCornerShape(10.dp),
-                                    )
-                                    .padding(horizontal = 8.dp, vertical = 10.dp)
-                            } else {
-                                Modifier.padding(horizontal = 4.dp, vertical = 8.dp)
-                            },
-                        ),
-                ) {
-                    Box(
-                        modifier = Modifier.size(previewIconSize + 8.dp),
-                        contentAlignment = Alignment.Center,
-                    ) {
-                        AsyncImage(
-                            model = app.icon,
-                            contentDescription = app.label,
-                            contentScale = ContentScale.Fit,
-                            modifier = Modifier
-                                .size(previewIconSize)
-                                .clip(iconMaskShape(appIconShape)),
+                IconSettingsPreviewItem(
+                    app = app,
+                    previewIconSize = previewIconSize,
+                    appIconShape = appIconShape,
+                    showCardBackground = showCardBackground,
+                    showBadge = badgeVisible,
+                    themePalette = themePalette,
+                )
+            }
+        }
+    }
+}
+
+private fun iconSettingsPreviewIconSize(iconSizeDp: Float): Dp =
+    iconSizeDp.coerceIn(38f, 48f).dp
+
+@Composable
+private fun IconSettingsPreviewItem(
+    app: AppEntry,
+    previewIconSize: Dp,
+    appIconShape: AppIconShape,
+    showCardBackground: Boolean,
+    showBadge: Boolean,
+    themePalette: LauncherThemePalette,
+) {
+    Column(
+        horizontalAlignment = Alignment.CenterHorizontally,
+        modifier = Modifier
+            .width(ICON_SETTINGS_PREVIEW_CELL_WIDTH)
+            .padding(top = 8.dp)
+            .then(
+                if (showCardBackground) {
+                    Modifier
+                        .padding(horizontal = 5.dp)
+                        .clip(ICON_SETTINGS_PREVIEW_CARD_SHAPE)
+                        .background(
+                            Brush.verticalGradient(
+                                listOf(themePalette.appCardTop, themePalette.appCardBottom),
+                            ),
                         )
-                        if (badgeVisible) {
-                            Box(
-                                modifier = Modifier
-                                    .align(Alignment.TopEnd)
-                                    .size(14.dp)
-                                    .clip(CircleShape)
-                                    .background(Color(0xFFD32F2F)),
-                                contentAlignment = Alignment.Center,
-                            ) {
-                                Text(
-                                    text = "\u2731",
-                                    style = MaterialTheme.typography.labelSmall.copy(
-                                        color = Color.White,
-                                        fontSize = 8.sp,
-                                        lineHeight = 8.sp,
-                                        fontWeight = FontWeight.Bold,
-                                    ),
-                                )
-                            }
-                        }
-                    }
-                    Spacer(Modifier.height(6.dp))
+                        .border(
+                            BorderStroke(1.dp, Color.White.copy(alpha = 0.06f)),
+                            ICON_SETTINGS_PREVIEW_CARD_SHAPE,
+                        )
+                        .padding(horizontal = 4.dp, vertical = 6.dp)
+                } else {
+                    Modifier.padding(horizontal = 0.dp, vertical = 0.dp)
+                },
+            ),
+    ) {
+        Box(
+            modifier = Modifier.size(previewIconSize + 8.dp),
+            contentAlignment = Alignment.Center,
+        ) {
+            AsyncImage(
+                model = app.icon,
+                contentDescription = app.label,
+                contentScale = ContentScale.Fit,
+                modifier = Modifier
+                    .size(previewIconSize)
+                    .clip(iconMaskShape(appIconShape)),
+            )
+            if (showBadge) {
+                Box(
+                    modifier = Modifier
+                        .align(Alignment.TopEnd)
+                        .size(14.dp)
+                        .clip(CircleShape)
+                        .background(Color(0xFFD32F2F)),
+                    contentAlignment = Alignment.Center,
+                ) {
                     Text(
-                        text = app.label,
-                        style = compactAppLabelStyle(
-                            fontSizeSp = 14,
-                            textColor = Color(0xFFE8EEF7),
+                        text = "\u2731",
+                        style = MaterialTheme.typography.labelSmall.copy(
+                            color = Color.White,
+                            fontSize = 8.sp,
+                            lineHeight = 8.sp,
+                            fontWeight = FontWeight.Bold,
                         ),
-                        maxLines = 2,
-                        overflow = TextOverflow.Ellipsis,
-                        textAlign = TextAlign.Center,
-                        modifier = Modifier.fillMaxWidth(),
                     )
                 }
             }
         }
+        Spacer(Modifier.height(4.dp))
+        Text(
+            text = app.label,
+            style = compactAppLabelStyle(
+                fontSizeSp = ICON_SETTINGS_PREVIEW_LABEL_SP,
+                textColor = Color(0xFFE8EEF7),
+            ),
+            maxLines = 1,
+            overflow = TextOverflow.Ellipsis,
+            textAlign = TextAlign.Center,
+            modifier = Modifier.fillMaxWidth(),
+        )
     }
 }
 
@@ -10948,13 +11000,16 @@ private fun IconLayoutSettingsOverlay(
     gridPreset: GridPreset,
     previewApps: List<AppEntry>,
     appIconShape: AppIconShape,
+    iconPackPackage: String,
     themePalette: LauncherThemePalette,
     onGridPreset: (GridPreset) -> Unit,
     onAppGridIconSize: (Float) -> Unit,
     onSetAppIconShape: (AppIconShape) -> Unit,
+    onSetIconPackPackage: (String) -> Unit,
     onDismiss: () -> Unit,
 ) {
     val context = LocalContext.current
+    val iconPackRepo = remember(context) { IconPackRepository(context) }
     val focusRequester = remember { FocusRequester() }
     var iconSize by remember(themePalette.appGridIconSizeDp) {
         mutableFloatStateOf(themePalette.appGridIconSizeDp.coerceIn(MIN_APP_ICON_SIZE_DP, MAX_APP_ICON_SIZE_DP))
@@ -10972,6 +11027,20 @@ private fun IconLayoutSettingsOverlay(
     val colOptions = remember { GridPreset.entries.map { it.cols }.distinct().sorted() }
     var columnsMenuExpanded by remember { mutableStateOf(false) }
     var rowsMenuExpanded by remember { mutableStateOf(false) }
+    var iconPackMenuExpanded by remember { mutableStateOf(false) }
+    var iconPacks by remember { mutableStateOf<List<IconPackEntry>>(emptyList()) }
+    var iconPacksLoaded by remember { mutableStateOf(false) }
+    LaunchedEffect(Unit) {
+        iconPacks = iconPackRepo.installedIconPacks()
+        iconPacksLoaded = true
+    }
+    val selectedIconPackLabel = remember(iconPackPackage, iconPacks, iconPacksLoaded) {
+        when {
+            iconPackPackage.isBlank() -> context.getString(R.string.icon_pack_system_icons)
+            else -> iconPacks.firstOrNull { it.packageName == iconPackPackage }?.label
+                ?: context.getString(R.string.icon_pack_missing)
+        }
+    }
     fun snapIconSize(value: Float): Float =
         (MIN_APP_ICON_SIZE_DP + ((value - MIN_APP_ICON_SIZE_DP) / 4f).roundToInt() * 4f)
             .coerceIn(MIN_APP_ICON_SIZE_DP, MAX_APP_ICON_SIZE_DP)
@@ -11018,8 +11087,8 @@ private fun IconLayoutSettingsOverlay(
             Row(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .height(48.dp)
-                    .background(Color(0xFF292B2B)),
+                    .height(56.dp)
+                    .background(Color(0xFF101619)),
                 verticalAlignment = Alignment.CenterVertically,
             ) {
                 IconButton(onClick = onDismiss) {
@@ -11038,181 +11107,310 @@ private fun IconLayoutSettingsOverlay(
                     modifier = Modifier.weight(1f),
                 )
             }
-            Box(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .height(88.dp),
-            ) {
-                if (currentWallpaper != null) {
-                    AsyncImage(
-                        model = currentWallpaper,
-                        contentDescription = null,
-                        contentScale = ContentScale.Crop,
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .height(88.dp),
-                    )
-                } else {
-                    Box(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .height(88.dp)
-                            .background(Color(0xFF202344)),
-                    )
-                }
-                Box(
-                    modifier = Modifier
-                        .fillMaxSize()
-                        .background(Color(0x33000000)),
-                )
-                Row(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .horizontalScroll(rememberScrollState()),
-                    verticalAlignment = Alignment.Top,
-                ) {
-                    previewItems.forEach { app ->
-                        Column(
-                            horizontalAlignment = Alignment.CenterHorizontally,
-                            modifier = Modifier
-                                .width(96.dp)
-                                .padding(top = 8.dp),
-                        ) {
-                            AsyncImage(
-                                model = app.icon,
-                                contentDescription = app.label,
-                                contentScale = ContentScale.Fit,
-                                modifier = Modifier
-                                    .size(iconSize.coerceIn(38f, 48f).dp)
-                                    .clip(iconMaskShape(currentShape)),
-                            )
-                            Spacer(Modifier.height(4.dp))
-                            Text(
-                                text = app.label,
-                                style = compactAppLabelStyle(
-                                    fontSizeSp = 12,
-                                    textColor = Color(0xFFE8EEF7),
-                                ),
-                                maxLines = 1,
-                                overflow = TextOverflow.Ellipsis,
-                                textAlign = TextAlign.Center,
-                                modifier = Modifier.fillMaxWidth(),
-                            )
-                        }
-                    }
-                }
-            }
             Column(
                 modifier = Modifier
                     .fillMaxWidth()
                     .weight(1f)
-                    .background(Color(0xFF2C2F2F))
+                    .background(Color(0xFF101619))
                     .verticalScroll(rememberScrollState())
-                    .padding(horizontal = 24.dp, vertical = 10.dp),
+                    .padding(horizontal = 16.dp, vertical = 12.dp),
+                verticalArrangement = Arrangement.spacedBy(12.dp),
             ) {
-                Row(
+                Surface(
                     modifier = Modifier.fillMaxWidth(),
-                    verticalAlignment = Alignment.CenterVertically,
+                    shape = RoundedCornerShape(22.dp),
+                    color = Color(0xFF171F27),
+                    border = BorderStroke(1.dp, Color.White.copy(alpha = 0.07f)),
                 ) {
-                    Text(
-                        stringResource(R.string.icon_layout_size),
-                        color = Color.White,
-                        fontSize = SETTINGS_TITLE_TEXT_SP,
-                        fontWeight = FontWeight.Normal,
-                        modifier = Modifier.weight(1f),
-                    )
-                    Text(
-                        stringResource(
-                            R.string.icon_layout_size_value,
-                            iconSize.roundToInt(),
-                            DEFAULT_APP_ICON_SIZE_DP.roundToInt(),
-                        ),
-                        color = Color(0xFF9EA4A9),
-                        fontSize = SETTINGS_BODY_TEXT_SP,
-                    )
-                }
-                Slider(
-                    value = iconSize,
-                    onValueChange = {
-                        val snapped = snapIconSize(it)
-                        iconSize = snapped
-                        onAppGridIconSize(snapped)
-                    },
-                    valueRange = MIN_APP_ICON_SIZE_DP..MAX_APP_ICON_SIZE_DP,
-                    steps = 4,
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .height(42.dp)
-                        .padding(top = 2.dp),
-                )
-                Row(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .padding(horizontal = 2.dp),
-                    verticalAlignment = Alignment.CenterVertically,
-                ) {
-                    Text(stringResource(R.string.icon_layout_small), color = Color(0xFF9EA4A9), fontSize = 12.sp, modifier = Modifier.weight(1f))
-                    Spacer(Modifier.weight(1f))
-                    Text(stringResource(R.string.icon_layout_large), color = Color(0xFF9EA4A9), fontSize = 12.sp, textAlign = TextAlign.End, modifier = Modifier.weight(1f))
-                }
-                Spacer(Modifier.height(10.dp))
-                Text(
-                    stringResource(R.string.icon_layout_grid),
-                    color = Color.White,
-                    fontSize = SETTINGS_TITLE_TEXT_SP,
-                )
-                Spacer(Modifier.height(2.dp))
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.spacedBy(14.dp),
-                    verticalAlignment = Alignment.CenterVertically,
-                ) {
-                    Box(modifier = Modifier.weight(1f)) {
-                        IconLayoutSelector(
-                            text = stringResource(R.string.icon_layout_columns, gridPreset.cols),
-                            onClick = { columnsMenuExpanded = true },
-                            modifier = Modifier.fillMaxWidth(),
-                        )
-                        IconLayoutDropdown(
-                            expanded = columnsMenuExpanded,
-                            onDismiss = { columnsMenuExpanded = false },
-                            options = colOptions,
-                            selected = gridPreset.cols,
-                            defaultValue = 5,
-                            suffix = null,
-                            onSelect = { cols ->
-                                columnsMenuExpanded = false
-                                onGridPreset(preferredPresetFor(gridPreset.rows, cols))
-                            },
-                        )
-                    }
-                    Box(modifier = Modifier.weight(1f)) {
-                        IconLayoutSelector(
-                            text = stringResource(R.string.icon_layout_rows, gridPreset.rows),
-                            onClick = { rowsMenuExpanded = true },
-                            modifier = Modifier.fillMaxWidth(),
-                        )
-                        IconLayoutDropdown(
-                            expanded = rowsMenuExpanded,
-                            onDismiss = { rowsMenuExpanded = false },
-                            options = rowOptions,
-                            selected = gridPreset.rows,
-                            defaultValue = 3,
-                            suffix = null,
-                            onSelect = { rows ->
-                                rowsMenuExpanded = false
-                                onGridPreset(preferredPresetFor(rows, gridPreset.cols))
-                            },
-                        )
+                    Column(Modifier.padding(12.dp)) {
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            Column(Modifier.weight(1f)) {
+                                Text("Live preview", color = Color.White, fontSize = 16.sp, fontWeight = FontWeight.SemiBold)
+                                Text("Matches the app grid scale", color = Color(0xFF9EA4A9), fontSize = 12.sp)
+                            }
+                            Text(
+                                "${iconSize.roundToInt()} dp",
+                                color = Color(0xFF00A9E0),
+                                fontSize = 15.sp,
+                                fontWeight = FontWeight.SemiBold,
+                                modifier = Modifier
+                                    .clip(RoundedCornerShape(50))
+                                    .background(Color(0x2211B7E8))
+                                    .padding(horizontal = 12.dp, vertical = 6.dp),
+                            )
+                        }
+                        Spacer(Modifier.height(10.dp))
+                        Box(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .height(ICON_SETTINGS_PREVIEW_HEIGHT)
+                                .clip(RoundedCornerShape(16.dp)),
+                        ) {
+                            if (currentWallpaper != null) {
+                                AsyncImage(
+                                    model = currentWallpaper,
+                                    contentDescription = null,
+                                    contentScale = ContentScale.Crop,
+                                    modifier = Modifier.fillMaxSize(),
+                                )
+                            } else {
+                                Box(
+                                    modifier = Modifier
+                                        .fillMaxSize()
+                                        .background(Color(0xFF202344)),
+                                )
+                            }
+                            Box(
+                                modifier = Modifier
+                                    .fillMaxSize()
+                                    .background(Color(0x44000000)),
+                            )
+                            Row(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .horizontalScroll(rememberScrollState()),
+                                verticalAlignment = Alignment.Top,
+                            ) {
+                                previewItems.forEach { app ->
+                                    IconSettingsPreviewItem(
+                                        app = app,
+                                        previewIconSize = iconSettingsPreviewIconSize(iconSize),
+                                        appIconShape = currentShape,
+                                        showCardBackground = false,
+                                        showBadge = false,
+                                        themePalette = themePalette,
+                                    )
+                                }
+                            }
+                        }
                     }
                 }
-                Spacer(Modifier.height(10.dp))
-                IconShapeValueRow(
-                    currentShape = currentShape,
-                    onClick = ::cycleShape,
-                )
+
+                Surface(
+                    modifier = Modifier.fillMaxWidth(),
+                    shape = RoundedCornerShape(22.dp),
+                    color = Color(0xFF171F27),
+                    border = BorderStroke(1.dp, Color.White.copy(alpha = 0.07f)),
+                ) {
+                    Column(Modifier.padding(horizontal = 16.dp, vertical = 12.dp)) {
+                        Column(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(vertical = 4.dp),
+                        ) {
+                            Row(
+                                modifier = Modifier.fillMaxWidth(),
+                                verticalAlignment = Alignment.CenterVertically,
+                            ) {
+                                Text(
+                                    stringResource(R.string.icon_layout_size),
+                                    color = Color.White,
+                                    fontSize = SETTINGS_TITLE_TEXT_SP,
+                                    fontWeight = FontWeight.SemiBold,
+                                    modifier = Modifier.weight(1f),
+                                )
+                                Text(
+                                    stringResource(
+                                        R.string.icon_layout_size_value,
+                                        iconSize.roundToInt(),
+                                        DEFAULT_APP_ICON_SIZE_DP.roundToInt(),
+                                    ),
+                                    color = Color(0xFF9EA4A9),
+                                    fontSize = SETTINGS_BODY_TEXT_SP,
+                                )
+                            }
+                            Slider(
+                                value = iconSize,
+                                onValueChange = {
+                                    val snapped = snapIconSize(it)
+                                    iconSize = snapped
+                                    onAppGridIconSize(snapped)
+                                },
+                                valueRange = MIN_APP_ICON_SIZE_DP..MAX_APP_ICON_SIZE_DP,
+                                steps = 4,
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .height(44.dp)
+                                    .padding(top = 2.dp),
+                            )
+                            Row(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .padding(horizontal = 2.dp),
+                                verticalAlignment = Alignment.CenterVertically,
+                            ) {
+                                Text(stringResource(R.string.icon_layout_small), color = Color(0xFF9EA4A9), fontSize = 12.sp, modifier = Modifier.weight(1f))
+                                Spacer(Modifier.weight(1f))
+                                Text(stringResource(R.string.icon_layout_large), color = Color(0xFF9EA4A9), fontSize = 12.sp, textAlign = TextAlign.End, modifier = Modifier.weight(1f))
+                            }
+                        }
+
+                        HorizontalDivider(color = Color.White.copy(alpha = 0.08f), modifier = Modifier.padding(vertical = 10.dp))
+
+                        Column(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(vertical = 4.dp),
+                        ) {
+                            Text(
+                                stringResource(R.string.icon_layout_grid),
+                                color = Color.White,
+                                fontSize = SETTINGS_TITLE_TEXT_SP,
+                                fontWeight = FontWeight.SemiBold,
+                            )
+                            Spacer(Modifier.height(10.dp))
+                            Row(
+                                modifier = Modifier.fillMaxWidth(),
+                                horizontalArrangement = Arrangement.spacedBy(12.dp),
+                                verticalAlignment = Alignment.CenterVertically,
+                            ) {
+                                Box(modifier = Modifier.weight(1f)) {
+                                    IconLayoutSelector(
+                                        text = stringResource(R.string.icon_layout_columns, gridPreset.cols),
+                                        onClick = { columnsMenuExpanded = true },
+                                        modifier = Modifier.fillMaxWidth(),
+                                    )
+                                    IconLayoutDropdown(
+                                        expanded = columnsMenuExpanded,
+                                        onDismiss = { columnsMenuExpanded = false },
+                                        options = colOptions,
+                                        selected = gridPreset.cols,
+                                        defaultValue = 5,
+                                        suffix = null,
+                                        onSelect = { cols ->
+                                            columnsMenuExpanded = false
+                                            onGridPreset(preferredPresetFor(gridPreset.rows, cols))
+                                        },
+                                    )
+                                }
+                                Box(modifier = Modifier.weight(1f)) {
+                                    IconLayoutSelector(
+                                        text = stringResource(R.string.icon_layout_rows, gridPreset.rows),
+                                        onClick = { rowsMenuExpanded = true },
+                                        modifier = Modifier.fillMaxWidth(),
+                                    )
+                                    IconLayoutDropdown(
+                                        expanded = rowsMenuExpanded,
+                                        onDismiss = { rowsMenuExpanded = false },
+                                        options = rowOptions,
+                                        selected = gridPreset.rows,
+                                        defaultValue = 3,
+                                        suffix = null,
+                                        onSelect = { rows ->
+                                            rowsMenuExpanded = false
+                                            onGridPreset(preferredPresetFor(rows, gridPreset.cols))
+                                        },
+                                    )
+                                }
+                            }
+                        }
+
+                        HorizontalDivider(color = Color.White.copy(alpha = 0.08f), modifier = Modifier.padding(vertical = 10.dp))
+
+                        IconShapeValueRow(
+                            currentShape = currentShape,
+                            onClick = ::cycleShape,
+                        )
+                        HorizontalDivider(color = Color.White.copy(alpha = 0.08f), modifier = Modifier.padding(vertical = 6.dp))
+                        IconPackValueRow(
+                            selectedLabel = selectedIconPackLabel,
+                            iconPacksLoaded = iconPacksLoaded,
+                            onClick = { iconPackMenuExpanded = true },
+                        )
+                        DropdownMenu(
+                            expanded = iconPackMenuExpanded,
+                            onDismissRequest = { iconPackMenuExpanded = false },
+                        ) {
+                            DropdownMenuItem(
+                                text = { Text(stringResource(R.string.icon_pack_system_icons)) },
+                                onClick = {
+                                    iconPackMenuExpanded = false
+                                    onSetIconPackPackage("")
+                                },
+                            )
+                            iconPacks.forEach { pack ->
+                                DropdownMenuItem(
+                                    text = {
+                                        Row(verticalAlignment = Alignment.CenterVertically) {
+                                            AsyncImage(
+                                                model = pack.icon,
+                                                contentDescription = null,
+                                                modifier = Modifier
+                                                    .size(28.dp)
+                                                    .clip(RoundedCornerShape(7.dp)),
+                                            )
+                                            Spacer(Modifier.width(10.dp))
+                                            Column {
+                                                Text(pack.label, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                                                Text(
+                                                    pack.packageName,
+                                                    color = Color(0xFF8E95A3),
+                                                    fontSize = 11.sp,
+                                                    maxLines = 1,
+                                                    overflow = TextOverflow.Ellipsis,
+                                                )
+                                            }
+                                        }
+                                    },
+                                    onClick = {
+                                        iconPackMenuExpanded = false
+                                        onSetIconPackPackage(pack.packageName)
+                                    },
+                                )
+                            }
+                            if (iconPacksLoaded && iconPacks.isEmpty()) {
+                                DropdownMenuItem(
+                                    text = { Text(stringResource(R.string.icon_pack_none_found)) },
+                                    enabled = false,
+                                    onClick = {},
+                                )
+                            }
+                        }
+                    }
+                }
             }
         }
+    }
+}
+
+@Composable
+private fun IconPackValueRow(
+    selectedLabel: String,
+    iconPacksLoaded: Boolean,
+    onClick: () -> Unit,
+) {
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .heightIn(min = 58.dp)
+            .clip(RoundedCornerShape(14.dp))
+            .clickable(enabled = iconPacksLoaded, onClick = onClick)
+            .padding(horizontal = 12.dp, vertical = 8.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Column(modifier = Modifier.weight(1f)) {
+            Text(
+                stringResource(R.string.icon_pack_title),
+                color = Color.White,
+                fontSize = SETTINGS_TITLE_TEXT_SP,
+            )
+            Text(
+                stringResource(R.string.icon_pack_subtitle),
+                color = Color(0xFF9EA4A9),
+                fontSize = 13.sp,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+            )
+        }
+        Text(
+            if (iconPacksLoaded) selectedLabel else stringResource(R.string.icon_pack_loading),
+            color = Color(0xFF00A9E0),
+            fontSize = SETTINGS_VALUE_TEXT_SP,
+            fontWeight = FontWeight.SemiBold,
+            maxLines = 1,
+            overflow = TextOverflow.Ellipsis,
+            modifier = Modifier.widthIn(max = 190.dp),
+        )
     }
 }
 
@@ -11224,14 +11422,15 @@ private fun IconShapeValueRow(
     Row(
         modifier = Modifier
             .fillMaxWidth()
-            .clip(RoundedCornerShape(6.dp))
+            .heightIn(min = 58.dp)
+            .clip(RoundedCornerShape(14.dp))
             .clickable(onClick = onClick)
-            .padding(vertical = 4.dp),
+            .padding(horizontal = 12.dp, vertical = 8.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
         Column(modifier = Modifier.weight(1f)) {
-                Text(
-                    stringResource(R.string.icon_layout_shape),
+            Text(
+                stringResource(R.string.icon_layout_shape),
                 color = Color.White,
                 fontSize = SETTINGS_TITLE_TEXT_SP,
             )
@@ -11260,9 +11459,12 @@ private fun IconLayoutSelector(
 ) {
     Row(
         modifier = modifier
-            .clip(RoundedCornerShape(6.dp))
+            .heightIn(min = 48.dp)
+            .clip(RoundedCornerShape(14.dp))
+            .background(Color.White.copy(alpha = 0.04f))
+            .border(0.6.dp, Color.White.copy(alpha = 0.08f), RoundedCornerShape(14.dp))
             .clickable(onClick = onClick)
-            .padding(vertical = 8.dp),
+            .padding(horizontal = 12.dp, vertical = 10.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
         Text(

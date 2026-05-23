@@ -188,6 +188,8 @@ data class LauncherPrefs(
     val classicMode: Boolean = false,
     /** Global installed-app icon mask used across launcher surfaces. */
     val appIconShape: AppIconShape = AppIconShape.SOFT_SQUARE,
+    /** Empty = app/system icons. Otherwise package name of an installed Nova/Apex-style icon pack. */
+    val iconPackPackage: String = "",
     /** Show a gradient card background behind each app tile in the A-Z drawer. */
     val showAppCardBackground: Boolean = false,
     /** Swipe-down on home opens the App Spotlight overlay instead of the launcher QS panel. */
@@ -261,6 +263,7 @@ class LauncherPrefsRepository(private val context: Context) {
         /** Legacy key from earlier builds; read only for migration. */
         val CLASSIC_MODE_LEGACY = booleanPreferencesKey("drawerOnlyMode")
         val APP_ICON_SHAPE = stringPreferencesKey("appIconShape")
+        val ICON_PACK_PACKAGE = stringPreferencesKey("iconPackPackage")
         val SHOW_APP_CARD_BG = booleanPreferencesKey("showAppCardBackground")
         val SWIPE_DOWN_SPOTLIGHT = booleanPreferencesKey("swipeDownAppSpotlight")
         val LANGUAGE_CODE = stringPreferencesKey("languageCode")
@@ -344,6 +347,7 @@ class LauncherPrefsRepository(private val context: Context) {
         val appIconShape =
             p[Keys.APP_ICON_SHAPE]?.let { v -> AppIconShape.entries.firstOrNull { it.name == v } }
                 ?: DEFAULT_PREFS.appIconShape
+        val iconPackPackage = p[Keys.ICON_PACK_PACKAGE]?.trim() ?: DEFAULT_PREFS.iconPackPackage
         val showAppCardBackground = p[Keys.SHOW_APP_CARD_BG] ?: DEFAULT_PREFS.showAppCardBackground
         val swipeDownAppSpotlight = p[Keys.SWIPE_DOWN_SPOTLIGHT] ?: DEFAULT_PREFS.swipeDownAppSpotlight
         val languageCode = p[Keys.LANGUAGE_CODE]?.trim() ?: DEFAULT_PREFS.languageCode
@@ -397,6 +401,7 @@ class LauncherPrefsRepository(private val context: Context) {
             quickSettingsTileOrder = quickSettingsTileOrder,
             classicMode = classicMode,
             appIconShape = appIconShape,
+            iconPackPackage = iconPackPackage,
             showAppCardBackground = showAppCardBackground,
             swipeDownAppSpotlight = swipeDownAppSpotlight,
             languageCode = languageCode,
@@ -677,6 +682,10 @@ class LauncherPrefsRepository(private val context: Context) {
         context.dataStore.edit { it[Keys.APP_ICON_SHAPE] = shape.name }
     }
 
+    suspend fun setIconPackPackage(packageName: String) {
+        context.dataStore.edit { it[Keys.ICON_PACK_PACKAGE] = packageName.trim() }
+    }
+
     suspend fun setShowAppCardBackground(enabled: Boolean) {
         context.dataStore.edit { it[Keys.SHOW_APP_CARD_BG] = enabled }
     }
@@ -748,6 +757,7 @@ class LauncherPrefsRepository(private val context: Context) {
             s[Keys.CLASSIC_MODE] = prefs.classicMode
             s.remove(Keys.CLASSIC_MODE_LEGACY)
             s[Keys.APP_ICON_SHAPE] = prefs.appIconShape.name
+            s[Keys.ICON_PACK_PACKAGE] = prefs.iconPackPackage.trim()
             s[Keys.DOCK_SECOND_ENABLED] = prefs.dockSecondEnabled
             s[Keys.HOME_STRIP_SLOTS] = prefs.homeStripSlots.joinToString(",") { it ?: "" }
             s[Keys.SHOW_APP_CARD_BG] = prefs.showAppCardBackground

@@ -1,0 +1,66 @@
+package com.zeno.classiclauncher.nlauncher.prefs
+
+import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
+import org.junit.Assert.assertTrue
+import org.junit.Test
+
+class LauncherPrefsTest {
+    @Test
+    fun moveHomeStripSlot_shiftsItemsForward() {
+        val slots = mutableListOf<String?>("mail", "tools", "browser", null, "music")
+
+        slots.moveHomeStripSlot(fromIdx = 0, toIdx = 3)
+
+        assertEquals(listOf("tools", "browser", null, "mail", "music"), slots)
+    }
+
+    @Test
+    fun moveHomeStripSlot_shiftsItemsBackward() {
+        val slots = mutableListOf<String?>("mail", "tools", "browser", null, "music")
+
+        slots.moveHomeStripSlot(fromIdx = 4, toIdx = 1)
+
+        assertEquals(listOf("mail", "music", "tools", "browser", null), slots)
+    }
+
+    @Test
+    fun launcherBackup_roundTripsWidgetProviderButRequiresRebinding() {
+        val prefs = LauncherPrefs(
+            iconPackPackage = "com.example.iconpack",
+            homeWidget = HomeWidgetConfig(
+                appWidgetId = 42,
+                providerPackage = "com.example",
+                providerClass = "com.example.Widget",
+                row = 1,
+                col = 1,
+                cols = 2,
+                rows = 2,
+            ),
+            quickSettingsTileOrder = listOf("battery", "internet"),
+        )
+
+        val restored = LauncherBackup.fromJson(LauncherBackup.toJson(prefs)).getOrThrow()
+
+        assertFalse(restored.homeWidget.hasWidget)
+        assertEquals("com.example", restored.homeWidget.providerPackage)
+        assertEquals("com.example.Widget", restored.homeWidget.providerClass)
+        assertEquals(1, restored.homeWidget.row)
+        assertEquals(1, restored.homeWidget.col)
+        assertEquals(2, restored.homeWidget.cols)
+        assertEquals(2, restored.homeWidget.rows)
+        assertEquals("com.example.iconpack", restored.iconPackPackage)
+        assertEquals(listOf("battery", "internet"), restored.quickSettingsTileOrder)
+    }
+
+    @Test
+    fun launcherBackup_rejectsUnknownFutureVersions() {
+        val json = LauncherBackup.toJson(LauncherPrefs())
+            .replace(
+                "\"${LauncherBackup.VERSION_KEY}\": ${LauncherBackup.CURRENT_VERSION}",
+                "\"${LauncherBackup.VERSION_KEY}\": ${LauncherBackup.CURRENT_VERSION + 1}",
+            )
+
+        assertTrue(LauncherBackup.fromJson(json).isFailure)
+    }
+}

@@ -138,6 +138,12 @@
     <string name="icon_layout_rows">%1$d Rows</string>
     <string name="icon_layout_shape">Icon Shape</string>
     <string name="icon_layout_shape_default">Default Soft square</string>
+    <string name="icon_pack_title">Icon Pack</string>
+    <string name="icon_pack_subtitle">Use installed Nova/Apex-style icon packs</string>
+    <string name="icon_pack_system_icons">System icons</string>
+    <string name="icon_pack_loading">Loading…</string>
+    <string name="icon_pack_missing">Icon pack missing</string>
+    <string name="icon_pack_none_found">No compatible icon packs found</string>
     <string name="device_admin_explanation">Optional fallback: lock the screen when double-tap is on and the lock helper (Accessibility) is not enabled.</string>
     <string name="lock_accessibility_service_label">Zeno Classic lock helper</string>
     <string name="flip_clock_dream_label">Zeno Flip Clock</string>

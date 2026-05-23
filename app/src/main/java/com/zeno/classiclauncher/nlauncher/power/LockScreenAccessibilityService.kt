@@ -5,6 +5,7 @@ import android.content.BroadcastReceiver
 import android.content.Context
 import android.content.Intent
 import android.content.IntentFilter
+import android.os.Build
 import android.view.accessibility.AccessibilityEvent
 import androidx.core.content.ContextCompat
 
@@ -19,7 +20,7 @@ class LockScreenAccessibilityService : AccessibilityService() {
         object : BroadcastReceiver() {
             override fun onReceive(context: Context?, intent: Intent?) {
                 if (intent?.action == ACTION_REQUEST_LOCK) {
-                    performGlobalAction(GLOBAL_ACTION_LOCK_SCREEN)
+                    lockWithAccessibilityAction()
                 }
             }
         }
@@ -48,6 +49,10 @@ class LockScreenAccessibilityService : AccessibilityService() {
 
     override fun onInterrupt() {}
 
+    private fun lockWithAccessibilityAction(): Boolean =
+        Build.VERSION.SDK_INT >= Build.VERSION_CODES.P &&
+            performGlobalAction(GLOBAL_ACTION_LOCK_SCREEN)
+
     companion object {
         const val ACTION_REQUEST_LOCK = "com.zeno.classiclauncher.nlauncher.action.REQUEST_LOCK"
 
@@ -56,7 +61,7 @@ class LockScreenAccessibilityService : AccessibilityService() {
 
         fun tryLockScreen(): Boolean {
             val s = instance ?: return false
-            return s.performGlobalAction(GLOBAL_ACTION_LOCK_SCREEN)
+            return s.lockWithAccessibilityAction()
         }
 
         fun sendLockRequestBroadcast(context: Context) {

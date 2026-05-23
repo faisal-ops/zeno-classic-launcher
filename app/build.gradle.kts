@@ -14,6 +14,10 @@ if (keystorePropertiesFile.exists()) {
     keystoreProperties.load(FileInputStream(keystorePropertiesFile))
 }
 
+fun signingProperty(name: String, envName: String): String? =
+    (keystoreProperties[name] as? String)?.takeIf { it.isNotBlank() }
+        ?: System.getenv(envName)?.takeIf { it.isNotBlank() }
+
 android {
     namespace = "com.zeno.classiclauncher.nlauncher"
     compileSdk = 34
@@ -54,10 +58,10 @@ android {
 
     signingConfigs {
         create("release") {
-            keyAlias = keystoreProperties["keyAlias"] as? String
-            keyPassword = keystoreProperties["keyPassword"] as? String
-            storeFile = keystoreProperties["storeFile"]?.let { file(it as String) }
-            storePassword = keystoreProperties["storePassword"] as? String
+            keyAlias = signingProperty("keyAlias", "ZENO_RELEASE_KEY_ALIAS")
+            keyPassword = signingProperty("keyPassword", "ZENO_RELEASE_KEY_PASSWORD")
+            storeFile = signingProperty("storeFile", "ZENO_RELEASE_STORE_FILE")?.let { file(it) }
+            storePassword = signingProperty("storePassword", "ZENO_RELEASE_STORE_PASSWORD")
         }
     }
 
@@ -116,6 +120,9 @@ dependencies {
 
     implementation("androidx.datastore:datastore-preferences:1.1.1")
     implementation("io.coil-kt:coil-compose:2.7.0")
+
+    testImplementation("junit:junit:4.13.2")
+    testImplementation("org.json:json:20240303")
 
     debugImplementation("androidx.compose.ui:ui-tooling")
     debugImplementation("androidx.compose.ui:ui-test-manifest")

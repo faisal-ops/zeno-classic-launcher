@@ -1,6 +1,7 @@
 package com.zeno.classiclauncher.nlauncher.apps
 
 import android.content.BroadcastReceiver
+import android.content.ComponentName
 import android.content.Context
 import android.content.Intent
 import android.content.IntentFilter
@@ -44,7 +45,8 @@ class AppsRepository(private val context: Context) {
             if (pkg == context.packageName) continue
             if (!seenPackages.add(pkg)) continue  // skip apps with multiple launcher activities
             val label = pm.getApplicationLabel(ai)?.toString() ?: pkg
-            installed.add(AppEntry(packageName = pkg, label = label, icon = getCachedIcon(pkg)))
+            val component = ComponentName(pkg, ri.activityInfo.name)
+            installed.add(AppEntry(packageName = pkg, label = label, icon = getCachedIcon(pkg), componentName = component))
         }
 
         installed.sortWith(APP_LABEL_COMPARATOR)

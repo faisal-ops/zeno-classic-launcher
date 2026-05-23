@@ -106,4 +106,47 @@
     <string name="device_admin_explanation">선택 사항: 더블 탭 잠금이 켜져 있고 접근성 잠금 도우미가 비활성화된 경우 화면을 잠급니다.</string>
     <string name="lock_accessibility_service_label">Zeno Classic 잠금 도우미</string>
     <string name="lock_accessibility_service_description">홈 화면을 두 번 탭하면 전원 버튼처럼 화면을 잠급니다. Zeno Classic의 창 이벤트만 관찰하며 화면 내용은 읽지 않습니다.</string>
+
+    <!-- English fallback strings added to keep localized builds complete. -->
+    <string name="search_apps_filter_hint">Type to filter…</string>
+    <string name="quick_settings_internet">Internet</string>
+    <string name="quick_settings_bluetooth">Bluetooth</string>
+    <string name="quick_settings_qr_tile">QR code scanner</string>
+    <string name="quick_settings_wireless_debugging">Wireless debugging</string>
+    <string name="quick_settings_battery">Battery</string>
+    <string name="quick_settings_aeroplane_mode">Aeroplane mode</string>
+    <string name="quick_settings_torch">Torch</string>
+    <string name="quick_settings_my_vault">My vault</string>
+    <string name="quick_settings_battery_saver_on">Saver on</string>
+    <string name="quick_settings_dnd">Do Not Disturb</string>
+    <string name="quick_settings_storage">Storage</string>
+    <string name="quick_settings_hotspot">Hotspot</string>
+    <string name="quick_settings_night_light">Night Light</string>
+    <string name="quick_settings_auto_rotate">Auto-rotate</string>
+    <string name="quick_settings_nfc">NFC</string>
+    <string name="quick_settings_extra_dim">Extra dim</string>
+    <string name="quick_settings_screen_record">Screen record</string>
+    <string name="quick_settings_screen_cast">Screen Cast</string>
+    <string name="quick_settings_greyscale">Greyscale</string>
+    <string name="quick_settings_bedtime">Bedtime mode</string>
+    <string name="quick_settings_start">Start</string>
+    <string name="quick_settings_auto_rotate_permission_prompt">Allow Modify system settings to toggle auto-rotate.</string>
+    <string name="quick_settings_tap_to_allow_control">Tap to allow control</string>
+    <string name="quick_settings_bluetooth_permission_denied">Bluetooth permission denied</string>
+    <string name="quick_settings_wifi_name_permission_denied">Location permission denied for Wi-Fi name</string>
+    <string name="quick_settings_torch_toggle_failed">Could not toggle torch</string>
+    <string name="quick_settings_camera_permission_denied">Camera permission denied for torch</string>
+    <string name="quick_settings_keyboard_mode_permission_prompt">Allow Modify system settings, then tap keyboard tile again.</string>
+    <string name="quick_settings_keyboard_mode_failed">Could not apply keyboard mode change. Long-press opens settings.</string>
+    <string name="quick_settings_bluetooth_blocked">Android blocked direct Bluetooth toggling. Long-press this tile to open Bluetooth settings.</string>
+    <string name="settings_flip_clock_title">Zeno Flip Clock</string>
+    <string name="settings_flip_clock_subtitle">Preview and enable the minute-based screen saver</string>
+    <string name="flip_clock_dream_label">Zeno Flip Clock</string>
+
+    <!-- English fallback strings added to keep localized builds complete. -->\n    <string name="icon_pack_title">Icon Pack</string>
+    <string name="icon_pack_subtitle">Use installed Nova/Apex-style icon packs</string>
+    <string name="icon_pack_system_icons">System icons</string>
+    <string name="icon_pack_loading">Loading…</string>
+    <string name="icon_pack_missing">Icon pack missing</string>
+    <string name="icon_pack_none_found">No compatible icon packs found</string>
 </resources>
