@@ -90,6 +90,7 @@ import androidx.compose.foundation.layout.wrapContentWidth
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.lazy.grid.GridCells
@@ -391,7 +392,8 @@ private val VISIBLE_ICON_SHAPES = listOf(
 private const val DEFAULT_APP_ICON_SIZE_DP = 52f
 private const val MIN_APP_ICON_SIZE_DP = 44f
 private const val MAX_APP_ICON_SIZE_DP = 64f
-private val ICON_SETTINGS_PREVIEW_HEIGHT = 88.dp
+private val ICON_SETTINGS_PREVIEW_HEIGHT = 115.dp
+private val ICON_SETTINGS_PREVIEW_HEIGHT_LARGE = 115.dp
 private val ICON_SETTINGS_PREVIEW_CELL_WIDTH = 96.dp
 private val ICON_SETTINGS_PREVIEW_LABEL_SP = 12
 private val ICON_SETTINGS_PREVIEW_CARD_SHAPE = RoundedCornerShape(10.dp)
@@ -9762,12 +9764,40 @@ private fun DockShortcutPickerOverlay(
             it.label.lowercase().contains(q) || it.packageName.lowercase().contains(q)
         }
     }
+    val dockPickerFR = remember { FocusRequester() }
+    var focusedApp by remember { mutableIntStateOf(0) }
+    val appListState = rememberLazyListState()
+    LaunchedEffect(filtered) { focusedApp = 0 }
+    LaunchedEffect(focusedApp) {
+        if (filtered.isNotEmpty()) appListState.animateScrollToItem(focusedApp.coerceIn(0, filtered.size - 1))
+    }
+    BackHandler(enabled = true, onBack = onDismiss)
     Surface(
         modifier = Modifier
             .fillMaxSize()
-            .zIndex(420f),
+            .zIndex(420f)
+            .focusRequester(dockPickerFR)
+            .focusable()
+            .onPreviewKeyEvent { ev ->
+                if (ev.type != KeyEventType.KeyDown) return@onPreviewKeyEvent false
+                val nk = ev.nativeKeyEvent
+                val up    = ev.key == Key.DirectionUp    || nk?.keyCode == AndroidKeyEvent.KEYCODE_DPAD_UP
+                val down  = ev.key == Key.DirectionDown  || nk?.keyCode == AndroidKeyEvent.KEYCODE_DPAD_DOWN
+                val enter = ev.key == Key.Enter || ev.key == Key.NumPadEnter ||
+                    nk?.keyCode == AndroidKeyEvent.KEYCODE_DPAD_CENTER ||
+                    nk?.keyCode == AndroidKeyEvent.KEYCODE_ENTER
+                val back  = ev.key == Key.Back || nk?.keyCode == AndroidKeyEvent.KEYCODE_BACK
+                when {
+                    back  -> { onDismiss(); true }
+                    up    -> { focusedApp = (focusedApp - 1).coerceAtLeast(0); true }
+                    down  -> { focusedApp = (focusedApp + 1).coerceAtMost((filtered.size - 1).coerceAtLeast(0)); true }
+                    enter -> { filtered.getOrNull(focusedApp)?.let { onSelect(it.packageName) }; true }
+                    else  -> false
+                }
+            },
         color = themePalette.settingsBg,
     ) {
+        LaunchedEffect(Unit) { dockPickerFR.requestFocus() }
         Column(
             modifier = Modifier
                 .fillMaxSize()
@@ -9857,14 +9887,16 @@ private fun DockShortcutPickerOverlay(
             )
             Spacer(Modifier.height(8.dp))
             LazyColumn(
+                state = appListState,
                 modifier = Modifier
                     .weight(1f)
                     .fillMaxWidth(),
             ) {
-                items(filtered, key = { it.packageName }) { app ->
+                itemsIndexed(filtered, key = { _, app -> app.packageName }) { index, app ->
                     Row(
                         modifier = Modifier
                             .fillMaxWidth()
+                            .then(if (focusedApp == index) Modifier.background(Color.White.copy(alpha = 0.07f)) else Modifier)
                             .clickable { onSelect(app.packageName) }
                             .padding(horizontal = 16.dp, vertical = 12.dp),
                         verticalAlignment = Alignment.CenterVertically,
@@ -10092,13 +10124,37 @@ private fun HomeGroupsSettingsOverlay(
 ) {
     val subtitleColor = Color(0xFF8E95A3)
     val cardBg = Color(0xFF1E2430)
+    val cardFocusedBg = Color(0xFF28303F)
     var newName by remember { mutableStateOf("") }
+    val homeGroupsFR = remember { FocusRequester() }
+    var focusedItem by remember { mutableIntStateOf(0) }
+    BackHandler(enabled = true, onBack = onDismiss)
     Surface(
         modifier = Modifier
             .fillMaxSize()
-            .zIndex(404f),
+            .zIndex(404f)
+            .focusRequester(homeGroupsFR)
+            .focusable()
+            .onPreviewKeyEvent { ev ->
+                if (ev.type != KeyEventType.KeyDown) return@onPreviewKeyEvent false
+                val nk = ev.nativeKeyEvent
+                val up    = ev.key == Key.DirectionUp    || nk?.keyCode == AndroidKeyEvent.KEYCODE_DPAD_UP
+                val down  = ev.key == Key.DirectionDown  || nk?.keyCode == AndroidKeyEvent.KEYCODE_DPAD_DOWN
+                val enter = ev.key == Key.Enter || ev.key == Key.NumPadEnter ||
+                    nk?.keyCode == AndroidKeyEvent.KEYCODE_DPAD_CENTER ||
+                    nk?.keyCode == AndroidKeyEvent.KEYCODE_ENTER
+                val back  = ev.key == Key.Back || nk?.keyCode == AndroidKeyEvent.KEYCODE_BACK
+                when {
+                    back  -> { onDismiss(); true }
+                    up    -> { focusedItem = (focusedItem - 1).coerceAtLeast(0); true }
+                    down  -> { focusedItem = (focusedItem + 1).coerceAtMost(groups.size); true }
+                    enter -> { if (focusedItem == 0) onToggleHomeStrip(!homeStripEnabled); true }
+                    else  -> false
+                }
+            },
         color = themePalette.settingsBg,
     ) {
+        LaunchedEffect(Unit) { homeGroupsFR.requestFocus() }
         Column(
             modifier = Modifier
                 .fillMaxSize()
@@ -10144,7 +10200,7 @@ private fun HomeGroupsSettingsOverlay(
                 )
                 Surface(
                     shape = RoundedCornerShape(12.dp),
-                    color = cardBg,
+                    color = if (focusedItem == 0) cardFocusedBg else cardBg,
                     modifier = Modifier.fillMaxWidth(),
                 ) {
                     Row(
@@ -10238,10 +10294,10 @@ private fun HomeGroupsSettingsOverlay(
                         color = themePalette.settingsMenuTitle,
                     )
                 }
-                groups.forEach { g ->
+                groups.forEachIndexed { gIdx, g ->
                     Surface(
                         shape = RoundedCornerShape(12.dp),
-                        color = cardBg,
+                        color = if (focusedItem == gIdx + 1) cardFocusedBg else cardBg,
                         modifier = Modifier.fillMaxWidth(),
                     ) {
                         Row(
@@ -10293,7 +10349,11 @@ private fun GlanceSettingsOverlay(
 ) {
     val subtitleColor = Color(0xFF8E95A3)
     val cardBg = Color(0xFF1E2430)
+    val cardFocusedBg = Color(0xFF28303F)
     val cardShape = RoundedCornerShape(12.dp)
+    val glanceFR = remember { FocusRequester() }
+    var focusedGlance by remember { mutableIntStateOf(0) }
+    BackHandler(enabled = true, onBack = onDismiss)
 
     @Composable
     fun ToggleCard(
@@ -10301,11 +10361,12 @@ private fun GlanceSettingsOverlay(
         subtitle: String,
         checked: Boolean,
         enabled: Boolean = true,
+        focused: Boolean = false,
         onCheckedChange: (Boolean) -> Unit,
     ) {
         Surface(
             shape = cardShape,
-            color = cardBg,
+            color = if (focused) cardFocusedBg else cardBg,
             modifier = Modifier.fillMaxWidth(),
         ) {
             Row(
@@ -10345,9 +10406,39 @@ private fun GlanceSettingsOverlay(
     Surface(
         modifier = Modifier
             .fillMaxSize()
-            .zIndex(403f),
+            .zIndex(403f)
+            .focusRequester(glanceFR)
+            .focusable()
+            .onPreviewKeyEvent { ev ->
+                if (ev.type != KeyEventType.KeyDown) return@onPreviewKeyEvent false
+                val nk = ev.nativeKeyEvent
+                val up    = ev.key == Key.DirectionUp    || nk?.keyCode == AndroidKeyEvent.KEYCODE_DPAD_UP
+                val down  = ev.key == Key.DirectionDown  || nk?.keyCode == AndroidKeyEvent.KEYCODE_DPAD_DOWN
+                val enter = ev.key == Key.Enter || ev.key == Key.NumPadEnter ||
+                    nk?.keyCode == AndroidKeyEvent.KEYCODE_DPAD_CENTER ||
+                    nk?.keyCode == AndroidKeyEvent.KEYCODE_ENTER
+                val back  = ev.key == Key.Back || nk?.keyCode == AndroidKeyEvent.KEYCODE_BACK
+                when {
+                    back  -> { onDismiss(); true }
+                    up    -> { focusedGlance = (focusedGlance - 1).coerceAtLeast(0); true }
+                    down  -> { focusedGlance = (focusedGlance + 1).coerceAtMost(5); true }
+                    enter -> {
+                        when (focusedGlance) {
+                            0 -> onGlanceEnabled(!glanceEnabled)
+                            1 -> onGlanceWeatherUnit(if (glanceWeatherUnit == GlanceWeatherUnit.CELSIUS) GlanceWeatherUnit.FAHRENHEIT else GlanceWeatherUnit.CELSIUS)
+                            2 -> if (glanceEnabled) onGlanceShowFlashlight(!glanceShowFlashlight)
+                            3 -> if (glanceEnabled) onGlanceShowCalendar(!glanceShowCalendar)
+                            4 -> if (glanceEnabled) onGlanceShowBattery(!glanceShowBattery)
+                            5 -> if (glanceEnabled) onGlanceShowAlarm(!glanceShowAlarm)
+                        }
+                        true
+                    }
+                    else -> false
+                }
+            },
         color = themePalette.settingsBg,
     ) {
+        LaunchedEffect(Unit) { glanceFR.requestFocus() }
         Column(
             modifier = Modifier
                 .fillMaxSize()
@@ -10394,9 +10485,10 @@ private fun GlanceSettingsOverlay(
                     title = stringResource(R.string.glance_show_title),
                     subtitle = stringResource(R.string.glance_show_subtitle),
                     checked = glanceEnabled,
+                    focused = focusedGlance == 0,
                     onCheckedChange = onGlanceEnabled,
                 )
-                Surface(shape = cardShape, color = cardBg, modifier = Modifier.fillMaxWidth()) {
+                Surface(shape = cardShape, color = if (focusedGlance == 1) cardFocusedBg else cardBg, modifier = Modifier.fillMaxWidth()) {
                     Column(modifier = Modifier.padding(horizontal = 16.dp, vertical = 12.dp)) {
                         Text(
                             stringResource(R.string.glance_weather_unit),
@@ -10450,6 +10542,7 @@ private fun GlanceSettingsOverlay(
                     subtitle = stringResource(R.string.glance_flashlight_subtitle),
                     checked = glanceShowFlashlight,
                     enabled = glanceEnabled,
+                    focused = focusedGlance == 2,
                     onCheckedChange = onGlanceShowFlashlight,
                 )
                 ToggleCard(
@@ -10457,6 +10550,7 @@ private fun GlanceSettingsOverlay(
                     subtitle = stringResource(R.string.glance_calendar_subtitle),
                     checked = glanceShowCalendar,
                     enabled = glanceEnabled,
+                    focused = focusedGlance == 3,
                     onCheckedChange = onGlanceShowCalendar,
                 )
                 ToggleCard(
@@ -10464,6 +10558,7 @@ private fun GlanceSettingsOverlay(
                     subtitle = stringResource(R.string.glance_battery_subtitle),
                     checked = glanceShowBattery,
                     enabled = glanceEnabled,
+                    focused = focusedGlance == 4,
                     onCheckedChange = onGlanceShowBattery,
                 )
                 ToggleCard(
@@ -10471,6 +10566,7 @@ private fun GlanceSettingsOverlay(
                     subtitle = stringResource(R.string.glance_alarm_subtitle),
                     checked = glanceShowAlarm,
                     enabled = glanceEnabled,
+                    focused = focusedGlance == 5,
                     onCheckedChange = onGlanceShowAlarm,
                 )
             }
@@ -10678,6 +10774,7 @@ private fun IconAppearanceSettingsOverlay(
             themePalette = themePalette,
             onCheckedChange = { onToggleAppCardBackground() },
             onDismiss = { showCardBackgroundSettings = false },
+            largePreview = true,
         )
     }
     if (showBadgeSettings) {
@@ -10720,6 +10817,7 @@ private fun IconPreviewToggleOverlay(
     themePalette: LauncherThemePalette,
     onCheckedChange: (Boolean) -> Unit,
     onDismiss: () -> Unit,
+    largePreview: Boolean = false,
 ) {
     val context = LocalContext.current
     val focusRequester = remember { FocusRequester() }
@@ -10794,6 +10892,7 @@ private fun IconPreviewToggleOverlay(
                 showBadgePreview = showBadgePreview,
                 currentWallpaper = currentWallpaper,
                 themePalette = themePalette,
+                largePreview = largePreview,
             )
             Column(
                 modifier = Modifier
@@ -10819,6 +10918,10 @@ private fun IconPreviewToggleOverlay(
                         .fillMaxWidth()
                         .clip(RoundedCornerShape(12.dp))
                         .background(Color(0xFF242828))
+                        .border(
+                            BorderStroke(1.dp, Color(0xFF00A9E0).copy(alpha = 0.35f)),
+                            RoundedCornerShape(12.dp),
+                        )
                         .clickable(enabled = enabled) { onCheckedChange(!checked) }
                         .padding(horizontal = 16.dp, vertical = 14.dp),
                     verticalAlignment = Alignment.CenterVertically,
@@ -10861,12 +10964,14 @@ private fun IconPreviewStrip(
     showBadgePreview: Boolean,
     currentWallpaper: Drawable?,
     themePalette: LauncherThemePalette,
+    largePreview: Boolean = false,
 ) {
     val previewIconSize = iconSettingsPreviewIconSize(iconSizeDp)
+    val previewHeight = if (largePreview) ICON_SETTINGS_PREVIEW_HEIGHT_LARGE else ICON_SETTINGS_PREVIEW_HEIGHT
     Box(
         modifier = Modifier
             .fillMaxWidth()
-            .height(ICON_SETTINGS_PREVIEW_HEIGHT),
+            .height(previewHeight),
     ) {
         if (currentWallpaper != null) {
             AsyncImage(
@@ -10890,13 +10995,13 @@ private fun IconPreviewStrip(
         Row(
             modifier = Modifier
                 .fillMaxWidth()
-                .horizontalScroll(rememberScrollState())
-                .padding(horizontal = 0.dp),
-            horizontalArrangement = Arrangement.spacedBy(0.dp),
+                .align(Alignment.TopCenter)
+                .padding(top = 10.dp),
+            horizontalArrangement = Arrangement.SpaceEvenly,
             verticalAlignment = Alignment.Top,
         ) {
-            previewApps.forEachIndexed { index, app ->
-                val badgeVisible = showBadgePreview && index % 2 == 0
+            previewApps.take(6).forEachIndexed { index, app ->
+                val badgeVisible = !largePreview && showBadgePreview && index % 2 == 0
                 IconSettingsPreviewItem(
                     app = app,
                     previewIconSize = previewIconSize,
@@ -11030,9 +11135,19 @@ private fun IconLayoutSettingsOverlay(
     var iconPackMenuExpanded by remember { mutableStateOf(false) }
     var iconPacks by remember { mutableStateOf<List<IconPackEntry>>(emptyList()) }
     var iconPacksLoaded by remember { mutableStateOf(false) }
+    // Trackpad nav: 0=slider, 1=shape, 2=columns, 3=rows, 4=iconpack
+    var focusedItem by remember { mutableIntStateOf(0) }
+    val itemBringers = remember { List(5) { BringIntoViewRequester() } }
+    // Cursor index inside each open dropdown (tracks keyboard focus, not selection)
+    var columnsCursor  by remember { mutableIntStateOf(0) }
+    var rowsCursor     by remember { mutableIntStateOf(0) }
+    var iconPackCursor by remember { mutableIntStateOf(0) }
     LaunchedEffect(Unit) {
         iconPacks = iconPackRepo.installedIconPacks()
         iconPacksLoaded = true
+    }
+    LaunchedEffect(focusedItem) {
+        itemBringers[focusedItem].bringIntoView()
     }
     val selectedIconPackLabel = remember(iconPackPackage, iconPacks, iconPacksLoaded) {
         when {
@@ -11074,9 +11189,49 @@ private fun IconLayoutSettingsOverlay(
                 .onPreviewKeyEvent { ev ->
                     if (ev.type != KeyEventType.KeyDown) return@onPreviewKeyEvent false
                     val nk = ev.nativeKeyEvent
+                    val isDpadUp    = ev.key == Key.DirectionUp    || nk?.keyCode == AndroidKeyEvent.KEYCODE_DPAD_UP
+                    val isDpadDown  = ev.key == Key.DirectionDown  || nk?.keyCode == AndroidKeyEvent.KEYCODE_DPAD_DOWN
+                    val isDpadLeft  = ev.key == Key.DirectionLeft  || nk?.keyCode == AndroidKeyEvent.KEYCODE_DPAD_LEFT
+                    val isDpadRight = ev.key == Key.DirectionRight || nk?.keyCode == AndroidKeyEvent.KEYCODE_DPAD_RIGHT
+                    val isEnter     = ev.key == Key.Enter || ev.key == Key.NumPadEnter ||
+                                      nk?.keyCode == AndroidKeyEvent.KEYCODE_DPAD_CENTER ||
+                                      nk?.keyCode == AndroidKeyEvent.KEYCODE_ENTER
                     when {
-                        ev.key == Key.Back || nk?.keyCode == AndroidKeyEvent.KEYCODE_BACK || ev.isEndCallKey() -> {
-                            onDismiss()
+                        isDpadUp -> {
+                            focusedItem = (focusedItem - 1).coerceAtLeast(0)
+                            true
+                        }
+                        isDpadDown -> {
+                            focusedItem = (focusedItem + 1).coerceAtMost(4)
+                            true
+                        }
+                        isDpadLeft && focusedItem == 0 -> {
+                            val snapped = snapIconSize(iconSize - 4f)
+                            iconSize = snapped; onAppGridIconSize(snapped)
+                            true
+                        }
+                        isDpadRight && focusedItem == 0 -> {
+                            val snapped = snapIconSize(iconSize + 4f)
+                            iconSize = snapped; onAppGridIconSize(snapped)
+                            true
+                        }
+                        isEnter -> {
+                            when (focusedItem) {
+                                1 -> cycleShape()
+                                2 -> {
+                                    columnsCursor = colOptions.indexOf(gridPreset.cols).coerceAtLeast(0)
+                                    columnsMenuExpanded = true
+                                }
+                                3 -> {
+                                    rowsCursor = rowOptions.indexOf(gridPreset.rows).coerceAtLeast(0)
+                                    rowsMenuExpanded = true
+                                }
+                                4 -> {
+                                    val allPkgs = listOf("") + iconPacks.map { it.packageName }
+                                    iconPackCursor = allPkgs.indexOf(iconPackPackage).coerceAtLeast(0)
+                                    iconPackMenuExpanded = true
+                                }
+                            }
                             true
                         }
                         else -> false
@@ -11112,257 +11267,231 @@ private fun IconLayoutSettingsOverlay(
                     .fillMaxWidth()
                     .weight(1f)
                     .background(Color(0xFF101619))
-                    .verticalScroll(rememberScrollState())
-                    .padding(horizontal = 16.dp, vertical = 12.dp),
-                verticalArrangement = Arrangement.spacedBy(12.dp),
+                    .verticalScroll(rememberScrollState()),
             ) {
-                Surface(
-                    modifier = Modifier.fillMaxWidth(),
-                    shape = RoundedCornerShape(22.dp),
-                    color = Color(0xFF171F27),
-                    border = BorderStroke(1.dp, Color.White.copy(alpha = 0.07f)),
+                // Full-width preview strip with wallpaper
+                Box(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .height(115.dp),
                 ) {
-                    Column(Modifier.padding(12.dp)) {
-                        Row(verticalAlignment = Alignment.CenterVertically) {
-                            Column(Modifier.weight(1f)) {
-                                Text("Live preview", color = Color.White, fontSize = 16.sp, fontWeight = FontWeight.SemiBold)
-                                Text("Matches the app grid scale", color = Color(0xFF9EA4A9), fontSize = 12.sp)
-                            }
-                            Text(
-                                "${iconSize.roundToInt()} dp",
-                                color = Color(0xFF00A9E0),
-                                fontSize = 15.sp,
-                                fontWeight = FontWeight.SemiBold,
-                                modifier = Modifier
-                                    .clip(RoundedCornerShape(50))
-                                    .background(Color(0x2211B7E8))
-                                    .padding(horizontal = 12.dp, vertical = 6.dp),
+                    if (currentWallpaper != null) {
+                        AsyncImage(
+                            model = currentWallpaper,
+                            contentDescription = null,
+                            contentScale = ContentScale.Crop,
+                            modifier = Modifier.fillMaxSize(),
+                        )
+                    } else {
+                        Box(modifier = Modifier.fillMaxSize().background(Color(0xFF202344)))
+                    }
+                    Box(modifier = Modifier.fillMaxSize().background(Color(0x44000000)))
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .align(Alignment.TopCenter)
+                            .padding(top = 10.dp),
+                        horizontalArrangement = Arrangement.SpaceEvenly,
+                        verticalAlignment = Alignment.Top,
+                    ) {
+                        previewItems.forEach { app ->
+                            IconSettingsPreviewItem(
+                                app = app,
+                                previewIconSize = iconSettingsPreviewIconSize(iconSize),
+                                appIconShape = currentShape,
+                                showCardBackground = false,
+                                showBadge = false,
+                                themePalette = themePalette,
                             )
-                        }
-                        Spacer(Modifier.height(10.dp))
-                        Box(
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .height(ICON_SETTINGS_PREVIEW_HEIGHT)
-                                .clip(RoundedCornerShape(16.dp)),
-                        ) {
-                            if (currentWallpaper != null) {
-                                AsyncImage(
-                                    model = currentWallpaper,
-                                    contentDescription = null,
-                                    contentScale = ContentScale.Crop,
-                                    modifier = Modifier.fillMaxSize(),
-                                )
-                            } else {
-                                Box(
-                                    modifier = Modifier
-                                        .fillMaxSize()
-                                        .background(Color(0xFF202344)),
-                                )
-                            }
-                            Box(
-                                modifier = Modifier
-                                    .fillMaxSize()
-                                    .background(Color(0x44000000)),
-                            )
-                            Row(
-                                modifier = Modifier
-                                    .fillMaxWidth()
-                                    .horizontalScroll(rememberScrollState()),
-                                verticalAlignment = Alignment.Top,
-                            ) {
-                                previewItems.forEach { app ->
-                                    IconSettingsPreviewItem(
-                                        app = app,
-                                        previewIconSize = iconSettingsPreviewIconSize(iconSize),
-                                        appIconShape = currentShape,
-                                        showCardBackground = false,
-                                        showBadge = false,
-                                        themePalette = themePalette,
-                                    )
-                                }
-                            }
                         }
                     }
                 }
 
-                Surface(
-                    modifier = Modifier.fillMaxWidth(),
-                    shape = RoundedCornerShape(22.dp),
-                    color = Color(0xFF171F27),
-                    border = BorderStroke(1.dp, Color.White.copy(alpha = 0.07f)),
+                Column(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(horizontal = 16.dp, vertical = 14.dp),
                 ) {
-                    Column(Modifier.padding(horizontal = 16.dp, vertical = 12.dp)) {
-                        Column(
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .padding(vertical = 4.dp),
-                        ) {
-                            Row(
-                                modifier = Modifier.fillMaxWidth(),
-                                verticalAlignment = Alignment.CenterVertically,
-                            ) {
-                                Text(
-                                    stringResource(R.string.icon_layout_size),
-                                    color = Color.White,
-                                    fontSize = SETTINGS_TITLE_TEXT_SP,
-                                    fontWeight = FontWeight.SemiBold,
-                                    modifier = Modifier.weight(1f),
-                                )
-                                Text(
-                                    stringResource(
-                                        R.string.icon_layout_size_value,
-                                        iconSize.roundToInt(),
-                                        DEFAULT_APP_ICON_SIZE_DP.roundToInt(),
-                                    ),
-                                    color = Color(0xFF9EA4A9),
-                                    fontSize = SETTINGS_BODY_TEXT_SP,
-                                )
-                            }
-                            Slider(
-                                value = iconSize,
-                                onValueChange = {
-                                    val snapped = snapIconSize(it)
-                                    iconSize = snapped
-                                    onAppGridIconSize(snapped)
-                                },
-                                valueRange = MIN_APP_ICON_SIZE_DP..MAX_APP_ICON_SIZE_DP,
-                                steps = 4,
+                    // Single settings card
+                    Surface(
+                        modifier = Modifier.fillMaxWidth(),
+                        shape = RoundedCornerShape(18.dp),
+                        color = Color(0xFF171F27),
+                        border = BorderStroke(1.dp, Color.White.copy(alpha = 0.07f)),
+                    ) {
+                        Column(Modifier.padding(vertical = 4.dp)) {
+                            // Icon Size
+                            Box(
                                 modifier = Modifier
                                     .fillMaxWidth()
-                                    .height(44.dp)
-                                    .padding(top = 2.dp),
+                                    .bringIntoViewRequester(itemBringers[0])
+                                    .then(if (focusedItem == 0) Modifier.background(Color.White.copy(alpha = 0.07f)) else Modifier)
+                                    .padding(horizontal = 16.dp)
+                                    .padding(top = 10.dp, bottom = 6.dp),
+                            ) {
+                                Column(modifier = Modifier.fillMaxWidth()) {
+                                    Row(
+                                        modifier = Modifier.fillMaxWidth(),
+                                        verticalAlignment = Alignment.CenterVertically,
+                                    ) {
+                                        Text(
+                                            stringResource(R.string.icon_layout_size),
+                                            color = Color.White,
+                                            fontSize = SETTINGS_TITLE_TEXT_SP,
+                                            fontWeight = FontWeight.SemiBold,
+                                            modifier = Modifier.weight(1f),
+                                        )
+                                        Text(
+                                            stringResource(
+                                                R.string.icon_layout_size_value,
+                                                iconSize.roundToInt(),
+                                                DEFAULT_APP_ICON_SIZE_DP.roundToInt(),
+                                            ),
+                                            color = Color(0xFF9EA4A9),
+                                            fontSize = SETTINGS_BODY_TEXT_SP,
+                                        )
+                                    }
+                                    Slider(
+                                        value = iconSize,
+                                        onValueChange = {
+                                            val snapped = snapIconSize(it)
+                                            iconSize = snapped
+                                            onAppGridIconSize(snapped)
+                                        },
+                                        valueRange = MIN_APP_ICON_SIZE_DP..MAX_APP_ICON_SIZE_DP,
+                                        steps = 4,
+                                        modifier = Modifier
+                                            .fillMaxWidth()
+                                            .height(44.dp)
+                                            .padding(top = 2.dp),
+                                    )
+                                    Row(modifier = Modifier.fillMaxWidth().padding(horizontal = 2.dp)) {
+                                        Text(stringResource(R.string.icon_layout_small), color = Color(0xFF9EA4A9), fontSize = 12.sp, modifier = Modifier.weight(1f))
+                                        Text(stringResource(R.string.icon_layout_large), color = Color(0xFF9EA4A9), fontSize = 12.sp, textAlign = TextAlign.End)
+                                    }
+                                    Spacer(Modifier.height(4.dp))
+                                }
+                            }
+                            HorizontalDivider(
+                                color = Color.White.copy(alpha = 0.07f),
+                                modifier = Modifier.padding(horizontal = 16.dp),
                             )
-                            Row(
+                            // Icon Shape
+                            Box(
                                 modifier = Modifier
                                     .fillMaxWidth()
-                                    .padding(horizontal = 2.dp),
-                                verticalAlignment = Alignment.CenterVertically,
+                                    .bringIntoViewRequester(itemBringers[1])
+                                    .then(if (focusedItem == 1) Modifier.background(Color.White.copy(alpha = 0.07f)) else Modifier),
                             ) {
-                                Text(stringResource(R.string.icon_layout_small), color = Color(0xFF9EA4A9), fontSize = 12.sp, modifier = Modifier.weight(1f))
-                                Spacer(Modifier.weight(1f))
-                                Text(stringResource(R.string.icon_layout_large), color = Color(0xFF9EA4A9), fontSize = 12.sp, textAlign = TextAlign.End, modifier = Modifier.weight(1f))
+                                IconShapeValueRow(currentShape = currentShape, onClick = ::cycleShape)
                             }
-                        }
-
-                        HorizontalDivider(color = Color.White.copy(alpha = 0.08f), modifier = Modifier.padding(vertical = 10.dp))
-
-                        Column(
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .padding(vertical = 4.dp),
-                        ) {
-                            Text(
-                                stringResource(R.string.icon_layout_grid),
-                                color = Color.White,
-                                fontSize = SETTINGS_TITLE_TEXT_SP,
-                                fontWeight = FontWeight.SemiBold,
+                            HorizontalDivider(
+                                color = Color.White.copy(alpha = 0.07f),
+                                modifier = Modifier.padding(horizontal = 16.dp),
                             )
-                            Spacer(Modifier.height(10.dp))
-                            Row(
-                                modifier = Modifier.fillMaxWidth(),
-                                horizontalArrangement = Arrangement.spacedBy(12.dp),
-                                verticalAlignment = Alignment.CenterVertically,
-                            ) {
-                                Box(modifier = Modifier.weight(1f)) {
-                                    IconLayoutSelector(
-                                        text = stringResource(R.string.icon_layout_columns, gridPreset.cols),
-                                        onClick = { columnsMenuExpanded = true },
-                                        modifier = Modifier.fillMaxWidth(),
-                                    )
-                                    IconLayoutDropdown(
-                                        expanded = columnsMenuExpanded,
-                                        onDismiss = { columnsMenuExpanded = false },
-                                        options = colOptions,
-                                        selected = gridPreset.cols,
-                                        defaultValue = 5,
-                                        suffix = null,
-                                        onSelect = { cols ->
-                                            columnsMenuExpanded = false
-                                            onGridPreset(preferredPresetFor(gridPreset.rows, cols))
-                                        },
-                                    )
-                                }
-                                Box(modifier = Modifier.weight(1f)) {
-                                    IconLayoutSelector(
-                                        text = stringResource(R.string.icon_layout_rows, gridPreset.rows),
-                                        onClick = { rowsMenuExpanded = true },
-                                        modifier = Modifier.fillMaxWidth(),
-                                    )
-                                    IconLayoutDropdown(
-                                        expanded = rowsMenuExpanded,
-                                        onDismiss = { rowsMenuExpanded = false },
-                                        options = rowOptions,
-                                        selected = gridPreset.rows,
-                                        defaultValue = 3,
-                                        suffix = null,
-                                        onSelect = { rows ->
-                                            rowsMenuExpanded = false
-                                            onGridPreset(preferredPresetFor(rows, gridPreset.cols))
-                                        },
-                                    )
-                                }
-                            }
-                        }
-
-                        HorizontalDivider(color = Color.White.copy(alpha = 0.08f), modifier = Modifier.padding(vertical = 10.dp))
-
-                        IconShapeValueRow(
-                            currentShape = currentShape,
-                            onClick = ::cycleShape,
-                        )
-                        HorizontalDivider(color = Color.White.copy(alpha = 0.08f), modifier = Modifier.padding(vertical = 6.dp))
-                        IconPackValueRow(
-                            selectedLabel = selectedIconPackLabel,
-                            iconPacksLoaded = iconPacksLoaded,
-                            onClick = { iconPackMenuExpanded = true },
-                        )
-                        DropdownMenu(
-                            expanded = iconPackMenuExpanded,
-                            onDismissRequest = { iconPackMenuExpanded = false },
-                        ) {
-                            DropdownMenuItem(
-                                text = { Text(stringResource(R.string.icon_pack_system_icons)) },
-                                onClick = {
-                                    iconPackMenuExpanded = false
-                                    onSetIconPackPackage("")
-                                },
-                            )
-                            iconPacks.forEach { pack ->
-                                DropdownMenuItem(
-                                    text = {
-                                        Row(verticalAlignment = Alignment.CenterVertically) {
-                                            AsyncImage(
-                                                model = pack.icon,
-                                                contentDescription = null,
-                                                modifier = Modifier
-                                                    .size(28.dp)
-                                                    .clip(RoundedCornerShape(7.dp)),
-                                            )
-                                            Spacer(Modifier.width(10.dp))
-                                            Column {
-                                                Text(pack.label, maxLines = 1, overflow = TextOverflow.Ellipsis)
-                                                Text(
-                                                    pack.packageName,
-                                                    color = Color(0xFF8E95A3),
-                                                    fontSize = 11.sp,
-                                                    maxLines = 1,
-                                                    overflow = TextOverflow.Ellipsis,
-                                                )
-                                            }
-                                        }
-                                    },
+                            // Columns
+                            Box(modifier = Modifier.bringIntoViewRequester(itemBringers[2])) {
+                                IconLayoutValueRow(
+                                    label = stringResource(R.string.icon_layout_columns_label),
+                                    subtitle = stringResource(R.string.icon_layout_grid),
+                                    value = "${gridPreset.cols}",
                                     onClick = {
-                                        iconPackMenuExpanded = false
-                                        onSetIconPackPackage(pack.packageName)
+                                        columnsCursor = colOptions.indexOf(gridPreset.cols).coerceAtLeast(0)
+                                        columnsMenuExpanded = true
+                                    },
+                                    focused = focusedItem == 2,
+                                )
+                                IconLayoutDropdown(
+                                    expanded = columnsMenuExpanded,
+                                    onDismiss = { columnsMenuExpanded = false },
+                                    options = colOptions,
+                                    selected = gridPreset.cols,
+                                    defaultValue = 5,
+                                    focusedIndex = columnsCursor,
+                                    onMoveCursor = { delta ->
+                                        columnsCursor = (columnsCursor + delta).coerceIn(0, colOptions.size - 1)
+                                    },
+                                    onConfirm = {
+                                        columnsMenuExpanded = false
+                                        onGridPreset(preferredPresetFor(gridPreset.rows, colOptions[columnsCursor]))
+                                    },
+                                    onSelect = { cols ->
+                                        columnsMenuExpanded = false
+                                        onGridPreset(preferredPresetFor(gridPreset.rows, cols))
                                     },
                                 )
                             }
-                            if (iconPacksLoaded && iconPacks.isEmpty()) {
-                                DropdownMenuItem(
-                                    text = { Text(stringResource(R.string.icon_pack_none_found)) },
-                                    enabled = false,
-                                    onClick = {},
+                            HorizontalDivider(
+                                color = Color.White.copy(alpha = 0.07f),
+                                modifier = Modifier.padding(horizontal = 16.dp),
+                            )
+                            // Rows
+                            Box(modifier = Modifier.bringIntoViewRequester(itemBringers[3])) {
+                                IconLayoutValueRow(
+                                    label = stringResource(R.string.icon_layout_rows_label),
+                                    subtitle = stringResource(R.string.icon_layout_grid),
+                                    value = "${gridPreset.rows}",
+                                    onClick = {
+                                        rowsCursor = rowOptions.indexOf(gridPreset.rows).coerceAtLeast(0)
+                                        rowsMenuExpanded = true
+                                    },
+                                    focused = focusedItem == 3,
+                                )
+                                IconLayoutDropdown(
+                                    expanded = rowsMenuExpanded,
+                                    onDismiss = { rowsMenuExpanded = false },
+                                    options = rowOptions,
+                                    selected = gridPreset.rows,
+                                    defaultValue = 3,
+                                    focusedIndex = rowsCursor,
+                                    onMoveCursor = { delta ->
+                                        rowsCursor = (rowsCursor + delta).coerceIn(0, rowOptions.size - 1)
+                                    },
+                                    onConfirm = {
+                                        rowsMenuExpanded = false
+                                        onGridPreset(preferredPresetFor(rowOptions[rowsCursor], gridPreset.cols))
+                                    },
+                                    onSelect = { rows ->
+                                        rowsMenuExpanded = false
+                                        onGridPreset(preferredPresetFor(rows, gridPreset.cols))
+                                    },
+                                )
+                            }
+                            HorizontalDivider(
+                                color = Color.White.copy(alpha = 0.07f),
+                                modifier = Modifier.padding(horizontal = 16.dp),
+                            )
+                            // Icon Pack
+                            Box(modifier = Modifier.bringIntoViewRequester(itemBringers[4])) {
+                                IconPackValueRow(
+                                    selectedLabel = selectedIconPackLabel,
+                                    iconPacksLoaded = iconPacksLoaded,
+                                    onClick = {
+                                        val allPkgs = listOf("") + iconPacks.map { it.packageName }
+                                        iconPackCursor = allPkgs.indexOf(iconPackPackage).coerceAtLeast(0)
+                                        iconPackMenuExpanded = true
+                                    },
+                                    focused = focusedItem == 4,
+                                )
+                                IconPackDropdown(
+                                    expanded = iconPackMenuExpanded,
+                                    onDismiss = { iconPackMenuExpanded = false },
+                                    iconPacks = iconPacks,
+                                    iconPacksLoaded = iconPacksLoaded,
+                                    iconPackPackage = iconPackPackage,
+                                    focusedIndex = iconPackCursor,
+                                    onMoveCursor = { delta ->
+                                        iconPackCursor = (iconPackCursor + delta).coerceIn(0, iconPacks.size)
+                                    },
+                                    onConfirm = {
+                                        iconPackMenuExpanded = false
+                                        val pkg = if (iconPackCursor == 0) "" else iconPacks.getOrNull(iconPackCursor - 1)?.packageName ?: ""
+                                        onSetIconPackPackage(pkg)
+                                    },
+                                    onSelect = { pkg ->
+                                        iconPackMenuExpanded = false
+                                        onSetIconPackPackage(pkg)
+                                    },
                                 )
                             }
                         }
@@ -11378,30 +11507,25 @@ private fun IconPackValueRow(
     selectedLabel: String,
     iconPacksLoaded: Boolean,
     onClick: () -> Unit,
+    focused: Boolean = false,
 ) {
     Row(
         modifier = Modifier
             .fillMaxWidth()
             .heightIn(min = 58.dp)
+            .then(if (focused) Modifier.background(Color.White.copy(alpha = 0.07f)) else Modifier)
             .clip(RoundedCornerShape(14.dp))
             .clickable(enabled = iconPacksLoaded, onClick = onClick)
             .padding(horizontal = 12.dp, vertical = 8.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
-        Column(modifier = Modifier.weight(1f)) {
-            Text(
-                stringResource(R.string.icon_pack_title),
-                color = Color.White,
-                fontSize = SETTINGS_TITLE_TEXT_SP,
-            )
-            Text(
-                stringResource(R.string.icon_pack_subtitle),
-                color = Color(0xFF9EA4A9),
-                fontSize = 13.sp,
-                maxLines = 1,
-                overflow = TextOverflow.Ellipsis,
-            )
-        }
+        Text(
+            stringResource(R.string.icon_pack_title),
+            color = Color.White,
+            fontSize = SETTINGS_TITLE_TEXT_SP,
+            fontWeight = FontWeight.SemiBold,
+            modifier = Modifier.weight(1f),
+        )
         Text(
             if (iconPacksLoaded) selectedLabel else stringResource(R.string.icon_pack_loading),
             color = Color(0xFF00A9E0),
@@ -11452,32 +11576,46 @@ private fun IconShapeValueRow(
 }
 
 @Composable
-private fun IconLayoutSelector(
-    text: String,
+private fun IconLayoutValueRow(
+    label: String,
+    subtitle: String,
+    value: String,
     onClick: () -> Unit,
-    modifier: Modifier = Modifier,
+    focused: Boolean = false,
 ) {
     Row(
-        modifier = modifier
-            .heightIn(min = 48.dp)
-            .clip(RoundedCornerShape(14.dp))
-            .background(Color.White.copy(alpha = 0.04f))
-            .border(0.6.dp, Color.White.copy(alpha = 0.08f), RoundedCornerShape(14.dp))
+        modifier = Modifier
+            .fillMaxWidth()
+            .heightIn(min = 58.dp)
+            .then(if (focused) Modifier.background(Color.White.copy(alpha = 0.07f)) else Modifier)
             .clickable(onClick = onClick)
-            .padding(horizontal = 12.dp, vertical = 10.dp),
+            .padding(horizontal = 16.dp, vertical = 10.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
+        Column(modifier = Modifier.weight(1f)) {
+            Text(
+                label,
+                color = Color.White,
+                fontSize = SETTINGS_TITLE_TEXT_SP,
+                fontWeight = FontWeight.SemiBold,
+            )
+            Text(
+                subtitle,
+                color = Color(0xFF9EA4A9),
+                fontSize = 13.sp,
+            )
+        }
         Text(
-            text,
+            value,
             color = Color(0xFF00A9E0),
             fontSize = SETTINGS_VALUE_TEXT_SP,
             fontWeight = FontWeight.SemiBold,
-            modifier = Modifier.weight(1f),
         )
         Icon(
             Icons.Rounded.ArrowDropDown,
             contentDescription = null,
-            tint = Color(0xFFB7BCC2),
+            tint = Color(0xFF9EA4A9),
+            modifier = Modifier.size(20.dp),
         )
     }
 }
@@ -11489,43 +11627,150 @@ private fun IconLayoutDropdown(
     options: List<Int>,
     selected: Int,
     defaultValue: Int,
-    suffix: String?,
+    focusedIndex: Int = -1,
+    onMoveCursor: (Int) -> Unit = {},
+    onConfirm: () -> Unit = {},
     onSelect: (Int) -> Unit,
 ) {
+    val innerFocus = remember { FocusRequester() }
     DropdownMenu(
         expanded = expanded,
         onDismissRequest = onDismiss,
         modifier = Modifier
             .width(210.dp)
-            .background(Color(0xFF252828)),
+            .background(Color(0xFF252828))
+            .focusRequester(innerFocus)
+            .focusable()
+            .onPreviewKeyEvent { ev ->
+                if (ev.type != KeyEventType.KeyDown) return@onPreviewKeyEvent false
+                val nk = ev.nativeKeyEvent
+                val up    = ev.key == Key.DirectionUp    || nk?.keyCode == AndroidKeyEvent.KEYCODE_DPAD_UP
+                val down  = ev.key == Key.DirectionDown  || nk?.keyCode == AndroidKeyEvent.KEYCODE_DPAD_DOWN
+                val enter = ev.key == Key.Enter || ev.key == Key.NumPadEnter ||
+                    nk?.keyCode == AndroidKeyEvent.KEYCODE_DPAD_CENTER ||
+                    nk?.keyCode == AndroidKeyEvent.KEYCODE_ENTER
+                val back  = ev.key == Key.Back || nk?.keyCode == AndroidKeyEvent.KEYCODE_BACK
+                when {
+                    up    -> { onMoveCursor(-1); true }
+                    down  -> { onMoveCursor(1);  true }
+                    enter -> { onConfirm();      true }
+                    back  -> { onDismiss();      true }
+                    else  -> false
+                }
+            },
     ) {
-        options.forEach { option ->
+        LaunchedEffect(expanded) { if (expanded) innerFocus.requestFocus() }
+        options.forEachIndexed { index, option ->
             DropdownMenuItem(
                 text = {
-                    Row(
-                        modifier = Modifier.fillMaxWidth(),
-                        verticalAlignment = Alignment.CenterVertically,
-                    ) {
+                    Row(modifier = Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
                         Text(
-                            text = if (option == defaultValue) {
-                                "Default ($option)"
-                            } else {
-                                suffix?.let { "$option $it" } ?: option.toString()
-                            },
+                            text = if (option == defaultValue) "Default ($option)" else option.toString(),
                             color = Color(0xFFE0E3E6),
                             fontSize = SETTINGS_VALUE_TEXT_SP,
                             modifier = Modifier.weight(1f),
                         )
                         if (option == selected) {
-                            Text(
-                                text = "✓",
-                                color = Color(0xFF00C853),
-                                fontSize = SETTINGS_VALUE_TEXT_SP,
-                            )
+                            Text("✓", color = Color(0xFF00C853), fontSize = SETTINGS_VALUE_TEXT_SP)
                         }
                     }
                 },
                 onClick = { onSelect(option) },
+                modifier = if (index == focusedIndex) Modifier.background(Color.White.copy(alpha = 0.1f)) else Modifier,
+            )
+        }
+    }
+}
+
+@Composable
+private fun IconPackDropdown(
+    expanded: Boolean,
+    onDismiss: () -> Unit,
+    iconPacks: List<IconPackEntry>,
+    iconPacksLoaded: Boolean,
+    iconPackPackage: String,
+    focusedIndex: Int = -1,
+    onMoveCursor: (Int) -> Unit = {},
+    onConfirm: () -> Unit = {},
+    onSelect: (String) -> Unit,
+) {
+    val innerFocus = remember { FocusRequester() }
+    DropdownMenu(
+        expanded = expanded,
+        onDismissRequest = onDismiss,
+        modifier = Modifier
+            .width(220.dp)
+            .background(Color(0xFF252828))
+            .focusRequester(innerFocus)
+            .focusable()
+            .onPreviewKeyEvent { ev ->
+                if (ev.type != KeyEventType.KeyDown) return@onPreviewKeyEvent false
+                val nk = ev.nativeKeyEvent
+                val up    = ev.key == Key.DirectionUp    || nk?.keyCode == AndroidKeyEvent.KEYCODE_DPAD_UP
+                val down  = ev.key == Key.DirectionDown  || nk?.keyCode == AndroidKeyEvent.KEYCODE_DPAD_DOWN
+                val enter = ev.key == Key.Enter || ev.key == Key.NumPadEnter ||
+                    nk?.keyCode == AndroidKeyEvent.KEYCODE_DPAD_CENTER ||
+                    nk?.keyCode == AndroidKeyEvent.KEYCODE_ENTER
+                val back  = ev.key == Key.Back || nk?.keyCode == AndroidKeyEvent.KEYCODE_BACK
+                when {
+                    up    -> { onMoveCursor(-1); true }
+                    down  -> { onMoveCursor(1);  true }
+                    enter -> { onConfirm();      true }
+                    back  -> { onDismiss();      true }
+                    else  -> false
+                }
+            },
+    ) {
+        LaunchedEffect(expanded) { if (expanded) innerFocus.requestFocus() }
+        DropdownMenuItem(
+            text = {
+                Row(modifier = Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+                    Text(
+                        stringResource(R.string.icon_pack_system_icons),
+                        color = Color(0xFFE0E3E6),
+                        fontSize = SETTINGS_VALUE_TEXT_SP,
+                        modifier = Modifier.weight(1f),
+                    )
+                    if (iconPackPackage.isBlank()) {
+                        Text("✓", color = Color(0xFF00C853), fontSize = SETTINGS_VALUE_TEXT_SP)
+                    }
+                }
+            },
+            onClick = { onSelect("") },
+            modifier = if (focusedIndex == 0) Modifier.background(Color.White.copy(alpha = 0.1f)) else Modifier,
+        )
+        if (iconPacksLoaded && iconPacks.isEmpty()) {
+            DropdownMenuItem(
+                text = {
+                    Text(
+                        stringResource(R.string.icon_pack_none_found),
+                        color = Color(0xFF9EA4A9),
+                        fontSize = SETTINGS_VALUE_TEXT_SP,
+                    )
+                },
+                enabled = false,
+                onClick = {},
+            )
+        }
+        iconPacks.forEachIndexed { i, pack ->
+            DropdownMenuItem(
+                text = {
+                    Row(modifier = Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+                        Text(
+                            pack.label,
+                            color = Color(0xFFE0E3E6),
+                            fontSize = SETTINGS_VALUE_TEXT_SP,
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis,
+                            modifier = Modifier.weight(1f),
+                        )
+                        if (pack.packageName == iconPackPackage) {
+                            Text("✓", color = Color(0xFF00C853), fontSize = SETTINGS_VALUE_TEXT_SP)
+                        }
+                    }
+                },
+                onClick = { onSelect(pack.packageName) },
+                modifier = if (focusedIndex == i + 1) Modifier.background(Color.White.copy(alpha = 0.1f)) else Modifier,
             )
         }
     }
@@ -12118,12 +12363,40 @@ private fun LanguageSettingsOverlay(
     val selectedCode = LauncherLocale.currentLanguageCode(context).ifEmpty {
         LauncherLocale.normalize(currentLanguageCode)
     }
+    val langFR = remember { FocusRequester() }
+    var focusedLang by remember { mutableIntStateOf(0) }
+    val langListState = rememberLazyListState()
+    LaunchedEffect(selectedCode) {
+        val idx = LauncherLocale.supportedLanguages.indexOfFirst { it.code == selectedCode }
+        if (idx >= 0) focusedLang = idx
+    }
+    LaunchedEffect(focusedLang) { langListState.animateScrollToItem(focusedLang) }
     Surface(
         modifier = Modifier
             .fillMaxSize()
-            .zIndex(520f),
+            .zIndex(520f)
+            .focusRequester(langFR)
+            .focusable()
+            .onPreviewKeyEvent { ev ->
+                if (ev.type != KeyEventType.KeyDown) return@onPreviewKeyEvent false
+                val nk = ev.nativeKeyEvent
+                val up    = ev.key == Key.DirectionUp    || nk?.keyCode == AndroidKeyEvent.KEYCODE_DPAD_UP
+                val down  = ev.key == Key.DirectionDown  || nk?.keyCode == AndroidKeyEvent.KEYCODE_DPAD_DOWN
+                val enter = ev.key == Key.Enter || ev.key == Key.NumPadEnter ||
+                    nk?.keyCode == AndroidKeyEvent.KEYCODE_DPAD_CENTER ||
+                    nk?.keyCode == AndroidKeyEvent.KEYCODE_ENTER
+                val back  = ev.key == Key.Back || nk?.keyCode == AndroidKeyEvent.KEYCODE_BACK
+                when {
+                    back  -> { onDismiss(); true }
+                    up    -> { focusedLang = (focusedLang - 1).coerceAtLeast(0); true }
+                    down  -> { focusedLang = (focusedLang + 1).coerceAtMost(LauncherLocale.supportedLanguages.size - 1); true }
+                    enter -> { onLanguageSelected(LauncherLocale.supportedLanguages[focusedLang].code); true }
+                    else  -> false
+                }
+            },
         color = Color.Black.copy(alpha = 0.62f),
     ) {
+        LaunchedEffect(Unit) { langFR.requestFocus() }
         Box(
             modifier = Modifier
                 .fillMaxSize()
@@ -12166,15 +12439,17 @@ private fun LanguageSettingsOverlay(
                     }
                     HorizontalDivider(color = Color.White.copy(alpha = 0.10f), thickness = 0.5.dp)
                     LazyColumn(
+                        state = langListState,
                         modifier = Modifier
                             .fillMaxWidth()
                             .heightIn(max = 420.dp),
                     ) {
-                        items(LauncherLocale.supportedLanguages) { language ->
+                        itemsIndexed(LauncherLocale.supportedLanguages) { index, language ->
                             val selected = language.code == selectedCode
                             Row(
                                 modifier = Modifier
                                     .fillMaxWidth()
+                                    .then(if (focusedLang == index) Modifier.background(Color.White.copy(alpha = 0.07f)) else Modifier)
                                     .clickable { onLanguageSelected(language.code) }
                                     .padding(horizontal = 24.dp, vertical = 10.dp),
                                 verticalAlignment = Alignment.CenterVertically,

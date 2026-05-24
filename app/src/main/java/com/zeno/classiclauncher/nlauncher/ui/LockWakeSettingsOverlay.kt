@@ -2,6 +2,9 @@ package com.zeno.classiclauncher.nlauncher.ui
 
 import android.content.Intent
 import android.provider.Settings
+import android.view.KeyEvent as AndroidKeyEvent
+import androidx.activity.compose.BackHandler
+import androidx.compose.foundation.focusable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -27,13 +30,21 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.focus.FocusRequester
+import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.input.key.Key
+import androidx.compose.ui.input.key.KeyEventType
+import androidx.compose.ui.input.key.key
+import androidx.compose.ui.input.key.onPreviewKeyEvent
+import androidx.compose.ui.input.key.type
 import androidx.compose.ui.platform.LocalContext
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleEventObserver
@@ -73,13 +84,36 @@ fun LockWakeSettingsOverlay(
     }
 
     val subtitleColor = Color(0xFF8E95A3)
+    val focusRequester = remember { FocusRequester() }
+
+    BackHandler(enabled = true, onBack = onDismiss)
 
     Surface(
         modifier = Modifier
             .fillMaxSize()
-            .zIndex(405f),
+            .zIndex(405f)
+            .focusRequester(focusRequester)
+            .focusable()
+            .onPreviewKeyEvent { ev ->
+                if (ev.type != KeyEventType.KeyDown) return@onPreviewKeyEvent false
+                val nk = ev.nativeKeyEvent
+                val enter = ev.key == Key.Enter || ev.key == Key.NumPadEnter ||
+                    nk?.keyCode == AndroidKeyEvent.KEYCODE_DPAD_CENTER ||
+                    nk?.keyCode == AndroidKeyEvent.KEYCODE_ENTER
+                val back  = ev.key == Key.Back || nk?.keyCode == AndroidKeyEvent.KEYCODE_BACK
+                when {
+                    back  -> { onDismiss(); true }
+                    enter -> {
+                        onDoubleTapChange(!doubleTapEnabled)
+                        lockHelperOn = SleepManager.isLockAccessibilityEnabled(context)
+                        true
+                    }
+                    else -> false
+                }
+            },
         color = themePalette.settingsBg,
     ) {
+        LaunchedEffect(Unit) { focusRequester.requestFocus() }
         Column(
             modifier = Modifier
                 .fillMaxSize()
@@ -128,6 +162,7 @@ fun LockWakeSettingsOverlay(
                         else -> "On — built-in lock path"
                     },
                     checked = doubleTapEnabled,
+                    focused = true,
                     themePalette = themePalette,
                     onCheckedChange = { want ->
                         if (want) {
@@ -158,12 +193,13 @@ private fun SettingsSwitchRow(
     subtitle: String,
     checked: Boolean,
     themePalette: LauncherThemePalette,
+    focused: Boolean = false,
     enabled: Boolean = true,
     onCheckedChange: (Boolean) -> Unit,
 ) {
     Surface(
         shape = RoundedCornerShape(16.dp),
-        color = Color(0xFF1E2430),
+        color = if (focused) Color(0xFF28303F) else Color(0xFF1E2430),
         modifier = Modifier.fillMaxWidth(),
     ) {
         Row(
