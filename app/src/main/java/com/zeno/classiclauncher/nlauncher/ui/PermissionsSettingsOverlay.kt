@@ -4,9 +4,12 @@ import android.Manifest
 import android.content.Intent
 import android.net.Uri
 import android.provider.Settings
+import android.view.KeyEvent as AndroidKeyEvent
 import android.widget.Toast
+import androidx.activity.compose.BackHandler
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.foundation.focusable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -32,13 +35,22 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.focus.FocusRequester
+import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.input.key.Key
+import androidx.compose.ui.input.key.KeyEventType
+import androidx.compose.ui.input.key.key
+import androidx.compose.ui.input.key.onPreviewKeyEvent
+import androidx.compose.ui.input.key.type
 import androidx.compose.ui.platform.LocalContext
 import androidx.lifecycle.compose.LocalLifecycleOwner
 import androidx.compose.ui.text.font.FontWeight
@@ -113,13 +125,48 @@ fun PermissionsSettingsOverlay(
     }
 
     val subtitleMuted = Color(0xFF8E95A3)
+    val focusRequester = remember { FocusRequester() }
+    var focusedItem by remember { mutableIntStateOf(0) }
+
+    BackHandler(enabled = true, onBack = onDismiss)
 
     Surface(
         modifier = Modifier
             .fillMaxSize()
-            .zIndex(406f),
+            .zIndex(406f)
+            .focusRequester(focusRequester)
+            .focusable()
+            .onPreviewKeyEvent { ev ->
+                if (ev.type != KeyEventType.KeyDown) return@onPreviewKeyEvent false
+                val nk = ev.nativeKeyEvent
+                val up    = ev.key == Key.DirectionUp    || nk?.keyCode == AndroidKeyEvent.KEYCODE_DPAD_UP
+                val down  = ev.key == Key.DirectionDown  || nk?.keyCode == AndroidKeyEvent.KEYCODE_DPAD_DOWN
+                val enter = ev.key == Key.Enter || ev.key == Key.NumPadEnter ||
+                    nk?.keyCode == AndroidKeyEvent.KEYCODE_DPAD_CENTER ||
+                    nk?.keyCode == AndroidKeyEvent.KEYCODE_ENTER
+                val back  = ev.key == Key.Back || nk?.keyCode == AndroidKeyEvent.KEYCODE_BACK
+                when {
+                    back  -> { onDismiss(); true }
+                    up    -> { focusedItem = (focusedItem - 1).coerceAtLeast(0); true }
+                    down  -> { focusedItem = (focusedItem + 1).coerceAtMost(3); true }
+                    enter -> {
+                        when (focusedItem) {
+                            0 -> onNotificationBadgesEnabled(!prefs.notificationBadgesEnabled)
+                            1 -> {
+                                onDoubleTapSleepEnabled(!prefs.doubleTapToSleepEnabled)
+                                runtime = computeRuntimePerms(context)
+                            }
+                            2 -> onGlanceEnabled(!prefs.glanceEnabled)
+                            3 -> onGlanceShowCalendar(!prefs.glanceShowCalendar)
+                        }
+                        true
+                    }
+                    else -> false
+                }
+            },
         color = themePalette.settingsBg,
     ) {
+        LaunchedEffect(Unit) { focusRequester.requestFocus() }
         Column(
             modifier = Modifier
                 .fillMaxSize()
@@ -170,6 +217,7 @@ fun PermissionsSettingsOverlay(
                     subtitleOnMissing = "On — allow notification access for badges",
                     featureOn = prefs.notificationBadgesEnabled,
                     permissionOk = runtime.notificationAccess,
+                    focused = focusedItem == 0,
                     themePalette = themePalette,
                     onFeatureChange = onNotificationBadgesEnabled,
                     showGrant = prefs.notificationBadgesEnabled && !runtime.notificationAccess,
@@ -212,6 +260,7 @@ fun PermissionsSettingsOverlay(
                     subtitleOnMissing = "On — built-in lock path",
                     featureOn = prefs.doubleTapToSleepEnabled,
                     permissionOk = true,
+                    focused = focusedItem == 1,
                     themePalette = themePalette,
                     onFeatureChange = { on ->
                         onDoubleTapSleepEnabled(on)
@@ -237,6 +286,7 @@ fun PermissionsSettingsOverlay(
                     subtitleOnMissing = "On — grant location for weather",
                     featureOn = prefs.glanceEnabled,
                     permissionOk = runtime.location,
+                    focused = focusedItem == 2,
                     themePalette = themePalette,
                     onFeatureChange = onGlanceEnabled,
                     showGrant = prefs.glanceEnabled && !runtime.location,
@@ -276,6 +326,7 @@ fun PermissionsSettingsOverlay(
                     },
                     featureOn = prefs.glanceShowCalendar,
                     permissionOk = runtime.calendar,
+                    focused = focusedItem == 3,
                     themePalette = themePalette,
                     enabled = true,
                     onFeatureChange = onGlanceShowCalendar,
@@ -320,6 +371,7 @@ private fun PermissionSwitchCard(
     subtitleOnMissing: String,
     featureOn: Boolean,
     permissionOk: Boolean,
+    focused: Boolean = false,
     themePalette: LauncherThemePalette,
     enabled: Boolean = true,
     onFeatureChange: (Boolean) -> Unit,
@@ -338,7 +390,7 @@ private fun PermissionSwitchCard(
     }
     Surface(
         shape = RoundedCornerShape(16.dp),
-        color = Color(0xFF1E2430),
+        color = if (focused) Color(0xFF28303F) else Color(0xFF1E2430),
         modifier = Modifier.fillMaxWidth(),
     ) {
         Column(Modifier.padding(horizontal = 16.dp, vertical = 12.dp)) {

@@ -1,5 +1,9 @@
 package com.zeno.classiclauncher.nlauncher.ui
 
+import android.view.KeyEvent as AndroidKeyEvent
+import androidx.activity.compose.BackHandler
+import androidx.compose.foundation.background
+import androidx.compose.foundation.focusable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -22,9 +26,21 @@ import androidx.compose.material3.Switch
 import androidx.compose.material3.SwitchDefaults
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableIntStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.focus.FocusRequester
+import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.input.key.Key
+import androidx.compose.ui.input.key.KeyEventType
+import androidx.compose.ui.input.key.key
+import androidx.compose.ui.input.key.onPreviewKeyEvent
+import androidx.compose.ui.input.key.type
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -43,13 +59,43 @@ fun AppDrawerBadgesOverlay(
     onShowIconNotifBadgeChange: (Boolean) -> Unit,
 ) {
     val subtitleColor = Color(0xFF8E95A3)
+    val focusRequester = remember { FocusRequester() }
+    var focusedItem by remember { mutableIntStateOf(0) }
+
+    BackHandler(enabled = true, onBack = onDismiss)
 
     Surface(
         modifier = Modifier
             .fillMaxSize()
-            .zIndex(405f),
+            .zIndex(405f)
+            .focusRequester(focusRequester)
+            .focusable()
+            .onPreviewKeyEvent { ev ->
+                if (ev.type != KeyEventType.KeyDown) return@onPreviewKeyEvent false
+                val nk = ev.nativeKeyEvent
+                val up    = ev.key == Key.DirectionUp    || nk?.keyCode == AndroidKeyEvent.KEYCODE_DPAD_UP
+                val down  = ev.key == Key.DirectionDown  || nk?.keyCode == AndroidKeyEvent.KEYCODE_DPAD_DOWN
+                val enter = ev.key == Key.Enter || ev.key == Key.NumPadEnter ||
+                    nk?.keyCode == AndroidKeyEvent.KEYCODE_DPAD_CENTER ||
+                    nk?.keyCode == AndroidKeyEvent.KEYCODE_ENTER
+                val back  = ev.key == Key.Back || nk?.keyCode == AndroidKeyEvent.KEYCODE_BACK
+                when {
+                    back  -> { onDismiss(); true }
+                    up    -> { focusedItem = (focusedItem - 1).coerceAtLeast(0); true }
+                    down  -> { focusedItem = (focusedItem + 1).coerceAtMost(1); true }
+                    enter -> {
+                        when (focusedItem) {
+                            0 -> onShowUsageStatsBadgeChange(!showUsageStatsBadge)
+                            1 -> if (notificationAccessReady) onShowIconNotifBadgeChange(!showIconNotifBadge)
+                        }
+                        true
+                    }
+                    else -> false
+                }
+            },
         color = themePalette.settingsBg,
     ) {
+        LaunchedEffect(Unit) { focusRequester.requestFocus() }
         Column(
             modifier = Modifier
                 .fillMaxSize()
@@ -98,6 +144,7 @@ fun AppDrawerBadgesOverlay(
                         "Off"
                     },
                     checked = showUsageStatsBadge,
+                    focused = focusedItem == 0,
                     themePalette = themePalette,
                     onCheckedChange = onShowUsageStatsBadgeChange,
                 )
@@ -113,6 +160,7 @@ fun AppDrawerBadgesOverlay(
                     },
                     checked = showIconNotifBadge && notificationAccessReady,
                     enabled = notificationAccessReady,
+                    focused = focusedItem == 1,
                     themePalette = themePalette,
                     onCheckedChange = onShowIconNotifBadgeChange,
                 )
@@ -129,11 +177,14 @@ private fun BadgeSwitchRow(
     subtitle: String,
     checked: Boolean,
     themePalette: LauncherThemePalette,
+    focused: Boolean = false,
     enabled: Boolean = true,
     onCheckedChange: (Boolean) -> Unit,
 ) {
     Row(
-        modifier = Modifier.fillMaxWidth(),
+        modifier = Modifier
+            .fillMaxWidth()
+            .then(if (focused) Modifier.background(Color.White.copy(alpha = 0.07f)) else Modifier),
         horizontalArrangement = Arrangement.SpaceBetween,
         verticalAlignment = Alignment.CenterVertically,
     ) {
