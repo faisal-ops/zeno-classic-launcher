@@ -1,0 +1,67 @@
+---
+description: Zeno Classic Launcher — mandatory workflow for all AI tools
+alwaysApply: true
+---
+
+# Zeno Classic Launcher — AI Workflow Rules
+
+## 1. NEVER USE WORKTREES
+- Never use `git worktree` or any isolated/worktree mode.
+- Always work directly in the main repo directory.
+
+## 2. AFTER EVERY CODE CHANGE — MANDATORY WORKFLOW
+
+Complete all steps in order. Never skip.
+
+### Step 1 — Full Release Build
+Always run the FULL assembleRelease. Never partial builds for device testing.
+
+```bash
+export JAVA_HOME="/Applications/Android Studio.app/Contents/jbr/Contents/Home"
+./gradlew assembleRelease --no-daemon
+```
+
+APK location: `app/build/outputs/apk/release/Zeno Classic.apk`
+
+Or use the helper script (build + install in one command):
+```bash
+./scripts/build-install.sh
+```
+
+### Step 2 — Install on Device
+```bash
+adb install -r "app/build/outputs/apk/release/Zeno Classic.apk"
+```
+
+### Step 3 — Ask User to Test
+After install say: "App installed. Please test it — does everything work correctly?"
+Wait for response. Do NOT commit yet.
+
+### Step 4 — Commit Only After User Confirms
+Only if user confirms it works:
+```bash
+git add <specific changed files>   # never git add . or git add -A
+git commit -m "description"
+```
+If user says it doesn't work — fix and repeat from Step 1.
+
+### Step 5 — Push Reminder
+After every commit check: `git rev-list --count @{u}..HEAD`
+- **< 5 ahead**: stay local, do not push
+- **≥ 5 ahead**: tell user "You have N commits ahead of remote. Want me to push?"
+
+## 3. BUILD RULES
+
+| | |
+|---|---|
+| Always use | `./gradlew assembleRelease --no-daemon` |
+| Never use for device testing | `assembleDebug`, `compileReleaseKotlin`, partial tasks |
+| JAVA_HOME | `/Applications/Android Studio.app/Contents/jbr/Contents/Home` |
+| Signing | Requires `key.properties` at repo root |
+
+## 4. GIT RULES
+- Never commit before building + installing on device
+- Never commit before user confirms the build works
+- Never use `git add .` or `git add -A`
+- Never force-push to `main`
+- Never skip hooks (`--no-verify`)

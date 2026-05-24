@@ -1,0 +1,44 @@
+# Zeno Classic Launcher — Windsurf AI Rules
+
+## MANDATORY RULES — Follow for every code change
+
+### No Worktrees
+Never use git worktrees. Always work directly in the main repo directory.
+
+### Full Workflow After Every Code Change
+
+Step 1 — Full release build (always assembleRelease, never partial):
+```
+export JAVA_HOME="/Applications/Android Studio.app/Contents/jbr/Contents/Home"
+./gradlew assembleRelease --no-daemon
+```
+
+Step 2 — Install on device:
+```
+adb install -r "app/build/outputs/apk/release/Zeno Classic.apk"
+```
+Shortcut: `./scripts/build-install.sh` does both steps.
+
+Step 3 — Ask user to test:
+Say "App installed. Please test it — does everything work correctly?"
+Wait for response before doing anything else.
+
+Step 4 — Commit only after user confirms:
+```
+git add <specific files changed>
+git commit -m "description"
+```
+If it doesn't work: fix and restart from Step 1.
+
+Step 5 — After commit, check push count:
+```
+git rev-list --count @{u}..HEAD
+```
+- Under 5: stay local
+- 5 or more: remind user to push to origin/main
+
+### Never
+- Never partial builds (compileReleaseKotlin, assembleDebug) for device testing
+- Never commit before user confirms device test passed
+- Never git add . or git add -A
+- Never force-push main

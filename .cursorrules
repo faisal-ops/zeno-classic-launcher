@@ -1,0 +1,38 @@
+# Zeno Classic Launcher — AI Workflow Rules
+# Full rules: see .cursor/rules/android-build-and-adb.mdc and CLAUDE.md
+
+## MANDATORY RULES
+
+### Never Use Worktrees
+Never use git worktree or any isolated worktree mode. Always work directly in the repo.
+
+### After Every Code Change — Full Workflow
+1. Full release build (ALWAYS assembleRelease, never partial):
+   export JAVA_HOME="/Applications/Android Studio.app/Contents/jbr/Contents/Home"
+   ./gradlew assembleRelease --no-daemon
+
+2. Install on device:
+   adb install -r "app/build/outputs/apk/release/Zeno Classic.apk"
+   (Or: ./scripts/build-install.sh does both steps)
+
+3. Ask user to test: "App installed. Please test it — does it work correctly?"
+   WAIT for response. Do NOT commit yet.
+
+4. Commit ONLY after user confirms it works:
+   git add <specific files>   # never "git add ." or "git add -A"
+   git commit -m "description"
+
+5. After commit check: git rev-list --count @{u}..HEAD
+   - Less than 5 ahead: stay local
+   - 5 or more ahead: remind user to push to remote
+
+### Build Rules
+- Always: ./gradlew assembleRelease --no-daemon
+- Never for device testing: assembleDebug, compileReleaseKotlin, or partial tasks
+- Signing requires key.properties at repo root
+
+### Git Rules
+- Never commit before build + install on device
+- Never commit before user confirms the build works
+- Never use git add . or git add -A
+- Never force-push to main

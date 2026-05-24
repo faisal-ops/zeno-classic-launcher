@@ -1,0 +1,33 @@
+# Zeno Classic Launcher — Cline AI Rules
+
+## MANDATORY RULES — Follow for every code change
+
+### No Worktrees
+Never use git worktrees. Always work directly in the main repo directory.
+
+### Full Workflow After Every Code Change
+
+1. Full release build (ALWAYS assembleRelease, never partial):
+   export JAVA_HOME="/Applications/Android Studio.app/Contents/jbr/Contents/Home"
+   ./gradlew assembleRelease --no-daemon
+
+2. Install on device:
+   adb install -r "app/build/outputs/apk/release/Zeno Classic.apk"
+   (shortcut: ./scripts/build-install.sh does both)
+
+3. Ask user to test — wait for confirmation before committing.
+
+4. Commit ONLY after user confirms:
+   git add <specific files>
+   git commit -m "description"
+
+5. After commit: git rev-list --count @{u}..HEAD
+   - <5 ahead: stay local
+   - ≥5 ahead: remind user to push to remote
+
+### Never
+- Use git worktrees
+- Run partial builds for device testing
+- Commit before user confirms device test
+- Use git add . or git add -A
+- Force-push main
