@@ -3,6 +3,36 @@ package com.zeno.classiclauncher.nlauncher.ui
 import android.view.KeyEvent as AndroidKeyEvent
 import androidx.compose.ui.input.key.Key
 import androidx.compose.ui.input.key.KeyEvent
+import androidx.compose.ui.input.key.KeyEventType
+import androidx.compose.ui.input.key.key
+import androidx.compose.ui.input.key.type
+
+// D-pad / trackpad direction helpers — include KeyDown check so callers need no type guard.
+val KeyEvent.isDpadUp: Boolean
+    get() = type == KeyEventType.KeyDown &&
+        (key == Key.DirectionUp || nativeKeyEvent?.keyCode == AndroidKeyEvent.KEYCODE_DPAD_UP)
+
+val KeyEvent.isDpadDown: Boolean
+    get() = type == KeyEventType.KeyDown &&
+        (key == Key.DirectionDown || nativeKeyEvent?.keyCode == AndroidKeyEvent.KEYCODE_DPAD_DOWN)
+
+val KeyEvent.isDpadLeft: Boolean
+    get() = type == KeyEventType.KeyDown &&
+        (key == Key.DirectionLeft || nativeKeyEvent?.keyCode == AndroidKeyEvent.KEYCODE_DPAD_LEFT)
+
+val KeyEvent.isDpadRight: Boolean
+    get() = type == KeyEventType.KeyDown &&
+        (key == Key.DirectionRight || nativeKeyEvent?.keyCode == AndroidKeyEvent.KEYCODE_DPAD_RIGHT)
+
+val KeyEvent.isDpadEnter: Boolean
+    get() = type == KeyEventType.KeyDown && (
+        key == Key.Enter || key == Key.NumPadEnter ||
+        nativeKeyEvent?.keyCode == AndroidKeyEvent.KEYCODE_DPAD_CENTER ||
+        nativeKeyEvent?.keyCode == AndroidKeyEvent.KEYCODE_ENTER)
+
+val KeyEvent.isDpadBack: Boolean
+    get() = type == KeyEventType.KeyDown &&
+        (key == Key.Back || nativeKeyEvent?.keyCode == AndroidKeyEvent.KEYCODE_BACK)
 
 /** Volume (and mute) must not be consumed by the launcher so SystemUI can show the on-screen panel. */
 fun KeyEvent.isVolumePanelKey(): Boolean {

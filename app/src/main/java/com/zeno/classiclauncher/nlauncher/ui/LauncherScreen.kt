@@ -10353,6 +10353,8 @@ private fun GlanceSettingsOverlay(
     val cardShape = RoundedCornerShape(12.dp)
     val glanceFR = remember { FocusRequester() }
     var focusedGlance by remember { mutableIntStateOf(0) }
+    val glanceBringers = remember { List(6) { BringIntoViewRequester() } }
+    LaunchedEffect(focusedGlance) { glanceBringers[focusedGlance].bringIntoView() }
     BackHandler(enabled = true, onBack = onDismiss)
 
     @Composable
@@ -10481,14 +10483,16 @@ private fun GlanceSettingsOverlay(
                     style = MaterialTheme.typography.bodyMedium,
                     color = subtitleColor,
                 )
-                ToggleCard(
-                    title = stringResource(R.string.glance_show_title),
-                    subtitle = stringResource(R.string.glance_show_subtitle),
-                    checked = glanceEnabled,
-                    focused = focusedGlance == 0,
-                    onCheckedChange = onGlanceEnabled,
-                )
-                Surface(shape = cardShape, color = if (focusedGlance == 1) cardFocusedBg else cardBg, modifier = Modifier.fillMaxWidth()) {
+                Box(modifier = Modifier.bringIntoViewRequester(glanceBringers[0])) {
+                    ToggleCard(
+                        title = stringResource(R.string.glance_show_title),
+                        subtitle = stringResource(R.string.glance_show_subtitle),
+                        checked = glanceEnabled,
+                        focused = focusedGlance == 0,
+                        onCheckedChange = onGlanceEnabled,
+                    )
+                }
+                Surface(shape = cardShape, color = if (focusedGlance == 1) cardFocusedBg else cardBg, modifier = Modifier.fillMaxWidth().bringIntoViewRequester(glanceBringers[1])) {
                     Column(modifier = Modifier.padding(horizontal = 16.dp, vertical = 12.dp)) {
                         Text(
                             stringResource(R.string.glance_weather_unit),
@@ -10537,38 +10541,46 @@ private fun GlanceSettingsOverlay(
                         }
                     }
                 }
-                ToggleCard(
-                    title = stringResource(R.string.glance_flashlight_title),
-                    subtitle = stringResource(R.string.glance_flashlight_subtitle),
-                    checked = glanceShowFlashlight,
-                    enabled = glanceEnabled,
-                    focused = focusedGlance == 2,
-                    onCheckedChange = onGlanceShowFlashlight,
-                )
-                ToggleCard(
-                    title = stringResource(R.string.glance_calendar_title),
-                    subtitle = stringResource(R.string.glance_calendar_subtitle),
-                    checked = glanceShowCalendar,
-                    enabled = glanceEnabled,
-                    focused = focusedGlance == 3,
-                    onCheckedChange = onGlanceShowCalendar,
-                )
-                ToggleCard(
-                    title = stringResource(R.string.glance_battery_title),
-                    subtitle = stringResource(R.string.glance_battery_subtitle),
-                    checked = glanceShowBattery,
-                    enabled = glanceEnabled,
-                    focused = focusedGlance == 4,
-                    onCheckedChange = onGlanceShowBattery,
-                )
-                ToggleCard(
-                    title = stringResource(R.string.glance_alarm_title),
-                    subtitle = stringResource(R.string.glance_alarm_subtitle),
-                    checked = glanceShowAlarm,
-                    enabled = glanceEnabled,
-                    focused = focusedGlance == 5,
-                    onCheckedChange = onGlanceShowAlarm,
-                )
+                Box(modifier = Modifier.bringIntoViewRequester(glanceBringers[2])) {
+                    ToggleCard(
+                        title = stringResource(R.string.glance_flashlight_title),
+                        subtitle = stringResource(R.string.glance_flashlight_subtitle),
+                        checked = glanceShowFlashlight,
+                        enabled = glanceEnabled,
+                        focused = focusedGlance == 2,
+                        onCheckedChange = onGlanceShowFlashlight,
+                    )
+                }
+                Box(modifier = Modifier.bringIntoViewRequester(glanceBringers[3])) {
+                    ToggleCard(
+                        title = stringResource(R.string.glance_calendar_title),
+                        subtitle = stringResource(R.string.glance_calendar_subtitle),
+                        checked = glanceShowCalendar,
+                        enabled = glanceEnabled,
+                        focused = focusedGlance == 3,
+                        onCheckedChange = onGlanceShowCalendar,
+                    )
+                }
+                Box(modifier = Modifier.bringIntoViewRequester(glanceBringers[4])) {
+                    ToggleCard(
+                        title = stringResource(R.string.glance_battery_title),
+                        subtitle = stringResource(R.string.glance_battery_subtitle),
+                        checked = glanceShowBattery,
+                        enabled = glanceEnabled,
+                        focused = focusedGlance == 4,
+                        onCheckedChange = onGlanceShowBattery,
+                    )
+                }
+                Box(modifier = Modifier.bringIntoViewRequester(glanceBringers[5])) {
+                    ToggleCard(
+                        title = stringResource(R.string.glance_alarm_title),
+                        subtitle = stringResource(R.string.glance_alarm_subtitle),
+                        checked = glanceShowAlarm,
+                        enabled = glanceEnabled,
+                        focused = focusedGlance == 5,
+                        onCheckedChange = onGlanceShowAlarm,
+                    )
+                }
             }
         }
     }
