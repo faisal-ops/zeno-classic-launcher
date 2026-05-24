@@ -37,7 +37,6 @@ keystore/
 .DS_Store
 
 # Local / contributor docs (keep on disk; not versioned)
-AGENTS.md
 PARITY_CHECKLIST.md
 
 # Wallpapers — large binaries; generated exports (see scripts/export_wallpapers_for_phone.py)
@@ -45,7 +44,8 @@ wallpapers/
 
 # Local working notes/scripts/temp artifacts
 docs/NOTES.md
-scripts/
+scripts/*.py
+scripts/tmp/
 tmp/
 .local/
 
