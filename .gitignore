@@ -30,8 +30,8 @@ keystore/
 .idea/
 *.iml
 
-# Cursor — local agent rules (not versioned)
-.cursor/rules/
+# Cursor — rules are versioned (see .cursor/rules/)
+.cursor/tmp/
 
 # OS
 .DS_Store
