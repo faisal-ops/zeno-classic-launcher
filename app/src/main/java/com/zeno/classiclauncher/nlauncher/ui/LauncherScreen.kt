@@ -91,6 +91,7 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.itemsIndexed
+import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.lazy.grid.GridCells
@@ -2224,7 +2225,7 @@ fun LauncherScreen(
                 titleContentColor = Color(0xFFEAF2F8),
                 textContentColor = Color(0xFFB7C2CF),
                 title = { Text("Remove widget?") },
-                text = { Text("This removes the widget from your home screen. You can add it again later from the widget picker.") },
+                text = { Text("It'll be removed from your home screen.") },
                 confirmButton = {
                     TextButton(onClick = { removeHomeWidget() }) {
                         Text("Remove", color = Color(0xFFFF9EAA), fontWeight = FontWeight.SemiBold)
@@ -2255,6 +2256,18 @@ fun LauncherScreen(
 
         if (showNewHomeGroupDialog) {
             LaunchedEffect(Unit) { newHomeGroupFocusRequester.requestFocus() }
+            val onCreateGroup = {
+                val name = newHomeGroupName
+                if (groupNameExists(name)) {
+                    Toast.makeText(context, "Groups already exist", Toast.LENGTH_SHORT).show()
+                } else if (!prefs.canAddHomeStripItem()) {
+                    Toast.makeText(context, "Home Strip is full (5 items)", Toast.LENGTH_SHORT).show()
+                    showNewHomeGroupDialog = false
+                } else {
+                    vm.createHomeGroup(name)
+                    showNewHomeGroupDialog = false
+                }
+            }
             AlertDialog(
                 onDismissRequest = { showNewHomeGroupDialog = false },
                 shape = RoundedCornerShape(16.dp),
@@ -2272,6 +2285,7 @@ fun LauncherScreen(
                             capitalization = KeyboardCapitalization.Sentences,
                             imeAction = ImeAction.Done,
                         ),
+                        keyboardActions = KeyboardActions(onDone = { onCreateGroup() }),
                         colors = TextFieldDefaults.colors(
                             focusedTextColor = Color(0xFFE8EEF7),
                             unfocusedTextColor = Color(0xFFE8EEF7),
@@ -2290,20 +2304,7 @@ fun LauncherScreen(
                     )
                 },
                 confirmButton = {
-                    TextButton(
-                        onClick = {
-                            val name = newHomeGroupName
-                            if (groupNameExists(name)) {
-                                Toast.makeText(context, "Groups already exist", Toast.LENGTH_SHORT).show()
-                            } else if (!prefs.canAddHomeStripItem()) {
-                                Toast.makeText(context, "Home Strip is full (5 items)", Toast.LENGTH_SHORT).show()
-                                showNewHomeGroupDialog = false
-                            } else {
-                                vm.createHomeGroup(name)
-                                showNewHomeGroupDialog = false
-                            }
-                        },
-                    ) { Text("Create", color = themePalette.settingsMenuBody) }
+                    TextButton(onClick = onCreateGroup) { Text("Create", color = themePalette.settingsMenuBody) }
                 },
                 dismissButton = {
                     TextButton(onClick = { showNewHomeGroupDialog = false }) {
@@ -5551,7 +5552,7 @@ private fun HomeWidgetPickerSheet(
                     onValueChange = { query = it },
                     singleLine = true,
                     placeholder = {
-                        Text("Search apps, widgets and shortcuts", color = Color(0xFFB7BCC3), fontSize = 20.sp)
+                        Text("Search widgets", color = Color(0xFFB7BCC3), fontSize = 20.sp)
                     },
                     colors = TextFieldDefaults.colors(
                         focusedTextColor = Color(0xFFEAF1FB),
@@ -5850,9 +5851,6 @@ private fun HomeActionsSheet(
             }
             if (newHomeGroupEnabled) {
                 MenuRow(Icons.Rounded.Folder, "New group", "Create a compact home folder", onClick = onNewHomeGroup)
-            }
-            if (pinToHomepageEnabled) {
-                MenuRow(Icons.AutoMirrored.Rounded.PlaylistAdd, "Pin to Home Strip", "Add an app shortcut to the bottom row", onClick = onPinToHomeStrip)
             }
             MenuRow(
                 Icons.Rounded.Settings,
@@ -6974,10 +6972,10 @@ private fun FolderTile(
     val phaseFlipped = remember(displayLabel) { displayLabel.hashCode() and 1 != 0 }
     val wiggle = rememberInfiniteTransition(label = "folderWiggle")
     val wiggleRotation by wiggle.animateFloat(
-        initialValue = if (phaseFlipped) 2.8f else -2.8f,
-        targetValue = if (phaseFlipped) -2.8f else 2.8f,
+        initialValue = if (phaseFlipped) 3.5f else -3.5f,
+        targetValue = if (phaseFlipped) -3.5f else 3.5f,
         animationSpec = infiniteRepeatable(
-            animation = tween(durationMillis = 220, easing = LinearEasing),
+            animation = tween(durationMillis = 200, easing = LinearEasing),
             repeatMode = RepeatMode.Reverse,
         ),
         label = "wiggleRotation",
@@ -7207,10 +7205,10 @@ private fun AppTile(
     // LinearEasing gives constant angular velocity so the icon decelerates smoothly at each
     // extreme — no asymmetric snap that FastOutSlowInEasing causes in reverse cycles.
     val wiggleRotation by wiggle.animateFloat(
-        initialValue = if (phaseFlipped) 2.8f else -2.8f,
-        targetValue = if (phaseFlipped) -2.8f else 2.8f,
+        initialValue = if (phaseFlipped) 3.5f else -3.5f,
+        targetValue = if (phaseFlipped) -3.5f else 3.5f,
         animationSpec = infiniteRepeatable(
-            animation = tween(durationMillis = 220, easing = LinearEasing),
+            animation = tween(durationMillis = 200, easing = LinearEasing),
             repeatMode = RepeatMode.Reverse,
         ),
         label = "wiggleRotation",
@@ -8012,7 +8010,7 @@ private fun FolderDrawerContextMenu(
                 "Rename folder",
                 onClick = { renameOpen = true },
             )
-            MenuRow(Icons.Rounded.SwapVert, "Reorder apps", onClick = onReorderApps)
+            MenuRow(Icons.Rounded.SwapVert, "Arrange", onClick = onReorderApps)
             if (showPinToHomeStrip) {
                 MenuRow(Icons.Rounded.BookmarkAdd, "Pin to Home Strip", onClick = onPinToHomeStrip)
             }
@@ -8163,7 +8161,7 @@ private fun AppContextMenu(
                     if (isHidden) "Unhide" else "Hide",
                     onHideToggle,
                 )
-                MenuRow(Icons.Rounded.SwapVert, "Reorder apps", onReorder)
+                MenuRow(Icons.Rounded.SwapVert, "Arrange", onReorder)
                 if (drawerFolderActionsEnabled) {
                     MenuRow(
                         Icons.Rounded.Folder,
@@ -8586,9 +8584,9 @@ private fun HomeShortcutStrip(
 
     val wiggle = rememberInfiniteTransition(label = "homeStripWiggle")
     val wiggleRot by wiggle.animateFloat(
-        initialValue = -2.5f,
-        targetValue = 2.5f,
-        animationSpec = infiniteRepeatable(tween(220, easing = LinearEasing), RepeatMode.Reverse),
+        initialValue = -3.5f,
+        targetValue = 3.5f,
+        animationSpec = infiniteRepeatable(tween(200, easing = LinearEasing), RepeatMode.Reverse),
         label = "homeStripWiggleRot",
     )
     val wiggleStr by animateFloatAsState(
