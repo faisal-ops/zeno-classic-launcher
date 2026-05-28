@@ -116,24 +116,54 @@ class LauncherActions(private val context: Context) {
     }
 
     fun launchMail(): Boolean {
-        // Prefer Zeno Hub when installed — it provides the unified inbox experience.
-        if (launchApp("com.zeno.hub")) return true
-        val intent = Intent(Intent.ACTION_SENDTO, Uri.parse("mailto:"))
-        val resolved = pm.resolveActivity(intent, PackageManager.MATCH_DEFAULT_ONLY) ?: return false
-        return launchApp(resolved.activityInfo.packageName)
+        // Try resolving the system default mail handler
+        val intent = Intent(Intent.ACTION_SENDTO, Uri.parse("mailto:")).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+        val resolved = pm.resolveActivity(intent, PackageManager.MATCH_DEFAULT_ONLY)
+        if (resolved != null) {
+            val pkg = resolved.activityInfo.packageName
+            // Exclude the resolver/chooser itself
+            if (!pkg.startsWith("android") && launchApp(pkg)) return true
+        }
+        // Fallback to common mail apps
+        val mailFallbacks = listOf(
+            "com.google.android.gm",          // Gmail
+            "com.microsoft.office.outlook",    // Outlook
+            "com.yahoo.mobile.client.android.mail", // Yahoo Mail
+        )
+        for (pkg in mailFallbacks) {
+            if (launchApp(pkg)) return true
+        }
+        return false
     }
 
     fun launchMessages(): Boolean {
-        val intent = Intent(Intent.ACTION_MAIN).apply {
+        // Try system default messaging handler
+        val messaging = Intent(Intent.ACTION_MAIN).apply {
             addCategory(Intent.CATEGORY_APP_MESSAGING)
             addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
         }
-        val resolved = pm.resolveActivity(intent, PackageManager.MATCH_DEFAULT_ONLY)
-        if (resolved != null) return launchApp(resolved.activityInfo.packageName)
-
+        val resolved = pm.resolveActivity(messaging, PackageManager.MATCH_DEFAULT_ONLY)
+        if (resolved != null) {
+            val pkg = resolved.activityInfo.packageName
+            if (!pkg.startsWith("android") && launchApp(pkg)) return true
+        }
+        // Try smsto: intent (respects user's default SMS app)
         val sms = Intent(Intent.ACTION_SENDTO, Uri.parse("smsto:")).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
-        val resolvedSms = pm.resolveActivity(sms, PackageManager.MATCH_DEFAULT_ONLY) ?: return false
-        return launchApp(resolvedSms.activityInfo.packageName)
+        val resolvedSms = pm.resolveActivity(sms, PackageManager.MATCH_DEFAULT_ONLY)
+        if (resolvedSms != null) {
+            val pkg = resolvedSms.activityInfo.packageName
+            if (!pkg.startsWith("android") && launchApp(pkg)) return true
+        }
+        // Fallback to common messaging apps
+        val messagingFallbacks = listOf(
+            "com.google.android.apps.messaging", // Google Messages
+            "com.samsung.android.messaging",     // Samsung Messages
+            "com.whatsapp",                      // WhatsApp
+        )
+        for (pkg in messagingFallbacks) {
+            if (launchApp(pkg)) return true
+        }
+        return false
     }
 
     /** System static wallpaper / “Wallpapers” entry (OEM chooser). */
