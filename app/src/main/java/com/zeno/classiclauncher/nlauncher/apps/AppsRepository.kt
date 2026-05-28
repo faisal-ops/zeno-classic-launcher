@@ -6,6 +6,10 @@ import android.content.Context
 import android.content.Intent
 import android.content.IntentFilter
 import android.content.pm.PackageManager
+import android.graphics.Bitmap
+import android.graphics.Canvas
+import android.graphics.drawable.AdaptiveIconDrawable
+import android.graphics.drawable.BitmapDrawable
 import android.graphics.drawable.Drawable
 import android.os.Build
 import com.zeno.classiclauncher.nlauncher.R
@@ -25,11 +29,56 @@ class AppsRepository(private val context: Context) {
 
     companion object {
         const val INTERNAL_SETTINGS_PACKAGE = "classiclauncher.internal.settings"
+
+        /**
+         * Icon raster size in pixels. 192px gives sharp icons on xxhdpi (3×) and higher.
+         * Keep this a power-of-two multiple of 48dp so downscaling stays clean.
+         */
+        private const val ICON_SIZE_PX = 192
+    }
+
+    /**
+     * Flatten an [AdaptiveIconDrawable] into a plain [BitmapDrawable] by compositing
+     * the background and foreground layers directly — without applying the system's icon
+     * mask path. This lets our own Compose `.clip()` control the shape instead of the
+     * ROM's adaptive-icon mask (which on LineageOS / Android 16+ is baked in during
+     * [Drawable.draw] and would override our per-preference shape).
+     *
+     * For non-adaptive drawables the input is returned unchanged.
+     */
+    @Suppress("DEPRECATION")
+    private fun flattenAdaptiveIcon(drawable: Drawable): Drawable {
+        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.O) return drawable
+        if (drawable !is AdaptiveIconDrawable) return drawable
+
+        val size = ICON_SIZE_PX
+        // AdaptiveIconDrawable assets are designed for a 108×108 canvas where only the
+        // centre 72×72 is the "safe zone". To avoid showing bleed content, we draw the
+        // layers into a canvas that is slightly larger and let the bitmap bounds crop it.
+        // inset = size × (1/8) / (1 + 2/8) ≈ size × 0.1
+        val inset = (size * 0.1f).toInt()
+
+        val bitmap = Bitmap.createBitmap(size, size, Bitmap.Config.ARGB_8888)
+        val canvas = Canvas(bitmap)
+
+        drawable.background?.let { bg ->
+            bg.setBounds(-inset, -inset, size + inset, size + inset)
+            bg.draw(canvas)
+        }
+        drawable.foreground?.let { fg ->
+            fg.setBounds(-inset, -inset, size + inset, size + inset)
+            fg.draw(canvas)
+        }
+
+        return BitmapDrawable(context.resources, bitmap)
     }
 
     @Suppress("NOTHING_TO_INLINE")
     private inline fun getCachedIcon(pkg: String): Drawable? =
-        iconCache[pkg] ?: runCatching { pm.getApplicationIcon(pkg) }.getOrNull()?.also { iconCache[pkg] = it }
+        iconCache[pkg] ?: runCatching { pm.getApplicationIcon(pkg) }
+            .getOrNull()
+            ?.let { flattenAdaptiveIcon(it) }
+            ?.also { iconCache[pkg] = it }
 
     private suspend fun loadLaunchableApps(): List<AppEntry> = withContext(Dispatchers.IO) {
         val intent = Intent(Intent.ACTION_MAIN, null).apply {
