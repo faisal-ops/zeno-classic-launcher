@@ -24,9 +24,21 @@ class IconPackRepository(private val context: Context) {
     private val drawableCache = ConcurrentHashMap<String, Drawable>()
 
     suspend fun installedIconPacks(): List<IconPackEntry> = withContext(Dispatchers.IO) {
-        val launchIntent = Intent(Intent.ACTION_MAIN).addCategory(Intent.CATEGORY_LAUNCHER)
-        pm.queryIntentActivities(launchIntent, 0)
-            .asSequence()
+        // Collect ApplicationInfo from every known icon-pack discovery intent.
+        // Many icon packs don't register a CATEGORY_LAUNCHER activity, so querying
+        // only that intent misses them. We also query the standard icon pack action
+        // strings that packs declare in their manifests.
+        val discoveryIntents = listOf(
+            Intent(Intent.ACTION_MAIN).addCategory(Intent.CATEGORY_LAUNCHER),
+            Intent("org.adw.launcher.THEMES"),
+            Intent("com.novalauncher.THEME"),
+            Intent("com.teslacoilsw.launcher.THEME"),
+            Intent("com.gau.go.launcherex.theme"),
+            Intent("org.adw.launcher.icons.ACTION_PICK_ICON"),
+        )
+
+        discoveryIntents
+            .flatMap { pm.queryIntentActivities(it, 0) }
             .mapNotNull { it.activityInfo?.applicationInfo }
             .distinctBy { it.packageName }
             .filter { it.packageName != context.packageName }
@@ -39,7 +51,6 @@ class IconPackRepository(private val context: Context) {
                 )
             }
             .sortedBy { it.label.lowercase() }
-            .toList()
     }
 
     suspend fun applyIconPack(apps: List<AppEntry>, iconPackPackage: String): List<AppEntry> = withContext(Dispatchers.IO) {
