@@ -23,12 +23,16 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.lazy.rememberLazyListState
+import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.rounded.ArrowBack
+import androidx.compose.material.icons.automirrored.rounded.ArrowForward
+import androidx.compose.material.icons.rounded.KeyboardArrowUp
 import androidx.compose.material.icons.outlined.Close
 import androidx.compose.material.icons.rounded.GridView
 import androidx.compose.material.icons.rounded.Lock
+import androidx.compose.material.icons.rounded.TouchApp
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
@@ -67,18 +71,20 @@ import com.zeno.classiclauncher.nlauncher.apps.AppEntry
 import com.zeno.classiclauncher.nlauncher.power.SleepManager
 import com.zeno.classiclauncher.nlauncher.theme.LauncherThemePalette
 
-private enum class GesturePicker { SwipeUp, DoubleTap, None }
+private enum class GesturePicker { SwipeUp, SwipeRight, DoubleTap, None }
 
 @Composable
 fun GestureShortcutsOverlay(
     allApps: List<AppEntry>,
     swipeUpPackage: String,
+    swipeRightPackage: String,
     doubleTapPackage: String,
     doubleTapToSleepEnabled: Boolean,
     customQuickSettingsEnabled: Boolean,
     themePalette: LauncherThemePalette,
     onDismiss: () -> Unit,
     onSetSwipeUp: (String) -> Unit,
+    onSetSwipeRight: (String) -> Unit,
     onSetDoubleTap: (String) -> Unit,
     onDoubleTapSleepChange: (Boolean) -> Unit,
     onCustomQuickSettingsChange: (Boolean) -> Unit,
@@ -86,7 +92,8 @@ fun GestureShortcutsOverlay(
     var activePicker by remember { mutableStateOf(GesturePicker.None) }
     val subtitleColor = Color(0xFF8E95A3)
     val cardBg = Color(0xFF1E2430)
-    val cardFocusedBg = Color(0xFF28303F)
+    val cardFocusedBg = Color(0xFF252D3E)
+    val cardFocusedBorder = BorderStroke(1.dp, Color(0x6684D5F6))
     val cardShape = RoundedCornerShape(16.dp)
     val context = LocalContext.current
 
@@ -99,14 +106,20 @@ fun GestureShortcutsOverlay(
     LaunchedEffect(activePicker) {
         if (activePicker == GesturePicker.None) return@LaunchedEffect
         val isDoubleTap = activePicker == GesturePicker.DoubleTap
+        val currentPkg = when (activePicker) {
+            GesturePicker.SwipeUp -> swipeUpPackage
+            GesturePicker.SwipeRight -> swipeRightPackage
+            GesturePicker.DoubleTap -> doubleTapPackage
+            GesturePicker.None -> ""
+        }
         focusedPicker = when {
             isDoubleTap && doubleTapToSleepEnabled -> 1
-            isDoubleTap && doubleTapPackage.isNotEmpty() -> {
-                val idx = allApps.indexOfFirst { it.packageName == doubleTapPackage }
+            isDoubleTap && currentPkg.isNotEmpty() -> {
+                val idx = allApps.indexOfFirst { it.packageName == currentPkg }
                 if (idx >= 0) idx + 2 else 0
             }
-            !isDoubleTap && swipeUpPackage.isNotEmpty() -> {
-                val idx = allApps.indexOfFirst { it.packageName == swipeUpPackage }
+            currentPkg.isNotEmpty() -> {
+                val idx = allApps.indexOfFirst { it.packageName == currentPkg }
                 if (idx >= 0) idx + 1 else 0
             }
             else -> 0
@@ -139,21 +152,26 @@ fun GestureShortcutsOverlay(
                 val enter = ev.key == Key.Enter || ev.key == Key.NumPadEnter ||
                     nk?.keyCode == AndroidKeyEvent.KEYCODE_DPAD_CENTER ||
                     nk?.keyCode == AndroidKeyEvent.KEYCODE_ENTER
-                val back  = ev.key == Key.Back || nk?.keyCode == AndroidKeyEvent.KEYCODE_BACK
+                // NOTE: Key.Back intentionally NOT handled here — the BackHandler handles it.
+                // Handling Back in onPreviewKeyEvent AND BackHandler causes a double-fire on
+                // physical BlackBerry back key (LineageOS), closing both the overlay AND settings.
 
                 if (activePicker != GesturePicker.None) {
                     val isDoubleTap = activePicker == GesturePicker.DoubleTap
                     val lazyOffset = if (isDoubleTap) 2 else 1
                     val maxPicker = allApps.size + lazyOffset - 1
                     when {
-                        back -> { activePicker = GesturePicker.None; true }
                         up   -> { focusedPicker = (focusedPicker - 1).coerceAtLeast(0); true }
                         down -> { focusedPicker = (focusedPicker + 1).coerceAtMost(maxPicker); true }
                         enter -> {
                             when {
                                 focusedPicker == 0 -> {
-                                    if (!isDoubleTap) onSetSwipeUp("")
-                                    else { onDoubleTapSleepChange(false); onSetDoubleTap("") }
+                                    when (activePicker) {
+                                        GesturePicker.SwipeUp -> onSetSwipeUp("")
+                                        GesturePicker.SwipeRight -> onSetSwipeRight("")
+                                        GesturePicker.DoubleTap -> { onDoubleTapSleepChange(false); onSetDoubleTap("") }
+                                        GesturePicker.None -> {}
+                                    }
                                     activePicker = GesturePicker.None
                                 }
                                 isDoubleTap && focusedPicker == 1 -> {
@@ -173,8 +191,12 @@ fun GestureShortcutsOverlay(
                                 else -> {
                                     val app = allApps.getOrNull(focusedPicker - lazyOffset)
                                     if (app != null) {
-                                        if (!isDoubleTap) onSetSwipeUp(app.packageName)
-                                        else { onDoubleTapSleepChange(false); onSetDoubleTap(app.packageName) }
+                                        when (activePicker) {
+                                            GesturePicker.SwipeUp -> onSetSwipeUp(app.packageName)
+                                            GesturePicker.SwipeRight -> onSetSwipeRight(app.packageName)
+                                            GesturePicker.DoubleTap -> { onDoubleTapSleepChange(false); onSetDoubleTap(app.packageName) }
+                                            GesturePicker.None -> {}
+                                        }
                                         activePicker = GesturePicker.None
                                     }
                                 }
@@ -185,14 +207,14 @@ fun GestureShortcutsOverlay(
                     }
                 } else {
                     when {
-                        back  -> { onDismiss(); true }
                         up    -> { focusedMain = (focusedMain - 1).coerceAtLeast(0); true }
-                        down  -> { focusedMain = (focusedMain + 1).coerceAtMost(2); true }
+                        down  -> { focusedMain = (focusedMain + 1).coerceAtMost(3); true }
                         enter -> {
                             when (focusedMain) {
                                 0 -> onCustomQuickSettingsChange(!customQuickSettingsEnabled)
                                 1 -> activePicker = GesturePicker.SwipeUp
-                                2 -> activePicker = GesturePicker.DoubleTap
+                                2 -> activePicker = GesturePicker.SwipeRight
+                                3 -> activePicker = GesturePicker.DoubleTap
                             }
                             true
                         }
@@ -207,8 +229,18 @@ fun GestureShortcutsOverlay(
         if (activePicker != GesturePicker.None) {
             val isDoubleTap = activePicker == GesturePicker.DoubleTap
             val lazyOffset = if (isDoubleTap) 2 else 1
-            val title = if (!isDoubleTap) stringResource(R.string.gesture_swipe_up_app) else stringResource(R.string.gesture_double_tap_action)
-            val current = if (!isDoubleTap) swipeUpPackage else doubleTapPackage
+            val title = when (activePicker) {
+                GesturePicker.SwipeUp -> stringResource(R.string.gesture_swipe_up_app)
+                GesturePicker.SwipeRight -> "Swipe right app"
+                GesturePicker.DoubleTap -> stringResource(R.string.gesture_double_tap_action)
+                GesturePicker.None -> ""
+            }
+            val current = when (activePicker) {
+                GesturePicker.SwipeUp -> swipeUpPackage
+                GesturePicker.SwipeRight -> swipeRightPackage
+                GesturePicker.DoubleTap -> doubleTapPackage
+                GesturePicker.None -> ""
+            }
             Column(
                 modifier = Modifier.fillMaxSize().statusBarsPadding().navigationBarsPadding(),
             ) {
@@ -227,7 +259,12 @@ fun GestureShortcutsOverlay(
                         .fillMaxWidth()
                         .then(if (focusedPicker == 0) Modifier.background(Color.White.copy(alpha = 0.07f)) else Modifier)
                         .clickable {
-                            if (!isDoubleTap) onSetSwipeUp("") else { onDoubleTapSleepChange(false); onSetDoubleTap("") }
+                            when (activePicker) {
+                                GesturePicker.SwipeUp -> onSetSwipeUp("")
+                                GesturePicker.SwipeRight -> onSetSwipeRight("")
+                                GesturePicker.DoubleTap -> { onDoubleTapSleepChange(false); onSetDoubleTap("") }
+                                GesturePicker.None -> {}
+                            }
                             activePicker = GesturePicker.None
                         }.padding(horizontal = 16.dp, vertical = 14.dp),
                     verticalAlignment = Alignment.CenterVertically,
@@ -285,8 +322,12 @@ fun GestureShortcutsOverlay(
                                 .fillMaxWidth()
                                 .then(if (focusedPicker == appIdx) Modifier.background(Color.White.copy(alpha = 0.07f)) else Modifier)
                                 .clickable {
-                                    if (!isDoubleTap) onSetSwipeUp(app.packageName)
-                                    else { onDoubleTapSleepChange(false); onSetDoubleTap(app.packageName) }
+                                    when (activePicker) {
+                                        GesturePicker.SwipeUp -> onSetSwipeUp(app.packageName)
+                                        GesturePicker.SwipeRight -> onSetSwipeRight(app.packageName)
+                                        GesturePicker.DoubleTap -> { onDoubleTapSleepChange(false); onSetDoubleTap(app.packageName) }
+                                        GesturePicker.None -> {}
+                                    }
                                     activePicker = GesturePicker.None
                                 }.padding(horizontal = 16.dp, vertical = 10.dp),
                             verticalAlignment = Alignment.CenterVertically,
@@ -299,8 +340,12 @@ fun GestureShortcutsOverlay(
                             )
                             Spacer(Modifier.width(14.dp))
                             Text(app.label, color = themePalette.settingsMenuTitle, fontSize = 15.sp, modifier = Modifier.weight(1f))
-                            val isSelected = if (!isDoubleTap) app.packageName == current
-                            else !doubleTapToSleepEnabled && app.packageName == current
+                            val isSelected = when (activePicker) {
+                                GesturePicker.SwipeUp -> app.packageName == current
+                                GesturePicker.SwipeRight -> app.packageName == current
+                                GesturePicker.DoubleTap -> !doubleTapToSleepEnabled && app.packageName == current
+                                GesturePicker.None -> false
+                            }
                             if (isSelected) {
                                 Text("✓", color = themePalette.settingsMenuBody, fontSize = 15.sp)
                             }
@@ -327,10 +372,12 @@ fun GestureShortcutsOverlay(
                 }
                 Spacer(Modifier.height(12.dp))
                 Column(modifier = Modifier.padding(horizontal = 16.dp)) {
+                    // Swipe down — quick settings toggle
                     Surface(
                         modifier = Modifier.fillMaxWidth(),
                         shape = cardShape,
                         color = if (focusedMain == 0) cardFocusedBg else cardBg,
+                        border = if (focusedMain == 0) cardFocusedBorder else null,
                     ) {
                         Row(
                             modifier = Modifier
@@ -383,15 +430,58 @@ fun GestureShortcutsOverlay(
                         modifier = Modifier.fillMaxWidth(),
                         shape = cardShape,
                         color = if (focusedMain == 1) cardFocusedBg else cardBg,
+                        border = if (focusedMain == 1) cardFocusedBorder else null,
                     ) {
-                        Column(modifier = Modifier.fillMaxWidth().clickable { activePicker = GesturePicker.SwipeUp }.padding(16.dp)) {
-                            Text(stringResource(R.string.gesture_swipe_up), color = themePalette.settingsMenuTitle, fontSize = 15.sp, fontWeight = FontWeight.Medium)
-                            Spacer(Modifier.height(2.dp))
-                            Text(
-                                if (swipeUpPackage.isEmpty()) stringResource(R.string.settings_not_configured)
-                                else allApps.find { it.packageName == swipeUpPackage }?.label ?: swipeUpPackage,
-                                color = subtitleColor, fontSize = 13.sp,
+                        Row(
+                            modifier = Modifier.fillMaxWidth().clickable { activePicker = GesturePicker.SwipeUp }.padding(16.dp),
+                            verticalAlignment = Alignment.CenterVertically,
+                        ) {
+                            Icon(
+                                Icons.Rounded.KeyboardArrowUp,
+                                contentDescription = null,
+                                tint = subtitleColor,
+                                modifier = Modifier.size(40.dp).padding(8.dp),
                             )
+                            Spacer(Modifier.width(8.dp))
+                            Column(modifier = Modifier.weight(1f)) {
+                                Text(stringResource(R.string.gesture_swipe_up), color = themePalette.settingsMenuTitle, fontSize = 15.sp, fontWeight = FontWeight.Medium)
+                                Spacer(Modifier.height(2.dp))
+                                Text(
+                                    if (swipeUpPackage.isEmpty()) stringResource(R.string.settings_not_configured)
+                                    else allApps.find { it.packageName == swipeUpPackage }?.label ?: swipeUpPackage,
+                                    color = subtitleColor, fontSize = 13.sp,
+                                )
+                            }
+                        }
+                    }
+                    Spacer(Modifier.height(10.dp))
+                    // Swipe right row
+                    Surface(
+                        modifier = Modifier.fillMaxWidth(),
+                        shape = cardShape,
+                        color = if (focusedMain == 2) cardFocusedBg else cardBg,
+                        border = if (focusedMain == 2) cardFocusedBorder else null,
+                    ) {
+                        Row(
+                            modifier = Modifier.fillMaxWidth().clickable { activePicker = GesturePicker.SwipeRight }.padding(16.dp),
+                            verticalAlignment = Alignment.CenterVertically,
+                        ) {
+                            Icon(
+                                Icons.AutoMirrored.Rounded.ArrowForward,
+                                contentDescription = null,
+                                tint = subtitleColor,
+                                modifier = Modifier.size(40.dp).padding(8.dp),
+                            )
+                            Spacer(Modifier.width(8.dp))
+                            Column(modifier = Modifier.weight(1f)) {
+                                Text("Swipe right", color = themePalette.settingsMenuTitle, fontSize = 15.sp, fontWeight = FontWeight.Medium)
+                                Spacer(Modifier.height(2.dp))
+                                Text(
+                                    if (swipeRightPackage.isEmpty()) stringResource(R.string.settings_not_configured)
+                                    else allApps.find { it.packageName == swipeRightPackage }?.label ?: swipeRightPackage,
+                                    color = subtitleColor, fontSize = 13.sp,
+                                )
+                            }
                         }
                     }
                     Spacer(Modifier.height(10.dp))
@@ -399,19 +489,32 @@ fun GestureShortcutsOverlay(
                     Surface(
                         modifier = Modifier.fillMaxWidth(),
                         shape = cardShape,
-                        color = if (focusedMain == 2) cardFocusedBg else cardBg,
+                        color = if (focusedMain == 3) cardFocusedBg else cardBg,
+                        border = if (focusedMain == 3) cardFocusedBorder else null,
                     ) {
-                        Column(modifier = Modifier.fillMaxWidth().clickable { activePicker = GesturePicker.DoubleTap }.padding(16.dp)) {
-                            Text(stringResource(R.string.gesture_double_tap), color = themePalette.settingsMenuTitle, fontSize = 15.sp, fontWeight = FontWeight.Medium)
-                            Spacer(Modifier.height(2.dp))
-                            Text(
-                                when {
-                                    doubleTapToSleepEnabled -> stringResource(R.string.gesture_sleep_lock)
-                                    doubleTapPackage.isNotEmpty() -> allApps.find { it.packageName == doubleTapPackage }?.label ?: doubleTapPackage
-                                    else -> stringResource(R.string.settings_not_configured)
-                                },
-                                color = subtitleColor, fontSize = 13.sp,
+                        Row(
+                            modifier = Modifier.fillMaxWidth().clickable { activePicker = GesturePicker.DoubleTap }.padding(16.dp),
+                            verticalAlignment = Alignment.CenterVertically,
+                        ) {
+                            Icon(
+                                Icons.Rounded.TouchApp,
+                                contentDescription = null,
+                                tint = subtitleColor,
+                                modifier = Modifier.size(40.dp).padding(8.dp),
                             )
+                            Spacer(Modifier.width(8.dp))
+                            Column(modifier = Modifier.weight(1f)) {
+                                Text(stringResource(R.string.gesture_double_tap), color = themePalette.settingsMenuTitle, fontSize = 15.sp, fontWeight = FontWeight.Medium)
+                                Spacer(Modifier.height(2.dp))
+                                Text(
+                                    when {
+                                        doubleTapToSleepEnabled -> stringResource(R.string.gesture_sleep_lock)
+                                        doubleTapPackage.isNotEmpty() -> allApps.find { it.packageName == doubleTapPackage }?.label ?: doubleTapPackage
+                                        else -> stringResource(R.string.settings_not_configured)
+                                    },
+                                    color = subtitleColor, fontSize = 13.sp,
+                                )
+                            }
                         }
                     }
                     Spacer(Modifier.height(16.dp))

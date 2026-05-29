@@ -105,10 +105,9 @@ private class FlipClockDreamView(context: Context) : View(context) {
 
     private val hourState   = TileState()
     private val minuteState = TileState()
-    private val secondState = TileState()
 
     private val ticker = object : Runnable {
-        override fun run() { tick(); postDelayed(this, 80L) }
+        override fun run() { tick(); postDelayed(this, 1000L) }
     }
 
     fun start() { removeCallbacks(ticker); post(ticker) }
@@ -117,7 +116,6 @@ private class FlipClockDreamView(context: Context) : View(context) {
         removeCallbacks(ticker)
         hourState.animator?.cancel()
         minuteState.animator?.cancel()
-        secondState.animator?.cancel()
     }
 
     override fun onDetachedFromWindow() { stop(); super.onDetachedFromWindow() }
@@ -129,7 +127,6 @@ private class FlipClockDreamView(context: Context) : View(context) {
         val hour    = if (use24h) hourRaw else { val h = hourRaw % 12; if (h == 0) 12 else h }
         updateState(hourState,   hour.toString().padStart(2, '0'))
         updateState(minuteState, now.minute.toString().padStart(2, '0'))
-        updateState(secondState, now.second.toString().padStart(2, '0'))
         invalidate()
     }
 
@@ -163,16 +160,15 @@ private class FlipClockDreamView(context: Context) : View(context) {
         canvas.save()
         canvas.translate(drift.first, drift.second)
 
-        val tileGap    = if (landscape) w * 0.025f else w * 0.030f
-        val totalWidth = if (landscape) w * 0.84f  else w * 0.92f
-        val tileWidth  = (totalWidth - 2f * tileGap) / 3f
+        val tileGap    = if (landscape) w * 0.040f else w * 0.050f
+        val totalWidth = if (landscape) w * 0.62f  else w * 0.72f
+        val tileWidth  = (totalWidth - tileGap) / 2f
         val tileHeight = min(if (landscape) h * 0.46f else h * 0.25f, tileWidth * 0.78f)
         val startX     = (w - totalWidth) / 2f
         val startY     = if (landscape) h * 0.27f else h * 0.30f
 
         drawFlipTile(canvas, RectF(startX, startY, startX + tileWidth, startY + tileHeight), hourState, period)
-        drawFlipTile(canvas, RectF(startX + tileWidth + tileGap, startY, startX + 2f * tileWidth + tileGap, startY + tileHeight), minuteState, "")
-        drawFlipTile(canvas, RectF(startX + 2f * tileWidth + 2f * tileGap, startY, startX + totalWidth, startY + tileHeight), secondState, "")
+        drawFlipTile(canvas, RectF(startX + tileWidth + tileGap, startY, startX + totalWidth, startY + tileHeight), minuteState, "")
 
         smallPaint.textSize = min(tileHeight * 0.13f, 28f)
         val dateText = now.format(dateFormatter).uppercase(Locale.getDefault()).replace(",", "")

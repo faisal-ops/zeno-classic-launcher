@@ -37,7 +37,6 @@ object LauncherBackup {
         p.put("dockSecondTitle", prefs.dockSecondTitle)
         p.put("dockThirdTitle", prefs.dockThirdTitle)
         p.put("dockSecondEnabled", prefs.dockSecondEnabled)
-        p.put("dockIconStyle", prefs.dockIconStyle.name)
         p.put("orderedPackages", JSONArray(prefs.orderedPackages))
         val folders = JSONObject()
         prefs.folderContents.forEach { (id, pkgs) ->
@@ -89,6 +88,7 @@ object LauncherBackup {
         }
         p.put("doubleTapToSleepEnabled", prefs.doubleTapToSleepEnabled)
         p.put("swipeUpPackage", prefs.swipeUpPackage)
+        p.put("swipeRightPackage", prefs.swipeRightPackage)
         p.put("doubleTapPackage", prefs.doubleTapPackage)
         p.put("showUsageStatsBadge", prefs.showUsageStatsBadge)
         p.put("showIconNotifBadge", prefs.showIconNotifBadge)
@@ -132,9 +132,6 @@ object LauncherBackup {
         val dockSecondTitle = p.optString("dockSecondTitle", "Messages").trim().ifEmpty { "Messages" }
         val dockThirdTitle = p.optString("dockThirdTitle", "Camera").trim().ifEmpty { "Camera" }
         val dockSecondEnabled = p.optBoolean("dockSecondEnabled", true)
-        val dockIconStyle = p.optString("dockIconStyle", "MONOCHROME").let { name ->
-            DockIconStyle.entries.firstOrNull { it.name == name } ?: DockIconStyle.MONOCHROME
-        }
         val orderArr = p.getJSONArray("orderedPackages")
         val ordered = buildList {
             for (i in 0 until orderArr.length()) add(orderArr.getString(i).trim())
@@ -204,6 +201,7 @@ object LauncherBackup {
         val glanceWeatherManualLongitude = p.optString("glanceWeatherManualLongitude", "").trim()
         val doubleTapSleep = p.optBoolean("doubleTapToSleepEnabled", true)
         val swipeUpPackage = p.optString("swipeUpPackage", "").trim()
+        val swipeRightPackage = p.optString("swipeRightPackage", "").trim()
         val doubleTapPackage = p.optString("doubleTapPackage", "").trim()
         val showUsageStatsBadge = p.optBoolean("showUsageStatsBadge", true)
         val showIconNotifBadge = p.optBoolean("showIconNotifBadge", true)
@@ -295,7 +293,6 @@ object LauncherBackup {
             dockSecondTitle = dockSecondTitle,
             dockThirdTitle = dockThirdTitle,
             dockSecondEnabled = dockSecondEnabled,
-            dockIconStyle = dockIconStyle,
             orderedPackages = ordered,
             folderContents = folderContents,
             folderNames = folderNames.filterKeys { folderContents.containsKey(it) },
@@ -322,6 +319,7 @@ object LauncherBackup {
             homeWidget = homeWidget,
             doubleTapToSleepEnabled = doubleTapSleep,
             swipeUpPackage = swipeUpPackage,
+            swipeRightPackage = swipeRightPackage,
             doubleTapPackage = doubleTapPackage,
             showUsageStatsBadge = showUsageStatsBadge,
             showIconNotifBadge = showIconNotifBadge,
