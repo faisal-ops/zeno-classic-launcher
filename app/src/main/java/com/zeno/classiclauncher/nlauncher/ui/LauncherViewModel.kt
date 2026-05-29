@@ -28,7 +28,6 @@ import com.zeno.classiclauncher.nlauncher.prefs.HomeGroupIds
 import com.zeno.classiclauncher.nlauncher.prefs.HomeGroupSide
 import com.zeno.classiclauncher.nlauncher.prefs.HomeWidgetConfig
 import com.zeno.classiclauncher.nlauncher.prefs.AppIconShape
-import com.zeno.classiclauncher.nlauncher.prefs.DockIconStyle
 import com.zeno.classiclauncher.nlauncher.prefs.LauncherPrefs
 import com.zeno.classiclauncher.nlauncher.prefs.LauncherPrefsRepository
 import com.zeno.classiclauncher.nlauncher.prefs.STRIP_TOTAL_SLOTS
@@ -938,10 +937,6 @@ class LauncherViewModel(app: Application) : AndroidViewModel(app) {
         }
     }
 
-    fun setDockIconStyle(style: DockIconStyle) {
-        viewModelScope.launch { prefsRepo.setDockIconStyle(style) }
-    }
-
     fun addHomeShortcut(packageName: String) {
         viewModelScope.launch {
             val snap = prefs.value
@@ -1175,6 +1170,10 @@ class LauncherViewModel(app: Application) : AndroidViewModel(app) {
 
     fun setSwipeUpPackage(pkg: String) {
         viewModelScope.launch { prefsRepo.setSwipeUpPackage(pkg) }
+    }
+
+    fun setSwipeRightPackage(pkg: String) {
+        viewModelScope.launch { prefsRepo.setSwipeRightPackage(pkg) }
     }
 
     fun setDoubleTapPackage(pkg: String) {

@@ -298,7 +298,6 @@ import com.zeno.classiclauncher.nlauncher.prefs.effectiveHomeStripSlotOrder
 import com.zeno.classiclauncher.nlauncher.prefs.moveHomeStripSlot
 import com.zeno.classiclauncher.nlauncher.prefs.LauncherPrefs
 import com.zeno.classiclauncher.nlauncher.prefs.AppIconShape
-import com.zeno.classiclauncher.nlauncher.prefs.DockIconStyle
 import com.zeno.classiclauncher.nlauncher.prefs.SecondShortcutTarget
 import com.zeno.classiclauncher.nlauncher.R
 import kotlinx.coroutines.Job
@@ -423,18 +422,6 @@ private fun appIconShapeLabel(shape: AppIconShape): String = when (shape) {
 @SuppressLint("MissingPermission")
 private fun safeWallpaperDrawable(context: android.content.Context): Drawable? =
     runCatching { WallpaperManager.getInstance(context).drawable }.getOrNull()
-
-private fun dockIconStyleLabel(style: DockIconStyle): String = when (style) {
-    DockIconStyle.MONOCHROME -> "Monochrome dock style"
-    DockIconStyle.APP -> "Original app icon"
-}
-
-private fun dockMonochromeModel(iconModel: Any?, tint: Color): Any? {
-    if (iconModel !is Drawable) return iconModel
-    val copy = iconModel.constantState?.newDrawable()?.mutate() ?: iconModel.mutate()
-    copy.setTint(tint.toArgb())
-    return copy
-}
 
 internal fun isNotificationListenerEnabled(context: android.content.Context): Boolean {
     val flat = android.provider.Settings.Secure.getString(
@@ -1076,6 +1063,8 @@ fun LauncherScreen(
                         hiddenPackages = prefs.hiddenPackages,
                         onLaunchApp = { pkg -> vm.launchApp(pkg) },
                         swipeUpPackage = prefs.swipeUpPackage,
+                        swipeRightPackage = prefs.swipeRightPackage,
+                        onOpenGestureSettings = { showGestureSettings = true },
                         doubleTapPackage = prefs.doubleTapPackage,
                         hapticsEnabled = prefs.hapticsEnabled,
                         hapticIntensity = prefs.hapticIntensity,
@@ -1375,7 +1364,6 @@ fun LauncherScreen(
                     thirdDockFallbackResId = thirdDockFallbackResId,
                     dockEndIconModel = dockEndIconModel,
                     appIconShape = prefs.appIconShape,
-                    dockIconStyle = prefs.dockIconStyle,
                     focused = dockFocused && (classicMode || pagerState.currentPage == 1 || pagerState.currentPage == 0),
                     focusedIndex = dockFocusIndex,
                 )
@@ -1775,6 +1763,7 @@ fun LauncherScreen(
                 onDismiss = { showSettings = false },
                 gestureSubtitle = remember(
                     prefs.swipeUpPackage,
+                    prefs.swipeRightPackage,
                     prefs.doubleTapPackage,
                     prefs.doubleTapToSleepEnabled,
                     prefs.customQuickSettingsEnabled,
@@ -1782,6 +1771,7 @@ fun LauncherScreen(
                     settingsNotConfigured,
                 ) {
                     if (prefs.swipeUpPackage.isNotEmpty() ||
+                        prefs.swipeRightPackage.isNotEmpty() ||
                         prefs.doubleTapToSleepEnabled ||
                         prefs.doubleTapPackage.isNotEmpty() ||
                         prefs.customQuickSettingsEnabled
@@ -1808,8 +1798,6 @@ fun LauncherScreen(
                 },
                 appIconShape = prefs.appIconShape,
                 onSetAppIconShape = vm::setAppIconShape,
-                dockIconStyle = prefs.dockIconStyle,
-                onSetDockIconStyle = vm::setDockIconStyle,
                 onOpenAppearanceSettings = { showIconAppearanceSettings = true },
                 classicMode = prefs.classicMode,
                 onToggleClassicMode = { vm.setClassicMode(!prefs.classicMode) },
@@ -1817,160 +1805,115 @@ fun LauncherScreen(
                 onToggleHomeStrip = { vm.setHomeStripEnabled(!prefs.homeStripEnabled) },
                 dockSecondEnabled = prefs.dockSecondEnabled,
                 onToggleDockSecond = { vm.setDockSecondEnabled(!prefs.dockSecondEnabled) },
-            )
-        }
-
-        if (showIconAppearanceSettings) {
-            IconAppearanceSettingsOverlay(
-                gridPreset = prefs.gridPreset,
-                appIconShape = prefs.appIconShape,
-                iconPackPackage = prefs.iconPackPackage,
-                showAppCardBackground = prefs.showAppCardBackground,
-                showIconNotifBadge = prefs.showIconNotifBadge,
-                notificationAccessReady = prefs.notificationBadgesEnabled && permRuntime.notificationAccess,
-                previewApps = allApps,
-                drawerBadgesSubtitle = remember(prefs.showIconNotifBadge, settingsNotifications, settingsAllOff) {
-                    buildList {
-                        if (prefs.showIconNotifBadge) add(settingsNotifications)
-                    }.let { if (it.isEmpty()) settingsAllOff else it.joinToString(", ") }
-                },
-                onGridPreset = vm::setGridPreset,
-                onAppGridIconSize = vm::setAppGridIconSize,
-                onSetAppIconShape = vm::setAppIconShape,
-                onSetIconPackPackage = vm::setIconPackPackage,
-                onToggleAppCardBackground = { vm.setShowAppCardBackground(!prefs.showAppCardBackground) },
-                onShowIconNotifBadgeChange = vm::setShowIconNotifBadge,
-                themePalette = themePalette,
-                onDismiss = { showIconAppearanceSettings = false },
-            )
-        }
-
-        if (showAppDrawerBadges) {
-            AppDrawerBadgesOverlay(
-                showUsageStatsBadge = prefs.showUsageStatsBadge,
-                showIconNotifBadge = prefs.showIconNotifBadge,
-                notificationAccessReady = prefs.notificationBadgesEnabled && permRuntime.notificationAccess,
-                themePalette = themePalette,
-                onDismiss = { showAppDrawerBadges = false },
-                onShowUsageStatsBadgeChange = vm::setShowUsageStatsBadge,
-                onShowIconNotifBadgeChange = vm::setShowIconNotifBadge,
-            )
-        }
-
-        if (showGestureSettings) {
-            GestureShortcutsOverlay(
-                allApps = allApps,
-                swipeUpPackage = prefs.swipeUpPackage,
-                doubleTapPackage = prefs.doubleTapPackage,
-                doubleTapToSleepEnabled = prefs.doubleTapToSleepEnabled,
-                customQuickSettingsEnabled = prefs.customQuickSettingsEnabled,
-                themePalette = themePalette,
-                onDismiss = { showGestureSettings = false },
-                onSetSwipeUp = vm::setSwipeUpPackage,
-                onSetDoubleTap = vm::setDoubleTapPackage,
-                onDoubleTapSleepChange = vm::setDoubleTapToSleepEnabled,
-                onCustomQuickSettingsChange = vm::setCustomQuickSettingsEnabled,
-            )
-        }
-
-        if (showLanguageSettings) {
-            LanguageSettingsOverlay(
-                currentLanguageCode = prefs.languageCode,
-                themePalette = themePalette,
-                onLanguageSelected = { code ->
-                    vm.setLanguageCode(code)
-                    showLanguageSettings = false
-                    context.restartHostActivityForLocaleChange()
-                },
-                onDismiss = { showLanguageSettings = false },
-            )
-        }
-
-        if (showPermissionsSettings) {
-            PermissionsSettingsOverlay(
-                prefs = prefs,
-                themePalette = themePalette,
-                onDismiss = {
-                    showPermissionsSettings = false
-                    permRuntime = computePermRuntime(context)
-                },
-                onNotificationBadgesEnabled = vm::setNotificationBadgesEnabled,
-                onDoubleTapSleepEnabled = vm::setDoubleTapToSleepEnabled,
-                onGlanceEnabled = vm::setGlanceEnabled,
-                onGlanceShowCalendar = vm::setGlanceShowCalendar,
-            )
-        }
-
-        if (!prefs.setupComplete) {
-            ZenoSetupOverlay(
-                themePalette = themePalette,
-                onClassic = {
-                    vm.setClassicMode(true)
-                    vm.setGlanceEnabled(false)
-                    vm.setHomeStripEnabled(false)
-                    vm.setCustomQuickSettingsEnabled(false)
-                    vm.setSetupComplete(true)
-                },
-                onSmartHome = {
-                    vm.setClassicMode(false)
-                    vm.setGlanceEnabled(true)
-                    vm.setHomeStripEnabled(true)
-                    vm.setCustomQuickSettingsEnabled(true)
-                    vm.setSetupComplete(true)
-                },
-                onMinimal = {
-                    vm.setClassicMode(false)
-                    vm.setGlanceEnabled(false)
-                    vm.setHomeStripEnabled(true)
-                    vm.setCustomQuickSettingsEnabled(false)
-                    vm.setSetupComplete(true)
-                },
-                onOpenPermissions = {
-                    vm.setSetupComplete(true)
-                    showPermissionsSettings = true
-                },
-                onSkip = { vm.setSetupComplete(true) },
-            )
-        }
-
-        if (showGlanceSettings) {
-            GlanceSettingsOverlay(
-                glanceEnabled = prefs.glanceEnabled,
-                glanceShowFlashlight = prefs.glanceShowFlashlight,
-                glanceShowBattery = prefs.glanceShowBattery,
-                glanceShowCalendar = prefs.glanceShowCalendar,
-                glanceShowAlarm = prefs.glanceShowAlarm,
-                glanceWeatherUnit = prefs.glanceWeatherUnit,
-                themePalette = themePalette,
-                onGlanceEnabled = vm::setGlanceEnabled,
-                onGlanceShowFlashlight = vm::setGlanceShowFlashlight,
-                onGlanceShowBattery = vm::setGlanceShowBattery,
-                onGlanceShowCalendar = vm::setGlanceShowCalendar,
-                onGlanceShowAlarm = vm::setGlanceShowAlarm,
-                onGlanceWeatherUnit = vm::setGlanceWeatherUnit,
-                onDismiss = { showGlanceSettings = false },
-            )
-        }
-
-        if (showHomeGroupsSettings) {
-            HomeGroupsSettingsOverlay(
-                groups = prefs.homeGroups,
-                allApps = allApps,
-                homeStripEnabled = prefs.homeStripEnabled,
-                themePalette = themePalette,
-                onToggleHomeStrip = vm::setHomeStripEnabled,
-                onCreateGroup = { name ->
-                    if (groupNameExists(name)) {
-                        Toast.makeText(context, "Groups already exist", Toast.LENGTH_SHORT).show()
-                    } else {
-                        vm.createHomeGroup(name)
+                childContent = {
+                    // All settings sub-overlays rendered INSIDE SettingsScreenOverlay's Box
+                    // so their BackHandlers are always deepest in the composition tree.
+                    if (showIconAppearanceSettings) {
+                        IconAppearanceSettingsOverlay(
+                            gridPreset = prefs.gridPreset,
+                            appIconShape = prefs.appIconShape,
+                            iconPackPackage = prefs.iconPackPackage,
+                            showAppCardBackground = prefs.showAppCardBackground,
+                            showIconNotifBadge = prefs.showIconNotifBadge,
+                            notificationAccessReady = prefs.notificationBadgesEnabled && permRuntime.notificationAccess,
+                            previewApps = allApps,
+                            drawerBadgesSubtitle = remember(prefs.showIconNotifBadge, settingsNotifications, settingsAllOff) {
+                                buildList {
+                                    if (prefs.showIconNotifBadge) add(settingsNotifications)
+                                }.let { if (it.isEmpty()) settingsAllOff else it.joinToString(", ") }
+                            },
+                            onGridPreset = vm::setGridPreset,
+                            onAppGridIconSize = vm::setAppGridIconSize,
+                            onSetAppIconShape = vm::setAppIconShape,
+                            onSetIconPackPackage = vm::setIconPackPackage,
+                            onToggleAppCardBackground = { vm.setShowAppCardBackground(!prefs.showAppCardBackground) },
+                            onShowIconNotifBadgeChange = vm::setShowIconNotifBadge,
+                            themePalette = themePalette,
+                            onDismiss = { showIconAppearanceSettings = false },
+                        )
+                    }
+                    if (showAppDrawerBadges) {
+                        AppDrawerBadgesOverlay(
+                            showUsageStatsBadge = prefs.showUsageStatsBadge,
+                            showIconNotifBadge = prefs.showIconNotifBadge,
+                            notificationAccessReady = prefs.notificationBadgesEnabled && permRuntime.notificationAccess,
+                            themePalette = themePalette,
+                            onDismiss = { showAppDrawerBadges = false },
+                            onShowUsageStatsBadgeChange = vm::setShowUsageStatsBadge,
+                            onShowIconNotifBadgeChange = vm::setShowIconNotifBadge,
+                        )
+                    }
+                    if (showGestureSettings) {
+                        GestureShortcutsOverlay(
+                            allApps = allApps,
+                            swipeUpPackage = prefs.swipeUpPackage,
+                            swipeRightPackage = prefs.swipeRightPackage,
+                            doubleTapPackage = prefs.doubleTapPackage,
+                            doubleTapToSleepEnabled = prefs.doubleTapToSleepEnabled,
+                            customQuickSettingsEnabled = prefs.customQuickSettingsEnabled,
+                            themePalette = themePalette,
+                            onDismiss = { showGestureSettings = false },
+                            onSetSwipeUp = vm::setSwipeUpPackage,
+                            onSetSwipeRight = vm::setSwipeRightPackage,
+                            onSetDoubleTap = vm::setDoubleTapPackage,
+                            onDoubleTapSleepChange = vm::setDoubleTapToSleepEnabled,
+                            onCustomQuickSettingsChange = vm::setCustomQuickSettingsEnabled,
+                        )
+                    }
+                    if (showLanguageSettings) {
+                        LanguageSettingsOverlay(
+                            currentLanguageCode = prefs.languageCode,
+                            themePalette = themePalette,
+                            onLanguageSelected = { code ->
+                                vm.setLanguageCode(code)
+                                showLanguageSettings = false
+                                context.restartHostActivityForLocaleChange()
+                            },
+                            onDismiss = { showLanguageSettings = false },
+                        )
+                    }
+                    if (showGlanceSettings) {
+                        GlanceSettingsOverlay(
+                            glanceEnabled = prefs.glanceEnabled,
+                            glanceShowFlashlight = prefs.glanceShowFlashlight,
+                            glanceShowBattery = prefs.glanceShowBattery,
+                            glanceShowCalendar = prefs.glanceShowCalendar,
+                            glanceShowAlarm = prefs.glanceShowAlarm,
+                            glanceWeatherUnit = prefs.glanceWeatherUnit,
+                            themePalette = themePalette,
+                            onGlanceEnabled = vm::setGlanceEnabled,
+                            onGlanceShowFlashlight = vm::setGlanceShowFlashlight,
+                            onGlanceShowBattery = vm::setGlanceShowBattery,
+                            onGlanceShowCalendar = vm::setGlanceShowCalendar,
+                            onGlanceShowAlarm = vm::setGlanceShowAlarm,
+                            onGlanceWeatherUnit = vm::setGlanceWeatherUnit,
+                            onDismiss = { showGlanceSettings = false },
+                        )
+                    }
+                    if (showHomeGroupsSettings) {
+                        HomeGroupsSettingsOverlay(
+                            groups = prefs.homeGroups,
+                            allApps = allApps,
+                            homeStripEnabled = prefs.homeStripEnabled,
+                            themePalette = themePalette,
+                            onToggleHomeStrip = vm::setHomeStripEnabled,
+                            onCreateGroup = { name ->
+                                if (groupNameExists(name)) {
+                                    Toast.makeText(context, "Groups already exist", Toast.LENGTH_SHORT).show()
+                                } else {
+                                    vm.createHomeGroup(name)
+                                }
+                            },
+                            onDeleteGroup = { id -> vm.deleteHomeGroup(id) },
+                            onDismiss = { showHomeGroupsSettings = false },
+                        )
                     }
                 },
-                onDeleteGroup = { id -> vm.deleteHomeGroup(id) },
-                onDismiss = { showHomeGroupsSettings = false },
             )
         }
 
+        // DockShortcutPickerOverlay at parent level so it works both from settings
+        // AND from the home-screen dock long-press (when showSettings = false).
         val activeDockSlot = showDockSlotPicker
         if (activeDockSlot != null) {
             DockShortcutPickerOverlay(
@@ -1996,6 +1939,51 @@ fun LauncherScreen(
                 onDismiss = { showDockSlotPicker = null },
                 dockSecondEnabled = prefs.dockSecondEnabled,
                 onToggleDockSecond = { vm.setDockSecondEnabled(!prefs.dockSecondEnabled) },
+            )
+        }
+
+        if (!prefs.setupComplete && !showPermissionsSettings) {
+            ZenoSetupOverlay(
+                themePalette = themePalette,
+                onApply = { mode ->
+                    when (mode) {
+                        0 -> { // Classic BlackBerry
+                            vm.setClassicMode(true)
+                            vm.setGlanceEnabled(false)
+                            vm.setHomeStripEnabled(false)
+                            vm.setCustomQuickSettingsEnabled(false)
+                        }
+                        1 -> { // Smart Home
+                            vm.setClassicMode(false)
+                            vm.setGlanceEnabled(true)
+                            vm.setHomeStripEnabled(true)
+                            vm.setCustomQuickSettingsEnabled(true)
+                        }
+                        else -> { // Minimal
+                            vm.setClassicMode(false)
+                            vm.setGlanceEnabled(false)
+                            vm.setHomeStripEnabled(true)
+                            vm.setCustomQuickSettingsEnabled(false)
+                        }
+                    }
+                    vm.setSetupComplete(true)
+                },
+                onOpenPermissions = { showPermissionsSettings = true },
+            )
+        }
+
+        if (showPermissionsSettings) {
+            PermissionsSettingsOverlay(
+                prefs = prefs,
+                themePalette = themePalette,
+                onDismiss = {
+                    showPermissionsSettings = false
+                    permRuntime = computePermRuntime(context)
+                },
+                onNotificationBadgesEnabled = vm::setNotificationBadgesEnabled,
+                onDoubleTapSleepEnabled = vm::setDoubleTapToSleepEnabled,
+                onGlanceEnabled = vm::setGlanceEnabled,
+                onGlanceShowCalendar = vm::setGlanceShowCalendar,
             )
         }
 
@@ -2703,6 +2691,7 @@ private fun HomePage(
     hiddenPackages: Set<String>,
     onLaunchApp: (String) -> Unit,
     swipeUpPackage: String,
+    swipeRightPackage: String,
     doubleTapPackage: String,
     hapticsEnabled: Boolean,
     hapticIntensity: Int,
@@ -2731,6 +2720,7 @@ private fun HomePage(
     onRemoveDropActiveChanged: (Boolean) -> Unit = {},
     removeDropBounds: Rect? = null,
     onRemoveDropBoundsChanged: (Rect?) -> Unit = {},
+    onOpenGestureSettings: () -> Unit = {},
 ) {
     val view = LocalView.current
     var navArea by remember { mutableStateOf(HomeNavArea.Strip) }
@@ -3123,6 +3113,47 @@ private fun HomePage(
                             if (dy < -threshold && swipeUpPackage.isNotEmpty() && searchQuery.isEmpty()) {
                                 triggered = true
                                 onLaunchApp(swipeUpPackage)
+                            }
+                        }
+                    }
+                }
+            }
+            .pointerInput(swipeRightPackage, searchQuery, homeWidgetBounds, homePageBounds, reorderMode) {
+                if (reorderMode) return@pointerInput
+                val threshold = 80.dp.toPx()
+                awaitPointerEventScope {
+                    while (true) {
+                        val down = awaitFirstDown(requireUnconsumed = false, pass = PointerEventPass.Final)
+                        if (isInsideHomeWidget(down.position)) {
+                            waitForUpOrCancellation(pass = PointerEventPass.Final)
+                            continue
+                        }
+                        val startX = down.position.x
+                        val startY = down.position.y
+                        var triggered = false
+                        while (!triggered) {
+                            val event = awaitPointerEvent(PointerEventPass.Final)
+                            val change = event.changes.firstOrNull() ?: break
+                            if (!change.pressed) break
+                            val dx = change.position.x - startX
+                            val dy = change.position.y - startY
+                            // Only fire if swipe is predominantly rightward (not a diagonal down/up swipe)
+                            if (dx > threshold && kotlin.math.abs(dx) > kotlin.math.abs(dy) * 1.5f
+                                && swipeRightPackage.isNotEmpty() && searchQuery.isEmpty()
+                            ) {
+                                triggered = true
+                                val canLaunch = context.packageManager
+                                    .getLaunchIntentForPackage(swipeRightPackage) != null
+                                if (canLaunch) {
+                                    onLaunchApp(swipeRightPackage)
+                                } else {
+                                    android.widget.Toast.makeText(
+                                        context,
+                                        "BlackBerry Hub not installed",
+                                        android.widget.Toast.LENGTH_SHORT,
+                                    ).show()
+                                    onOpenGestureSettings()
+                                }
                             }
                         }
                     }
@@ -5191,17 +5222,70 @@ private fun AddAppToContainerSheet(
 @Composable
 private fun ZenoSetupOverlay(
     themePalette: LauncherThemePalette,
-    onClassic: () -> Unit,
-    onSmartHome: () -> Unit,
-    onMinimal: () -> Unit,
+    /** Called with 0=Classic, 1=SmartHome, 2=Minimal when user presses Apply. */
+    onApply: (mode: Int) -> Unit,
     onOpenPermissions: () -> Unit,
-    onSkip: () -> Unit,
 ) {
-    BackHandler(onBack = onSkip)
+    val focusRequester = remember { FocusRequester() }
+    // selectedMode = which layout card is chosen (0-2)
+    var selectedMode by remember { mutableStateOf(0) }
+    // selectedIndex = which row the trackpad cursor is on (0-4)
+    var selectedIndex by remember { mutableStateOf(0) }
+    // 0=Classic, 1=SmartHome, 2=Minimal, 3=Permissions, 4=Apply
+    val itemCount = 5
+    val accentColor = Color(0xFF84D5F6)
+    val scope = rememberCoroutineScope()
+    val rowBringers = remember { List(itemCount) { BringIntoViewRequester() } }
+
+    fun activate(index: Int) {
+        when (index) {
+            0, 1, 2 -> selectedMode = index   // select mode, stay on screen
+            3 -> onOpenPermissions()
+            4 -> onApply(selectedMode)
+        }
+    }
+
+    LaunchedEffect(selectedIndex) {
+        rowBringers[selectedIndex].bringIntoView()
+    }
+
+    LaunchedEffect(Unit) {
+        runCatching { focusRequester.requestFocus() }
+    }
+
     Surface(
         modifier = Modifier
             .fillMaxSize()
-            .zIndex(700f),
+            .zIndex(700f)
+            .focusRequester(focusRequester)
+            .focusable()
+            .onPreviewKeyEvent { ev ->
+                if (ev.type != KeyEventType.KeyDown) return@onPreviewKeyEvent false
+                val nk = ev.nativeKeyEvent as? AndroidKeyEvent
+                when {
+                    ev.key == Key.DirectionUp || nk?.keyCode == AndroidKeyEvent.KEYCODE_DPAD_UP -> {
+                        val next = (selectedIndex - 1).coerceAtLeast(0)
+                        if (next != selectedIndex) {
+                            selectedIndex = next
+                            scope.launch { rowBringers[next].bringIntoView() }
+                        }
+                        true
+                    }
+                    ev.key == Key.DirectionDown || nk?.keyCode == AndroidKeyEvent.KEYCODE_DPAD_DOWN -> {
+                        val next = (selectedIndex + 1).coerceAtMost(itemCount - 1)
+                        if (next != selectedIndex) {
+                            selectedIndex = next
+                            scope.launch { rowBringers[next].bringIntoView() }
+                        }
+                        true
+                    }
+                    ev.key == Key.Enter || ev.key == Key.NumPadEnter ||
+                        nk?.keyCode == AndroidKeyEvent.KEYCODE_ENTER -> {
+                        activate(selectedIndex); true
+                    }
+                    else -> false
+                }
+            },
         color = Color(0xF4090D12),
     ) {
         Column(
@@ -5209,6 +5293,7 @@ private fun ZenoSetupOverlay(
                 .fillMaxSize()
                 .statusBarsPadding()
                 .navigationBarsPadding()
+                .verticalScroll(rememberScrollState())
                 .padding(horizontal = 18.dp, vertical = 16.dp),
         ) {
             Text(
@@ -5223,76 +5308,116 @@ private fun ZenoSetupOverlay(
                 style = MaterialTheme.typography.bodyMedium,
             )
             Spacer(Modifier.height(18.dp))
-            SetupModeCard(
-                icon = Icons.Rounded.GridView,
-                title = "Classic BlackBerry",
-                subtitle = "Drawer-first, compact pages, dock-focused navigation.",
-                selectedTone = Color(0xFF84D5F6),
-                onClick = onClassic,
-            )
+            Column(Modifier.bringIntoViewRequester(rowBringers[0])) {
+                SetupModeCard(
+                    icon = Icons.Rounded.GridView,
+                    title = "Classic BlackBerry",
+                    subtitle = "Drawer-first, compact pages, dock-focused navigation.",
+                    accentColor = accentColor,
+                    selected = selectedMode == 0,
+                    cursorOn = selectedIndex == 0,
+                    onClick = { selectedMode = 0; selectedIndex = 0 },
+                )
+            }
             Spacer(Modifier.height(10.dp))
-            SetupModeCard(
-                icon = Icons.Rounded.WbSunny,
-                title = "Smart Home",
-                subtitle = "Home strip, Glance, and launcher Quick Settings enabled.",
-                selectedTone = Color(0xFF84D5F6),
-                onClick = onSmartHome,
-            )
+            Column(Modifier.bringIntoViewRequester(rowBringers[1])) {
+                SetupModeCard(
+                    icon = Icons.Rounded.WbSunny,
+                    title = "Smart Home",
+                    subtitle = "Home strip, Glance, and launcher Quick Settings enabled.",
+                    accentColor = accentColor,
+                    selected = selectedMode == 1,
+                    cursorOn = selectedIndex == 1,
+                    onClick = { selectedMode = 1; selectedIndex = 1 },
+                )
+            }
             Spacer(Modifier.height(10.dp))
-            SetupModeCard(
-                icon = Icons.Rounded.FilterBAndW,
-                title = "Minimal",
-                subtitle = "Clean home screen with only essentials visible.",
-                selectedTone = Color(0xFF84D5F6),
-                onClick = onMinimal,
-            )
-            Spacer(Modifier.weight(1f))
-            Surface(
-                shape = RoundedCornerShape(18.dp),
-                color = Color(0xFF111820),
-                border = BorderStroke(0.7.dp, Color.White.copy(alpha = 0.10f)),
-            ) {
-                Column(Modifier.padding(14.dp)) {
-                    Text(
-                        "Recommended permissions",
-                        color = Color(0xFFEAF2F8),
-                        style = MaterialTheme.typography.titleSmall.copy(fontWeight = FontWeight.SemiBold),
-                    )
-                    Spacer(Modifier.height(4.dp))
-                    Text(
-                        "Enable only what you use: badges, calendar, weather, sleep helper, and usage sorting.",
-                        color = Color(0xFF9EADB8),
-                        style = MaterialTheme.typography.bodySmall,
-                    )
-                    Spacer(Modifier.height(10.dp))
-                    Row(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .clip(RoundedCornerShape(13.dp))
-                            .background(Color(0xFF1B2630))
-                            .clickable(onClick = onOpenPermissions)
-                            .padding(horizontal = 12.dp, vertical = 11.dp),
-                        verticalAlignment = Alignment.CenterVertically,
-                    ) {
-                        Icon(Icons.Rounded.Security, contentDescription = null, tint = Color(0xFF84D5F6), modifier = Modifier.size(19.dp))
-                        Spacer(Modifier.width(10.dp))
+            Column(Modifier.bringIntoViewRequester(rowBringers[2])) {
+                SetupModeCard(
+                    icon = Icons.Rounded.FilterBAndW,
+                    title = "Minimal",
+                    subtitle = "Clean home screen with only essentials visible.",
+                    accentColor = accentColor,
+                    selected = selectedMode == 2,
+                    cursorOn = selectedIndex == 2,
+                    onClick = { selectedMode = 2; selectedIndex = 2 },
+                )
+            }
+            Spacer(Modifier.height(18.dp))
+            Column(Modifier.bringIntoViewRequester(rowBringers[3])) {
+                Surface(
+                    shape = RoundedCornerShape(18.dp),
+                    color = Color(0xFF111820),
+                    border = BorderStroke(
+                        0.7.dp,
+                        if (selectedIndex == 3) accentColor else Color.White.copy(alpha = 0.10f),
+                    ),
+                ) {
+                    Column(Modifier.padding(14.dp)) {
                         Text(
-                            "Review permissions",
+                            "Recommended permissions",
                             color = Color(0xFFEAF2F8),
-                            style = MaterialTheme.typography.labelLarge.copy(fontWeight = FontWeight.SemiBold),
-                            modifier = Modifier.weight(1f),
+                            style = MaterialTheme.typography.titleSmall.copy(fontWeight = FontWeight.SemiBold),
                         )
-                        Icon(Icons.AutoMirrored.Rounded.ArrowForward, contentDescription = null, tint = Color(0xFF84D5F6), modifier = Modifier.size(18.dp))
+                        Spacer(Modifier.height(4.dp))
+                        Text(
+                            "Enable only what you use: badges, calendar, weather, sleep helper, and usage sorting.",
+                            color = Color(0xFF9EADB8),
+                            style = MaterialTheme.typography.bodySmall,
+                        )
+                        Spacer(Modifier.height(10.dp))
+                        Row(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .clip(RoundedCornerShape(13.dp))
+                                .background(
+                                    if (selectedIndex == 3) accentColor.copy(alpha = 0.15f)
+                                    else Color(0xFF1B2630)
+                                )
+                                .clickable(onClick = { selectedIndex = 3; onOpenPermissions() })
+                                .padding(horizontal = 12.dp, vertical = 11.dp),
+                            verticalAlignment = Alignment.CenterVertically,
+                        ) {
+                            Icon(Icons.Rounded.Security, contentDescription = null, tint = accentColor, modifier = Modifier.size(19.dp))
+                            Spacer(Modifier.width(10.dp))
+                            Text(
+                                "Review permissions",
+                                color = Color(0xFFEAF2F8),
+                                style = MaterialTheme.typography.labelLarge.copy(fontWeight = FontWeight.SemiBold),
+                                modifier = Modifier.weight(1f),
+                            )
+                            Icon(Icons.AutoMirrored.Rounded.ArrowForward, contentDescription = null, tint = accentColor, modifier = Modifier.size(18.dp))
+                        }
                     }
                 }
             }
-            Spacer(Modifier.height(10.dp))
-            TextButton(
-                onClick = onSkip,
-                modifier = Modifier.align(Alignment.CenterHorizontally),
+            Spacer(Modifier.height(16.dp))
+            Column(
+                Modifier
+                    .bringIntoViewRequester(rowBringers[4])
+                    .fillMaxWidth(),
             ) {
-                Text("Skip for now", color = themePalette.settingsMenuBody)
+                Surface(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .clip(RoundedCornerShape(14.dp))
+                        .clickable { onApply(selectedMode) },
+                    shape = RoundedCornerShape(14.dp),
+                    color = if (selectedIndex == 4) accentColor else accentColor.copy(alpha = 0.90f),
+                ) {
+                    Box(
+                        contentAlignment = Alignment.Center,
+                        modifier = Modifier.padding(vertical = 14.dp),
+                    ) {
+                        Text(
+                            "Apply",
+                            color = Color(0xFF070C11),
+                            style = MaterialTheme.typography.labelLarge.copy(fontWeight = FontWeight.Bold),
+                        )
+                    }
+                }
             }
+            Spacer(Modifier.height(8.dp))
         }
     }
 }
@@ -5302,7 +5427,11 @@ private fun SetupModeCard(
     icon: ImageVector,
     title: String,
     subtitle: String,
-    selectedTone: Color,
+    accentColor: Color,
+    /** True when this mode is the chosen layout (filled accent border + tint). */
+    selected: Boolean = false,
+    /** True when the trackpad cursor is resting on this row (dim highlight only). */
+    cursorOn: Boolean = false,
     onClick: () -> Unit,
 ) {
     Surface(
@@ -5310,8 +5439,19 @@ private fun SetupModeCard(
             .fillMaxWidth()
             .clickable(onClick = onClick),
         shape = RoundedCornerShape(18.dp),
-        color = Color(0xFF111820),
-        border = BorderStroke(0.8.dp, Color.White.copy(alpha = 0.10f)),
+        color = when {
+            selected -> accentColor.copy(alpha = 0.08f)
+            cursorOn -> Color.White.copy(alpha = 0.04f)
+            else -> Color(0xFF111820)
+        },
+        border = BorderStroke(
+            if (selected) 1.2.dp else 0.8.dp,
+            when {
+                selected -> accentColor
+                cursorOn -> accentColor.copy(alpha = 0.45f)
+                else -> Color.White.copy(alpha = 0.10f)
+            },
+        ),
     ) {
         Row(
             modifier = Modifier.padding(horizontal = 14.dp, vertical = 14.dp),
@@ -5321,10 +5461,10 @@ private fun SetupModeCard(
                 modifier = Modifier
                     .size(42.dp)
                     .clip(RoundedCornerShape(14.dp))
-                    .background(selectedTone.copy(alpha = 0.16f)),
+                    .background(accentColor.copy(alpha = 0.16f)),
                 contentAlignment = Alignment.Center,
             ) {
-                Icon(icon, contentDescription = null, tint = selectedTone, modifier = Modifier.size(22.dp))
+                Icon(icon, contentDescription = null, tint = accentColor, modifier = Modifier.size(22.dp))
             }
             Spacer(Modifier.width(13.dp))
             Column(Modifier.weight(1f)) {
@@ -5341,7 +5481,7 @@ private fun SetupModeCard(
                     overflow = TextOverflow.Ellipsis,
                 )
             }
-            Icon(Icons.AutoMirrored.Rounded.ArrowForward, contentDescription = null, tint = selectedTone, modifier = Modifier.size(18.dp))
+            Icon(Icons.AutoMirrored.Rounded.ArrowForward, contentDescription = null, tint = accentColor, modifier = Modifier.size(18.dp))
         }
     }
 }
@@ -9302,7 +9442,6 @@ private fun Dock(
     /** When non-null, show this drawable in the dock end slot (same as app grid). Null = default camera asset. */
     dockEndIconModel: Any?,
     appIconShape: AppIconShape,
-    dockIconStyle: DockIconStyle,
     selectedTint: Color = Color(0x664FC3F7),
     themePalette: LauncherThemePalette,
     /** True when DPAD focus is inside the dock (from AppDrawer key handler). */
@@ -9388,7 +9527,6 @@ private fun Dock(
                     selected = focused && focusedIndex == 0,
                     selectedTint = selectedTint,
                     iconTint = dockIconTint,
-                    forceMonochrome = false,
                 )
             }
             Spacer(Modifier.weight(1f))
@@ -9483,7 +9621,6 @@ private fun Dock(
                     selected = focused && focusedIndex == shortcutFocusIdx,
                     selectedTint = selectedTint,
                     iconTint = dockIconTint,
-                    forceMonochrome = false,
                 )
             }
 
@@ -9502,7 +9639,6 @@ private fun Dock(
                 selected = focused && focusedIndex == cameraFocusIdx,
                 selectedTint = selectedTint,
                 iconTint = dockIconTint,
-                forceMonochrome = false,
             )
         }
 
@@ -9652,8 +9788,7 @@ private fun Dots(
                         .shadow(5.dp, activeShape, ambientColor = spotShadow, spotColor = spotShadow)
                         .clip(activeShape)
                         .background(pageColor)
-                        .border(width = 1.dp, color = Color.Black, shape = activeShape)
-                        .padding(top = 2.dp),
+                        .border(width = 1.dp, color = Color.Black, shape = activeShape),
                     contentAlignment = Alignment.Center,
                 ) {
                     Text(
@@ -9698,12 +9833,8 @@ private fun DockEndSlot(
     selected: Boolean = false,
     selectedTint: Color = Color(0x664FC3F7),
     iconTint: Color = Color(0xFFE6E6E6),
-    forceMonochrome: Boolean = false,
     hasUnread: Boolean = false,
 ) {
-    val resolvedIconModel = remember(iconModel, forceMonochrome, iconTint) {
-        if (forceMonochrome) dockMonochromeModel(iconModel, iconTint) else iconModel
-    }
     Box(
         contentAlignment = Alignment.Center,
         modifier = modifier
@@ -9713,13 +9844,13 @@ private fun DockEndSlot(
             .combinedClickable(onClick = onClick, onLongClick = onLongPress),
     ) {
         AppIconWithBadge(hasUnread = hasUnread) {
-            if (resolvedIconModel != null) {
+            if (iconModel != null) {
                 AsyncImage(
-                    model = resolvedIconModel,
+                    model = iconModel,
                     contentDescription = null,
                     contentScale = ContentScale.Fit,
                     modifier = Modifier
-                        .size(if (forceMonochrome) iconSize * fallbackScale else iconSize)
+                        .size(iconSize) // always full icon size; fallbackScale is only for built-in PNG assets
                         .clip(iconMaskShape(appIconShape)),
                 )
             } else if (fallbackResId != null) {
@@ -9763,6 +9894,7 @@ private fun DockShortcutPickerOverlay(
         }
     }
     val dockPickerFR = remember { FocusRequester() }
+    val searchFieldFR = remember { FocusRequester() }
     var focusedApp by remember { mutableIntStateOf(0) }
     val appListState = rememberLazyListState()
     LaunchedEffect(filtered) { focusedApp = 0 }
@@ -9784,9 +9916,7 @@ private fun DockShortcutPickerOverlay(
                 val enter = ev.key == Key.Enter || ev.key == Key.NumPadEnter ||
                     nk?.keyCode == AndroidKeyEvent.KEYCODE_DPAD_CENTER ||
                     nk?.keyCode == AndroidKeyEvent.KEYCODE_ENTER
-                val back  = ev.key == Key.Back || nk?.keyCode == AndroidKeyEvent.KEYCODE_BACK
                 when {
-                    back  -> { onDismiss(); true }
                     up    -> { focusedApp = (focusedApp - 1).coerceAtLeast(0); true }
                     down  -> { focusedApp = (focusedApp + 1).coerceAtMost((filtered.size - 1).coerceAtLeast(0)); true }
                     enter -> { filtered.getOrNull(focusedApp)?.let { onSelect(it.packageName) }; true }
@@ -9795,7 +9925,7 @@ private fun DockShortcutPickerOverlay(
             },
         color = themePalette.settingsBg,
     ) {
-        LaunchedEffect(Unit) { dockPickerFR.requestFocus() }
+        LaunchedEffect(Unit) { runCatching { searchFieldFR.requestFocus() } }
         Column(
             modifier = Modifier
                 .fillMaxSize()
@@ -9867,7 +9997,8 @@ private fun DockShortcutPickerOverlay(
                 onValueChange = { query = it },
                 modifier = Modifier
                     .fillMaxWidth()
-                    .padding(horizontal = 16.dp),
+                    .padding(horizontal = 16.dp)
+                    .focusRequester(searchFieldFR),
                 placeholder = { Text(stringResource(R.string.search_apps_hint), color = themePalette.settingsMenuBody) },
                 singleLine = true,
                 colors = TextFieldDefaults.colors(
@@ -10122,7 +10253,8 @@ private fun HomeGroupsSettingsOverlay(
 ) {
     val subtitleColor = Color(0xFF8E95A3)
     val cardBg = Color(0xFF1E2430)
-    val cardFocusedBg = Color(0xFF28303F)
+    val cardFocusedBg = Color(0xFF252D3E)
+    val cardFocusedBorder = BorderStroke(1.dp, Color(0x6684D5F6))
     var newName by remember { mutableStateOf("") }
     val homeGroupsFR = remember { FocusRequester() }
     var focusedItem by remember { mutableIntStateOf(0) }
@@ -10141,9 +10273,7 @@ private fun HomeGroupsSettingsOverlay(
                 val enter = ev.key == Key.Enter || ev.key == Key.NumPadEnter ||
                     nk?.keyCode == AndroidKeyEvent.KEYCODE_DPAD_CENTER ||
                     nk?.keyCode == AndroidKeyEvent.KEYCODE_ENTER
-                val back  = ev.key == Key.Back || nk?.keyCode == AndroidKeyEvent.KEYCODE_BACK
                 when {
-                    back  -> { onDismiss(); true }
                     up    -> { focusedItem = (focusedItem - 1).coerceAtLeast(0); true }
                     down  -> { focusedItem = (focusedItem + 1).coerceAtMost(groups.size); true }
                     enter -> { if (focusedItem == 0) onToggleHomeStrip(!homeStripEnabled); true }
@@ -10199,6 +10329,7 @@ private fun HomeGroupsSettingsOverlay(
                 Surface(
                     shape = RoundedCornerShape(12.dp),
                     color = if (focusedItem == 0) cardFocusedBg else cardBg,
+                    border = if (focusedItem == 0) cardFocusedBorder else null,
                     modifier = Modifier.fillMaxWidth(),
                 ) {
                     Row(
@@ -10296,6 +10427,7 @@ private fun HomeGroupsSettingsOverlay(
                     Surface(
                         shape = RoundedCornerShape(12.dp),
                         color = if (focusedItem == gIdx + 1) cardFocusedBg else cardBg,
+                        border = if (focusedItem == gIdx + 1) cardFocusedBorder else null,
                         modifier = Modifier.fillMaxWidth(),
                     ) {
                         Row(
@@ -10347,7 +10479,8 @@ private fun GlanceSettingsOverlay(
 ) {
     val subtitleColor = Color(0xFF8E95A3)
     val cardBg = Color(0xFF1E2430)
-    val cardFocusedBg = Color(0xFF28303F)
+    val cardFocusedBg = Color(0xFF252D3E)
+    val cardFocusedBorder = BorderStroke(1.dp, Color(0x6684D5F6))
     val cardShape = RoundedCornerShape(12.dp)
     val glanceFR = remember { FocusRequester() }
     var focusedGlance by remember { mutableIntStateOf(0) }
@@ -10367,6 +10500,7 @@ private fun GlanceSettingsOverlay(
         Surface(
             shape = cardShape,
             color = if (focused) cardFocusedBg else cardBg,
+            border = if (focused) cardFocusedBorder else null,
             modifier = Modifier.fillMaxWidth(),
         ) {
             Row(
@@ -10417,9 +10551,7 @@ private fun GlanceSettingsOverlay(
                 val enter = ev.key == Key.Enter || ev.key == Key.NumPadEnter ||
                     nk?.keyCode == AndroidKeyEvent.KEYCODE_DPAD_CENTER ||
                     nk?.keyCode == AndroidKeyEvent.KEYCODE_ENTER
-                val back  = ev.key == Key.Back || nk?.keyCode == AndroidKeyEvent.KEYCODE_BACK
                 when {
-                    back  -> { onDismiss(); true }
                     up    -> { focusedGlance = (focusedGlance - 1).coerceAtLeast(0); true }
                     down  -> { focusedGlance = (focusedGlance + 1).coerceAtMost(5); true }
                     enter -> {
@@ -10490,7 +10622,7 @@ private fun GlanceSettingsOverlay(
                         onCheckedChange = onGlanceEnabled,
                     )
                 }
-                Surface(shape = cardShape, color = if (focusedGlance == 1) cardFocusedBg else cardBg, modifier = Modifier.fillMaxWidth().bringIntoViewRequester(glanceBringers[1])) {
+                Surface(shape = cardShape, color = if (focusedGlance == 1) cardFocusedBg else cardBg, border = if (focusedGlance == 1) cardFocusedBorder else null, modifier = Modifier.fillMaxWidth().bringIntoViewRequester(glanceBringers[1])) {
                     Column(modifier = Modifier.padding(horizontal = 16.dp, vertical = 12.dp)) {
                         Text(
                             stringResource(R.string.glance_weather_unit),
@@ -10665,15 +10797,6 @@ private fun IconAppearanceSettingsOverlay(
                         if (ev.type != KeyEventType.KeyDown) return@onPreviewKeyEvent false
                         val nk = ev.nativeKeyEvent
                         when {
-                            ev.key == Key.Back || nk?.keyCode == AndroidKeyEvent.KEYCODE_BACK || ev.isEndCallKey() -> {
-                                when {
-                                    showIconLayoutSettings -> showIconLayoutSettings = false
-                                    showCardBackgroundSettings -> showCardBackgroundSettings = false
-                                    showBadgeSettings -> showBadgeSettings = false
-                                    else -> onDismiss()
-                                }
-                                true
-                            }
                             ev.key == Key.DirectionUp || nk?.keyCode == AndroidKeyEvent.KEYCODE_DPAD_UP -> {
                                 val next = (selectedIndex - 1).coerceAtLeast(0)
                                 if (next != selectedIndex) {
@@ -10856,10 +10979,6 @@ private fun IconPreviewToggleOverlay(
                     if (ev.type != KeyEventType.KeyDown) return@onPreviewKeyEvent false
                     val nk = ev.nativeKeyEvent
                     when {
-                        ev.key == Key.Back || nk?.keyCode == AndroidKeyEvent.KEYCODE_BACK || ev.isEndCallKey() -> {
-                            onDismiss()
-                            true
-                        }
                         ev.key == Key.Enter ||
                             ev.key == Key.NumPadEnter ||
                             nk?.keyCode == AndroidKeyEvent.KEYCODE_DPAD_CENTER ||
@@ -11827,11 +11946,12 @@ private fun SettingsScreenOverlay(
     onToggleDockSecond: () -> Unit,
     appIconShape: AppIconShape,
     onSetAppIconShape: (AppIconShape) -> Unit,
-    dockIconStyle: DockIconStyle,
-    onSetDockIconStyle: (DockIconStyle) -> Unit,
     onOpenAppearanceSettings: () -> Unit,
     themePalette: LauncherThemePalette,
     onDismiss: () -> Unit,
+    /** Sub-overlays (Gesture, Glance, Language, etc.) rendered inside the settings panel
+     *  so their BackHandlers are deepest in the composition tree and always fire first. */
+    childContent: @Composable () -> Unit = {},
 ) {
     val context = LocalContext.current
     val view = LocalView.current
@@ -11873,6 +11993,11 @@ private fun SettingsScreenOverlay(
     }
 
     fun activate(index: Int) {
+        // Actions that open a full-screen sub-overlay: do NOT steal focus back to the
+        // settings list — the sub-overlay's own LaunchedEffect will request focus.
+        // Actions that stay on the settings list (toggles, resets, backups): reclaim
+        // focus so trackpad DPAD navigation continues to work.
+        val opensSubOverlay = index in setOf(0, 3, 4, 8, 9, 10, 12, 13)
         when (index) {
             // HOME SCREEN
             0 -> onOpenAppearanceSettings()
@@ -11900,7 +12025,16 @@ private fun SettingsScreenOverlay(
             15 -> openBackupFromDownloads.launch(SettingsDownloads.openBackupJsonPickerIntent())
         }
         doNavFeedback(view, hapticsEnabled, hapticIntensity)
-        scope.launch { focusRequester.requestFocus() }
+        if (!opensSubOverlay) {
+            scope.launch { focusRequester.requestFocus() }
+        }
+    }
+
+    // Own BackHandler: disabled when a child overlay is open so that child's BackHandler
+    // fires first. Without this, the main screen's single BackHandler would sometimes close
+    // settings entirely instead of just the child sub-screen.
+    BackHandler(enabled = !stackedChildOverlayOpen) {
+        onDismiss()
     }
 
     val cardBg = Color(0xFF1E2430)
@@ -11913,6 +12047,7 @@ private fun SettingsScreenOverlay(
             .zIndex(400f),
         color = themePalette.settingsBg,
     ) {
+        Box(modifier = Modifier.fillMaxSize()) {
         val focusManager = LocalFocusManager.current
         val settingsScrollState = rememberScrollState()
         val rowBringers = remember { List(itemCount) { BringIntoViewRequester() } }
@@ -11923,6 +12058,13 @@ private fun SettingsScreenOverlay(
         }
         LaunchedEffect(classicMode) {
             focusRequester.requestFocus()
+        }
+        // When a sub-overlay closes (stackedChildOverlayOpen transitions true→false),
+        // reclaim focus so trackpad DPAD navigation works again immediately.
+        LaunchedEffect(stackedChildOverlayOpen) {
+            if (!stackedChildOverlayOpen) {
+                focusRequester.requestFocus()
+            }
         }
         // BB Classic / Q20 trackpad sends DPAD up/down: we move selection but must scroll the viewport too.
         LaunchedEffect(selectedIndex) {
@@ -12003,11 +12145,6 @@ private fun SettingsScreenOverlay(
                                 ev.key == Key.NumPadEnter ||
                                 nk?.keyCode == AndroidKeyEvent.KEYCODE_ENTER -> {
                                 activate(selectedIndex)
-                                true
-                            }
-                            ev.key == Key.Back || nk?.keyCode == AndroidKeyEvent.KEYCODE_BACK -> {
-                                if (stackedChildOverlayOpen) return@onPreviewKeyEvent false
-                                onDismiss()
                                 true
                             }
                             else -> false
@@ -12358,6 +12495,10 @@ private fun SettingsScreenOverlay(
                 Spacer(Modifier.height(24.dp))
             }
         }
+        // Child overlays rendered INSIDE the settings panel's Box so their
+        // BackHandlers are always deepest in the composition tree (LIFO → fires first).
+        childContent()
+        } // end Box
     }
 }
 
@@ -12395,9 +12536,7 @@ private fun LanguageSettingsOverlay(
                 val enter = ev.key == Key.Enter || ev.key == Key.NumPadEnter ||
                     nk?.keyCode == AndroidKeyEvent.KEYCODE_DPAD_CENTER ||
                     nk?.keyCode == AndroidKeyEvent.KEYCODE_ENTER
-                val back  = ev.key == Key.Back || nk?.keyCode == AndroidKeyEvent.KEYCODE_BACK
                 when {
-                    back  -> { onDismiss(); true }
                     up    -> { focusedLang = (focusedLang - 1).coerceAtLeast(0); true }
                     down  -> { focusedLang = (focusedLang + 1).coerceAtMost(LauncherLocale.supportedLanguages.size - 1); true }
                     enter -> { onLanguageSelected(LauncherLocale.supportedLanguages[focusedLang].code); true }

@@ -58,11 +58,6 @@ enum class AppIconShape {
     CUT_CORNER,
 }
 
-enum class DockIconStyle {
-    MONOCHROME,
-    APP,
-}
-
 enum class GlanceCalendarRange {
     DAY,
     WEEK,
@@ -109,7 +104,6 @@ data class LauncherPrefs(
     val dockThirdTitle: String = "Camera",
     /** When false, the second dock shortcut is hidden from the dock. */
     val dockSecondEnabled: Boolean = true,
-    val dockIconStyle: DockIconStyle = DockIconStyle.MONOCHROME,
     val orderedPackages: List<String> = emptyList(),
     /** Folder slot id → member package names (order preserved). */
     val folderContents: Map<String, List<String>> = emptyMap(),
@@ -160,6 +154,8 @@ data class LauncherPrefs(
     val doubleTapToSleepEnabled: Boolean = true,
     /** Package to launch on swipe-up gesture on home. Empty = disabled. */
     val swipeUpPackage: String = "",
+    /** Package to launch on swipe-right gesture on home. Empty = disabled. */
+    val swipeRightPackage: String = "com.blackberry.hub",
     /** Package to launch on double-tap on home (only when doubleTapToSleepEnabled is false). */
     val doubleTapPackage: String = "",
     /** Show today's screen-time badge (e.g. "2h") on app icons in the drawer. */
@@ -217,7 +213,6 @@ class LauncherPrefsRepository(private val context: Context) {
         val DOCK_SECOND_TITLE = stringPreferencesKey("dockSecondTitle")
         val DOCK_THIRD_TITLE = stringPreferencesKey("dockThirdTitle")
         val DOCK_SECOND_ENABLED = booleanPreferencesKey("dockSecondEnabled")
-        val DOCK_ICON_STYLE = stringPreferencesKey("dockIconStyle")
         val ORDER = stringPreferencesKey("orderedPackagesCsv")
         val FOLDERS = stringPreferencesKey("folderContentsJson")
         val FOLDER_NAMES = stringPreferencesKey("folderNamesJson")
@@ -250,6 +245,7 @@ class LauncherPrefsRepository(private val context: Context) {
         val HOME_WIDGET_ROWS = intPreferencesKey("homeWidgetRows")
         val DOUBLE_TAP_SLEEP = booleanPreferencesKey("doubleTapToSleepEnabled")
         val SWIPE_UP_PKG = stringPreferencesKey("swipeUpPackage")
+        val SWIPE_RIGHT_PKG = stringPreferencesKey("swipeRightPackage")
         val DOUBLE_TAP_PKG = stringPreferencesKey("doubleTapPackage")
         val SHOW_USAGE_STATS_BADGE = booleanPreferencesKey("showUsageStatsBadge")
         val SHOW_ICON_NOTIF_BADGE = booleanPreferencesKey("showIconNotifBadge")
@@ -286,9 +282,6 @@ class LauncherPrefsRepository(private val context: Context) {
         val dockSecondTitle = p[Keys.DOCK_SECOND_TITLE]?.trim().orEmpty().ifEmpty { DEFAULT_PREFS.dockSecondTitle }
         val dockThirdTitle = p[Keys.DOCK_THIRD_TITLE]?.trim().orEmpty().ifEmpty { DEFAULT_PREFS.dockThirdTitle }
         val dockSecondEnabled = p[Keys.DOCK_SECOND_ENABLED] ?: DEFAULT_PREFS.dockSecondEnabled
-        val dockIconStyle =
-            p[Keys.DOCK_ICON_STYLE]?.let { v -> DockIconStyle.entries.firstOrNull { it.name == v } }
-                ?: DEFAULT_PREFS.dockIconStyle
         val order = parseCsvList(p[Keys.ORDER])
         val folders = parseFolderContentsJson(p[Keys.FOLDERS])
         val folderNames = parseFolderNamesJson(p[Keys.FOLDER_NAMES])
@@ -334,6 +327,7 @@ class LauncherPrefsRepository(private val context: Context) {
         }
         val doubleTapSleep = p[Keys.DOUBLE_TAP_SLEEP] ?: DEFAULT_PREFS.doubleTapToSleepEnabled
         val swipeUpPkg = p[Keys.SWIPE_UP_PKG]?.trim() ?: ""
+        val swipeRightPkg = p[Keys.SWIPE_RIGHT_PKG]?.trim() ?: "com.blackberry.hub"
         val doubleTapPkg = p[Keys.DOUBLE_TAP_PKG]?.trim() ?: ""
         val showUsageStatsBadge = p[Keys.SHOW_USAGE_STATS_BADGE] ?: DEFAULT_PREFS.showUsageStatsBadge
         val showIconNotifBadge = p[Keys.SHOW_ICON_NOTIF_BADGE] ?: DEFAULT_PREFS.showIconNotifBadge
@@ -363,7 +357,6 @@ class LauncherPrefsRepository(private val context: Context) {
             dockSecondTitle = dockSecondTitle,
             dockThirdTitle = dockThirdTitle,
             dockSecondEnabled = dockSecondEnabled,
-            dockIconStyle = dockIconStyle,
             orderedPackages = order,
             folderContents = folders,
             folderNames = folderNames,
@@ -390,6 +383,7 @@ class LauncherPrefsRepository(private val context: Context) {
             homeWidget = homeWidget,
             doubleTapToSleepEnabled = doubleTapSleep,
             swipeUpPackage = swipeUpPkg,
+            swipeRightPackage = swipeRightPkg,
             doubleTapPackage = doubleTapPkg,
             showUsageStatsBadge = showUsageStatsBadge,
             showIconNotifBadge = showIconNotifBadge,
@@ -452,9 +446,6 @@ class LauncherPrefsRepository(private val context: Context) {
         context.dataStore.edit { it[Keys.DOCK_SECOND_ENABLED] = enabled }
     }
 
-    suspend fun setDockIconStyle(style: DockIconStyle) {
-        context.dataStore.edit { it[Keys.DOCK_ICON_STYLE] = style.name }
-    }
 
     suspend fun setHomeStripOrder(order: List<String>) {
         context.dataStore.edit { it[Keys.HOME_STRIP_ORDER] = order.joinToString(",") }
@@ -635,6 +626,10 @@ class LauncherPrefsRepository(private val context: Context) {
         context.dataStore.edit { it[Keys.SWIPE_UP_PKG] = pkg.trim() }
     }
 
+    suspend fun setSwipeRightPackage(pkg: String) {
+        context.dataStore.edit { it[Keys.SWIPE_RIGHT_PKG] = pkg.trim() }
+    }
+
     suspend fun setDoubleTapPackage(pkg: String) {
         context.dataStore.edit { it[Keys.DOUBLE_TAP_PKG] = pkg.trim() }
     }
@@ -713,7 +708,6 @@ class LauncherPrefsRepository(private val context: Context) {
             s[Keys.DOCK_MAIL_TITLE] = prefs.dockMailTitle.trim().ifEmpty { DEFAULT_PREFS.dockMailTitle }
             s[Keys.DOCK_SECOND_TITLE] = prefs.dockSecondTitle.trim().ifEmpty { DEFAULT_PREFS.dockSecondTitle }
             s[Keys.DOCK_THIRD_TITLE] = prefs.dockThirdTitle.trim().ifEmpty { DEFAULT_PREFS.dockThirdTitle }
-            s[Keys.DOCK_ICON_STYLE] = prefs.dockIconStyle.name
             s[Keys.ORDER] = prefs.orderedPackages.joinToString(",")
             s[Keys.FOLDERS] = folderContentsToJson(prefs.folderContents)
             s[Keys.FOLDER_NAMES] = folderNamesToJson(prefs.folderNames.filterKeys { prefs.folderContents.containsKey(it) })
@@ -745,6 +739,7 @@ class LauncherPrefsRepository(private val context: Context) {
             s[Keys.HOME_WIDGET_ROWS] = prefs.homeWidget.rows.coerceIn(1, 4)
             s[Keys.DOUBLE_TAP_SLEEP] = prefs.doubleTapToSleepEnabled
             s[Keys.SWIPE_UP_PKG] = prefs.swipeUpPackage
+            s[Keys.SWIPE_RIGHT_PKG] = prefs.swipeRightPackage
             s[Keys.DOUBLE_TAP_PKG] = prefs.doubleTapPackage
             s[Keys.SHOW_USAGE_STATS_BADGE] = prefs.showUsageStatsBadge
             s[Keys.SHOW_ICON_NOTIF_BADGE] = prefs.showIconNotifBadge

@@ -144,9 +144,7 @@ fun PermissionsSettingsOverlay(
                 val enter = ev.key == Key.Enter || ev.key == Key.NumPadEnter ||
                     nk?.keyCode == AndroidKeyEvent.KEYCODE_DPAD_CENTER ||
                     nk?.keyCode == AndroidKeyEvent.KEYCODE_ENTER
-                val back  = ev.key == Key.Back || nk?.keyCode == AndroidKeyEvent.KEYCODE_BACK
                 when {
-                    back  -> { onDismiss(); true }
                     up    -> { focusedItem = (focusedItem - 1).coerceAtLeast(0); true }
                     down  -> { focusedItem = (focusedItem + 1).coerceAtMost(3); true }
                     enter -> {
