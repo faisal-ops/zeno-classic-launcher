@@ -231,6 +231,10 @@ object NotificationRepository {
         if (!isAllowedForBadge(pkg)) return false
         if (isBackgroundOrSilent(sbn, n)) return false
         if (isMailLikePackage(pkg)) {
+            // Group summaries from Gmail/Outlook are silent background bookkeeping notifications
+            // that are invisible to the user — excluding them prevents the badge from getting stuck
+            // after the user clears all visible mail notifications.
+            if (isGroupSummary(n)) return false
             return true
         }
         if (isGroupSummary(n)) return false

@@ -849,6 +849,26 @@ class LauncherViewModel(app: Application) : AndroidViewModel(app) {
         viewModelScope.launch { prefsRepo.setHidden(packageName, hidden) }
     }
 
+    fun setCustomIcon(pkg: String, uri: android.net.Uri) {
+        viewModelScope.launch(kotlinx.coroutines.Dispatchers.IO) {
+            val ok = com.zeno.classiclauncher.nlauncher.apps.CustomIconStore.save(
+                getApplication(), pkg, uri
+            )
+            if (ok) {
+                prefsRepo.addCustomIconPackage(pkg)
+                appsRepo.invalidateAndRefresh(pkg)
+            }
+        }
+    }
+
+    fun clearCustomIcon(pkg: String) {
+        viewModelScope.launch(kotlinx.coroutines.Dispatchers.IO) {
+            com.zeno.classiclauncher.nlauncher.apps.CustomIconStore.delete(getApplication(), pkg)
+            prefsRepo.removeCustomIconPackage(pkg)
+            appsRepo.invalidateAndRefresh(pkg)
+        }
+    }
+
     fun setGridPreset(preset: GridPreset) {
         viewModelScope.launch { prefsRepo.setGridPreset(preset) }
     }
@@ -1166,6 +1186,10 @@ class LauncherViewModel(app: Application) : AndroidViewModel(app) {
 
     fun setDoubleTapToSleepEnabled(enabled: Boolean) {
         viewModelScope.launch { prefsRepo.setDoubleTapToSleepEnabled(enabled) }
+    }
+
+    fun setAutoUnlockEnabled(enabled: Boolean) {
+        viewModelScope.launch { prefsRepo.setAutoUnlockEnabled(enabled) }
     }
 
     fun setSwipeUpPackage(pkg: String) {

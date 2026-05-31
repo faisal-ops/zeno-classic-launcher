@@ -96,6 +96,7 @@ fun PermissionsSettingsOverlay(
     onDismiss: () -> Unit,
     onNotificationBadgesEnabled: (Boolean) -> Unit,
     onDoubleTapSleepEnabled: (Boolean) -> Unit,
+    onAutoUnlockEnabled: (Boolean) -> Unit,
     onGlanceEnabled: (Boolean) -> Unit,
     onGlanceShowCalendar: (Boolean) -> Unit,
 ) {
@@ -278,13 +279,28 @@ fun PermissionsSettingsOverlay(
                 )
 
                 PermissionSwitchCard(
+                    title = "Auto Unlock",
+                    subtitleOff = "Off — tap overlay + Enter required",
+                    subtitleOnOk = "On — skips overlay, auto-submits PIN after 4 digits",
+                    subtitleOnMissing = "On — skips overlay, auto-submits PIN after 4 digits",
+                    featureOn = prefs.autoUnlockEnabled,
+                    permissionOk = true,
+                    focused = focusedItem == 2,
+                    themePalette = themePalette,
+                    onFeatureChange = { on -> onAutoUnlockEnabled(on) },
+                    showGrant = false,
+                    onGrant = {},
+                    grantLabel = "",
+                )
+
+                PermissionSwitchCard(
                     title = "Glance Strip (Date & Weather)",
                     subtitleOff = "Off — location not required for weather",
                     subtitleOnOk = "On — location granted (weather)",
                     subtitleOnMissing = "On — grant location for weather",
                     featureOn = prefs.glanceEnabled,
                     permissionOk = runtime.location,
-                    focused = focusedItem == 2,
+                    focused = focusedItem == 3,
                     themePalette = themePalette,
                     onFeatureChange = onGlanceEnabled,
                     showGrant = prefs.glanceEnabled && !runtime.location,
@@ -324,7 +340,7 @@ fun PermissionsSettingsOverlay(
                     },
                     featureOn = prefs.glanceShowCalendar,
                     permissionOk = runtime.calendar,
-                    focused = focusedItem == 3,
+                    focused = focusedItem == 4,
                     themePalette = themePalette,
                     enabled = true,
                     onFeatureChange = onGlanceShowCalendar,

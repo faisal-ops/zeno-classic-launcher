@@ -15,6 +15,7 @@ import android.os.Build
 import com.zeno.classiclauncher.nlauncher.R
 import kotlinx.coroutines.channels.awaitClose
 import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.callbackFlow
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
@@ -26,6 +27,15 @@ class AppsRepository(private val context: Context) {
 
     /** Warm size for typical device app counts; reduces map resize churn when listing the grid. */
     private val iconCache = ConcurrentHashMap<String, Drawable>(256)
+
+    /** Emitting to this triggers a full app list reload (e.g. after custom icon change). */
+    private val refreshTrigger = MutableSharedFlow<Unit>(extraBufferCapacity = 1)
+
+    /** Evicts [pkg] from the icon cache and signals [appsFlow] to re-emit. */
+    fun invalidateAndRefresh(pkg: String) {
+        iconCache.remove(pkg)
+        refreshTrigger.tryEmit(Unit)
+    }
 
     companion object {
         const val INTERNAL_SETTINGS_PACKAGE = "classiclauncher.internal.settings"
@@ -74,11 +84,15 @@ class AppsRepository(private val context: Context) {
     }
 
     @Suppress("NOTHING_TO_INLINE")
-    private inline fun getCachedIcon(pkg: String): Drawable? =
-        iconCache[pkg] ?: runCatching { pm.getApplicationIcon(pkg) }
+    private inline fun getCachedIcon(pkg: String): Drawable? {
+        iconCache[pkg]?.let { return it }
+        // Custom icon takes priority over PackageManager icon
+        CustomIconStore.load(context, pkg)?.also { iconCache[pkg] = it; return it }
+        return runCatching { pm.getApplicationIcon(pkg) }
             .getOrNull()
             ?.let { flattenAdaptiveIcon(it) }
             ?.also { iconCache[pkg] = it }
+    }
 
     private suspend fun loadLaunchableApps(): List<AppEntry> = withContext(Dispatchers.IO) {
         val intent = Intent(Intent.ACTION_MAIN, null).apply {
@@ -147,6 +161,9 @@ class AppsRepository(private val context: Context) {
         }
 
         launch { emitNow() }
+
+        // Re-emit when a custom icon is saved or cleared
+        launch { refreshTrigger.collect { emitNow() } }
 
         awaitClose {
             runCatching { context.unregisterReceiver(receiver) }

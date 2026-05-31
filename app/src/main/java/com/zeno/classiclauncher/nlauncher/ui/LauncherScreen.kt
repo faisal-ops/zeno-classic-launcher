@@ -183,6 +183,9 @@ import com.zeno.classiclauncher.nlauncher.backup.SettingsDownloads
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableFloatStateOf
+import androidx.compose.runtime.CompositionLocalProvider
+import androidx.compose.runtime.compositionLocalOf
+import androidx.compose.runtime.mutableLongStateOf
 import androidx.compose.runtime.mutableStateListOf
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
@@ -356,6 +359,14 @@ private val HOME_STRIP_SHORTCUT_GAP = 4.dp
 private val HOME_STRIP_FOCUS_RADIUS = 5.dp
 private val HOME_STRIP_FOCUS_INSET = 1.dp
 private val HOME_STRIP_CONTENT_VERTICAL_INSET = 2.dp
+
+/**
+ * Whether the focus highlight is currently visible.
+ * True only while the trackpad/D-pad is in active use; auto-hides after [TRACKPAD_IDLE_HIDE_MS].
+ * Default false = highlight hidden until first trackpad event.
+ */
+private val LocalTrackpadActive = androidx.compose.runtime.compositionLocalOf { false }
+private const val TRACKPAD_IDLE_HIDE_MS = 2000L
 private const val HOME_STRIP_DND_TAG = "HomeStripDnD"
 private inline fun logHomeStripDnD(message: () -> String) {
     if (BuildConfig.DEBUG) Log.d(HOME_STRIP_DND_TAG, message())
@@ -628,13 +639,19 @@ fun LauncherScreen(
             p.contains("sms") ||
             p.contains("mms")
     }
-    val dockStartIconModel = remember(prefs.dockMailPackage, allApps) {
-        val pkg = prefs.dockMailPackage.trim()
-        if (keepEnvelopeForMail(pkg)) null else appIconFor(pkg)
+    val dockStartIconModel = remember(prefs.dockMailPackage, prefs.customIconPackages, allApps) {
+        com.zeno.classiclauncher.nlauncher.apps.CustomIconStore.load(context, com.zeno.classiclauncher.nlauncher.apps.CustomIconStore.DOCK_MAIL_KEY)
+            ?: run {
+                val pkg = prefs.dockMailPackage.trim()
+                if (keepEnvelopeForMail(pkg)) null else appIconFor(pkg)
+            }
     }
-    val dockMiddleIconModel = remember(prefs.dockSecondPackage, allApps) {
-        val pkg = prefs.dockSecondPackage.trim()
-        if (keepEnvelopeForSecondShortcut(pkg) || pkg == "com.apple.android.music" || pkg == "com.zeno.pulse") null else appIconFor(pkg)
+    val dockMiddleIconModel = remember(prefs.dockSecondPackage, prefs.customIconPackages, allApps) {
+        com.zeno.classiclauncher.nlauncher.apps.CustomIconStore.load(context, com.zeno.classiclauncher.nlauncher.apps.CustomIconStore.DOCK_SHORTCUT_KEY)
+            ?: run {
+                val pkg = prefs.dockSecondPackage.trim()
+                if (keepEnvelopeForSecondShortcut(pkg) || pkg == "com.apple.android.music" || pkg == "com.zeno.pulse") null else appIconFor(pkg)
+            }
     }
     val secondDockFallbackResId = remember(prefs.dockSecondPackage, prefs.secondShortcutTarget) {
         val pkg = prefs.dockSecondPackage.trim()
@@ -654,9 +671,12 @@ fun LauncherScreen(
             else -> null
         }
     }
-    val dockEndIconModel = remember(prefs.dockCameraPackage, allApps) {
-        val pkg = prefs.dockCameraPackage.trim()
-        if (pkg.isEmpty() || thirdDockFallbackResId != null) null else appIconFor(pkg)
+    val dockEndIconModel = remember(prefs.dockCameraPackage, prefs.customIconPackages, allApps) {
+        com.zeno.classiclauncher.nlauncher.apps.CustomIconStore.load(context, com.zeno.classiclauncher.nlauncher.apps.CustomIconStore.DOCK_CAMERA_KEY)
+            ?: run {
+                val pkg = prefs.dockCameraPackage.trim()
+                if (pkg.isEmpty() || thirdDockFallbackResId != null) null else appIconFor(pkg)
+            }
     }
     val classicMode = prefs.classicMode
     val homeStripNavEligible = !classicMode && prefs.homeStripEnabled && (
@@ -817,7 +837,29 @@ fun LauncherScreen(
     LaunchedEffect(prefs.homeWidget.appWidgetId) {
         homeWidgetId = prefs.homeWidget.appWidgetId.takeIf { it > 0 }
     }
+    // ── Trackpad-aware focus visibility ──────────────────────────────────────
+    // The focus highlight is only shown while the trackpad/D-pad is in use.
+    // Any D-pad key event resets the idle timer; after TRACKPAD_IDLE_HIDE_MS of inactivity
+    // the highlight fades out. Touch input has no effect on this timer.
+    var lastTrackpadEventMs by remember { mutableStateOf(0) }
+    var trackpadActive by remember { mutableStateOf(false) }
+    LaunchedEffect(lastTrackpadEventMs) {
+        if (lastTrackpadEventMs > 0) {
+            trackpadActive = true
+            kotlinx.coroutines.delay(TRACKPAD_IDLE_HIDE_MS)
+            trackpadActive = false
+        }
+    }
+
     var showAppMenu by remember { mutableStateOf<AppEntry?>(null) }
+    var pendingIconChangePkg by remember { mutableStateOf<String?>(null) }
+    val iconPickerLauncher = rememberLauncherForActivityResult(
+        ActivityResultContracts.GetContent()
+    ) { uri ->
+        val pkg = pendingIconChangePkg
+        if (uri != null && pkg != null) vm.setCustomIcon(pkg, uri)
+        pendingIconChangePkg = null
+    }
     /** Storage token (`pkg` or `pkg#id`) when the app menu was opened from the home shortcut strip. */
     var homeShortcutMenuToken by remember { mutableStateOf<String?>(null) }
     var openFolder by remember { mutableStateOf<OpenFolderState?>(null) }
@@ -972,7 +1014,24 @@ fun LauncherScreen(
     }
 
     // Wallpaper: Theme.ClassicLauncher + FLAG_SHOW_WALLPAPER (same idea as Flutter transparent MaterialApp).
-    Box(modifier = Modifier.fillMaxSize()) {
+    CompositionLocalProvider(LocalTrackpadActive provides trackpadActive) {
+    Box(modifier = Modifier
+        .fillMaxSize()
+        .onPreviewKeyEvent { ev ->
+            if (ev.type != KeyEventType.KeyDown) return@onPreviewKeyEvent false
+            val nk = ev.nativeKeyEvent
+            val isDpad = ev.key == Key.DirectionUp || ev.key == Key.DirectionDown ||
+                ev.key == Key.DirectionLeft || ev.key == Key.DirectionRight ||
+                ev.key == Key.Enter || ev.key == Key.NumPadEnter ||
+                nk?.keyCode == android.view.KeyEvent.KEYCODE_DPAD_CENTER ||
+                nk?.keyCode == android.view.KeyEvent.KEYCODE_DPAD_UP ||
+                nk?.keyCode == android.view.KeyEvent.KEYCODE_DPAD_DOWN ||
+                nk?.keyCode == android.view.KeyEvent.KEYCODE_DPAD_LEFT ||
+                nk?.keyCode == android.view.KeyEvent.KEYCODE_DPAD_RIGHT
+            if (isDpad) lastTrackpadEventMs = (System.currentTimeMillis() % Int.MAX_VALUE).toInt()
+            false // never consume — just observe
+        }
+    ) {
         Column(modifier = Modifier.fillMaxSize()) {
             // Do not add top Spacer here: HomePage uses statusBarsPadding(); an extra inset stacked a large gap under the status bar.
             HorizontalPager(
@@ -1133,7 +1192,7 @@ fun LauncherScreen(
                         unreadPackages = if (prefs.notificationBadgesEnabled) unreadPackages else emptySet(),
                         usageStats = emptyMap(),
                         drawerSortMode = drawerSortMode,
-                        showIconNotifBadge = prefs.showIconNotifBadge,
+                        showIconNotifBadge = prefs.notificationBadgesEnabled,
                         onSortModeSelected = { mode ->
                             if (mode != DrawerSortMode.MOST_USED || vm.hasUsagePermission()) {
                                 vm.setDrawerSortMode(mode)
@@ -1388,11 +1447,21 @@ fun LauncherScreen(
                 app = selectedApp,
                 themePalette = themePalette,
                 isHidden = prefs.hiddenPackages.contains(selectedApp.packageName),
+                hasCustomIcon = prefs.customIconPackages.contains(selectedApp.packageName),
                 homeGroups = prefs.homeGroups,
                 addHomeShortcutEnabled = canAddHomeShortcut,
                 removeHomeShortcutEnabled = appMenuFromHomeShortcut,
                 drawerFolderActionsEnabled = drawerFolderActionsEnabled,
                 drawerFolders = drawerFolderChoices,
+                onChangeIcon = {
+                    pendingIconChangePkg = selectedApp.packageName
+                    showAppMenu = null
+                    iconPickerLauncher.launch("image/*")
+                },
+                onResetIcon = {
+                    vm.clearCustomIcon(selectedApp.packageName)
+                    showAppMenu = null
+                },
                 onDismiss = {
                     showAppMenu = null
                     appMenuFromHomeShortcut = false
@@ -1982,6 +2051,7 @@ fun LauncherScreen(
                 },
                 onNotificationBadgesEnabled = vm::setNotificationBadgesEnabled,
                 onDoubleTapSleepEnabled = vm::setDoubleTapToSleepEnabled,
+                onAutoUnlockEnabled = vm::setAutoUnlockEnabled,
                 onGlanceEnabled = vm::setGlanceEnabled,
                 onGlanceShowCalendar = vm::setGlanceShowCalendar,
             )
@@ -2036,6 +2106,46 @@ fun LauncherScreen(
                             Icon(Icons.Rounded.Tune, contentDescription = null, tint = Color.White, modifier = Modifier.size(20.dp))
                             Spacer(Modifier.width(14.dp))
                             Text("Change shortcut", color = Color.White, fontSize = 15.sp)
+                        }
+                        HorizontalDivider(color = Color(0x22FFFFFF))
+                        // Change icon
+                        val dockSlotKey = when (activeQuickSlot) {
+                            DockSlot.Mail     -> com.zeno.classiclauncher.nlauncher.apps.CustomIconStore.DOCK_MAIL_KEY
+                            DockSlot.Shortcut -> com.zeno.classiclauncher.nlauncher.apps.CustomIconStore.DOCK_SHORTCUT_KEY
+                            DockSlot.Camera   -> com.zeno.classiclauncher.nlauncher.apps.CustomIconStore.DOCK_CAMERA_KEY
+                        }
+                        val hasDockCustomIcon = dockSlotKey in prefs.customIconPackages
+                        Row(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .clickable {
+                                    pendingIconChangePkg = dockSlotKey
+                                    dockQuickActionSlot = null
+                                    iconPickerLauncher.launch("image/*")
+                                }
+                                .padding(horizontal = 20.dp, vertical = 16.dp),
+                            verticalAlignment = Alignment.CenterVertically,
+                        ) {
+                            Icon(Icons.Rounded.Image, contentDescription = null, tint = Color.White, modifier = Modifier.size(20.dp))
+                            Spacer(Modifier.width(14.dp))
+                            Text("Change icon", color = Color.White, fontSize = 15.sp)
+                        }
+                        if (hasDockCustomIcon) {
+                            HorizontalDivider(color = Color(0x22FFFFFF))
+                            Row(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .clickable {
+                                        vm.clearCustomIcon(dockSlotKey)
+                                        dockQuickActionSlot = null
+                                    }
+                                    .padding(horizontal = 20.dp, vertical = 16.dp),
+                                verticalAlignment = Alignment.CenterVertically,
+                            ) {
+                                Icon(Icons.Outlined.Close, contentDescription = null, tint = Color(0xFF8E95A3), modifier = Modifier.size(20.dp))
+                                Spacer(Modifier.width(14.dp))
+                                Text("Reset icon", color = Color(0xFF8E95A3), fontSize = 15.sp)
+                            }
                         }
                         HorizontalDivider(color = Color(0x22FFFFFF))
                         // Remove / hide
@@ -2311,6 +2421,7 @@ fun LauncherScreen(
                 .navigationBarsPadding(),
         )
     }
+    } // end CompositionLocalProvider(LocalTrackpadActive)
 }
 
 /**
@@ -3456,7 +3567,7 @@ private fun HomePage(
                         modifier = Modifier
                             .fillMaxWidth()
                             .bringIntoViewRequester(searchRowBringers[idx])
-                            .background(if (isFocused) Color(0x336EA8D8) else Color.Transparent)
+                            .background(if (isFocused && LocalTrackpadActive.current) Color(0x336EA8D8) else Color.Transparent)
                             .clickable {
                                 onSearchQueryChange("")
                                 onLaunchApp(app.packageName)
@@ -3471,7 +3582,7 @@ private fun HomePage(
                             modifier = Modifier.size(42.dp).clip(iconMaskShape(appIconShape)),
                         )
                         Spacer(Modifier.width(12.dp))
-                        val baseColor = if (isFocused) Color(0xFF84D5F6) else HOME_STRIP_LABEL_COLOR
+                        val baseColor = if (isFocused && LocalTrackpadActive.current) Color(0xFF84D5F6) else HOME_STRIP_LABEL_COLOR
                         val highlightColor = Color(0xFF84D5F6)
                         val label = app.label
                         val matchStart = label.indexOf(searchQuery, ignoreCase = true)
@@ -3526,7 +3637,7 @@ private fun HomePage(
                             modifier = Modifier
                                 .fillMaxWidth()
                                 .bringIntoViewRequester(searchRowBringers[absoluteIdx])
-                                .background(if (isFocused) Color(0x336EA8D8) else Color.Transparent)
+                                .background(if (isFocused && LocalTrackpadActive.current) Color(0x336EA8D8) else Color.Transparent)
                                 .clickable {
                                     onSearchQueryChange("")
                                     val intent = Intent(entry.action).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
@@ -3550,14 +3661,14 @@ private fun HomePage(
                                 Icon(
                                     Icons.Rounded.Settings,
                                     contentDescription = null,
-                                    tint = if (isFocused) Color(0xFF84D5F6) else Color(0xFF8E95A3),
+                                    tint = if (isFocused && LocalTrackpadActive.current) Color(0xFF84D5F6) else Color(0xFF8E95A3),
                                     modifier = Modifier.size(18.dp),
                                 )
                             }
                             Spacer(Modifier.width(12.dp))
                             Text(
                                 text = entry.label,
-                                color = if (isFocused) Color(0xFF84D5F6) else HOME_STRIP_LABEL_COLOR,
+                                color = if (isFocused && LocalTrackpadActive.current) Color(0xFF84D5F6) else HOME_STRIP_LABEL_COLOR,
                                 fontSize = 14.sp,
                                 fontWeight = if (isFocused) FontWeight.SemiBold else FontWeight.Normal,
                                 maxLines = 1,
@@ -7410,16 +7521,25 @@ private fun AppTile(
             Pair(sz.coerceAtLeast(40.dp), pad)
         }
 
-        if (selected) {
+        val trackpadActive = LocalTrackpadActive.current
+        val highlightAlpha by animateFloatAsState(
+            targetValue = if (selected && trackpadActive) 1f else 0f,
+            animationSpec = tween(
+                durationMillis = if (selected && trackpadActive) 120 else 500,
+                easing = FastOutSlowInEasing,
+            ),
+            label = "focusHighlightAlpha",
+        )
+        if (highlightAlpha > 0f) {
             Box(
                 modifier = Modifier
                     .padding(horizontal = focusHorizontalInset)
                     .fillMaxSize()
                     .clip(androidx.compose.foundation.shape.RoundedCornerShape(selRadius))
-                    .background(themePalette.selectorBackgroundColour)
+                    .background(themePalette.selectorBackgroundColour.copy(alpha = highlightAlpha))
                     .border(
                         width = 1.dp,
-                        color = themePalette.selectorBorderColour,
+                        color = themePalette.selectorBorderColour.copy(alpha = highlightAlpha),
                         shape = androidx.compose.foundation.shape.RoundedCornerShape(selRadius),
                     )
             )
@@ -8218,6 +8338,7 @@ private fun AppContextMenu(
     app: AppEntry,
     themePalette: LauncherThemePalette,
     isHidden: Boolean,
+    hasCustomIcon: Boolean,
     homeGroups: List<HomeGroup>,
     addHomeShortcutEnabled: Boolean,
     removeHomeShortcutEnabled: Boolean,
@@ -8228,6 +8349,8 @@ private fun AppContextMenu(
     onInfo: () -> Unit,
     onHideToggle: () -> Unit,
     onReorder: () -> Unit,
+    onChangeIcon: () -> Unit,
+    onResetIcon: () -> Unit,
     onAddHomeShortcut: () -> Unit,
     onRemoveHomeShortcut: () -> Unit,
     onAddToHomeGroup: (String) -> Unit,
@@ -8302,6 +8425,12 @@ private fun AppContextMenu(
                     onHideToggle,
                 )
                 MenuRow(Icons.Rounded.SwapVert, "Arrange", onReorder)
+                if (!app.internal) {
+                    MenuRow(Icons.Rounded.Image, "Change icon", onChangeIcon)
+                    if (hasCustomIcon) {
+                        MenuRow(Icons.Rounded.SettingsBackupRestore, "Reset icon", onResetIcon)
+                    }
+                }
                 if (drawerFolderActionsEnabled) {
                     MenuRow(
                         Icons.Rounded.Folder,

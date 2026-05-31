@@ -112,6 +112,8 @@ data class LauncherPrefs(
     /** Drawer folder ids pinned into the home strip. */
     val homePinnedFolderIds: List<String> = emptyList(),
     val hiddenPackages: Set<String> = emptySet(),
+    /** Packages that have a user-set custom icon stored in CustomIconStore. */
+    val customIconPackages: Set<String> = emptySet(),
     /**
      * Home-strip shortcut tokens (package or `package#shortcutId`). Combined with [homeGroups],
      * at most [STRIP_TOTAL_SLOTS] items can appear on the strip (see [canAddHomeStripItem]).
@@ -152,6 +154,8 @@ data class LauncherPrefs(
     val homeStripSlots: List<String?> = emptyList(),
     /** Double-tap home workspace to lock (lock helper accessibility and/or device admin). Default on. */
     val doubleTapToSleepEnabled: Boolean = true,
+    /** Skip "tap to unlock" overlay on screen-on and auto-submit PIN after 4 digits. Default on. */
+    val autoUnlockEnabled: Boolean = true,
     /** Package to launch on swipe-up gesture on home. Empty = disabled. */
     val swipeUpPackage: String = "",
     /** Package to launch on swipe-right gesture on home. Empty = disabled. */
@@ -217,6 +221,7 @@ class LauncherPrefsRepository(private val context: Context) {
         val FOLDERS = stringPreferencesKey("folderContentsJson")
         val FOLDER_NAMES = stringPreferencesKey("folderNamesJson")
         val HIDDEN = stringPreferencesKey("hiddenPackagesCsv")
+        val CUSTOM_ICON_PACKAGES = stringPreferencesKey("customIconPackagesCsv")
         val HOME_SHORTCUTS = stringPreferencesKey("homeShortcutsCsv")
         val HAPTICS = booleanPreferencesKey("hapticsEnabled")
         val HAPTIC_INTENSITY = intPreferencesKey("hapticIntensity")
@@ -244,6 +249,7 @@ class LauncherPrefsRepository(private val context: Context) {
         val HOME_WIDGET_COLS = intPreferencesKey("homeWidgetCols")
         val HOME_WIDGET_ROWS = intPreferencesKey("homeWidgetRows")
         val DOUBLE_TAP_SLEEP = booleanPreferencesKey("doubleTapToSleepEnabled")
+        val AUTO_UNLOCK = booleanPreferencesKey("autoUnlockEnabled")
         val SWIPE_UP_PKG = stringPreferencesKey("swipeUpPackage")
         val SWIPE_RIGHT_PKG = stringPreferencesKey("swipeRightPackage")
         val DOUBLE_TAP_PKG = stringPreferencesKey("doubleTapPackage")
@@ -286,6 +292,7 @@ class LauncherPrefsRepository(private val context: Context) {
         val folders = parseFolderContentsJson(p[Keys.FOLDERS])
         val folderNames = parseFolderNamesJson(p[Keys.FOLDER_NAMES])
         val hidden = parseCsvSet(p[Keys.HIDDEN])
+        val customIconPkgs = parseCsvSet(p[Keys.CUSTOM_ICON_PACKAGES])
         val homeShortcuts = parseCsvList(p[Keys.HOME_SHORTCUTS])
         val haptics = p[Keys.HAPTICS] ?: DEFAULT_PREFS.hapticsEnabled
         val hapticIntensity = (p[Keys.HAPTIC_INTENSITY] ?: DEFAULT_PREFS.hapticIntensity).coerceIn(1, 5)
@@ -326,6 +333,7 @@ class LauncherPrefsRepository(private val context: Context) {
             )
         }
         val doubleTapSleep = p[Keys.DOUBLE_TAP_SLEEP] ?: DEFAULT_PREFS.doubleTapToSleepEnabled
+        val autoUnlock = p[Keys.AUTO_UNLOCK] ?: DEFAULT_PREFS.autoUnlockEnabled
         val swipeUpPkg = p[Keys.SWIPE_UP_PKG]?.trim() ?: ""
         val swipeRightPkg = p[Keys.SWIPE_RIGHT_PKG]?.trim() ?: "com.blackberry.hub"
         val doubleTapPkg = p[Keys.DOUBLE_TAP_PKG]?.trim() ?: ""
@@ -362,6 +370,7 @@ class LauncherPrefsRepository(private val context: Context) {
             folderNames = folderNames,
             homePinnedFolderIds = homePinnedFolderIds,
             hiddenPackages = hidden,
+            customIconPackages = customIconPkgs,
             homeShortcutPackages = homeShortcuts,
             hapticsEnabled = haptics,
             hapticIntensity = hapticIntensity,
@@ -382,6 +391,7 @@ class LauncherPrefsRepository(private val context: Context) {
             homeStripSlots = homeStripSlots,
             homeWidget = homeWidget,
             doubleTapToSleepEnabled = doubleTapSleep,
+            autoUnlockEnabled = autoUnlock,
             swipeUpPackage = swipeUpPkg,
             swipeRightPackage = swipeRightPkg,
             doubleTapPackage = doubleTapPkg,
@@ -552,6 +562,22 @@ class LauncherPrefsRepository(private val context: Context) {
         }
     }
 
+    suspend fun addCustomIconPackage(pkg: String) {
+        context.dataStore.edit { prefs ->
+            val current = parseCsvMutableSet(prefs[Keys.CUSTOM_ICON_PACKAGES])
+            current.add(pkg)
+            prefs[Keys.CUSTOM_ICON_PACKAGES] = current.joinToString(",")
+        }
+    }
+
+    suspend fun removeCustomIconPackage(pkg: String) {
+        context.dataStore.edit { prefs ->
+            val current = parseCsvMutableSet(prefs[Keys.CUSTOM_ICON_PACKAGES])
+            current.remove(pkg)
+            prefs[Keys.CUSTOM_ICON_PACKAGES] = current.joinToString(",")
+        }
+    }
+
     suspend fun setHiddenPackages(packages: Set<String>) {
         context.dataStore.edit { it[Keys.HIDDEN] = packages.joinToString(",") }
     }
@@ -620,6 +646,10 @@ class LauncherPrefsRepository(private val context: Context) {
 
     suspend fun setDoubleTapToSleepEnabled(enabled: Boolean) {
         context.dataStore.edit { it[Keys.DOUBLE_TAP_SLEEP] = enabled }
+    }
+
+    suspend fun setAutoUnlockEnabled(enabled: Boolean) {
+        context.dataStore.edit { it[Keys.AUTO_UNLOCK] = enabled }
     }
 
     suspend fun setSwipeUpPackage(pkg: String) {
@@ -738,6 +768,7 @@ class LauncherPrefsRepository(private val context: Context) {
             s[Keys.HOME_WIDGET_COLS] = prefs.homeWidget.cols.coerceIn(1, 4)
             s[Keys.HOME_WIDGET_ROWS] = prefs.homeWidget.rows.coerceIn(1, 4)
             s[Keys.DOUBLE_TAP_SLEEP] = prefs.doubleTapToSleepEnabled
+            s[Keys.AUTO_UNLOCK] = prefs.autoUnlockEnabled
             s[Keys.SWIPE_UP_PKG] = prefs.swipeUpPackage
             s[Keys.SWIPE_RIGHT_PKG] = prefs.swipeRightPackage
             s[Keys.DOUBLE_TAP_PKG] = prefs.doubleTapPackage
