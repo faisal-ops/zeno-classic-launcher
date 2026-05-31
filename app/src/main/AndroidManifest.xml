@@ -131,6 +131,16 @@
             </intent-filter>
         </activity>
 
+        <activity
+            android:name=".power.DismissKeyguardActivity"
+            android:exported="false"
+            android:showWhenLocked="true"
+            android:turnScreenOn="true"
+            android:theme="@android:style/Theme.Translucent.NoTitleBar"
+            android:launchMode="singleInstance"
+            android:noHistory="true"
+            android:taskAffinity="" />
+
 <!-- exported=true: system must bind this service. Access is still restricted by
              BIND_NOTIFICATION_LISTENER_SERVICE (system/signature only). exported=false can
              block binding on API 31+. -->

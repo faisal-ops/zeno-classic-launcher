@@ -21,7 +21,7 @@ Native **Android home app** (launcher) built with **Jetpack Compose**, tuned for
 [![Downloads](https://img.shields.io/github/downloads/faisal-ops/zeno-classic-launcher/total?style=flat-square&label=downloads)](https://github.com/faisal-ops/zeno-classic-launcher/releases)
 [![Latest release](https://img.shields.io/github/v/release/faisal-ops/zeno-classic-launcher?sort=semver&style=flat-square&label=release)](https://github.com/faisal-ops/zeno-classic-launcher/releases/latest)
 
-**Install:** open **[Latest release](https://github.com/faisal-ops/zeno-classic-launcher/releases/latest)** and download the attached APK (currently **`zeno-classic-launcher-v1.2.6.apk`**).  
+**Install:** open **[Latest release](https://github.com/faisal-ops/zeno-classic-launcher/releases/latest)** and download the attached APK (currently **`zeno-classic-launcher-v1.2.8.apk`**).  
 All releases: [github.com/faisal-ops/zeno-classic-launcher/releases](https://github.com/faisal-ops/zeno-classic-launcher/releases).
 
 ---
@@ -31,12 +31,15 @@ All releases: [github.com/faisal-ops/zeno-classic-launcher/releases](https://git
 - **Home + horizontal app drawer** — Themed grid, **folders**, reorder (tap + drag), hidden apps, search ranking, most-used sorting, and compact BlackBerry-style app labels
 - **Launcher Quick Settings** — Swipe-down QS overlay with keyboard mode, internet, Bluetooth, QR scanner, battery, torch, DND, storage, hotspot, night light, rotate, NFC, cast, and more where supported by the device
 - **QS customization** — Pick the QR scanner app, long-press tiles for settings/actions, drag to rearrange tiles, reset tile order, and persist changes automatically
-- **Dock** — Mail badge (notification listener or auto/user mail app), home/page dots with scrub, optional second shortcut, and configurable mail/messages/camera-style dock targets
+- **Dock** — Mail badge (notification listener or auto/user mail app), home/page dots with scrub, optional second shortcut, configurable mail/messages/camera-style dock targets, and **custom icon override per dock slot**
 - **Glance strip** — Date, Open-Meteo **weather** (coarse location), **calendar** instances, optional battery / alarm hints, and localized glance text
 - **Settings** — Grid size, gestures, home strip, icon layout, theme JSON, app icon shape, dock shortcuts, permissions, haptics, language, and **JSON backup / restore**
-- **Hardware & keyboard** — D-pad / arrow navigation, drawer/home focus, search key handling where the device exposes it, haptic navigation, and keyboard-first edit flows
+- **Hardware & keyboard** — D-pad / trackpad navigation with **smart focus visibility** (highlight appears only while trackpad is in use, auto-hides after 2 s), search key handling, haptic navigation, and keyboard-first edit flows
+- **Auto Unlock** — On screen-on, skips the "tap to unlock" overlay and auto-submits PIN after 4 digits (physical keyboard; toggle in Settings → Permissions)
 - **Sound profiles** — Ring, Vibrate, and DND selector with system-aware fallbacks
 - **Localization** — App/settings/glance strings for English plus German, Spanish, French, Hindi, Indonesian, Italian, Japanese, Korean, Portuguese, Russian, and Chinese
+- **Notification badges** — Single toggle controls both dock and drawer badges; stuck badge fix (Gmail/Outlook group summaries excluded)
+- **Custom app icons** — Long-press any app or dock shortcut → "Change icon" to pick from gallery; "Reset icon" to restore default
 - **Notification listener** (optional) — Unread styling for dock mail badge (`BadgeNotificationListener`)
 - **Device admin** (optional) — Sleep / lock policies where enabled (`LauncherDeviceAdminReceiver`)
 - **Widgets** — Add widgets via system picker from the launcher settings sheet
@@ -49,7 +52,7 @@ All releases: [github.com/faisal-ops/zeno-classic-launcher/releases](https://git
 | **Language** | Kotlin |
 | **UI** | Jetpack Compose |
 | **`applicationId`** | `com.zeno.classiclauncher.nlauncher` |
-| **Version** | **1.2.6** (`versionCode` **10**) |
+| **Version** | **1.2.8** (`versionCode` **12**) |
 | **Min SDK** | **26** (Android 8.0) |
 | **Target SDK** | 34 |
 | **Release APK filename** | `zeno-classic-launcher-vX.Y.Z.apk` (see `app/build.gradle.kts` `outputFileName`) |
@@ -102,10 +105,10 @@ APK: `app/build/outputs/apk/debug/Zeno Classic-debug.apk`
 ./gradlew :app:assembleRelease
 ```
 
-APK: `app/build/outputs/apk/release/zeno-classic-launcher-v1.2.6.apk`
+APK: `app/build/outputs/apk/release/zeno-classic-launcher-v1.2.8.apk`
 
 ```bash
-adb install -r app/build/outputs/apk/release/zeno-classic-launcher-v1.2.6.apk
+adb install -r app/build/outputs/apk/release/zeno-classic-launcher-v1.2.8.apk
 ```
 
 Or install via Gradle (uses `adb` under the hood):
