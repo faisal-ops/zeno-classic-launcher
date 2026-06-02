@@ -4,9 +4,14 @@ import android.accessibilityservice.AccessibilityService
 import android.accessibilityservice.AccessibilityServiceInfo
 import android.app.KeyguardManager
 import android.content.BroadcastReceiver
+import android.content.ComponentName
 import android.content.Context
 import android.content.Intent
 import android.content.IntentFilter
+import android.media.AudioAttributes
+import android.media.AudioManager
+import android.media.session.MediaSessionManager
+import android.media.session.PlaybackState
 import android.os.Build
 import android.os.Handler
 import android.os.Looper
@@ -15,6 +20,7 @@ import android.view.accessibility.AccessibilityEvent
 import android.view.accessibility.AccessibilityNodeInfo
 import android.view.accessibility.AccessibilityWindowInfo
 import androidx.core.content.ContextCompat
+import com.zeno.classiclauncher.nlauncher.badges.BadgeNotificationListener
 import com.zeno.classiclauncher.nlauncher.prefs.LauncherPrefsRepository
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -56,6 +62,7 @@ class LockScreenAccessibilityService : AccessibilityService() {
                 }
                 Intent.ACTION_SCREEN_ON -> handleScreenOn()
                 Intent.ACTION_SCREEN_OFF -> handleScreenOff()
+                Intent.ACTION_USER_PRESENT -> handleUserPresent()
             }
         }
     }
@@ -74,6 +81,7 @@ class LockScreenAccessibilityService : AccessibilityService() {
             addAction(ACTION_REQUEST_LOCK)
             addAction(Intent.ACTION_SCREEN_ON)
             addAction(Intent.ACTION_SCREEN_OFF)
+            addAction(Intent.ACTION_USER_PRESENT)
         }
         ContextCompat.registerReceiver(this, screenReceiver, filter, ContextCompat.RECEIVER_NOT_EXPORTED)
 
@@ -107,9 +115,15 @@ class LockScreenAccessibilityService : AccessibilityService() {
         pollingActive = false
         handler.removeCallbacksAndMessages(null)
         val locked = keyguardManager.isKeyguardLocked
-        Log.d(TAG, "Screen on — isKeyguardLocked=$locked autoUnlockEnabled=$autoUnlockEnabled")
+        val keepLock = shouldKeepLockScreen()
+        Log.d(TAG, "Screen on — isKeyguardLocked=$locked autoUnlockEnabled=$autoUnlockEnabled keepLock=$keepLock")
         if (locked && autoUnlockEnabled) {
-            handler.postDelayed(::attemptDismiss, DISMISS_DELAY_MS)
+            if (keepLock) {
+                // Alarm or media session active — keep lock screen visible.
+                Log.d(TAG, "Keep lock screen — skipping overlay dismiss")
+            } else {
+                handler.postDelayed(::attemptDismiss, DISMISS_DELAY_MS)
+            }
         }
     }
 
@@ -121,15 +135,36 @@ class LockScreenAccessibilityService : AccessibilityService() {
         Log.d(TAG, "Screen off — all state reset")
     }
 
+    /**
+     * Fired by Android after ANY successful unlock (face, fingerprint, PIN, pattern, swipe).
+     * Brings the launcher to the foreground so the user always lands on the home screen
+     * instead of whatever app was last open — consistent with what auto-unlock does.
+     * Only acts when [autoUnlockEnabled] is true.
+     */
+    private fun handleUserPresent() {
+        Log.d(TAG, "USER_PRESENT — bringing launcher to front")
+        runCatching {
+            val intent = packageManager
+                .getLaunchIntentForPackage(packageName)
+                ?.apply { addFlags(Intent.FLAG_ACTIVITY_REORDER_TO_FRONT) }
+            if (intent != null) startActivity(intent)
+            else Log.w(TAG, "No launch intent found for $packageName")
+        }.onFailure { Log.w(TAG, "Failed to bring launcher to front: $it") }
+    }
+
     // ── Dismiss lock screen overlay ───────────────────────────────────────────
 
     private fun attemptDismiss() {
         if (!isScreenOn) return
+        // Re-check at actual dismiss time — state may have changed since screen-on
+        // (e.g. alarm fires, Spotify resumes after wake transition, BT reconnects, etc.)
+        if (shouldKeepLockScreen()) {
+            Log.d(TAG, "Keep lock screen at dismiss time — aborting dismiss")
+            return
+        }
         dismissAttempted = true
         Log.d(TAG, "Launching DismissKeyguardActivity")
         DismissKeyguardActivity.launch(this)
-        // Give the activity time to call requestDismissKeyguard and PIN bouncer to appear
-        handler.postDelayed(::startPinPolling, POLLING_START_DELAY_MS)
     }
 
     // ── PIN polling ───────────────────────────────────────────────────────────
@@ -252,6 +287,76 @@ class LockScreenAccessibilityService : AccessibilityService() {
             }
         }
         return false
+    }
+
+    // ── Lock screen keep-alive detection ─────────────────────────────────────
+
+    /**
+     * Single gate: returns true if auto-dismiss should be suppressed.
+     * Covers both alarm audio and active media sessions.
+     */
+    private fun shouldKeepLockScreen(): Boolean {
+        val systemAudio = isSystemAudioActive()
+        val media = if (!systemAudio) hasActiveMediaSession() else false
+        Log.d(TAG, "shouldKeepLockScreen — systemAudio=$systemAudio media=$media")
+        return systemAudio || media
+    }
+
+    /**
+     * Returns true if any audio playback that requires lock screen interaction is active:
+     *  - USAGE_ALARM                          : alarm / timer
+     *  - USAGE_NOTIFICATION_RINGTONE          : incoming phone call ringtone
+     *  - USAGE_VOICE_COMMUNICATION            : active phone call audio
+     *  - USAGE_NOTIFICATION_COMMUNICATION_REQUEST : VoIP incoming call (WhatsApp, Meet, etc.)
+     *  - USAGE_ASSISTANCE_NAVIGATION_GUIDANCE : GPS / turn-by-turn navigation
+     */
+    private fun isSystemAudioActive(): Boolean {
+        val keepUsages = setOf(
+            AudioAttributes.USAGE_ALARM,                         // alarm / timer
+            AudioAttributes.USAGE_NOTIFICATION_RINGTONE,         // incoming call ringtone
+            AudioAttributes.USAGE_VOICE_COMMUNICATION,           // active call / VoIP audio
+            AudioAttributes.USAGE_ASSISTANCE_NAVIGATION_GUIDANCE, // GPS navigation
+        )
+        val audioManager = getSystemService(Context.AUDIO_SERVICE) as AudioManager
+        return audioManager.activePlaybackConfigurations.any { config ->
+            config.audioAttributes.usage in keepUsages
+        }
+    }
+
+    // ── Media session detection ───────────────────────────────────────────────
+
+    /**
+     * Returns true if any media session has a "visible on lock screen" playback state:
+     * PLAYING, PAUSED, BUFFERING, FAST_FORWARDING, or REWINDING.
+     *
+     * Uses MediaSessionManager.getActiveSessions() via BadgeNotificationListener's
+     * NotificationListenerService token — no extra permission required.
+     * Falls back to AudioManager.isMusicActive() if the listener isn't connected yet.
+     *
+     * This is the correct signal for "should lock screen media controls be shown?" because
+     * Android SystemUI also uses MediaSession state (not audio hardware output) to decide
+     * whether to render media controls — isMusicActive() misses paused sessions, Bluetooth
+     * audio, and apps that briefly drop output during screen-wake transitions.
+     */
+    private fun hasActiveMediaSession(): Boolean {
+        return try {
+            val msm = getSystemService(Context.MEDIA_SESSION_SERVICE) as MediaSessionManager
+            val cn = ComponentName(this, BadgeNotificationListener::class.java)
+            val sessions = msm.getActiveSessions(cn)
+            val activeStates = setOf(
+                PlaybackState.STATE_PLAYING,
+                PlaybackState.STATE_PAUSED,
+                PlaybackState.STATE_BUFFERING,
+                PlaybackState.STATE_FAST_FORWARDING,
+                PlaybackState.STATE_REWINDING,
+            )
+            val active = sessions.any { it.playbackState?.state in activeStates }
+            Log.d(TAG, "hasActiveMediaSession — sessions=${sessions.size} active=$active")
+            active
+        } catch (e: Exception) {
+            Log.w(TAG, "MediaSessionManager check failed (listener not connected?) — falling back to isMusicActive: $e")
+            (getSystemService(Context.AUDIO_SERVICE) as AudioManager).isMusicActive
+        }
     }
 
     // ── Lock screen ───────────────────────────────────────────────────────────
