@@ -15,6 +15,7 @@ import android.media.session.PlaybackState
 import android.os.Build
 import android.os.Handler
 import android.os.Looper
+import android.provider.Settings
 import android.util.Log
 import android.view.accessibility.AccessibilityEvent
 import android.view.accessibility.AccessibilityNodeInfo
@@ -293,13 +294,25 @@ class LockScreenAccessibilityService : AccessibilityService() {
 
     /**
      * Single gate: returns true if auto-dismiss should be suppressed.
-     * Covers both alarm audio and active media sessions.
+     * Covers bedtime mode, alarm audio, and active media sessions.
      */
     private fun shouldKeepLockScreen(): Boolean {
+        val bedtime = isBedtimeModeActive()
+        if (bedtime) {
+            Log.d(TAG, "shouldKeepLockScreen — bedtime mode active, keeping lock screen")
+            return true
+        }
         val systemAudio = isSystemAudioActive()
         val media = if (!systemAudio) hasActiveMediaSession() else false
         Log.d(TAG, "shouldKeepLockScreen — systemAudio=$systemAudio media=$media")
         return systemAudio || media
+    }
+
+    private fun isBedtimeModeActive(): Boolean = try {
+        Settings.Secure.getInt(contentResolver, "bedtime_mode", 0) == 1
+    } catch (e: Exception) {
+        Log.w(TAG, "bedtime_mode check failed: $e")
+        false
     }
 
     /**
@@ -350,12 +363,23 @@ class LockScreenAccessibilityService : AccessibilityService() {
                 PlaybackState.STATE_FAST_FORWARDING,
                 PlaybackState.STATE_REWINDING,
             )
-            val active = sessions.any { it.playbackState?.state in activeStates }
+            // Also accept null playbackState — session exists but hasn't set state yet
+            // (e.g. media app just started). Android's own lock screen shows controls in this case.
+            val active = sessions.any {
+                val state = it.playbackState?.state
+                state == null || state in activeStates
+            }
             Log.d(TAG, "hasActiveMediaSession — sessions=${sessions.size} active=$active")
             active
         } catch (e: Exception) {
-            Log.w(TAG, "MediaSessionManager check failed (listener not connected?) — falling back to isMusicActive: $e")
-            (getSystemService(Context.AUDIO_SERVICE) as AudioManager).isMusicActive
+            // NLS not connected — fall back to activePlaybackConfigurations which works for
+            // ALL audio outputs (speaker, Bluetooth, headphones) unlike isMusicActive()
+            // which only checks the device speaker hardware output.
+            Log.w(TAG, "MediaSessionManager check failed — falling back to activePlaybackConfigurations: $e")
+            val audioManager = getSystemService(Context.AUDIO_SERVICE) as AudioManager
+            audioManager.activePlaybackConfigurations.any { config ->
+                config.audioAttributes.usage == AudioAttributes.USAGE_MEDIA
+            }
         }
     }
 

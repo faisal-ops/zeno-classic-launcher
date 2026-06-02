@@ -104,6 +104,7 @@ data class LauncherPrefs(
     val dockThirdTitle: String = "Camera",
     /** When false, the second dock shortcut is hidden from the dock. */
     val dockSecondEnabled: Boolean = true,
+    val drawerSortMode: String = "ALPHABETICAL",
     val orderedPackages: List<String> = emptyList(),
     /** Folder slot id → member package names (order preserved). */
     val folderContents: Map<String, List<String>> = emptyMap(),
@@ -218,6 +219,7 @@ class LauncherPrefsRepository(private val context: Context) {
         val DOCK_THIRD_TITLE = stringPreferencesKey("dockThirdTitle")
         val DOCK_SECOND_ENABLED = booleanPreferencesKey("dockSecondEnabled")
         val ORDER = stringPreferencesKey("orderedPackagesCsv")
+        val DRAWER_SORT_MODE = stringPreferencesKey("drawerSortMode")
         val FOLDERS = stringPreferencesKey("folderContentsJson")
         val FOLDER_NAMES = stringPreferencesKey("folderNamesJson")
         val HIDDEN = stringPreferencesKey("hiddenPackagesCsv")
@@ -288,6 +290,7 @@ class LauncherPrefsRepository(private val context: Context) {
         val dockSecondTitle = p[Keys.DOCK_SECOND_TITLE]?.trim().orEmpty().ifEmpty { DEFAULT_PREFS.dockSecondTitle }
         val dockThirdTitle = p[Keys.DOCK_THIRD_TITLE]?.trim().orEmpty().ifEmpty { DEFAULT_PREFS.dockThirdTitle }
         val dockSecondEnabled = p[Keys.DOCK_SECOND_ENABLED] ?: DEFAULT_PREFS.dockSecondEnabled
+        val drawerSortMode = p[Keys.DRAWER_SORT_MODE] ?: "ALPHABETICAL"
         val order = parseCsvList(p[Keys.ORDER])
         val folders = parseFolderContentsJson(p[Keys.FOLDERS])
         val folderNames = parseFolderNamesJson(p[Keys.FOLDER_NAMES])
@@ -365,6 +368,7 @@ class LauncherPrefsRepository(private val context: Context) {
             dockSecondTitle = dockSecondTitle,
             dockThirdTitle = dockThirdTitle,
             dockSecondEnabled = dockSecondEnabled,
+            drawerSortMode = drawerSortMode,
             orderedPackages = order,
             folderContents = folders,
             folderNames = folderNames,
@@ -411,6 +415,10 @@ class LauncherPrefsRepository(private val context: Context) {
             languageCode = languageCode,
         )
     }.distinctUntilChanged()
+
+    suspend fun setDrawerSortMode(mode: String) {
+        context.dataStore.edit { it[Keys.DRAWER_SORT_MODE] = mode }
+    }
 
     suspend fun setGridPreset(preset: GridPreset) {
         context.dataStore.edit { it[Keys.GRID] = preset.name }
@@ -738,6 +746,7 @@ class LauncherPrefsRepository(private val context: Context) {
             s[Keys.DOCK_MAIL_TITLE] = prefs.dockMailTitle.trim().ifEmpty { DEFAULT_PREFS.dockMailTitle }
             s[Keys.DOCK_SECOND_TITLE] = prefs.dockSecondTitle.trim().ifEmpty { DEFAULT_PREFS.dockSecondTitle }
             s[Keys.DOCK_THIRD_TITLE] = prefs.dockThirdTitle.trim().ifEmpty { DEFAULT_PREFS.dockThirdTitle }
+            s[Keys.DRAWER_SORT_MODE] = prefs.drawerSortMode
             s[Keys.ORDER] = prefs.orderedPackages.joinToString(",")
             s[Keys.FOLDERS] = folderContentsToJson(prefs.folderContents)
             s[Keys.FOLDER_NAMES] = folderNamesToJson(prefs.folderNames.filterKeys { prefs.folderContents.containsKey(it) })

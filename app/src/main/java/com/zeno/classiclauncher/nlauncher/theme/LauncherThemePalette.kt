@@ -45,12 +45,13 @@ data class LauncherThemePalette(
     // app grid (subset)
     val appGridIconSizeDp: Float = 52f,
     val appGridColumnSpacingDp: Float = 9f,
-    val appGridRowSpacingDp: Float = 9f,
+    val appGridRowSpacingDp: Float = 5f,
     /** Flutter `appGridTheme.appGridEdgeHoverZoneWidth` (px in logical coords). */
     val appGridEdgeHoverZoneWidthDp: Float = 70f,
     /** Flutter stores duration in microseconds in JSON; we keep ms here. */
     val appGridEdgeHoverDurationMs: Long = 2500L,
-    val appCardFontSp: Float = 12f,
+    val appCardFontSp: Float = 10f,
+    val appCardFontWeightName: String = "Normal",
     val appCardTextColour: Color = Color(0xFFE6E6E6),
     val appCardTextOutlineColour: Color = Color.Black,
     val appCardCornerRadiusDp: Float = 12f,
@@ -138,12 +139,13 @@ data class LauncherThemePalette(
                     .equals("squircle", ignoreCase = true),
                 appGridIconSizeDp = f(appGrid, "iconSize", 52f),
                 appGridColumnSpacingDp = f(appGrid, "columnSpacing", 9f),
-                appGridRowSpacingDp = f(appGrid, "rowSpacing", 9f),
-                appCardFontSp = f(appGrid, "appCardFontSize", 12f).let {
-                    // 15f was the old compile-time default, written automatically on every
-                    // fresh install — it was never a user choice. Migrate it to 12f.
-                    if (it == 15f) 12f else it
+                appGridRowSpacingDp = f(appGrid, "rowSpacing", 5f),
+                appCardFontSp = f(appGrid, "appCardFontSize", 10f).let {
+                    // migrate only the old 15sp compile-time default; 12sp is now a valid user choice
+                    if (it == 15f) 10f else it
                 },
+                appCardFontWeightName = appGrid.optString("appCardFontWeight", "Normal")
+                    .let { if (it.isBlank()) "Normal" else it },
                 appCardTextColour = c(appGrid, "appCardTextColour", Color(0xFFE6E6E6)),
                 appCardTextOutlineColour = c(appGrid, "appCardTextOutlineColour", Color.Black),
                 appCardCornerRadiusDp = f(appGrid, "cornerRadius", 12f).let { if (it <= 0f || it == 7f) 12f else it },
@@ -216,6 +218,7 @@ data class LauncherThemePalette(
             appGrid.put("columnSpacing", p.appGridColumnSpacingDp.toDouble())
             appGrid.put("rowSpacing", p.appGridRowSpacingDp.toDouble())
             appGrid.put("appCardFontSize", p.appCardFontSp.toDouble())
+            appGrid.put("appCardFontWeight", p.appCardFontWeightName)
             appGrid.put("appCardTextColour", colorToHex8(p.appCardTextColour))
             appGrid.put("appCardTextOutlineColour", colorToHex8(p.appCardTextOutlineColour))
             appGrid.put("cornerRadius", p.appCardCornerRadiusDp.toDouble())

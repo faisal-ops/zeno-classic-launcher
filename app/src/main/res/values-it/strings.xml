@@ -68,7 +68,7 @@
     <string name="icon_layout_shape">Forma icona</string>
     <string name="icon_layout_shape_default">Quadrato morbido predefinito</string>
     <string name="device_admin_explanation">Fallback opzionale: blocca lo schermo quando il doppio tocco è attivo e l’assistente di accessibilità non è abilitato.</string>
-    <string name="lock_accessibility_service_label">Assistente blocco Zeno Classic</string>
+    <string name="lock_accessibility_service_label">Zeno Classic</string>
     <string name="lock_accessibility_service_description">Blocca lo schermo quando tocchi due volte la schermata home, come il pulsante di accensione. Vengono osservati solo gli eventi finestra di Zeno Classic; il contenuto dello schermo non viene letto.</string>
 
     <!-- English fallback strings added to keep localized builds complete. -->

@@ -68,7 +68,7 @@
     <string name="icon_layout_shape">आइकन आकार</string>
     <string name="icon_layout_shape_default">डिफॉल्ट सॉफ्ट स्क्वायर</string>
     <string name="device_admin_explanation">वैकल्पिक fallback: डबल टैप चालू होने और लॉक accessibility helper बंद होने पर स्क्रीन लॉक करता है।</string>
-    <string name="lock_accessibility_service_label">Zeno Classic लॉक हेल्पर</string>
+    <string name="lock_accessibility_service_label">Zeno Classic</string>
     <string name="lock_accessibility_service_description">होम वर्कस्पेस पर डबल टैप करने पर स्क्रीन को पावर बटन की तरह लॉक करता है। केवल Zeno Classic के window events देखे जाते हैं; स्क्रीन सामग्री नहीं पढ़ी जाती।</string>
 
     <!-- English fallback strings added to keep localized builds complete. -->

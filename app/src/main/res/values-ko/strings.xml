@@ -104,7 +104,7 @@
     <string name="icon_layout_shape">아이콘 모양</string>
     <string name="icon_layout_shape_default">기본 부드러운 사각형</string>
     <string name="device_admin_explanation">선택 사항: 더블 탭 잠금이 켜져 있고 접근성 잠금 도우미가 비활성화된 경우 화면을 잠급니다.</string>
-    <string name="lock_accessibility_service_label">Zeno Classic 잠금 도우미</string>
+    <string name="lock_accessibility_service_label">Zeno Classic</string>
     <string name="lock_accessibility_service_description">홈 화면을 두 번 탭하면 전원 버튼처럼 화면을 잠급니다. Zeno Classic의 창 이벤트만 관찰하며 화면 내용은 읽지 않습니다.</string>
 
     <!-- English fallback strings added to keep localized builds complete. -->

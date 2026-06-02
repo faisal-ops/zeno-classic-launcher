@@ -68,7 +68,7 @@
     <string name="icon_layout_shape">Forma do ícone</string>
     <string name="icon_layout_shape_default">Quadrado suave padrão</string>
     <string name="device_admin_explanation">Fallback opcional: bloqueia a tela quando o toque duplo está ativado e o auxiliar de bloqueio de Acessibilidade não está habilitado.</string>
-    <string name="lock_accessibility_service_label">Auxiliar de bloqueio Zeno Classic</string>
+    <string name="lock_accessibility_service_label">Zeno Classic</string>
     <string name="lock_accessibility_service_description">Bloqueia a tela quando você toca duas vezes na área inicial, igual ao botão de energia. Apenas eventos de janela do Zeno Classic são observados; o conteúdo da tela não é lido.</string>
 
     <!-- English fallback strings added to keep localized builds complete. -->
