@@ -351,8 +351,8 @@ private val HOME_SHORTCUT_ICON_DP = 52.dp
 private val HOME_SHORTCUT_FALLBACK_ICON_DP = 48.dp
 private val HOME_STRIP_LABEL_COLOR = Color(0xFFE8EEF7)
 /** Compact strip captions shared by apps, folders, and groups. */
-private val HOME_STRIP_LABEL_FONT_SP = 13.sp
-private val HOME_STRIP_LABEL_LINE_SP = 15.sp
+private val HOME_STRIP_LABEL_FONT_SP = 11.sp
+private val HOME_STRIP_LABEL_LINE_SP = 13.sp
 /** Space between the icon tile and caption across all home-strip item types. */
 private val HOME_STRIP_ICON_LABEL_GAP = 4.dp
 /** Centre shortcuts: tight fixed gap between slots. */
@@ -405,7 +405,7 @@ private const val DEFAULT_APP_ICON_SIZE_DP = 52f
 private const val MIN_APP_ICON_SIZE_DP = 44f
 private const val MAX_APP_ICON_SIZE_DP = 64f
 private val ICON_SETTINGS_PREVIEW_HEIGHT = 115.dp
-private val ICON_SETTINGS_PREVIEW_HEIGHT_LARGE = 115.dp
+private val ICON_SETTINGS_PREVIEW_HEIGHT_LARGE = 160.dp
 private val ICON_SETTINGS_PREVIEW_CELL_WIDTH = 96.dp
 private val ICON_SETTINGS_PREVIEW_LABEL_SP = 12
 private val ICON_SETTINGS_PREVIEW_CARD_SHAPE = RoundedCornerShape(10.dp)
@@ -6161,7 +6161,7 @@ private fun AppDrawer(
     themePalette: LauncherThemePalette,
 ) {
     val view = LocalView.current
-    val outerPadH = 22.dp
+    val outerPadH = 12.dp
     val outerPadV = 11.dp
     val colSpacing = themePalette.appGridColumnSpacingDp.dp
     val rowSpacing = themePalette.appGridRowSpacingDp.dp
@@ -6548,28 +6548,41 @@ private fun AppDrawer(
                     val next = sortCycleOrder[(sortCycleOrder.indexOf(drawerSortMode) + 1) % sortCycleOrder.size]
                     onSortModeSelected(next)
                 }
-                Text(
-                    text = drawerSortModeLabel(drawerSortMode),
-                    fontSize = 11.sp,
-                    color = themePalette.settingsMenuBody,
+                // Icon-only tap target; label fades in beside it briefly after each tap
+                var showSortLabel by remember { mutableStateOf(false) }
+                LaunchedEffect(drawerSortMode) {
+                    showSortLabel = true
+                    kotlinx.coroutines.delay(1800)
+                    showSortLabel = false
+                }
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
                     modifier = Modifier
                         .clip(RoundedCornerShape(8.dp))
                         .clickable { cycleNext() }
-                        .padding(horizontal = 8.dp, vertical = 6.dp),
-                )
-                IconButton(
-                    onClick = { cycleNext() },
-                    modifier = Modifier.size(28.dp),
+                        .padding(horizontal = 6.dp, vertical = 4.dp),
                 ) {
+                    androidx.compose.animation.AnimatedVisibility(
+                        visible = showSortLabel,
+                        enter = fadeIn(tween(150)),
+                        exit = fadeOut(tween(300)),
+                    ) {
+                        Text(
+                            text = drawerSortModeLabel(drawerSortMode),
+                            fontSize = 11.sp,
+                            color = themePalette.settingsMenuBody,
+                            modifier = Modifier.padding(end = 4.dp),
+                        )
+                    }
                     Icon(
                         imageVector = Icons.Outlined.QueryStats,
-                        contentDescription = "Cycle app sorting",
+                        contentDescription = "Cycle app sorting: ${drawerSortModeLabel(drawerSortMode)}",
                         tint = if (drawerSortMode == DrawerSortMode.MOST_USED) {
                             themePalette.settingsMenuTitle
                         } else {
-                            themePalette.settingsMenuBody.copy(alpha = 0.65f)
+                            themePalette.settingsMenuBody.copy(alpha = 0.55f)
                         },
-                        modifier = Modifier.size(18.dp),
+                        modifier = Modifier.size(17.dp),
                     )
                 }
             }
@@ -7304,16 +7317,22 @@ private fun FolderTile(
             .then(reorderDragModifier),
         contentAlignment = Alignment.TopCenter,
     ) {
-        if (selected) {
+        val folderTrackpadActive = LocalTrackpadActive.current
+        val folderHighlightAlpha by animateFloatAsState(
+            targetValue = if (selected && folderTrackpadActive) 1f else 0f,
+            animationSpec = tween(durationMillis = if (selected && folderTrackpadActive) 120 else 500),
+            label = "folderFocusHighlightAlpha",
+        )
+        if (folderHighlightAlpha > 0f) {
             Box(
                 modifier = Modifier
                     .padding(horizontal = focusHorizontalInset)
                     .fillMaxSize()
                     .clip(RoundedCornerShape(selRadius))
-                    .background(themePalette.selectorBackgroundColour)
+                    .background(themePalette.selectorBackgroundColour.copy(alpha = folderHighlightAlpha))
                     .border(
                         width = 1.dp,
-                        color = themePalette.selectorBorderColour,
+                        color = themePalette.selectorBorderColour.copy(alpha = folderHighlightAlpha),
                         shape = RoundedCornerShape(selRadius),
                     ),
             )
@@ -7619,7 +7638,7 @@ private fun AppTile(
                         contentAlignment = Alignment.Center,
                     ) {
                         Text(
-                            text = "\u2731",
+                            text = "✱",
                             style = MaterialTheme.typography.labelSmall.copy(
                                 color = Color.White,
                                 fontSize = 9.sp,
@@ -7704,10 +7723,12 @@ private fun OutlinedLabel(
         )
     }
 
+    // wrapContentHeight so the label sits tight below the icon rather than
+    // floating in a large gap when cells are tall (e.g. 3-row grid).
     Box(
         modifier = Modifier
             .fillMaxWidth()
-            .fillMaxHeight(),
+            .wrapContentHeight(),
         contentAlignment = Alignment.TopCenter,
     ) {
         for (style in outlineShadowStyles) {
@@ -9638,7 +9659,7 @@ private fun Dock(
             .height(navBarHeight)
             .fillMaxWidth()
             .background(
-                Brush.verticalGradient(listOf(Color.Transparent, Color(0x77000000)))
+                Brush.verticalGradient(listOf(Color.Transparent, Color(0x99000000)))
             )
             .padding(horizontal = 0.dp, vertical = 8.dp)
     ) {
@@ -9697,10 +9718,8 @@ private fun Dock(
                         awaitEachGesture {
                             val down = awaitFirstDown(pass = PointerEventPass.Main)
                             fingerXpx = down.position.x
-
                             val startMs = SystemClock.uptimeMillis()
                             var activated = false
-
                             while (true) {
                                 val remaining = (250L - (SystemClock.uptimeMillis() - startMs)).coerceAtLeast(0L)
                                 val event = if (!activated && remaining > 0L) {
@@ -9708,7 +9727,6 @@ private fun Dock(
                                 } else {
                                     awaitPointerEvent(pass = PointerEventPass.Main)
                                 }
-
                                 if (event == null) {
                                     activated = true
                                     scrubbing = true
@@ -9717,21 +9735,13 @@ private fun Dock(
                                     onScrubPage(page)
                                     continue
                                 }
-
                                 val change = event.changes.firstOrNull() ?: break
-                                if (change.changedToUp()) {
-                                    scrubbing = false
-                                    break
-                                }
-
+                                if (change.changedToUp()) { scrubbing = false; break }
                                 if (change.positionChanged()) {
                                     fingerXpx = change.position.x
                                     if (activated) {
                                         val page = xToPage(fingerXpx)
-                                        if (page != hoveredPage) {
-                                            hoveredPage = page
-                                            onScrubPage(page)
-                                        }
+                                        if (page != hoveredPage) { hoveredPage = page; onScrubPage(page) }
                                     }
                                 }
                             }
@@ -9856,13 +9866,19 @@ private fun DockIcon(
     selectedTint: Color = Color(0x664FC3F7),
     iconTint: Color = Color(0xFFE6E6E6),
 ) {
-        TextButton(
-            onClick = onClick,
-            modifier = Modifier
-                .size(buttonSize)
-                .clip(androidx.compose.foundation.shape.RoundedCornerShape(8.dp))
-                .background(if (selected) selectedTint else Color.Transparent)
-        ) {
+    val trackpadActive = LocalTrackpadActive.current
+    val highlightAlpha by animateFloatAsState(
+        targetValue = if (selected && trackpadActive) 1f else 0f,
+        animationSpec = tween(durationMillis = if (selected && trackpadActive) 120 else 500),
+        label = "dockIconHighlight",
+    )
+    TextButton(
+        onClick = onClick,
+        modifier = Modifier
+            .size(buttonSize)
+            .clip(androidx.compose.foundation.shape.RoundedCornerShape(8.dp))
+            .background(selectedTint.copy(alpha = selectedTint.alpha * highlightAlpha))
+    ) {
         AppIconWithBadge(hasUnread = hasUnread) {
             Icon(icon, contentDescription = null, tint = iconTint, modifier = Modifier.size(iconSize))
         }
@@ -9882,12 +9898,18 @@ private fun DockPng(
     selectedTint: Color = Color(0x664FC3F7),
     iconTint: Color = Color(0xFFE6E6E6),
 ) {
+    val trackpadActive = LocalTrackpadActive.current
+    val highlightAlpha by animateFloatAsState(
+        targetValue = if (selected && trackpadActive) 1f else 0f,
+        animationSpec = tween(durationMillis = if (selected && trackpadActive) 120 else 500),
+        label = "dockPngHighlight",
+    )
     Box(
         contentAlignment = Alignment.Center,
         modifier = modifier
             .size(buttonSize)
             .clip(androidx.compose.foundation.shape.RoundedCornerShape(8.dp))
-            .background(if (selected) selectedTint else Color.Transparent)
+            .background(selectedTint.copy(alpha = selectedTint.alpha * highlightAlpha))
             .combinedClickable(onClick = onClick, onLongClick = onLongPress),
     ) {
         AppIconWithBadge(hasUnread = hasUnread) {
@@ -9982,12 +10004,18 @@ private fun DockEndSlot(
     iconTint: Color = Color(0xFFE6E6E6),
     hasUnread: Boolean = false,
 ) {
+    val trackpadActive = LocalTrackpadActive.current
+    val highlightAlpha by animateFloatAsState(
+        targetValue = if (selected && trackpadActive) 1f else 0f,
+        animationSpec = tween(durationMillis = if (selected && trackpadActive) 120 else 500),
+        label = "dockSlotHighlight",
+    )
     Box(
         contentAlignment = Alignment.Center,
         modifier = modifier
             .size(buttonSize)
             .clip(androidx.compose.foundation.shape.RoundedCornerShape(8.dp))
-            .background(if (selected) selectedTint else Color.Transparent)
+            .background(selectedTint.copy(alpha = selectedTint.alpha * highlightAlpha))
             .combinedClickable(onClick = onClick, onLongClick = onLongPress),
     ) {
         AppIconWithBadge(hasUnread = hasUnread) {

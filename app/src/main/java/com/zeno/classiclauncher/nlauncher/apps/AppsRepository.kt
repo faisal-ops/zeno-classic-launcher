@@ -132,6 +132,7 @@ class AppsRepository(private val context: Context) {
 
         installed.sortWith(APP_LABEL_COMPARATOR)
 
+
         val settingsIcon = runCatching { context.getDrawable(R.drawable.ic_dock_settings) }.getOrNull()
         installed.add(
             0,
