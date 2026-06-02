@@ -49,6 +49,7 @@ import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.debounce
 import kotlinx.coroutines.flow.distinctUntilChanged
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.sync.Mutex
@@ -117,9 +118,9 @@ class LauncherViewModel(app: Application) : AndroidViewModel(app) {
         if (mode == DrawerSortMode.MOST_USED) {
             refreshUsageStats()
         } else {
-            // Stop showing usage ordering data when sorting is disabled.
             _usageStats.value = emptyMap()
         }
+        viewModelScope.launch { prefsRepo.setDrawerSortMode(mode.name) }
     }
 
     fun toggleSortByUsage() {
@@ -206,6 +207,15 @@ class LauncherViewModel(app: Application) : AndroidViewModel(app) {
     private val gridHomeMutex = Mutex()
 
     init {
+        viewModelScope.launch {
+            val savedMode = runCatching {
+                prefsRepo.prefsFlow.first().drawerSortMode
+            }.getOrDefault("ALPHABETICAL")
+            val mode = runCatching { DrawerSortMode.valueOf(savedMode) }.getOrDefault(DrawerSortMode.ALPHABETICAL)
+            _drawerSortMode.value = mode
+            _sortByUsage.value = mode == DrawerSortMode.MOST_USED
+            if (mode == DrawerSortMode.MOST_USED) refreshUsageStats()
+        }
         viewModelScope.launch {
             combine(apps, prefsRepo.prefsFlow) { list, p -> list to p }
                 .debounce(150)
@@ -876,7 +886,25 @@ class LauncherViewModel(app: Application) : AndroidViewModel(app) {
         viewModelScope.launch {
             val next = LauncherThemePalette
                 .fromJson(prefs.value.themeJson)
-                .copy(appGridIconSizeDp = sizeDp.coerceIn(42f, 64f))
+                .copy(appGridIconSizeDp = sizeDp.coerceIn(42f, 80f))
+            prefsRepo.setThemeJson(LauncherThemePalette.toExportJson(next))
+        }
+    }
+
+    fun setAppGridFontSize(sp: Float) {
+        viewModelScope.launch {
+            val next = LauncherThemePalette
+                .fromJson(prefs.value.themeJson)
+                .copy(appCardFontSp = sp.coerceIn(8f, 14f))
+            prefsRepo.setThemeJson(LauncherThemePalette.toExportJson(next))
+        }
+    }
+
+    fun setAppGridFontWeight(weightName: String) {
+        viewModelScope.launch {
+            val next = LauncherThemePalette
+                .fromJson(prefs.value.themeJson)
+                .copy(appCardFontWeightName = weightName)
             prefsRepo.setThemeJson(LauncherThemePalette.toExportJson(next))
         }
     }

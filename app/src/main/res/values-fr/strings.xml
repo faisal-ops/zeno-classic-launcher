@@ -68,7 +68,7 @@
     <string name="icon_layout_shape">Forme de l’icône</string>
     <string name="icon_layout_shape_default">Carré doux par défaut</string>
     <string name="device_admin_explanation">Solution de secours facultative : verrouille l’écran lorsque le double appui est activé et que l’assistant d’accessibilité n’est pas activé.</string>
-    <string name="lock_accessibility_service_label">Assistant de verrouillage Zeno Classic</string>
+    <string name="lock_accessibility_service_label">Zeno Classic</string>
     <string name="lock_accessibility_service_description">Verrouille l’écran lorsque vous touchez deux fois l’accueil, comme le bouton d’alimentation. Seuls les événements de fenêtre de Zeno Classic sont observés ; le contenu de l’écran n’est pas lu.</string>
 
     <!-- English fallback strings added to keep localized builds complete. -->

@@ -68,7 +68,7 @@
     <string name="icon_layout_shape">图标形状</string>
     <string name="icon_layout_shape_default">默认柔和方形</string>
     <string name="device_admin_explanation">可选备用方案：当双击锁屏开启且无障碍锁屏助手未启用时锁定屏幕。</string>
-    <string name="lock_accessibility_service_label">Zeno Classic 锁屏助手</string>
+    <string name="lock_accessibility_service_label">Zeno Classic</string>
     <string name="lock_accessibility_service_description">双击主屏幕时像电源键一样锁定屏幕。仅观察 Zeno Classic 的窗口事件；不会读取屏幕内容。</string>
 
     <!-- English fallback strings added to keep localized builds complete. -->

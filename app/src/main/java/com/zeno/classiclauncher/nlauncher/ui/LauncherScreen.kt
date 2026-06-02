@@ -115,7 +115,9 @@ import androidx.compose.material.icons.automirrored.rounded.VolumeUp
 import androidx.compose.material.icons.outlined.BookmarkRemove
 import androidx.compose.material.icons.outlined.Close
 import androidx.compose.material.icons.outlined.Delete
+import androidx.compose.material.icons.outlined.GridView
 import androidx.compose.material.icons.outlined.QueryStats
+import androidx.compose.material.icons.outlined.SortByAlpha
 import androidx.compose.material.icons.outlined.Search
 import androidx.compose.material.icons.outlined.Menu
 import androidx.compose.material.icons.outlined.MailOutline
@@ -403,7 +405,7 @@ private val VISIBLE_ICON_SHAPES = listOf(
 )
 private const val DEFAULT_APP_ICON_SIZE_DP = 52f
 private const val MIN_APP_ICON_SIZE_DP = 44f
-private const val MAX_APP_ICON_SIZE_DP = 64f
+private const val MAX_APP_ICON_SIZE_DP = 80f
 private val ICON_SETTINGS_PREVIEW_HEIGHT = 115.dp
 private val ICON_SETTINGS_PREVIEW_HEIGHT_LARGE = 160.dp
 private val ICON_SETTINGS_PREVIEW_CELL_WIDTH = 96.dp
@@ -1895,6 +1897,8 @@ fun LauncherScreen(
                             },
                             onGridPreset = vm::setGridPreset,
                             onAppGridIconSize = vm::setAppGridIconSize,
+                            onAppGridFontSize = vm::setAppGridFontSize,
+                            onAppGridFontWeight = vm::setAppGridFontWeight,
                             onSetAppIconShape = vm::setAppIconShape,
                             onSetIconPackPackage = vm::setIconPackPackage,
                             onToggleAppCardBackground = { vm.setShowAppCardBackground(!prefs.showAppCardBackground) },
@@ -6304,7 +6308,7 @@ private fun AppDrawer(
     // Match HomePage: keep drawer below status bar when the activity draws edge-to-edge.
     // Sort row is ~32dp tall; when searching that row is hidden — reserve the same height so the grid
     // does not jump up under the status bar.
-    val drawerSortHeaderHeight = 32.dp
+    val drawerSortHeaderHeight = 22.dp
     Column(
         modifier = Modifier
             .fillMaxSize()
@@ -6535,7 +6539,7 @@ private fun AppDrawer(
             Row(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .padding(horizontal = 16.dp, vertical = 2.dp),
+                    .padding(horizontal = 8.dp, vertical = 0.dp),
                 horizontalArrangement = androidx.compose.foundation.layout.Arrangement.End,
                 verticalAlignment = Alignment.CenterVertically,
             ) {
@@ -6548,41 +6552,24 @@ private fun AppDrawer(
                     val next = sortCycleOrder[(sortCycleOrder.indexOf(drawerSortMode) + 1) % sortCycleOrder.size]
                     onSortModeSelected(next)
                 }
-                // Icon-only tap target; label fades in beside it briefly after each tap
-                var showSortLabel by remember { mutableStateOf(false) }
-                LaunchedEffect(drawerSortMode) {
-                    showSortLabel = true
-                    kotlinx.coroutines.delay(1800)
-                    showSortLabel = false
-                }
-                Row(
-                    verticalAlignment = Alignment.CenterVertically,
-                    modifier = Modifier
-                        .clip(RoundedCornerShape(8.dp))
-                        .clickable { cycleNext() }
-                        .padding(horizontal = 6.dp, vertical = 4.dp),
+                IconButton(
+                    onClick = { cycleNext() },
+                    modifier = Modifier.size(36.dp).padding(4.dp),
                 ) {
-                    androidx.compose.animation.AnimatedVisibility(
-                        visible = showSortLabel,
-                        enter = fadeIn(tween(150)),
-                        exit = fadeOut(tween(300)),
-                    ) {
-                        Text(
-                            text = drawerSortModeLabel(drawerSortMode),
-                            fontSize = 11.sp,
-                            color = themePalette.settingsMenuBody,
-                            modifier = Modifier.padding(end = 4.dp),
-                        )
+                    val sortIcon = when (drawerSortMode) {
+                        DrawerSortMode.ALPHABETICAL -> Icons.Outlined.SortByAlpha
+                        DrawerSortMode.CLASSIC -> Icons.Outlined.GridView
+                        DrawerSortMode.MOST_USED -> Icons.Outlined.QueryStats
                     }
                     Icon(
-                        imageVector = Icons.Outlined.QueryStats,
-                        contentDescription = "Cycle app sorting: ${drawerSortModeLabel(drawerSortMode)}",
+                        imageVector = sortIcon,
+                        contentDescription = "Sort: ${drawerSortModeLabel(drawerSortMode)}",
                         tint = if (drawerSortMode == DrawerSortMode.MOST_USED) {
                             themePalette.settingsMenuTitle
                         } else {
-                            themePalette.settingsMenuBody.copy(alpha = 0.55f)
+                            themePalette.settingsMenuBody.copy(alpha = 0.65f)
                         },
-                        modifier = Modifier.size(17.dp),
+                        modifier = Modifier.size(18.dp),
                     )
                 }
             }
@@ -7441,6 +7428,7 @@ private fun FolderTile(
                         fontSizeSp = labelSizeSp,
                         textColor = themePalette.appCardTextColour,
                         outlineColor = themePalette.appCardTextOutlineColour,
+                        fontWeight = fontWeightFromName(themePalette.appCardFontWeightName),
                     )
                 } else {
                     HomeStripItemLabel(displayLabel)
@@ -7540,13 +7528,13 @@ private fun AppTile(
     ) {
         val density = LocalDensity.current
         // Reserve extra height for two lines (descenders + outline); shrink icon/padding when the cell is short.
-        val iconPadTop = 3.dp
+        val iconPadTop = 1.dp
         val textPadBottom = 2.dp
         val contentHeight = (height - contentVerticalInset * 2).coerceAtLeast(iconSize)
         val (iconSizeUsed, iconPadBottom) = remember(contentHeight, iconSize, labelSizeSp, density) {
             val minLabel = with(density) { (labelSizeSp * 2.3f).sp.toDp() }
             var sz = iconSize
-            var pad = (contentHeight - iconPadTop - sz - textPadBottom - minLabel).coerceIn(3.dp, 14.dp)
+            var pad = (contentHeight - iconPadTop - sz - textPadBottom - minLabel).coerceIn(2.dp, 8.dp)
             repeat(10) {
                 val labelSpace = contentHeight - iconPadTop - sz - pad - textPadBottom
                 if (labelSpace >= minLabel) return@remember Pair(sz, pad)
@@ -7680,6 +7668,7 @@ private fun AppTile(
                         fontSizeSp = labelSizeSp,
                         textColor = themePalette.appCardTextColour,
                         outlineColor = themePalette.appCardTextOutlineColour,
+                        fontWeight = fontWeightFromName(themePalette.appCardFontWeightName),
                     )
                 } else {
                     HomeStripItemLabel(displayLabel)
@@ -7695,6 +7684,7 @@ private fun OutlinedLabel(
     fontSizeSp: Int,
     textColor: Color = Color(0xFFE6E6E6),
     outlineColor: Color = Color.Black,
+    fontWeight: FontWeight = FontWeight.Normal,
 ) {
     val lineHeightStyle = remember {
         LineHeightStyle(
@@ -7702,10 +7692,11 @@ private fun OutlinedLabel(
         trim = LineHeightStyle.Trim.None,
     )
     }
-    val base = remember(fontSizeSp, textColor, lineHeightStyle) {
+    val base = remember(fontSizeSp, textColor, fontWeight, lineHeightStyle) {
         compactAppLabelStyle(
             fontSizeSp = fontSizeSp,
             textColor = textColor,
+            fontWeight = fontWeight,
             lineHeightStyle = lineHeightStyle,
         )
     }
@@ -7796,7 +7787,7 @@ private fun HomeGroupFolderOverlay(
     val gridColumns = 4
     val gridItemCount = members.size + if (showAddButton && members.isNotEmpty()) 1 else 0
     val gridRows = ((gridItemCount - 1).coerceAtLeast(0) / gridColumns) + 1
-    val tileIconSize = 50.dp
+    val tileIconSize = themePalette.appGridIconSizeDp.dp
     val tileVerticalPadding = 6.dp
     val iconLabelGap = 5.dp
     val gridVerticalGap = 10.dp
@@ -7958,23 +7949,7 @@ private fun HomeGroupFolderOverlay(
                             modifier = Modifier
                                 .fillMaxWidth()
                                 .clip(cardShape)
-                                .background(
-                                    brush = if (isFocused) {
-                                        Brush.verticalGradient(
-                                            listOf(
-                                                themePalette.dockSelected,
-                                                themePalette.dockSelected,
-                                            ),
-                                        )
-                                    } else {
-                                        Brush.verticalGradient(listOf(themePalette.appCardTop, themePalette.appCardBottom))
-                                    },
-                                )
-                                .border(
-                                    width = if (isFocused) 1.dp else 0.8.dp,
-                                    color = if (isFocused) Color(0x553D4B60) else Color(0x332F3B4F),
-                                    shape = cardShape,
-                                )
+                                .background(if (isFocused) Color(0x3385BFFF) else Color.Transparent)
                                 .padding(top = tileVerticalPadding, start = 4.dp, end = 4.dp, bottom = tileVerticalPadding)
                                 .pointerInput(app.packageName) {
                                     detectTapGestures(
@@ -8592,15 +8567,24 @@ private fun HomeStripItemLabel(text: String) {
     )
 }
 
+private fun fontWeightFromName(name: String): FontWeight = when (name) {
+    "Light"    -> FontWeight.Light
+    "Medium"   -> FontWeight.Medium
+    "SemiBold" -> FontWeight.SemiBold
+    "Bold"     -> FontWeight.Bold
+    else       -> FontWeight.Normal
+}
+
 private fun compactAppLabelStyle(
     fontSizeSp: Int,
     textColor: Color,
+    fontWeight: FontWeight = FontWeight.Normal,
     lineHeightStyle: LineHeightStyle? = null,
 ): TextStyle =
     TextStyle(
         fontFamily = FontFamily.SansSerif,
         fontSize = fontSizeSp.sp,
-        fontWeight = FontWeight.SemiBold,
+        fontWeight = fontWeight,
         color = textColor,
         lineHeight = (fontSizeSp + 1).sp,
         letterSpacing = (-0.18).sp,
@@ -9962,12 +9946,18 @@ private fun Dots(
                 ) {
                     Text(
                         text = if (hideFirstPageLabel && current == 0) "" else (current + 1).toString(),
-                        style = MaterialTheme.typography.labelMedium.copy(
+                        style = TextStyle(
                             color = Color.Black,
                             fontSize = themePalette.pageIndicatorFontSp.sp,
                             lineHeight = themePalette.pageIndicatorFontSp.sp,
+                            fontWeight = FontWeight.Bold,
+                            textAlign = TextAlign.Center,
+                            platformStyle = PlatformTextStyle(includeFontPadding = false),
+                            lineHeightStyle = LineHeightStyle(
+                                alignment = LineHeightStyle.Alignment.Center,
+                                trim = LineHeightStyle.Trim.Both,
+                            ),
                         ),
-                        fontWeight = FontWeight.Bold,
                     )
                 }
             } else {
@@ -10903,6 +10893,8 @@ private fun IconAppearanceSettingsOverlay(
     drawerBadgesSubtitle: String,
     onGridPreset: (GridPreset) -> Unit,
     onAppGridIconSize: (Float) -> Unit,
+    onAppGridFontSize: (Float) -> Unit,
+    onAppGridFontWeight: (String) -> Unit,
     onSetAppIconShape: (AppIconShape) -> Unit,
     onSetIconPackPackage: (String) -> Unit,
     onToggleAppCardBackground: () -> Unit,
@@ -11060,6 +11052,8 @@ private fun IconAppearanceSettingsOverlay(
             themePalette = themePalette,
             onGridPreset = onGridPreset,
             onAppGridIconSize = onAppGridIconSize,
+            onAppGridFontSize = onAppGridFontSize,
+            onAppGridFontWeight = onAppGridFontWeight,
             onSetAppIconShape = onSetAppIconShape,
             iconPackPackage = iconPackPackage,
             onSetIconPackPackage = onSetIconPackPackage,
@@ -11337,6 +11331,8 @@ private fun IconSettingsPreviewItem(
     appIconShape: AppIconShape,
     showCardBackground: Boolean,
     showBadge: Boolean,
+    labelSizeSp: Int = ICON_SETTINGS_PREVIEW_LABEL_SP,
+    fontWeightName: String = "Normal",
     themePalette: LauncherThemePalette,
 ) {
     Column(
@@ -11401,8 +11397,9 @@ private fun IconSettingsPreviewItem(
         Text(
             text = app.label,
             style = compactAppLabelStyle(
-                fontSizeSp = ICON_SETTINGS_PREVIEW_LABEL_SP,
+                fontSizeSp = labelSizeSp,
                 textColor = Color(0xFFE8EEF7),
+                fontWeight = fontWeightFromName(fontWeightName),
             ),
             maxLines = 1,
             overflow = TextOverflow.Ellipsis,
@@ -11421,6 +11418,8 @@ private fun IconLayoutSettingsOverlay(
     themePalette: LauncherThemePalette,
     onGridPreset: (GridPreset) -> Unit,
     onAppGridIconSize: (Float) -> Unit,
+    onAppGridFontSize: (Float) -> Unit,
+    onAppGridFontWeight: (String) -> Unit,
     onSetAppIconShape: (AppIconShape) -> Unit,
     onSetIconPackPackage: (String) -> Unit,
     onDismiss: () -> Unit,
@@ -11431,6 +11430,10 @@ private fun IconLayoutSettingsOverlay(
     var iconSize by remember(themePalette.appGridIconSizeDp) {
         mutableFloatStateOf(themePalette.appGridIconSizeDp.coerceIn(MIN_APP_ICON_SIZE_DP, MAX_APP_ICON_SIZE_DP))
     }
+    var labelSize by remember(themePalette.appCardFontSp) {
+        mutableFloatStateOf(themePalette.appCardFontSp.coerceIn(8f, 14f))
+    }
+    val weightOptions = listOf("Light", "Normal", "Medium", "SemiBold", "Bold")
     val currentShape = if (appIconShape == AppIconShape.ROUNDED) AppIconShape.SOFT_SQUARE else appIconShape
     val currentWallpaper = remember { safeWallpaperDrawable(context) }
     val previewItems = remember(previewApps) {
@@ -11440,19 +11443,15 @@ private fun IconLayoutSettingsOverlay(
             .take(6)
             .toList()
     }
-    val rowOptions = remember { GridPreset.entries.map { it.rows }.distinct().sorted() }
-    val colOptions = remember { GridPreset.entries.map { it.cols }.distinct().sorted() }
-    var columnsMenuExpanded by remember { mutableStateOf(false) }
-    var rowsMenuExpanded by remember { mutableStateOf(false) }
+    var gridMenuExpanded by remember { mutableStateOf(false) }
     var iconPackMenuExpanded by remember { mutableStateOf(false) }
     var iconPacks by remember { mutableStateOf<List<IconPackEntry>>(emptyList()) }
     var iconPacksLoaded by remember { mutableStateOf(false) }
-    // Trackpad nav: 0=slider, 1=shape, 2=columns, 3=rows, 4=iconpack
+    // Trackpad nav: 0=iconSize, 1=shape, 2=labelSize, 3=labelWeight, 4=grid, 5=iconpack
     var focusedItem by remember { mutableIntStateOf(0) }
-    val itemBringers = remember { List(5) { BringIntoViewRequester() } }
+    val itemBringers = remember { List(6) { BringIntoViewRequester() } }
     // Cursor index inside each open dropdown (tracks keyboard focus, not selection)
-    var columnsCursor  by remember { mutableIntStateOf(0) }
-    var rowsCursor     by remember { mutableIntStateOf(0) }
+    var gridCursor     by remember { mutableIntStateOf(0) }
     var iconPackCursor by remember { mutableIntStateOf(0) }
     LaunchedEffect(Unit) {
         iconPacks = iconPackRepo.installedIconPacks()
@@ -11514,7 +11513,7 @@ private fun IconLayoutSettingsOverlay(
                             true
                         }
                         isDpadDown -> {
-                            focusedItem = (focusedItem + 1).coerceAtMost(4)
+                            focusedItem = (focusedItem + 1).coerceAtMost(5)
                             true
                         }
                         isDpadLeft && focusedItem == 0 -> {
@@ -11527,18 +11526,28 @@ private fun IconLayoutSettingsOverlay(
                             iconSize = snapped; onAppGridIconSize(snapped)
                             true
                         }
+                        isDpadLeft && focusedItem == 1 -> {
+                            val next = (labelSize - 1f).coerceAtLeast(8f)
+                            labelSize = next; onAppGridFontSize(next)
+                            true
+                        }
+                        isDpadRight && focusedItem == 1 -> {
+                            val next = (labelSize + 1f).coerceAtMost(14f)
+                            labelSize = next; onAppGridFontSize(next)
+                            true
+                        }
                         isEnter -> {
                             when (focusedItem) {
-                                1 -> cycleShape()
                                 2 -> {
-                                    columnsCursor = colOptions.indexOf(gridPreset.cols).coerceAtLeast(0)
-                                    columnsMenuExpanded = true
+                                    val cur = weightOptions.indexOf(themePalette.appCardFontWeightName).coerceAtLeast(0)
+                                    onAppGridFontWeight(weightOptions[(cur + 1) % weightOptions.size])
                                 }
-                                3 -> {
-                                    rowsCursor = rowOptions.indexOf(gridPreset.rows).coerceAtLeast(0)
-                                    rowsMenuExpanded = true
-                                }
+                                3 -> cycleShape()
                                 4 -> {
+                                    gridCursor = GridPreset.entries.indexOf(gridPreset).coerceAtLeast(0)
+                                    gridMenuExpanded = true
+                                }
+                                5 -> {
                                     val allPkgs = listOf("") + iconPacks.map { it.packageName }
                                     iconPackCursor = allPkgs.indexOf(iconPackPackage).coerceAtLeast(0)
                                     iconPackMenuExpanded = true
@@ -11585,7 +11594,7 @@ private fun IconLayoutSettingsOverlay(
                 Box(
                     modifier = Modifier
                         .fillMaxWidth()
-                        .height(115.dp),
+                        .height(150.dp),
                 ) {
                     if (currentWallpaper != null) {
                         AsyncImage(
@@ -11602,7 +11611,7 @@ private fun IconLayoutSettingsOverlay(
                         modifier = Modifier
                             .fillMaxWidth()
                             .align(Alignment.TopCenter)
-                            .padding(top = 10.dp),
+                            .padding(top = 14.dp),
                         horizontalArrangement = Arrangement.SpaceEvenly,
                         verticalAlignment = Alignment.Top,
                     ) {
@@ -11613,6 +11622,8 @@ private fun IconLayoutSettingsOverlay(
                                 appIconShape = currentShape,
                                 showCardBackground = false,
                                 showBadge = false,
+                                labelSizeSp = labelSize.roundToInt(),
+                                fontWeightName = themePalette.appCardFontWeightName,
                                 themePalette = themePalette,
                             )
                         }
@@ -11639,7 +11650,7 @@ private fun IconLayoutSettingsOverlay(
                                     .bringIntoViewRequester(itemBringers[0])
                                     .then(if (focusedItem == 0) Modifier.background(Color.White.copy(alpha = 0.07f)) else Modifier)
                                     .padding(horizontal = 16.dp)
-                                    .padding(top = 10.dp, bottom = 6.dp),
+                                    .padding(top = 6.dp, bottom = 2.dp),
                             ) {
                                 Column(modifier = Modifier.fillMaxWidth()) {
                                     Row(
@@ -11663,26 +11674,143 @@ private fun IconLayoutSettingsOverlay(
                                             fontSize = SETTINGS_BODY_TEXT_SP,
                                         )
                                     }
-                                    Slider(
-                                        value = iconSize,
-                                        onValueChange = {
-                                            val snapped = snapIconSize(it)
-                                            iconSize = snapped
-                                            onAppGridIconSize(snapped)
-                                        },
-                                        valueRange = MIN_APP_ICON_SIZE_DP..MAX_APP_ICON_SIZE_DP,
-                                        steps = 4,
-                                        modifier = Modifier
-                                            .fillMaxWidth()
-                                            .height(44.dp)
-                                            .padding(top = 2.dp),
-                                    )
-                                    Row(modifier = Modifier.fillMaxWidth().padding(horizontal = 2.dp)) {
-                                        Text(stringResource(R.string.icon_layout_small), color = Color(0xFF9EA4A9), fontSize = 12.sp, modifier = Modifier.weight(1f))
-                                        Text(stringResource(R.string.icon_layout_large), color = Color(0xFF9EA4A9), fontSize = 12.sp, textAlign = TextAlign.End)
+                                    Row(
+                                        verticalAlignment = Alignment.CenterVertically,
+                                        modifier = Modifier.fillMaxWidth(),
+                                    ) {
+                                        Text(
+                                            "−",
+                                            color = if (iconSize > MIN_APP_ICON_SIZE_DP) Color.White else Color(0xFF4A5060),
+                                            fontSize = 20.sp,
+                                            modifier = Modifier
+                                                .clip(RoundedCornerShape(6.dp))
+                                                .clickable(enabled = iconSize > MIN_APP_ICON_SIZE_DP) {
+                                                    val s = snapIconSize(iconSize - 4f)
+                                                    iconSize = s; onAppGridIconSize(s)
+                                                }
+                                                .padding(horizontal = 8.dp, vertical = 4.dp),
+                                        )
+                                        Slider(
+                                            value = iconSize,
+                                            onValueChange = {
+                                                val snapped = snapIconSize(it)
+                                                iconSize = snapped
+                                                onAppGridIconSize(snapped)
+                                            },
+                                            valueRange = MIN_APP_ICON_SIZE_DP..MAX_APP_ICON_SIZE_DP,
+                                            steps = 8,
+                                            modifier = Modifier.weight(1f).height(36.dp),
+                                        )
+                                        Text(
+                                            "+",
+                                            color = if (iconSize < MAX_APP_ICON_SIZE_DP) Color.White else Color(0xFF4A5060),
+                                            fontSize = 20.sp,
+                                            modifier = Modifier
+                                                .clip(RoundedCornerShape(6.dp))
+                                                .clickable(enabled = iconSize < MAX_APP_ICON_SIZE_DP) {
+                                                    val s = snapIconSize(iconSize + 4f)
+                                                    iconSize = s; onAppGridIconSize(s)
+                                                }
+                                                .padding(horizontal = 8.dp, vertical = 4.dp),
+                                        )
                                     }
-                                    Spacer(Modifier.height(4.dp))
+                                    Spacer(Modifier.height(2.dp))
                                 }
+                            }
+                            HorizontalDivider(
+                                color = Color.White.copy(alpha = 0.07f),
+                                modifier = Modifier.padding(horizontal = 16.dp),
+                            )
+                            // Label Size
+                            Box(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .bringIntoViewRequester(itemBringers[1])
+                                    .then(if (focusedItem == 1) Modifier.background(Color.White.copy(alpha = 0.07f)) else Modifier)
+                                    .padding(horizontal = 16.dp)
+                                    .padding(top = 6.dp, bottom = 2.dp),
+                            ) {
+                                Column(modifier = Modifier.fillMaxWidth()) {
+                                    Row(
+                                        modifier = Modifier.fillMaxWidth(),
+                                        verticalAlignment = Alignment.CenterVertically,
+                                    ) {
+                                        Text(
+                                            "Label size",
+                                            color = Color.White,
+                                            fontSize = SETTINGS_TITLE_TEXT_SP,
+                                            fontWeight = FontWeight.SemiBold,
+                                            modifier = Modifier.weight(1f),
+                                        )
+                                        Text(
+                                            "${labelSize.roundToInt()}sp",
+                                            color = Color(0xFF9EA4A9),
+                                            fontSize = SETTINGS_BODY_TEXT_SP,
+                                        )
+                                    }
+                                    Row(
+                                        verticalAlignment = Alignment.CenterVertically,
+                                        modifier = Modifier.fillMaxWidth(),
+                                    ) {
+                                        Text(
+                                            "−",
+                                            color = if (labelSize > 8f) Color.White else Color(0xFF4A5060),
+                                            fontSize = 20.sp,
+                                            modifier = Modifier
+                                                .clip(RoundedCornerShape(6.dp))
+                                                .clickable(enabled = labelSize > 8f) {
+                                                    val s = (labelSize - 1f).coerceAtLeast(8f)
+                                                    labelSize = s; onAppGridFontSize(s)
+                                                }
+                                                .padding(horizontal = 8.dp, vertical = 4.dp),
+                                        )
+                                        Slider(
+                                            value = labelSize,
+                                            onValueChange = { v ->
+                                                val snapped = v.roundToInt().toFloat().coerceIn(8f, 14f)
+                                                labelSize = snapped
+                                                onAppGridFontSize(snapped)
+                                            },
+                                            valueRange = 8f..14f,
+                                            steps = 5,
+                                            modifier = Modifier.weight(1f).height(36.dp),
+                                        )
+                                        Text(
+                                            "+",
+                                            color = if (labelSize < 14f) Color.White else Color(0xFF4A5060),
+                                            fontSize = 20.sp,
+                                            modifier = Modifier
+                                                .clip(RoundedCornerShape(6.dp))
+                                                .clickable(enabled = labelSize < 14f) {
+                                                    val s = (labelSize + 1f).coerceAtMost(14f)
+                                                    labelSize = s; onAppGridFontSize(s)
+                                                }
+                                                .padding(horizontal = 8.dp, vertical = 4.dp),
+                                        )
+                                    }
+                                    Spacer(Modifier.height(2.dp))
+                                }
+                            }
+                            HorizontalDivider(
+                                color = Color.White.copy(alpha = 0.07f),
+                                modifier = Modifier.padding(horizontal = 16.dp),
+                            )
+                            // Label Weight
+                            Box(
+                                modifier = Modifier
+                                    .bringIntoViewRequester(itemBringers[2])
+                                    .then(if (focusedItem == 2) Modifier.background(Color.White.copy(alpha = 0.07f)) else Modifier),
+                            ) {
+                                IconLayoutValueRow(
+                                    label = "Label weight",
+                                    subtitle = "Grid",
+                                    value = themePalette.appCardFontWeightName,
+                                    onClick = {
+                                        val cur = weightOptions.indexOf(themePalette.appCardFontWeightName).coerceAtLeast(0)
+                                        onAppGridFontWeight(weightOptions[(cur + 1) % weightOptions.size])
+                                    },
+                                    focused = focusedItem == 2,
+                                )
                             }
                             HorizontalDivider(
                                 color = Color.White.copy(alpha = 0.07f),
@@ -11692,8 +11820,8 @@ private fun IconLayoutSettingsOverlay(
                             Box(
                                 modifier = Modifier
                                     .fillMaxWidth()
-                                    .bringIntoViewRequester(itemBringers[1])
-                                    .then(if (focusedItem == 1) Modifier.background(Color.White.copy(alpha = 0.07f)) else Modifier),
+                                    .bringIntoViewRequester(itemBringers[3])
+                                    .then(if (focusedItem == 3) Modifier.background(Color.White.copy(alpha = 0.07f)) else Modifier),
                             ) {
                                 IconShapeValueRow(currentShape = currentShape, onClick = ::cycleShape)
                             }
@@ -11701,71 +11829,33 @@ private fun IconLayoutSettingsOverlay(
                                 color = Color.White.copy(alpha = 0.07f),
                                 modifier = Modifier.padding(horizontal = 16.dp),
                             )
-                            // Columns
-                            Box(modifier = Modifier.bringIntoViewRequester(itemBringers[2])) {
+                            // Grid (columns × rows)
+                            Box(modifier = Modifier.bringIntoViewRequester(itemBringers[4])) {
                                 IconLayoutValueRow(
-                                    label = stringResource(R.string.icon_layout_columns_label),
+                                    label = "Grid",
                                     subtitle = stringResource(R.string.icon_layout_grid),
-                                    value = "${gridPreset.cols}",
+                                    value = "${gridPreset.cols} × ${gridPreset.rows}",
                                     onClick = {
-                                        columnsCursor = colOptions.indexOf(gridPreset.cols).coerceAtLeast(0)
-                                        columnsMenuExpanded = true
+                                        gridCursor = GridPreset.entries.indexOf(gridPreset).coerceAtLeast(0)
+                                        gridMenuExpanded = true
                                     },
-                                    focused = focusedItem == 2,
+                                    focused = focusedItem == 4,
                                 )
-                                IconLayoutDropdown(
-                                    expanded = columnsMenuExpanded,
-                                    onDismiss = { columnsMenuExpanded = false },
-                                    options = colOptions,
-                                    selected = gridPreset.cols,
-                                    defaultValue = 5,
-                                    focusedIndex = columnsCursor,
+                                GridPresetDropdown(
+                                    expanded = gridMenuExpanded,
+                                    onDismiss = { gridMenuExpanded = false },
+                                    selected = gridPreset,
+                                    focusedIndex = gridCursor,
                                     onMoveCursor = { delta ->
-                                        columnsCursor = (columnsCursor + delta).coerceIn(0, colOptions.size - 1)
+                                        gridCursor = (gridCursor + delta).coerceIn(0, GridPreset.entries.size - 1)
                                     },
                                     onConfirm = {
-                                        columnsMenuExpanded = false
-                                        onGridPreset(preferredPresetFor(gridPreset.rows, colOptions[columnsCursor]))
+                                        gridMenuExpanded = false
+                                        onGridPreset(GridPreset.entries[gridCursor])
                                     },
-                                    onSelect = { cols ->
-                                        columnsMenuExpanded = false
-                                        onGridPreset(preferredPresetFor(gridPreset.rows, cols))
-                                    },
-                                )
-                            }
-                            HorizontalDivider(
-                                color = Color.White.copy(alpha = 0.07f),
-                                modifier = Modifier.padding(horizontal = 16.dp),
-                            )
-                            // Rows
-                            Box(modifier = Modifier.bringIntoViewRequester(itemBringers[3])) {
-                                IconLayoutValueRow(
-                                    label = stringResource(R.string.icon_layout_rows_label),
-                                    subtitle = stringResource(R.string.icon_layout_grid),
-                                    value = "${gridPreset.rows}",
-                                    onClick = {
-                                        rowsCursor = rowOptions.indexOf(gridPreset.rows).coerceAtLeast(0)
-                                        rowsMenuExpanded = true
-                                    },
-                                    focused = focusedItem == 3,
-                                )
-                                IconLayoutDropdown(
-                                    expanded = rowsMenuExpanded,
-                                    onDismiss = { rowsMenuExpanded = false },
-                                    options = rowOptions,
-                                    selected = gridPreset.rows,
-                                    defaultValue = 3,
-                                    focusedIndex = rowsCursor,
-                                    onMoveCursor = { delta ->
-                                        rowsCursor = (rowsCursor + delta).coerceIn(0, rowOptions.size - 1)
-                                    },
-                                    onConfirm = {
-                                        rowsMenuExpanded = false
-                                        onGridPreset(preferredPresetFor(rowOptions[rowsCursor], gridPreset.cols))
-                                    },
-                                    onSelect = { rows ->
-                                        rowsMenuExpanded = false
-                                        onGridPreset(preferredPresetFor(rows, gridPreset.cols))
+                                    onSelect = { preset ->
+                                        gridMenuExpanded = false
+                                        onGridPreset(preset)
                                     },
                                 )
                             }
@@ -11774,7 +11864,7 @@ private fun IconLayoutSettingsOverlay(
                                 modifier = Modifier.padding(horizontal = 16.dp),
                             )
                             // Icon Pack
-                            Box(modifier = Modifier.bringIntoViewRequester(itemBringers[4])) {
+                            Box(modifier = Modifier.bringIntoViewRequester(itemBringers[5])) {
                                 IconPackValueRow(
                                     selectedLabel = selectedIconPackLabel,
                                     iconPacksLoaded = iconPacksLoaded,
@@ -11783,7 +11873,7 @@ private fun IconLayoutSettingsOverlay(
                                         iconPackCursor = allPkgs.indexOf(iconPackPackage).coerceAtLeast(0)
                                         iconPackMenuExpanded = true
                                     },
-                                    focused = focusedItem == 4,
+                                    focused = focusedItem == 5,
                                 )
                                 IconPackDropdown(
                                     expanded = iconPackMenuExpanded,
@@ -11989,6 +12079,72 @@ private fun IconLayoutDropdown(
                 },
                 onClick = { onSelect(option) },
                 modifier = if (index == focusedIndex) Modifier.background(Color.White.copy(alpha = 0.1f)) else Modifier,
+            )
+        }
+    }
+}
+
+@Composable
+private fun GridPresetDropdown(
+    expanded: Boolean,
+    onDismiss: () -> Unit,
+    selected: GridPreset,
+    focusedIndex: Int = -1,
+    onMoveCursor: (Int) -> Unit = {},
+    onConfirm: () -> Unit = {},
+    onSelect: (GridPreset) -> Unit,
+) {
+    val innerFocus = remember { FocusRequester() }
+    val presets = GridPreset.entries
+    val default = GridPreset.R3C5
+    DropdownMenu(
+        expanded = expanded,
+        onDismissRequest = onDismiss,
+        modifier = Modifier
+            .width(210.dp)
+            .background(Color(0xFF252828))
+            .focusRequester(innerFocus)
+            .focusable()
+            .onPreviewKeyEvent { ev ->
+                if (ev.type != KeyEventType.KeyDown) return@onPreviewKeyEvent false
+                val nk = ev.nativeKeyEvent
+                val up    = ev.key == Key.DirectionUp    || nk?.keyCode == AndroidKeyEvent.KEYCODE_DPAD_UP
+                val down  = ev.key == Key.DirectionDown  || nk?.keyCode == AndroidKeyEvent.KEYCODE_DPAD_DOWN
+                val enter = ev.key == Key.Enter || ev.key == Key.NumPadEnter ||
+                    nk?.keyCode == AndroidKeyEvent.KEYCODE_DPAD_CENTER ||
+                    nk?.keyCode == AndroidKeyEvent.KEYCODE_ENTER
+                val back  = ev.key == Key.Back || nk?.keyCode == AndroidKeyEvent.KEYCODE_BACK
+                when {
+                    up    -> { onMoveCursor(-1); true }
+                    down  -> { onMoveCursor(1);  true }
+                    enter -> { onConfirm();      true }
+                    back  -> { onDismiss();      true }
+                    else  -> false
+                }
+            },
+    ) {
+        LaunchedEffect(expanded) { if (expanded) innerFocus.requestFocus() }
+        presets.forEachIndexed { index, preset ->
+            val label = "${preset.cols} × ${preset.rows}" + if (preset == default) " (Default)" else ""
+            val isFocused = index == focusedIndex
+            DropdownMenuItem(
+                text = {
+                    Row(modifier = Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+                        Text(
+                            text = label,
+                            color = if (isFocused) Color.White else Color(0xFFE0E3E6),
+                            fontSize = SETTINGS_VALUE_TEXT_SP,
+                            modifier = Modifier.weight(1f),
+                        )
+                        if (preset == selected) {
+                            Text("✓", color = Color(0xFF00C853), fontSize = SETTINGS_VALUE_TEXT_SP)
+                        }
+                    }
+                },
+                onClick = { onSelect(preset) },
+                modifier = Modifier.then(
+                    if (isFocused) Modifier.background(Color.White.copy(alpha = 0.1f)) else Modifier,
+                ),
             )
         }
     }
