@@ -56,9 +56,15 @@ object CustomIconStore {
         return runCatching {
             val bitmap = decodeBitmap(context, uri)
             val scaled = Bitmap.createScaledBitmap(bitmap, ICON_SIZE, ICON_SIZE, true)
-            iconFile(context, pkg).outputStream().buffered().use { out ->
+            val target = iconFile(context, pkg)
+            // Write to a temp file first, then atomically rename.
+            // This prevents concurrent getCachedIcon() calls from reading a partially-written
+            // file and falling back to the system icon, which would then be stored in iconCache.
+            val tmp = File(target.parent, "${target.name}.tmp")
+            tmp.outputStream().buffered().use { out ->
                 scaled.compress(Bitmap.CompressFormat.PNG, 100, out)
             }
+            check(tmp.renameTo(target)) { "renameTo failed: ${tmp.absolutePath} → ${target.absolutePath}" }
             Log.d(TAG, "Saved custom icon for $pkg")
             true
         }.getOrElse {

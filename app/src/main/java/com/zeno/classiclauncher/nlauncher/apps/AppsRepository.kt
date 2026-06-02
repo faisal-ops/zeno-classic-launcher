@@ -84,14 +84,21 @@ class AppsRepository(private val context: Context) {
     }
 
     @Suppress("NOTHING_TO_INLINE")
-    private inline fun getCachedIcon(pkg: String): Drawable? {
+    private inline fun getCachedIcon(pkg: String, component: ComponentName? = null): Drawable? {
         iconCache[pkg]?.let { return it }
         // Custom icon takes priority over PackageManager icon
         CustomIconStore.load(context, pkg)?.also { iconCache[pkg] = it; return it }
-        return runCatching { pm.getApplicationIcon(pkg) }
-            .getOrNull()
-            ?.let { flattenAdaptiveIcon(it) }
-            ?.also { iconCache[pkg] = it }
+        // Use getActivityIcon only when the activity has a DISTINCT icon from the application —
+        // this is the Google Calendar pattern (31 day-specific aliases, each with its own icon).
+        // For apps like Etar whose AllInOneActivity has its own static resource but it's NOT
+        // date-adaptive, getApplicationIcon is correct and avoids loading the wrong resource.
+        val raw = if (component != null) {
+            runCatching { pm.getActivityIcon(component) }.getOrNull()
+                ?: runCatching { pm.getApplicationIcon(pkg) }.getOrNull()
+        } else {
+            runCatching { pm.getApplicationIcon(pkg) }.getOrNull()
+        }
+        return raw?.let { flattenAdaptiveIcon(it) }?.also { iconCache[pkg] = it }
     }
 
     private suspend fun loadLaunchableApps(): List<AppEntry> = withContext(Dispatchers.IO) {
@@ -109,7 +116,18 @@ class AppsRepository(private val context: Context) {
             if (!seenPackages.add(pkg)) continue  // skip apps with multiple launcher activities
             val label = pm.getApplicationLabel(ai)?.toString() ?: pkg
             val component = ComponentName(pkg, ri.activityInfo.name)
-            installed.add(AppEntry(packageName = pkg, label = label, icon = getCachedIcon(pkg), componentName = component))
+            // Pass component only when the activity defines its OWN icon distinct from the app icon.
+            // This covers Google Calendar-style day aliases (each alias has a date-specific icon).
+            // For Etar and normal apps whose activity inherits the app icon, pass null so we use
+            // getApplicationIcon — avoids loading an incorrect activity-specific static resource.
+            val activityHasOwnIcon = ri.activityInfo.icon != 0 &&
+                ri.activityInfo.icon != ri.activityInfo.applicationInfo.icon
+            installed.add(AppEntry(
+                packageName = pkg,
+                label = label,
+                icon = getCachedIcon(pkg, if (activityHasOwnIcon) component else null),
+                componentName = component,
+            ))
         }
 
         installed.sortWith(APP_LABEL_COMPARATOR)
@@ -134,15 +152,25 @@ class AppsRepository(private val context: Context) {
 
         val receiver = object : BroadcastReceiver() {
             override fun onReceive(c: Context?, i: Intent?) {
-                val pkg = i?.data?.schemeSpecificPart
-                if (pkg != null) {
-                    when (i.action) {
-                        Intent.ACTION_PACKAGE_ADDED,
-                        Intent.ACTION_PACKAGE_REPLACED,
-                        Intent.ACTION_PACKAGE_REMOVED -> iconCache.remove(pkg)
+                when (i?.action) {
+                    Intent.ACTION_DATE_CHANGED, Intent.ACTION_TIME_CHANGED -> {
+                        // Date changed — evict all icons so apps like Google Calendar
+                        // (which show today's date via a per-day activity alias) refresh.
+                        iconCache.clear()
+                        launch { emitNow() }
+                    }
+                    else -> {
+                        val pkg = i?.data?.schemeSpecificPart
+                        if (pkg != null) {
+                            when (i.action) {
+                                Intent.ACTION_PACKAGE_ADDED,
+                                Intent.ACTION_PACKAGE_REPLACED,
+                                Intent.ACTION_PACKAGE_REMOVED -> iconCache.remove(pkg)
+                            }
+                        }
+                        launch { emitNow() }
                     }
                 }
-                launch { emitNow() }
             }
         }
 
@@ -152,12 +180,21 @@ class AppsRepository(private val context: Context) {
             addAction(Intent.ACTION_PACKAGE_REPLACED)
             addDataScheme("package")
         }
+        // DATE_CHANGED / TIME_CHANGED cannot have a data scheme — register separately
+        val dateFilter = IntentFilter().apply {
+            addAction(Intent.ACTION_DATE_CHANGED)
+            addAction(Intent.ACTION_TIME_CHANGED)
+        }
 
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
             context.registerReceiver(receiver, filter, Context.RECEIVER_NOT_EXPORTED)
+            // DATE_CHANGED / TIME_CHANGED are system broadcasts — must be RECEIVER_EXPORTED
+            context.registerReceiver(receiver, dateFilter, Context.RECEIVER_EXPORTED)
         } else {
             @Suppress("DEPRECATION")
             context.registerReceiver(receiver, filter)
+            @Suppress("DEPRECATION")
+            context.registerReceiver(receiver, dateFilter)
         }
 
         launch { emitNow() }

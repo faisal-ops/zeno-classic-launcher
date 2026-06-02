@@ -128,7 +128,6 @@ class LauncherViewModel(app: Application) : AndroidViewModel(app) {
 
     private val rawApps: StateFlow<List<AppEntry>> =
         appsRepo.appsFlow()
-            .distinctUntilChanged()
             .stateIn(viewModelScope, VIEWMODEL_SHARING, emptyList())
 
     val apps: StateFlow<List<AppEntry>> =

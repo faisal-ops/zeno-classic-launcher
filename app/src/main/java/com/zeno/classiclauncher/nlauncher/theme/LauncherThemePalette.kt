@@ -50,7 +50,7 @@ data class LauncherThemePalette(
     val appGridEdgeHoverZoneWidthDp: Float = 70f,
     /** Flutter stores duration in microseconds in JSON; we keep ms here. */
     val appGridEdgeHoverDurationMs: Long = 2500L,
-    val appCardFontSp: Float = 15f,
+    val appCardFontSp: Float = 12f,
     val appCardTextColour: Color = Color(0xFFE6E6E6),
     val appCardTextOutlineColour: Color = Color.Black,
     val appCardCornerRadiusDp: Float = 7f,
@@ -136,7 +136,11 @@ data class LauncherThemePalette(
                 appGridIconSizeDp = f(appGrid, "iconSize", 52f),
                 appGridColumnSpacingDp = f(appGrid, "columnSpacing", 9f),
                 appGridRowSpacingDp = f(appGrid, "rowSpacing", 9f),
-                appCardFontSp = f(appGrid, "appCardFontSize", 15f),
+                appCardFontSp = f(appGrid, "appCardFontSize", 12f).let {
+                    // 15f was the old compile-time default, written automatically on every
+                    // fresh install — it was never a user choice. Migrate it to 12f.
+                    if (it == 15f) 12f else it
+                },
                 appCardTextColour = c(appGrid, "appCardTextColour", Color(0xFFE6E6E6)),
                 appCardTextOutlineColour = c(appGrid, "appCardTextOutlineColour", Color.Black),
                 appCardCornerRadiusDp = f(appGrid, "cornerRadius", 7f).let { if (it <= 0f) 7f else it },

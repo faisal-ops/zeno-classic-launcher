@@ -191,6 +191,7 @@ import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.derivedStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.setValue
 import androidx.compose.runtime.mutableStateMapOf
@@ -852,7 +853,8 @@ fun LauncherScreen(
     }
 
     var showAppMenu by remember { mutableStateOf<AppEntry?>(null) }
-    var pendingIconChangePkg by remember { mutableStateOf<String?>(null) }
+    // rememberSaveable survives activity recreation (e.g. gallery picker kills launcher on low RAM)
+    var pendingIconChangePkg: String? by rememberSaveable { mutableStateOf(null) }
     val iconPickerLauncher = rememberLauncherForActivityResult(
         ActivityResultContracts.GetContent()
     ) { uri ->
@@ -3191,11 +3193,13 @@ private fun HomePage(
                         lastTapMs = 0L
                         when {
                             doubleTapToSleepEnabled -> {
-                                view.performHapticFeedback(HapticFeedbackConstants.CLOCK_TICK)
+                                // doVibrate fires unconditionally (ignores hapticsEnabled) and
+                                // calls VibrationEffect directly so screen-off can't cancel it
+                                doVibrate(view, hapticIntensity)
                                 SleepManager.lockNow(context)
                             }
                             doubleTapPackage.isNotEmpty() -> {
-                                view.performHapticFeedback(HapticFeedbackConstants.CLOCK_TICK)
+                                doNavFeedback(view, hapticsEnabled, hapticIntensity)
                                 onLaunchApp(doubleTapPackage)
                             }
                         }
@@ -6618,7 +6622,7 @@ private fun AppDrawer(
                 val viewportHeight = if (pagerViewportSize.height > 0) {
                     with(density) { pagerViewportSize.height.toDp() }
                 } else maxHeight
-                val minLabelBlock = with(density) { (labelSizeSp * 2.55f).sp.toDp() }
+                val minLabelBlock = with(density) { (labelSizeSp * 2.3f).sp.toDp() }
                 val minCellHeight = 3.dp + iconSize + 14.dp + 2.dp + minLabelBlock
                 val minCellWidth = iconSize + 14.dp
                 val cardW =
@@ -7161,6 +7165,19 @@ private fun keyToTypedChar(key: Key): Char? = when (key) {
 
 private fun doNavFeedback(view: android.view.View, hapticsEnabled: Boolean, intensity: Int = 3) {
     if (!hapticsEnabled) return
+    doVibrate(view, intensity)
+}
+
+/**
+ * Fires a haptic pulse unconditionally (ignores the Zeno hapticsEnabled pref).
+ * Use for confirmations where feedback must always occur regardless of user preference —
+ * e.g. double-tap to lock where the pulse IS the confirmation signal.
+ *
+ * Uses [android.os.VibrationEffect] directly (API 26+) so it is not cancelled by an
+ * immediate screen-off and bypasses [android.provider.Settings.System.HAPTIC_FEEDBACK_ENABLED].
+ * Falls back to [HapticFeedbackConstants.VIRTUAL_KEY] if amplitude control is unavailable.
+ */
+private fun doVibrate(view: android.view.View, intensity: Int = 3) {
     // Map intensity 1–5 to vibration amplitude 30–255. Use VibrationEffect for fine-grained control.
     // Falls back to VIRTUAL_KEY if amplitude control is unavailable (older devices/ROMs).
     val vibrator = if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.S) {
@@ -7243,7 +7260,7 @@ private fun FolderTile(
     val contentHeight = (height - contentVerticalInset * 2).coerceAtLeast(iconSize)
     // Keep folder tile vertical geometry in lockstep with AppTile so label baseline matches.
     val (iconSizeUsed, iconPadBottom) = remember(contentHeight, iconSize, labelSizeSp, density) {
-        val minLabel = with(density) { (labelSizeSp * 2.55f).sp.toDp() }
+        val minLabel = with(density) { (labelSizeSp * 2.3f).sp.toDp() }
         var sz = iconSize
         var pad = (contentHeight - iconPadTop - sz - textPadBottom - minLabel).coerceIn(3.dp, 14.dp)
         repeat(10) {
@@ -7508,7 +7525,7 @@ private fun AppTile(
         val textPadBottom = 2.dp
         val contentHeight = (height - contentVerticalInset * 2).coerceAtLeast(iconSize)
         val (iconSizeUsed, iconPadBottom) = remember(contentHeight, iconSize, labelSizeSp, density) {
-            val minLabel = with(density) { (labelSizeSp * 2.55f).sp.toDp() }
+            val minLabel = with(density) { (labelSizeSp * 2.3f).sp.toDp() }
             var sz = iconSize
             var pad = (contentHeight - iconPadTop - sz - textPadBottom - minLabel).coerceIn(3.dp, 14.dp)
             repeat(10) {
@@ -8544,8 +8561,9 @@ private fun HomeStripItemLabel(text: String) {
             fontSizeSp = HOME_STRIP_LABEL_FONT_SP.value.toInt(),
             textColor = HOME_STRIP_LABEL_COLOR,
         ).copy(lineHeight = HOME_STRIP_LABEL_LINE_SP),
-        maxLines = 1,
+        maxLines = 2,
         overflow = TextOverflow.Ellipsis,
+        softWrap = true,
         textAlign = TextAlign.Center,
         modifier = Modifier
             .widthIn(max = 88.dp)
@@ -9140,7 +9158,7 @@ private fun HomeShortcutStrip(
                 .align(Alignment.BottomCenter),
         ) {
             val viewportWidth = maxWidth
-            val minLabelBlock = with(density) { (labelSizeSp * 2.55f).sp.toDp() }
+            val minLabelBlock = with(density) { (labelSizeSp * 2.3f).sp.toDp() }
             val minCellHeight = 3.dp + iconSize + HOME_STRIP_ICON_LABEL_GAP + 2.dp + minLabelBlock
             val minCellWidth = iconSize + 10.dp
             val stripCols = 5
@@ -11273,8 +11291,16 @@ private fun IconPreviewStrip(
     }
 }
 
-private fun iconSettingsPreviewIconSize(iconSizeDp: Float): Dp =
-    iconSizeDp.coerceIn(38f, 48f).dp
+/**
+ * Maps the real icon size (44–64 dp slider range) to a preview-friendly size (36–54 dp).
+ * The preview container is smaller than the actual grid, so we scale down proportionally
+ * rather than using the raw value — but the relative difference must be visible as the
+ * slider moves across the full range.
+ */
+private fun iconSettingsPreviewIconSize(iconSizeDp: Float): Dp {
+    val t = (iconSizeDp - MIN_APP_ICON_SIZE_DP) / (MAX_APP_ICON_SIZE_DP - MIN_APP_ICON_SIZE_DP)
+    return (36f + t * (54f - 36f)).dp
+}
 
 @Composable
 private fun IconSettingsPreviewItem(
