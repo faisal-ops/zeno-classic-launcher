@@ -53,7 +53,7 @@ data class LauncherThemePalette(
     val appCardFontSp: Float = 12f,
     val appCardTextColour: Color = Color(0xFFE6E6E6),
     val appCardTextOutlineColour: Color = Color.Black,
-    val appCardCornerRadiusDp: Float = 7f,
+    val appCardCornerRadiusDp: Float = 12f,
     // selectorTheme (grid focus / edit selection)
     val selectorBackgroundColour: Color = Color(0xBE42A7CF),
     val selectorBorderColour: Color = Color(0x9470B9D6),
@@ -126,9 +126,12 @@ data class LauncherThemePalette(
                 navBarSpacingDp = f(navBar, "navBarSpacing", 14f),
                 navBarIconSizeDp = f(navBar, "navBarIconSize", 43f),
                 dockIconTint = c(navBar, "iconColour", Color(0xFFE6E6E6)),
-                pageIndicatorInactiveDp = f(pageInd, "pageIndicatorInactiveSize", 12f),
-                pageIndicatorActiveDp = f(pageInd, "pageIndicatorActiveSize", 22f),
-                pageIndicatorSpacingDp = f(pageInd, "pageIndicatorSpacing", 28f),
+                pageIndicatorInactiveDp = f(pageInd, "pageIndicatorInactiveSize", 12f)
+                    .let { if (it == 7f) 12f else it },  // undo accidental shrink migration
+                pageIndicatorActiveDp = f(pageInd, "pageIndicatorActiveSize", 22f)
+                    .let { if (it == 11f) 22f else it }, // undo accidental shrink migration
+                pageIndicatorSpacingDp = f(pageInd, "pageIndicatorSpacing", 28f)
+                    .let { if (it == 18f) 28f else it }, // undo accidental shrink migration
                 pageIndicatorFontSp = f(pageInd, "pageIndicatorFontSize", 14f),
                 pageIndicatorColour = c(pageInd, "pageIndicatorColour", Color(0xFFE6E6E6)),
                 pageIndicatorShapeSquircle = pageInd.optString("indicatorShape", "circle")
@@ -143,7 +146,7 @@ data class LauncherThemePalette(
                 },
                 appCardTextColour = c(appGrid, "appCardTextColour", Color(0xFFE6E6E6)),
                 appCardTextOutlineColour = c(appGrid, "appCardTextOutlineColour", Color.Black),
-                appCardCornerRadiusDp = f(appGrid, "cornerRadius", 7f).let { if (it <= 0f) 7f else it },
+                appCardCornerRadiusDp = f(appGrid, "cornerRadius", 12f).let { if (it <= 0f || it == 7f) 12f else it },
                 appGridEdgeHoverZoneWidthDp = f(appGrid, "appGridEdgeHoverZoneWidth", 70f),
                 appGridEdgeHoverDurationMs = run {
                     if (!appGrid.has("appGridEdgeHoverDuration")) return@run 2500L
