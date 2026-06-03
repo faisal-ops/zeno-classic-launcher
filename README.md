@@ -21,7 +21,7 @@ Native **Android home app** (launcher) built with **Jetpack Compose**, tuned for
 [![Downloads](https://img.shields.io/github/downloads/faisal-ops/zeno-classic-launcher/total?style=flat-square&label=downloads)](https://github.com/faisal-ops/zeno-classic-launcher/releases)
 [![Latest release](https://img.shields.io/github/v/release/faisal-ops/zeno-classic-launcher?sort=semver&style=flat-square&label=release)](https://github.com/faisal-ops/zeno-classic-launcher/releases/latest)
 
-**Install:** open **[Latest release](https://github.com/faisal-ops/zeno-classic-launcher/releases/latest)** and download the attached APK (currently **`zeno-classic-launcher-v1.2.8.apk`**).  
+**Install:** open **[Latest release](https://github.com/faisal-ops/zeno-classic-launcher/releases/latest)** and download the attached APK (currently **`zeno-classic-launcher-v1.3.0.apk`**).  
 All releases: [github.com/faisal-ops/zeno-classic-launcher/releases](https://github.com/faisal-ops/zeno-classic-launcher/releases).
 
 ---
@@ -41,7 +41,6 @@ All releases: [github.com/faisal-ops/zeno-classic-launcher/releases](https://git
 - **Notification badges** — Single toggle controls both dock and drawer badges; stuck badge fix (Gmail/Outlook group summaries excluded)
 - **Custom app icons** — Long-press any app or dock shortcut → "Change icon" to pick from gallery; "Reset icon" to restore default
 - **Notification listener** (optional) — Unread styling for dock mail badge (`BadgeNotificationListener`)
-- **Device admin** (optional) — Sleep / lock policies where enabled (`LauncherDeviceAdminReceiver`)
 - **Widgets** — Add widgets via system picker from the launcher settings sheet
 - **DataStore** — Preferences + versioned backup format
 
@@ -52,7 +51,7 @@ All releases: [github.com/faisal-ops/zeno-classic-launcher/releases](https://git
 | **Language** | Kotlin |
 | **UI** | Jetpack Compose |
 | **`applicationId`** | `com.zeno.classiclauncher.nlauncher` |
-| **Version** | **1.2.8** (`versionCode` **12**) |
+| **Version** | **1.3.0** (`versionCode` **14**) |
 | **Min SDK** | **26** (Android 8.0) |
 | **Target SDK** | 34 |
 | **Release APK filename** | `zeno-classic-launcher-vX.Y.Z.apk` (see `app/build.gradle.kts` `outputFileName`) |
@@ -80,7 +79,6 @@ All releases: [github.com/faisal-ops/zeno-classic-launcher/releases](https://git
 | Component | Role |
 |-----------|------|
 | **Notification listener** (`BadgeNotificationListener`) | User enables in system settings; used for dock mail-style badge |
-| **Device admin** (`LauncherDeviceAdminReceiver`) | Optional; user enables for sleep / policy features |
 
 Exact declarations are in `app/src/main/AndroidManifest.xml` and runtime flows in the app (e.g. special-access grants for usage stats).
 
@@ -105,10 +103,10 @@ APK: `app/build/outputs/apk/debug/Zeno Classic-debug.apk`
 ./gradlew :app:assembleRelease
 ```
 
-APK: `app/build/outputs/apk/release/zeno-classic-launcher-v1.2.8.apk`
+APK: `app/build/outputs/apk/release/zeno-classic-launcher-v1.3.0.apk`
 
 ```bash
-adb install -r app/build/outputs/apk/release/zeno-classic-launcher-v1.2.8.apk
+adb install -r app/build/outputs/apk/release/zeno-classic-launcher-v1.3.0.apk
 ```
 
 Or install via Gradle (uses `adb` under the hood):
