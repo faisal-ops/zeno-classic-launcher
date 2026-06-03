@@ -133,7 +133,7 @@ class LauncherViewModel(app: Application) : AndroidViewModel(app) {
 
     val apps: StateFlow<List<AppEntry>> =
         combine(rawApps, prefs) { list, pr ->
-            iconPackRepo.applyIconPack(list, pr.iconPackPackage)
+            iconPackRepo.applyIconPack(list, pr.iconPackPackage, pr.customIconPackages)
         }.stateIn(viewModelScope, VIEWMODEL_SHARING, emptyList())
 
     fun hasUsagePermission(): Boolean = UsageStatsRepository.hasPermission(getApplication())

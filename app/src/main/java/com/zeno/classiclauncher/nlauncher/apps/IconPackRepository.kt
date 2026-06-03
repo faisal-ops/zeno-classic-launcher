@@ -53,13 +53,18 @@ class IconPackRepository(private val context: Context) {
             .sortedBy { it.label.lowercase() }
     }
 
-    suspend fun applyIconPack(apps: List<AppEntry>, iconPackPackage: String): List<AppEntry> = withContext(Dispatchers.IO) {
+    suspend fun applyIconPack(
+        apps: List<AppEntry>,
+        iconPackPackage: String,
+        customIconPackages: Set<String> = emptySet(),
+    ): List<AppEntry> = withContext(Dispatchers.IO) {
         val pack = iconPackPackage.trim()
         if (pack.isEmpty()) return@withContext apps
         val mappings = loadMappings(pack)
         if (mappings.isEmpty()) return@withContext apps
         apps.map { app ->
-            if (app.internal) {
+            if (app.internal || app.packageName in customIconPackages) {
+                // Skip: internal app or user has set a custom icon — preserve it
                 app
             } else {
                 val drawableName = app.componentName?.let { mappings[it] }
