@@ -166,6 +166,9 @@ class LockScreenAccessibilityService : AccessibilityService() {
         dismissAttempted = true
         Log.d(TAG, "Launching DismissKeyguardActivity")
         DismissKeyguardActivity.launch(this)
+        // Start polling for PIN entry after the keyguard overlay is dismissed.
+        // POLLING_START_DELAY_MS gives the PIN bouncer time to appear on screen.
+        handler.postDelayed(::startPinPolling, POLLING_START_DELAY_MS)
     }
 
     // ── PIN polling ───────────────────────────────────────────────────────────
