@@ -120,11 +120,12 @@ class LockScreenAccessibilityService : AccessibilityService() {
         Log.d(TAG, "Screen on — isKeyguardLocked=$locked autoUnlockEnabled=$autoUnlockEnabled keepLock=$keepLock")
         if (locked && autoUnlockEnabled) {
             if (keepLock) {
-                // Alarm or media session active — keep lock screen visible.
                 Log.d(TAG, "Keep lock screen — skipping overlay dismiss")
             } else {
                 handler.postDelayed(::attemptDismiss, DISMISS_DELAY_MS)
             }
+            // Poll for PIN in all cases (including media/keepLock) — auto-submits manual PIN entry
+            handler.postDelayed(::startPinPolling, POLLING_START_DELAY_MS)
         }
     }
 
@@ -166,9 +167,6 @@ class LockScreenAccessibilityService : AccessibilityService() {
         dismissAttempted = true
         Log.d(TAG, "Launching DismissKeyguardActivity")
         DismissKeyguardActivity.launch(this)
-        // Start polling for PIN entry after the keyguard overlay is dismissed.
-        // POLLING_START_DELAY_MS gives the PIN bouncer time to appear on screen.
-        handler.postDelayed(::startPinPolling, POLLING_START_DELAY_MS)
     }
 
     // ── PIN polling ───────────────────────────────────────────────────────────
@@ -186,6 +184,11 @@ class LockScreenAccessibilityService : AccessibilityService() {
     private val pinPollRunnable = object : Runnable {
         override fun run() {
             if (!isScreenOn || !pollingActive) return
+            if (!keyguardManager.isKeyguardLocked) {
+                pollingActive = false
+                Log.d(TAG, "PIN poll — keyguard unlocked, stopping")
+                return
+            }
             val len = findPinFieldLength()
             Log.d(TAG, "PIN poll — length=$len")
             when {
