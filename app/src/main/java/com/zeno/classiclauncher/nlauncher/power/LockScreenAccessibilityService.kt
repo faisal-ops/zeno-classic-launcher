@@ -315,7 +315,15 @@ class LockScreenAccessibilityService : AccessibilityService() {
     }
 
     private fun isBedtimeModeActive(): Boolean = try {
-        Settings.Secure.getInt(contentResolver, "bedtime_mode", 0) == 1
+        // bedtime_mode setting is set by Digital Wellbeing — on a fresh boot it may still be 0
+        // for several seconds while Digital Wellbeing initialises, even though the bedtime
+        // ZenRule is already active. zen_mode is restored from disk immediately by
+        // NotificationManager, so we use it as a fallback to catch the boot race condition.
+        val bedtimeSetting = Settings.Secure.getInt(contentResolver, "bedtime_mode", 0) == 1
+        val zenActive = Settings.Global.getInt(contentResolver, "zen_mode", 0) != 0
+        val active = bedtimeSetting || zenActive
+        Log.d(TAG, "isBedtimeModeActive — bedtimeSetting=$bedtimeSetting zenActive=$zenActive → $active")
+        active
     } catch (e: Exception) {
         Log.w(TAG, "bedtime_mode check failed: $e")
         false
