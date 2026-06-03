@@ -36,11 +36,16 @@ keystore/
 # OS
 .DS_Store
 
-# Local / contributor docs (keep on disk; not versioned)
+# Local / contributor docs and AI rules (keep on disk; not versioned)
 PARITY_CHECKLIST.md
 CLAUDE.md
 AGENTS.md
 docs/AGENTS.md
+.clinerules
+.cursorrules
+.windsurfrules
+.cursor/rules/
+.github/copilot-instructions.md
 
 # Wallpapers — large binaries; generated exports (see scripts/export_wallpapers_for_phone.py)
 wallpapers/
