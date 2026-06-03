@@ -192,6 +192,7 @@ import androidx.compose.runtime.mutableStateListOf
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.derivedStateOf
+import androidx.compose.runtime.withFrameNanos
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.rememberUpdatedState
@@ -222,6 +223,7 @@ import androidx.compose.ui.layout.boundsInRoot
 import androidx.compose.ui.layout.onGloballyPositioned
 import androidx.compose.ui.zIndex
 import androidx.compose.ui.draw.alpha
+import androidx.compose.ui.draw.rotate
 import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.draw.clip
 import androidx.compose.foundation.shape.CircleShape
@@ -316,6 +318,8 @@ import java.util.Locale
 import kotlin.math.abs
 import kotlin.math.hypot
 import kotlin.math.roundToInt
+import kotlin.math.sin
+import kotlin.math.PI
 import androidx.compose.ui.graphics.Shape
 
 /**
@@ -6543,34 +6547,48 @@ private fun AppDrawer(
                 horizontalArrangement = androidx.compose.foundation.layout.Arrangement.End,
                 verticalAlignment = Alignment.CenterVertically,
             ) {
-                val sortCycleOrder = listOf(
-                    DrawerSortMode.ALPHABETICAL,
-                    DrawerSortMode.CLASSIC,
-                    DrawerSortMode.MOST_USED,
-                )
-                val cycleNext = {
-                    val next = sortCycleOrder[(sortCycleOrder.indexOf(drawerSortMode) + 1) % sortCycleOrder.size]
-                    onSortModeSelected(next)
-                }
-                IconButton(
-                    onClick = { cycleNext() },
-                    modifier = Modifier.size(36.dp).padding(4.dp),
-                ) {
-                    val sortIcon = when (drawerSortMode) {
-                        DrawerSortMode.ALPHABETICAL -> Icons.Outlined.SortByAlpha
-                        DrawerSortMode.CLASSIC -> Icons.Outlined.GridView
-                        DrawerSortMode.MOST_USED -> Icons.Outlined.QueryStats
-                    }
-                    Icon(
-                        imageVector = sortIcon,
-                        contentDescription = "Sort: ${drawerSortModeLabel(drawerSortMode)}",
-                        tint = if (drawerSortMode == DrawerSortMode.MOST_USED) {
-                            themePalette.settingsMenuTitle
-                        } else {
-                            themePalette.settingsMenuBody.copy(alpha = 0.65f)
-                        },
-                        modifier = Modifier.size(18.dp),
+                if (reorderMode) {
+                    // Arrange mode active — show Done button
+                    Text(
+                        text = "Done",
+                        fontSize = 13.sp,
+                        fontWeight = FontWeight.SemiBold,
+                        color = Color(0xFF4FC3F7),
+                        modifier = Modifier
+                            .clip(RoundedCornerShape(8.dp))
+                            .clickable { onToggleReorder() }
+                            .padding(horizontal = 10.dp, vertical = 4.dp),
                     )
+                } else {
+                    val sortCycleOrder = listOf(
+                        DrawerSortMode.ALPHABETICAL,
+                        DrawerSortMode.CLASSIC,
+                        DrawerSortMode.MOST_USED,
+                    )
+                    val cycleNext = {
+                        val next = sortCycleOrder[(sortCycleOrder.indexOf(drawerSortMode) + 1) % sortCycleOrder.size]
+                        onSortModeSelected(next)
+                    }
+                    IconButton(
+                        onClick = { cycleNext() },
+                        modifier = Modifier.size(36.dp).padding(4.dp),
+                    ) {
+                        val sortIcon = when (drawerSortMode) {
+                            DrawerSortMode.ALPHABETICAL -> Icons.Outlined.SortByAlpha
+                            DrawerSortMode.CLASSIC -> Icons.Outlined.GridView
+                            DrawerSortMode.MOST_USED -> Icons.Outlined.QueryStats
+                        }
+                        Icon(
+                            imageVector = sortIcon,
+                            contentDescription = "Sort: ${drawerSortModeLabel(drawerSortMode)}",
+                            tint = if (drawerSortMode == DrawerSortMode.MOST_USED) {
+                                themePalette.settingsMenuTitle
+                            } else {
+                                themePalette.settingsMenuBody.copy(alpha = 0.65f)
+                            },
+                            modifier = Modifier.size(18.dp),
+                        )
+                    }
                 }
             }
         } else {
@@ -7238,22 +7256,26 @@ private fun FolderTile(
     val cardRadius = themePalette.appCardCornerRadiusDp.dp
     val selRadius = themePalette.selectorBorderRadiusDp.dp
     val phaseFlipped = remember(displayLabel) { displayLabel.hashCode() and 1 != 0 }
-    val wiggle = rememberInfiniteTransition(label = "folderWiggle")
-    val wiggleRotation by wiggle.animateFloat(
-        initialValue = if (phaseFlipped) 3.5f else -3.5f,
-        targetValue = if (phaseFlipped) -3.5f else 3.5f,
-        animationSpec = infiniteRepeatable(
-            animation = tween(durationMillis = 200, easing = LinearEasing),
-            repeatMode = RepeatMode.Reverse,
-        ),
-        label = "wiggleRotation",
-    )
     val showLiftInPlace = isFingerDraggingThisTile && !hideSourceWhileFingerDragging
-    val wiggleStrength by animateFloatAsState(
-        targetValue = if (reorderMode && !showLiftInPlace && !isFingerDraggingThisTile) 1f else 0f,
-        animationSpec = tween(200),
-        label = "folderWiggleStrength",
-    )
+    val shouldWiggle = reorderMode && !showLiftInPlace && !isFingerDraggingThisTile
+    val wiggleAngle = remember { androidx.compose.runtime.mutableFloatStateOf(0f) }
+    androidx.compose.runtime.LaunchedEffect(shouldWiggle, phaseFlipped) {
+        if (!shouldWiggle) { wiggleAngle.floatValue = 0f; return@LaunchedEffect }
+        // Sine-wave via withFrameNanos — works the same way iOS CAAnimation drives its layer.
+        // period = 900ms per full swing; phase offset staggers alternate icons.
+        val peak = 5f
+        val periodNs = 900_000_000L
+        val phaseOffset = if (phaseFlipped) PI else 0.0
+        var startNs = -1L
+        while (true) {
+            withFrameNanos { nanos ->
+                if (startNs < 0L) startNs = nanos
+                val t = (nanos - startNs).toDouble() / periodNs.toDouble()
+                wiggleAngle.floatValue = (peak * sin(2.0 * PI * t + phaseOffset)).toFloat()
+            }
+        }
+    }
+    val currentWiggle = wiggleAngle.floatValue
     val density = LocalDensity.current
     val iconPadTop = 3.dp
     val textPadBottom = 2.dp
@@ -7281,14 +7303,13 @@ private fun FolderTile(
             .zIndex(if (isFingerDraggingThisTile) 1f else 0f)
             .onGloballyPositioned(onGloballyPositioned)
             .size(width, height)
+            .rotate(currentWiggle)
             .graphicsLayer {
                 if (showLiftInPlace) {
                     translationX = reorderDragOffset.x
                     translationY = reorderDragOffset.y
                     alpha = 0.92f
                     shadowElevation = 12f
-                } else {
-                    rotationZ = wiggleRotation * wiggleStrength
                 }
             }
             .alpha(animateFloatAsState(if (hideSourceWhileFingerDragging && isFingerDraggingThisTile) 0f else 1f, label = "folderTileAlpha").value)
@@ -7476,39 +7497,40 @@ private fun AppTile(
     val selRadius = themePalette.selectorBorderRadiusDp.dp
     // Phase-stagger: half the tiles start at +peak, half at –peak, so they don't lockstep.
     val phaseFlipped = remember(app.packageName) { app.packageName.hashCode() and 1 != 0 }
-    val wiggle = rememberInfiniteTransition(label = "wiggle")
-    // LinearEasing gives constant angular velocity so the icon decelerates smoothly at each
-    // extreme — no asymmetric snap that FastOutSlowInEasing causes in reverse cycles.
-    val wiggleRotation by wiggle.animateFloat(
-        initialValue = if (phaseFlipped) 3.5f else -3.5f,
-        targetValue = if (phaseFlipped) -3.5f else 3.5f,
-        animationSpec = infiniteRepeatable(
-            animation = tween(durationMillis = 200, easing = LinearEasing),
-            repeatMode = RepeatMode.Reverse,
-        ),
-        label = "wiggleRotation",
-    )
-
     val showLiftInPlace = isFingerDraggingThisTile && !hideSourceWhileFingerDragging
-    // wiggleStrength fades 0→1 on entry and 1→0 on exit without chasing the live wiggle value.
-    val wiggleStrength by animateFloatAsState(
-        targetValue = if (reorderMode && !showLiftInPlace && !isFingerDraggingThisTile) 1f else 0f,
-        animationSpec = tween(200),
-        label = "appWiggleStrength",
-    )
+    val shouldWiggle = reorderMode && !showLiftInPlace && !isFingerDraggingThisTile
+    // Manual coroutine wiggle — rememberInfiniteTransition does not drive per-frame
+    // recomposition inside LazyVerticalGrid items (lazy skip optimisation blocks it).
+    val wiggleAngle = remember { androidx.compose.runtime.mutableFloatStateOf(0f) }
+    androidx.compose.runtime.LaunchedEffect(shouldWiggle, phaseFlipped) {
+        if (!shouldWiggle) { wiggleAngle.floatValue = 0f; return@LaunchedEffect }
+        // Sine-wave via withFrameNanos — works the same way iOS CAAnimation drives its layer.
+        // period = 900ms per full swing; phase offset staggers alternate icons.
+        val peak = 5f
+        val periodNs = 900_000_000L
+        val phaseOffset = if (phaseFlipped) PI else 0.0
+        var startNs = -1L
+        while (true) {
+            withFrameNanos { nanos ->
+                if (startNs < 0L) startNs = nanos
+                val t = (nanos - startNs).toDouble() / periodNs.toDouble()
+                wiggleAngle.floatValue = (peak * sin(2.0 * PI * t + phaseOffset)).toFloat()
+            }
+        }
+    }
+    val currentWiggle = wiggleAngle.floatValue   // read in composition → triggers recompose each frame
     Box(
         modifier = Modifier
             .zIndex(if (isFingerDraggingThisTile) 1f else 0f)
             .onGloballyPositioned(onGloballyPositioned)
             .size(width, height)
+            .rotate(currentWiggle)
             .graphicsLayer {
                 if (showLiftInPlace) {
                     translationX = reorderDragOffset.x
                     translationY = reorderDragOffset.y
                     alpha = 0.92f
                     shadowElevation = 12f
-                } else {
-                    rotationZ = wiggleRotation * wiggleStrength
                 }
             }
             .alpha(animateFloatAsState(if (hideSourceWhileFingerDragging && isFingerDraggingThisTile) 0f else 1f, label = "appTileAlpha").value)
