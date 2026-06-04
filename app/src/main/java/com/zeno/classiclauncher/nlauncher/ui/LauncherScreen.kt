@@ -7277,20 +7277,20 @@ private fun FolderTile(
     }
     val currentWiggle = wiggleAngle.floatValue
     val density = LocalDensity.current
-    val iconPadTop = 3.dp
+    val iconPadTop = 4.dp
     val textPadBottom = 2.dp
     val contentHeight = (height - contentVerticalInset * 2).coerceAtLeast(iconSize)
     // Keep folder tile vertical geometry in lockstep with AppTile so label baseline matches.
     val (iconSizeUsed, iconPadBottom) = remember(contentHeight, iconSize, labelSizeSp, density) {
         val minLabel = with(density) { (labelSizeSp * 2.3f).sp.toDp() }
         var sz = iconSize
-        var pad = (contentHeight - iconPadTop - sz - textPadBottom - minLabel).coerceIn(3.dp, 14.dp)
+        var pad = (contentHeight - iconPadTop - sz - textPadBottom - minLabel).coerceIn(2.dp, 8.dp)
         repeat(10) {
             val labelSpace = contentHeight - iconPadTop - sz - pad - textPadBottom
             if (labelSpace >= minLabel) return@remember Pair(sz, pad)
             if (sz <= 40.dp) return@remember Pair(sz, pad)
             sz -= 3.dp
-            pad = (contentHeight - iconPadTop - sz - textPadBottom - minLabel).coerceIn(3.dp, 14.dp)
+            pad = (contentHeight - iconPadTop - sz - textPadBottom - minLabel).coerceIn(2.dp, 8.dp)
         }
         Pair(sz.coerceAtLeast(40.dp), pad)
     }
@@ -7424,7 +7424,7 @@ private fun FolderTile(
                         contentAlignment = Alignment.Center,
                     ) {
                         Text(
-                            text = "\u2731",
+                            text = "✱",
                             style = MaterialTheme.typography.labelSmall.copy(
                                 color = Color.White,
                                 fontSize = 9.sp,
@@ -7550,7 +7550,7 @@ private fun AppTile(
     ) {
         val density = LocalDensity.current
         // Reserve extra height for two lines (descenders + outline); shrink icon/padding when the cell is short.
-        val iconPadTop = 1.dp
+        val iconPadTop = 4.dp
         val textPadBottom = 2.dp
         val contentHeight = (height - contentVerticalInset * 2).coerceAtLeast(iconSize)
         val (iconSizeUsed, iconPadBottom) = remember(contentHeight, iconSize, labelSizeSp, density) {
@@ -7562,7 +7562,7 @@ private fun AppTile(
                 if (labelSpace >= minLabel) return@remember Pair(sz, pad)
                 if (sz <= 40.dp) return@remember Pair(sz, pad)
                 sz -= 3.dp
-                pad = (contentHeight - iconPadTop - sz - textPadBottom - minLabel).coerceIn(3.dp, 14.dp)
+                pad = (contentHeight - iconPadTop - sz - textPadBottom - minLabel).coerceIn(2.dp, 8.dp)
             }
             Pair(sz.coerceAtLeast(40.dp), pad)
         }
@@ -8754,7 +8754,7 @@ private fun HomeGroupStripIcon(
                 contentAlignment = Alignment.Center,
             ) {
                 Text(
-                    text = "\u2731",
+                    text = "✱",
                     style = MaterialTheme.typography.labelSmall.copy(
                         color = Color.White,
                         fontSize = 8.sp,
@@ -11404,7 +11404,7 @@ private fun IconSettingsPreviewItem(
                     contentAlignment = Alignment.Center,
                 ) {
                     Text(
-                        text = "\u2731",
+                        text = "✱",
                         style = MaterialTheme.typography.labelSmall.copy(
                             color = Color.White,
                             fontSize = 8.sp,
