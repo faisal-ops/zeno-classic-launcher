@@ -1489,7 +1489,11 @@ fun LauncherScreen(
                     homeShortcutMenuToken = null
                 },
                 onHideToggle = {
-                    vm.setHidden(selectedApp.packageName, !prefs.hiddenPackages.contains(selectedApp.packageName))
+                    val isCurrentlyHidden = prefs.hiddenPackages.contains(selectedApp.packageName)
+                    vm.setHidden(selectedApp.packageName, !isCurrentlyHidden)
+                    if (!isCurrentlyHidden) {
+                        Toast.makeText(context, "App hidden · Type \"private\" in drawer to view", Toast.LENGTH_SHORT).show()
+                    }
                     showAppMenu = null
                     appMenuFromHomeShortcut = false
                     homeShortcutMenuToken = null
@@ -1616,6 +1620,7 @@ fun LauncherScreen(
                 hapticIntensity = prefs.hapticIntensity,
                 appIconShape = prefs.appIconShape,
                 themePalette = themePalette,
+                unreadPackages = if (prefs.notificationBadgesEnabled) unreadPackages else emptySet(),
                 renameDialogTitle = "Rename folder",
                 emptyStateMessage = "No apps in this folder.",
             )
@@ -1653,6 +1658,7 @@ fun LauncherScreen(
                 hapticIntensity = prefs.hapticIntensity,
                 appIconShape = prefs.appIconShape,
                 themePalette = themePalette,
+                unreadPackages = if (prefs.notificationBadgesEnabled) unreadPackages else emptySet(),
                 renameDialogTitle = "Rename group",
                 emptyStateMessage = "No apps yet — long-press an app in the drawer to add it here.",
             )
@@ -7785,6 +7791,7 @@ private fun HomeGroupFolderOverlay(
     hapticIntensity: Int,
     appIconShape: AppIconShape,
     themePalette: LauncherThemePalette,
+    unreadPackages: Set<String> = emptySet(),
     renameDialogTitle: String = "Rename group",
     emptyStateMessage: String = "No apps yet — long-press an app in the drawer to add it here.",
 ) {
@@ -7983,14 +7990,16 @@ private fun HomeGroupFolderOverlay(
                                     )
                                 },
                         ) {
-                            AsyncImage(
-                                model = app.icon,
-                                contentDescription = app.label,
-                                contentScale = ContentScale.Fit,
-                                modifier = Modifier
-                                    .size(tileIconSize)
-                                    .clip(iconMaskShape(appIconShape)),
-                            )
+                            AppIconWithBadge(hasUnread = app.packageName in unreadPackages) {
+                                AsyncImage(
+                                    model = app.icon,
+                                    contentDescription = app.label,
+                                    contentScale = ContentScale.Fit,
+                                    modifier = Modifier
+                                        .size(tileIconSize)
+                                        .clip(iconMaskShape(appIconShape)),
+                                )
+                            }
                             Spacer(Modifier.height(iconLabelGap))
                             Text(
                                 text = app.label,
