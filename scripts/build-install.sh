@@ -5,7 +5,8 @@
 set -e
 
 JAVA_HOME_PATH="/Applications/Android Studio.app/Contents/jbr/Contents/Home"
-APK_PATH="app/build/outputs/apk/release/Zeno Classic.apk"
+# APK filename is set dynamically in build.gradle.kts (zeno-classic-launcher-vX.Y.Z.apk)
+APK_PATH=$(ls app/build/outputs/apk/release/zeno-classic-launcher-v*.apk 2>/dev/null | head -1)
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 REPO_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
 

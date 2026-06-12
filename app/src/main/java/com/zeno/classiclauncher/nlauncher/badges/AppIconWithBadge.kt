@@ -4,6 +4,7 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.sizeIn
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
@@ -38,7 +39,9 @@ fun AppIconWithBadge(
                 modifier = Modifier
                     .align(Alignment.TopEnd)
                     .offset(x = 3.dp, y = (-3).dp)
-                    .size(badgeDiameter)
+                    // sizeIn (not size) so the circle grows at large font-scale accessibility
+                    // settings instead of clipping the ✱ glyph inside it.
+                    .sizeIn(minWidth = badgeDiameter, minHeight = badgeDiameter)
                     .clip(CircleShape)
                     .background(BadgeRed),
                 contentAlignment = Alignment.Center,
