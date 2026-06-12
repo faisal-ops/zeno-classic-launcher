@@ -39,6 +39,16 @@ import com.zeno.classiclauncher.nlauncher.prefs.MailBadgeCandidates
 import com.zeno.classiclauncher.nlauncher.prefs.SecondShortcutTarget
 import com.zeno.classiclauncher.nlauncher.prefs.DEFAULT_THEME_JSON
 import com.zeno.classiclauncher.nlauncher.prefs.LauncherBackup
+import com.zeno.classiclauncher.nlauncher.prefs.SimpleModeLayout
+import com.zeno.classiclauncher.nlauncher.prefs.SimpleModeMaxApps
+import android.content.ComponentName
+import android.media.MediaMetadata
+import android.media.session.MediaSessionManager
+import android.media.session.PlaybackState
+import com.zeno.classiclauncher.nlauncher.badges.BadgeNotificationListener
+import com.zeno.classiclauncher.nlauncher.simplemode.NowPlayingState
+import com.zeno.classiclauncher.nlauncher.simplemode.SimpleModeWeatherDay
+import com.zeno.classiclauncher.nlauncher.simplemode.fetchSimpleModeWeather
 import com.zeno.classiclauncher.nlauncher.theme.LauncherThemePalette
 import com.zeno.classiclauncher.nlauncher.usage.UsageStatsRepository
 import kotlinx.coroutines.delay
@@ -46,11 +56,17 @@ import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.debounce
 import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.flow.flatMapLatest
+import kotlinx.coroutines.flow.flow
+import kotlinx.coroutines.flow.flowOf
+import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.stateIn
+import kotlinx.coroutines.withContext
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
@@ -135,6 +151,103 @@ class LauncherViewModel(app: Application) : AndroidViewModel(app) {
         combine(rawApps, prefs) { list, pr ->
             iconPackRepo.applyIconPack(list, pr.iconPackPackage, pr.customIconPackages)
         }.stateIn(viewModelScope, VIEWMODEL_SHARING, emptyList())
+
+    private val _simpleModeForecast = MutableStateFlow<List<SimpleModeWeatherDay>>(emptyList())
+    val simpleModeForecast: StateFlow<List<SimpleModeWeatherDay>> = _simpleModeForecast.asStateFlow()
+
+    private val _nowPlaying = MutableStateFlow<NowPlayingState?>(null)
+    val nowPlaying: StateFlow<NowPlayingState?> = _nowPlaying.asStateFlow()
+
+    init {
+        // Weather: re-fetch on pref change; retry every 30s on failure, refresh every 30min on success
+        viewModelScope.launch {
+            prefs
+                .map { p ->
+                    Triple(
+                        p.simpleModeEnabled && p.simpleModeShowWeather,
+                        p.glanceWeatherLocationMode,
+                        p.glanceWeatherManualLatitude to p.glanceWeatherManualLongitude,
+                    )
+                }
+                .distinctUntilChanged()
+                .flatMapLatest { (shouldFetch, locMode, coords) ->
+                    if (!shouldFetch) flowOf(emptyList()) else flow {
+                        while (true) {
+                            val result = withContext(Dispatchers.IO) {
+                                fetchSimpleModeWeather(
+                                    getApplication<Application>().applicationContext,
+                                    locMode,
+                                    coords.first,
+                                    coords.second,
+                                )
+                            }
+                            emit(result)
+                            delay(if (result.isNotEmpty()) 30 * 60_000L else 30_000L)
+                        }
+                    }
+                }
+                .collect { _simpleModeForecast.value = it }
+        }
+
+        // Now-playing: poll media sessions every 2 seconds
+        viewModelScope.launch {
+            while (true) {
+                _nowPlaying.value = buildNowPlayingState()
+                delay(2_000L)
+            }
+        }
+    }
+
+    private fun buildNowPlayingState(): NowPlayingState? = runCatching {
+        val app = getApplication<Application>()
+        val msm = app.getSystemService(MediaSessionManager::class.java) ?: return null
+        val cn = ComponentName(app, BadgeNotificationListener::class.java)
+        val sessions = msm.getActiveSessions(cn)
+        val activeStates = setOf(
+            PlaybackState.STATE_PLAYING,
+            PlaybackState.STATE_PAUSED,
+            PlaybackState.STATE_BUFFERING,
+        )
+        val session = sessions.firstOrNull { it.playbackState?.state in activeStates } ?: return null
+        val meta = session.metadata ?: return null
+        val title = meta.getString(MediaMetadata.METADATA_KEY_TITLE) ?: return null
+        val artist = meta.getString(MediaMetadata.METADATA_KEY_ARTIST)
+            ?: meta.getString(MediaMetadata.METADATA_KEY_ALBUM_ARTIST)
+            ?: ""
+        NowPlayingState(
+            title = title,
+            artist = artist,
+            isPlaying = session.playbackState?.state == PlaybackState.STATE_PLAYING,
+        )
+    }.getOrNull()
+
+    fun mediaPlayPause() {
+        runCatching {
+            val app = getApplication<Application>()
+            val msm = app.getSystemService(MediaSessionManager::class.java) ?: return
+            val cn = ComponentName(app, BadgeNotificationListener::class.java)
+            val sessions = msm.getActiveSessions(cn)
+            val activeStates = setOf(PlaybackState.STATE_PLAYING, PlaybackState.STATE_PAUSED, PlaybackState.STATE_BUFFERING)
+            val ctrl = sessions.firstOrNull { it.playbackState?.state in activeStates } ?: return
+            if (ctrl.playbackState?.state == PlaybackState.STATE_PLAYING) {
+                ctrl.transportControls.pause()
+            } else {
+                ctrl.transportControls.play()
+            }
+        }
+    }
+
+    fun mediaSkipNext() {
+        runCatching {
+            val app = getApplication<Application>()
+            val msm = app.getSystemService(MediaSessionManager::class.java) ?: return
+            val cn = ComponentName(app, BadgeNotificationListener::class.java)
+            val sessions = msm.getActiveSessions(cn)
+            val activeStates = setOf(PlaybackState.STATE_PLAYING, PlaybackState.STATE_PAUSED, PlaybackState.STATE_BUFFERING)
+            sessions.firstOrNull { it.playbackState?.state in activeStates }
+                ?.transportControls?.skipToNext()
+        }
+    }
 
     fun hasUsagePermission(): Boolean = UsageStatsRepository.hasPermission(getApplication())
 
@@ -1291,6 +1404,28 @@ class LauncherViewModel(app: Application) : AndroidViewModel(app) {
 
     fun setClassicMode(enabled: Boolean) {
         viewModelScope.launch { prefsRepo.setClassicMode(enabled) }
+    }
+
+    fun setSimpleModeEnabled(enabled: Boolean) {
+        viewModelScope.launch { prefsRepo.setSimpleModeEnabled(enabled) }
+    }
+    fun setSimpleModeLayout(layout: SimpleModeLayout) {
+        viewModelScope.launch { prefsRepo.setSimpleModeLayout(layout) }
+    }
+    fun setSimpleModeMaxApps(maxApps: SimpleModeMaxApps) {
+        viewModelScope.launch { prefsRepo.setSimpleModeMaxApps(maxApps) }
+    }
+    fun setSimpleModeShowIcons(show: Boolean) {
+        viewModelScope.launch { prefsRepo.setSimpleModeShowIcons(show) }
+    }
+    fun setSimpleModeShowWeather(show: Boolean) {
+        viewModelScope.launch { prefsRepo.setSimpleModeShowWeather(show) }
+    }
+    fun setSimpleModeShowNotifSummary(show: Boolean) {
+        viewModelScope.launch { prefsRepo.setSimpleModeShowNotifSummary(show) }
+    }
+    fun setSimpleModeApps(packages: List<String>) {
+        viewModelScope.launch { prefsRepo.setSimpleModeApps(packages) }
     }
 
     fun setAppIconShape(shape: AppIconShape) {

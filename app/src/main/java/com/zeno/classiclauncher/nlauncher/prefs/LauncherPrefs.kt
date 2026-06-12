@@ -73,6 +73,10 @@ enum class GlanceWeatherLocationMode {
     MANUAL,
 }
 
+enum class SimpleModeLayout { LIST, GRID }
+
+enum class SimpleModeMaxApps { AUTO, SIX, NINE, TWELVE }
+
 data class HomeWidgetConfig(
     val appWidgetId: Int = -1,
     val providerPackage: String = "",
@@ -187,6 +191,15 @@ data class LauncherPrefs(
      * receivers while this is on.
      */
     val classicMode: Boolean = false,
+    // ── Simple Mode ──────────────────────────────────────────────────────────────
+    val simpleModeEnabled: Boolean = false,
+    val simpleModeLayout: SimpleModeLayout = SimpleModeLayout.LIST,
+    val simpleModeMaxApps: SimpleModeMaxApps = SimpleModeMaxApps.AUTO,
+    val simpleModeShowIcons: Boolean = true,
+    val simpleModeShowWeather: Boolean = true,
+    val simpleModeShowNotifSummary: Boolean = true,
+    /** Ordered package names pinned in Simple Mode. Empty = use built-in defaults. */
+    val simpleModeApps: List<String> = emptyList(),
     /** Global installed-app icon mask used across launcher surfaces. */
     val appIconShape: AppIconShape = AppIconShape.SOFT_SQUARE,
     /** Empty = app/system icons. Otherwise package name of an installed Nova/Apex-style icon pack. */
@@ -264,6 +277,13 @@ class LauncherPrefsRepository(private val context: Context) {
         val QUICK_SETTINGS_QR_SCANNER = stringPreferencesKey("quickSettingsQrScannerPackage")
         val QUICK_SETTINGS_TILE_ORDER = stringPreferencesKey("quickSettingsTileOrderCsv")
         val CLASSIC_MODE = booleanPreferencesKey("classicMode")
+        val SIMPLE_MODE = booleanPreferencesKey("simpleMode")
+        val SIMPLE_MODE_LAYOUT = stringPreferencesKey("simpleModeLayout")
+        val SIMPLE_MODE_MAX_APPS = stringPreferencesKey("simpleModeMaxApps")
+        val SIMPLE_MODE_SHOW_ICONS = booleanPreferencesKey("simpleModeShowIcons")
+        val SIMPLE_MODE_SHOW_WEATHER = booleanPreferencesKey("simpleModeShowWeather")
+        val SIMPLE_MODE_SHOW_NOTIF_SUMMARY = booleanPreferencesKey("simpleModeShowNotifSummary")
+        val SIMPLE_MODE_APPS = stringPreferencesKey("simpleModeApps")
         /** Legacy key from earlier builds; read only for migration. */
         val CLASSIC_MODE_LEGACY = booleanPreferencesKey("drawerOnlyMode")
         val APP_ICON_SHAPE = stringPreferencesKey("appIconShape")
@@ -349,6 +369,13 @@ class LauncherPrefsRepository(private val context: Context) {
         val quickSettingsQrScannerPackage = p[Keys.QUICK_SETTINGS_QR_SCANNER]?.trim() ?: ""
         val quickSettingsTileOrder = parseCsvList(p[Keys.QUICK_SETTINGS_TILE_ORDER])
         val classicMode = p[Keys.CLASSIC_MODE] ?: p[Keys.CLASSIC_MODE_LEGACY] ?: DEFAULT_PREFS.classicMode
+        val simpleModeEnabled = p[Keys.SIMPLE_MODE] ?: DEFAULT_PREFS.simpleModeEnabled
+        val simpleModeLayout = p[Keys.SIMPLE_MODE_LAYOUT]?.let { v -> SimpleModeLayout.entries.firstOrNull { it.name == v } } ?: DEFAULT_PREFS.simpleModeLayout
+        val simpleModeMaxApps = p[Keys.SIMPLE_MODE_MAX_APPS]?.let { v -> SimpleModeMaxApps.entries.firstOrNull { it.name == v } } ?: DEFAULT_PREFS.simpleModeMaxApps
+        val simpleModeShowIcons = p[Keys.SIMPLE_MODE_SHOW_ICONS] ?: DEFAULT_PREFS.simpleModeShowIcons
+        val simpleModeShowWeather = p[Keys.SIMPLE_MODE_SHOW_WEATHER] ?: DEFAULT_PREFS.simpleModeShowWeather
+        val simpleModeShowNotifSummary = p[Keys.SIMPLE_MODE_SHOW_NOTIF_SUMMARY] ?: DEFAULT_PREFS.simpleModeShowNotifSummary
+        val simpleModeApps = parseCsvList(p[Keys.SIMPLE_MODE_APPS])
         val appIconShape =
             p[Keys.APP_ICON_SHAPE]?.let { v -> AppIconShape.entries.firstOrNull { it.name == v } }
                 ?: DEFAULT_PREFS.appIconShape
@@ -408,6 +435,13 @@ class LauncherPrefsRepository(private val context: Context) {
             quickSettingsQrScannerPackage = quickSettingsQrScannerPackage,
             quickSettingsTileOrder = quickSettingsTileOrder,
             classicMode = classicMode,
+            simpleModeEnabled = simpleModeEnabled,
+            simpleModeLayout = simpleModeLayout,
+            simpleModeMaxApps = simpleModeMaxApps,
+            simpleModeShowIcons = simpleModeShowIcons,
+            simpleModeShowWeather = simpleModeShowWeather,
+            simpleModeShowNotifSummary = simpleModeShowNotifSummary,
+            simpleModeApps = simpleModeApps,
             appIconShape = appIconShape,
             iconPackPackage = iconPackPackage,
             showAppCardBackground = showAppCardBackground,
@@ -709,6 +743,28 @@ class LauncherPrefsRepository(private val context: Context) {
             s[Keys.CLASSIC_MODE] = enabled
             s.remove(Keys.CLASSIC_MODE_LEGACY)
         }
+    }
+
+    suspend fun setSimpleModeEnabled(enabled: Boolean) {
+        context.dataStore.edit { it[Keys.SIMPLE_MODE] = enabled }
+    }
+    suspend fun setSimpleModeLayout(layout: SimpleModeLayout) {
+        context.dataStore.edit { it[Keys.SIMPLE_MODE_LAYOUT] = layout.name }
+    }
+    suspend fun setSimpleModeMaxApps(maxApps: SimpleModeMaxApps) {
+        context.dataStore.edit { it[Keys.SIMPLE_MODE_MAX_APPS] = maxApps.name }
+    }
+    suspend fun setSimpleModeShowIcons(show: Boolean) {
+        context.dataStore.edit { it[Keys.SIMPLE_MODE_SHOW_ICONS] = show }
+    }
+    suspend fun setSimpleModeShowWeather(show: Boolean) {
+        context.dataStore.edit { it[Keys.SIMPLE_MODE_SHOW_WEATHER] = show }
+    }
+    suspend fun setSimpleModeShowNotifSummary(show: Boolean) {
+        context.dataStore.edit { it[Keys.SIMPLE_MODE_SHOW_NOTIF_SUMMARY] = show }
+    }
+    suspend fun setSimpleModeApps(packages: List<String>) {
+        context.dataStore.edit { it[Keys.SIMPLE_MODE_APPS] = packages.joinToString(",") }
     }
 
     suspend fun setAppIconShape(shape: AppIconShape) {

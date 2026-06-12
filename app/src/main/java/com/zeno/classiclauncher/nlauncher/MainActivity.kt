@@ -13,6 +13,9 @@ import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.viewModels
 import androidx.lifecycle.lifecycleScope
+import androidx.compose.runtime.getValue
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import com.zeno.classiclauncher.nlauncher.simplemode.SimpleModeScreen
 import com.zeno.classiclauncher.nlauncher.ui.BbTheme
 import com.zeno.classiclauncher.nlauncher.ui.LauncherScreen
 import com.zeno.classiclauncher.nlauncher.ui.LauncherViewModel
@@ -42,7 +45,12 @@ class MainActivity : ComponentActivity() {
         window.setBackgroundDrawableResource(android.R.color.transparent)
         setContent {
             BbTheme {
-                LauncherScreen()
+                val prefs by viewModel.prefs.collectAsStateWithLifecycle()
+                if (prefs.simpleModeEnabled) {
+                    SimpleModeScreen(vm = viewModel)
+                } else {
+                    LauncherScreen(vm = viewModel)
+                }
             }
         }
     }

@@ -107,26 +107,44 @@ class AppsRepository(private val context: Context) {
         }
         val resolveInfos = pm.queryIntentActivities(intent, 0)
         val installed = ArrayList<AppEntry>(resolveInfos.size + 1)
-        val seenPackages = HashSet<String>(resolveInfos.size)
+        // Maps package name → index in `installed`. Using a map (not a set) so that a later
+        // activity alias with a distinct date-specific icon (Google Calendar, BB Hub+ Calendar)
+        // can upgrade an already-inserted entry that had only the generic app icon.
+        val seenPackages = HashMap<String, Int>(resolveInfos.size)
 
         for (ri in resolveInfos) {
             val ai = ri.activityInfo?.applicationInfo ?: continue
             val pkg = ai.packageName ?: continue
             if (pkg == context.packageName) continue
-            if (!seenPackages.add(pkg)) continue  // skip apps with multiple launcher activities
-            val label = pm.getApplicationLabel(ai)?.toString() ?: pkg
             val component = ComponentName(pkg, ri.activityInfo.name)
-            // Pass component only when the activity defines its OWN icon distinct from the app icon.
-            // This covers Google Calendar-style day aliases (each alias has a date-specific icon).
-            // For Etar and normal apps whose activity inherits the app icon, pass null so we use
-            // getApplicationIcon — avoids loading an incorrect activity-specific static resource.
+            // True when the activity defines its OWN icon distinct from the application icon —
+            // the Google Calendar / BB Hub+ Calendar pattern: 31 day aliases, one enabled per day.
             val activityHasOwnIcon = ri.activityInfo.icon != 0 &&
                 ri.activityInfo.icon != ri.activityInfo.applicationInfo.icon
+
+            val existingIdx = seenPackages[pkg]
+            if (existingIdx != null) {
+                // Duplicate package. Upgrade the stored entry only if this alias has a
+                // distinct icon and the stored entry did not (base activity came first).
+                if (activityHasOwnIcon) {
+                    iconCache.remove(pkg)  // evict base-activity icon so we re-fetch the alias
+                    installed[existingIdx] = installed[existingIdx].copy(
+                        icon = getCachedIcon(pkg, component),
+                        componentName = component,
+                        hasDynamicIcon = true,
+                    )
+                }
+                continue
+            }
+
+            val label = pm.getApplicationLabel(ai)?.toString() ?: pkg
+            seenPackages[pkg] = installed.size
             installed.add(AppEntry(
                 packageName = pkg,
                 label = label,
                 icon = getCachedIcon(pkg, if (activityHasOwnIcon) component else null),
                 componentName = component,
+                hasDynamicIcon = activityHasOwnIcon,
             ))
         }
 

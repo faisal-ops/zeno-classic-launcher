@@ -122,6 +122,7 @@ import androidx.compose.material.icons.outlined.QueryStats
 import androidx.compose.material.icons.outlined.SortByAlpha
 import androidx.compose.material.icons.outlined.Search
 import androidx.compose.material.icons.outlined.Menu
+import androidx.compose.material.icons.outlined.ViewList
 import androidx.compose.material.icons.outlined.MailOutline
 import androidx.compose.material.icons.outlined.Vibration
 import androidx.compose.material.icons.rounded.PhotoCamera
@@ -705,6 +706,7 @@ fun LauncherScreen(
     var showLanguageSettings by remember { mutableStateOf(false) }
     var showAppDrawerBadges by remember { mutableStateOf(false) }
     var showIconAppearanceSettings by remember { mutableStateOf(false) }
+    var showSimpleModeSettings by remember { mutableStateOf(false) }
     var showDevDiagnostics by remember { mutableStateOf(false) }
     var showHomeActions by remember { mutableStateOf(false) }
     var showPinAppToHome by remember { mutableStateOf(false) }
@@ -963,6 +965,7 @@ fun LauncherScreen(
             showGestureSettings -> showGestureSettings = false
             showAppDrawerBadges -> showAppDrawerBadges = false
             showIconAppearanceSettings -> showIconAppearanceSettings = false
+            showSimpleModeSettings -> showSimpleModeSettings = false
             showHomeGroupsSettings -> showHomeGroupsSettings = false
             showGlanceSettings -> showGlanceSettings = false
             showSettings -> showSettings = false
@@ -1758,7 +1761,7 @@ fun LauncherScreen(
         val settingsStackedOverlayOpen =
             showPermissionsSettings || showGlanceSettings ||
                 showHomeGroupsSettings || showDockSlotPicker != null ||
-                showGestureSettings || showLanguageSettings || showAppDrawerBadges || showIconAppearanceSettings
+                showGestureSettings || showLanguageSettings || showAppDrawerBadges || showIconAppearanceSettings || showSimpleModeSettings
         val settingsOn = stringResource(R.string.settings_on)
         val settingsOff = stringResource(R.string.settings_off)
         val settingsConfigured = stringResource(R.string.settings_configured)
@@ -1894,8 +1897,8 @@ fun LauncherScreen(
                 appIconShape = prefs.appIconShape,
                 onSetAppIconShape = vm::setAppIconShape,
                 onOpenAppearanceSettings = { showIconAppearanceSettings = true },
-                classicMode = prefs.classicMode,
-                onToggleClassicMode = { vm.setClassicMode(!prefs.classicMode) },
+                simpleModeEnabled = prefs.simpleModeEnabled,
+                onOpenSimpleModeSettings = { showSimpleModeSettings = true },
                 homeStripEnabled = prefs.homeStripEnabled,
                 onToggleHomeStrip = { vm.setHomeStripEnabled(!prefs.homeStripEnabled) },
                 dockSecondEnabled = prefs.dockSecondEnabled,
@@ -1938,6 +1941,12 @@ fun LauncherScreen(
                             onDismiss = { showAppDrawerBadges = false },
                             onShowUsageStatsBadgeChange = vm::setShowUsageStatsBadge,
                             onShowIconNotifBadgeChange = vm::setShowIconNotifBadge,
+                        )
+                    }
+                    if (showSimpleModeSettings) {
+                        com.zeno.classiclauncher.nlauncher.simplemode.SimpleModeSettingsOverlay(
+                            vm = vm,
+                            onDismiss = { showSimpleModeSettings = false },
                         )
                     }
                     if (showGestureSettings) {
@@ -12385,8 +12394,8 @@ private fun SettingsScreenOverlay(
     onOpenGestureSettings: () -> Unit,
     onOpenScreenSaverSettings: () -> Unit,
     drawerBadgesSubtitle: String,
-    classicMode: Boolean,
-    onToggleClassicMode: () -> Unit,
+    simpleModeEnabled: Boolean,
+    onOpenSimpleModeSettings: () -> Unit,
     homeStripEnabled: Boolean,
     onToggleHomeStrip: () -> Unit,
     dockSecondEnabled: Boolean,
@@ -12447,11 +12456,11 @@ private fun SettingsScreenOverlay(
         // settings list — the sub-overlay's own LaunchedEffect will request focus.
         // Actions that stay on the settings list (toggles, resets, backups): reclaim
         // focus so trackpad DPAD navigation continues to work.
-        val opensSubOverlay = index in setOf(0, 3, 4, 8, 9, 10, 12, 13)
+        val opensSubOverlay = index in setOf(0, 1, 3, 4, 8, 9, 10, 12, 13)
         when (index) {
             // HOME SCREEN
             0 -> onOpenAppearanceSettings()
-            1 -> onToggleClassicMode()
+            1 -> onOpenSimpleModeSettings()
             2 -> onToggleHomeStrip()
             3 -> onOpenGestureSettings()
             // DISPLAY
@@ -12504,9 +12513,6 @@ private fun SettingsScreenOverlay(
         // Steal focus from drawer/pager (still composed under us) so trackpad/DPAD events hit settings.
         LaunchedEffect(Unit) {
             focusManager.clearFocus(force = true)
-            focusRequester.requestFocus()
-        }
-        LaunchedEffect(classicMode) {
             focusRequester.requestFocus()
         }
         // When a sub-overlay closes (stackedChildOverlayOpen transitions true→false),
@@ -12634,27 +12640,22 @@ private fun SettingsScreenOverlay(
                 Column(Modifier.bringIntoViewRequester(rowBringers[1])) {
                     SettingsCategoryCard(cardBg = cardBg, cardShape = cardShape, selected = selectedIndex == 1) {
                         SettingsRow(
-                            icon = Icons.Outlined.Menu,
-                            title = stringResource(R.string.settings_classic_mode_title),
-                            subtitle = if (classicMode) {
+                            icon = Icons.Outlined.ViewList,
+                            title = stringResource(R.string.settings_simple_mode_title),
+                            subtitle = if (simpleModeEnabled) {
                                 stringResource(R.string.settings_on)
                             } else {
-                                stringResource(R.string.settings_off)
+                                stringResource(R.string.settings_simple_mode_subtitle)
                             },
                             selected = selectedIndex == 1,
                             themePalette = themePalette,
                             subtitleColor = subtitleColor,
                             onClick = { activate(1) },
                             trailingContent = {
-                                Switch(
-                                    checked = classicMode,
-                                    onCheckedChange = { onToggleClassicMode() },
-                                    colors = SwitchDefaults.colors(
-                                        checkedThumbColor = Color.White,
-                                        checkedTrackColor = Color(0xFF4A90D9),
-                                        uncheckedThumbColor = Color(0xFF9AA0A8),
-                                        uncheckedTrackColor = Color(0xFF3A3F4A),
-                                    ),
+                                Text(
+                                    text = "›",
+                                    fontSize = 20.sp,
+                                    color = if (selectedIndex == 1) Color(0xFF84D5F6) else Color(0xFF7A8290),
                                 )
                             },
                         )
@@ -12808,7 +12809,7 @@ private fun SettingsScreenOverlay(
                             subtitle = if (!dockSecondEnabled) {
                                 stringResource(R.string.settings_hidden)
                             } else {
-                                dockSecondBody + if (classicMode) " · " + stringResource(R.string.settings_hidden_classic) else ""
+                                dockSecondBody
                             },
                             selected = selectedIndex == 9,
                             themePalette = themePalette,
