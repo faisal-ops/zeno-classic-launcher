@@ -90,14 +90,17 @@ fun NavState.onGridKey(key: Key, cols: Int, itemCount: Int): NavState {
 
 /**
  * Dock navigation: left/right move between 4 items (stop at edges), up exits to grid.
+ * Down wraps back to the grid (circular navigation — mirrors BB Classic behaviour).
  * No isHard requirement — single deliberate swipe is enough for any dock action.
  * dockSize = 4 (Mail=0, Home=1, Shortcut=2, Camera=3).
  */
 fun NavState.onDockKey(key: Key, dockSize: Int = 4): NavState {
     return when (key) {
-        Key.DirectionLeft -> copy(dockIndex = (dockIndex - 1).coerceAtLeast(0))
+        Key.DirectionLeft  -> copy(dockIndex = (dockIndex - 1).coerceAtLeast(0))
         Key.DirectionRight -> copy(dockIndex = (dockIndex + 1).coerceAtMost(dockSize - 1))
-        Key.DirectionUp -> copy(area = FocusArea.DrawerGrid)
+        Key.DirectionUp    -> copy(area = FocusArea.DrawerGrid)
+        // Down in dock wraps back to drawer grid (circular nav — nothing is below the dock).
+        Key.DirectionDown  -> copy(area = FocusArea.DrawerGrid)
         else -> this
     }
 }

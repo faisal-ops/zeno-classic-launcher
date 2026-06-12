@@ -76,12 +76,14 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.heightIn
+import androidx.compose.foundation.layout.imePadding
 import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.sizeIn
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.widthIn
@@ -589,6 +591,8 @@ fun LauncherScreen(
 ) {
     val context = LocalContext.current
     val rootView = LocalView.current
+    // Centralised adaptive layout — recomputes on rotation, fold, DPI/display-size changes.
+    val adaptiveLayout = rememberAdaptiveLayout()
     val prefs by vm.prefs.collectAsStateWithLifecycle()
     val allApps by vm.apps.collectAsStateWithLifecycle()
     val gridCells by vm.filteredGridCells.collectAsStateWithLifecycle()
@@ -701,6 +705,7 @@ fun LauncherScreen(
     var showLanguageSettings by remember { mutableStateOf(false) }
     var showAppDrawerBadges by remember { mutableStateOf(false) }
     var showIconAppearanceSettings by remember { mutableStateOf(false) }
+    var showDevDiagnostics by remember { mutableStateOf(false) }
     var showHomeActions by remember { mutableStateOf(false) }
     var showPinAppToHome by remember { mutableStateOf(false) }
     var showWidgetPicker by remember { mutableStateOf(false) }
@@ -1036,7 +1041,13 @@ fun LauncherScreen(
                 nk?.keyCode == android.view.KeyEvent.KEYCODE_DPAD_DOWN ||
                 nk?.keyCode == android.view.KeyEvent.KEYCODE_DPAD_LEFT ||
                 nk?.keyCode == android.view.KeyEvent.KEYCODE_DPAD_RIGHT
-            if (isDpad) lastTrackpadEventMs = (System.currentTimeMillis() % Int.MAX_VALUE).toInt()
+            if (isDpad) {
+                // Set trackpadActive synchronously so the focus highlight appears on the SAME frame
+                // as the first D-pad keypress (LaunchedEffect fires asynchronously, so first-press
+                // would otherwise show no highlight until the next composition).
+                trackpadActive = true
+                lastTrackpadEventMs = (System.currentTimeMillis() % Int.MAX_VALUE).toInt()
+            }
             false // never consume — just observe
         }
     ) {
@@ -1844,6 +1855,7 @@ fun LauncherScreen(
                 onResetTheme = vm::resetTheme,
                 themePalette = themePalette,
                 onDismiss = { showSettings = false },
+                onShowDiagnostics = { showDevDiagnostics = true },
                 gestureSubtitle = remember(
                     prefs.swipeUpPackage,
                     prefs.swipeRightPackage,
@@ -2055,6 +2067,11 @@ fun LauncherScreen(
                 },
                 onOpenPermissions = { showPermissionsSettings = true },
             )
+        }
+
+        // Developer Diagnostics — triggered by 7-tap on Settings gear icon (hidden panel).
+        if (showDevDiagnostics) {
+            DevDiagnosticsOverlay(onDismiss = { showDevDiagnostics = false })
         }
 
         if (showPermissionsSettings) {
@@ -2883,6 +2900,7 @@ private fun HomePage(
     }
     val context = LocalContext.current
     val density = LocalDensity.current
+    val adaptiveLayout = rememberAdaptiveLayout()
     val appWidgetManager = remember(context) { AppWidgetManager.getInstance(context) }
     val glanceRef = remember { mutableStateOf<GlanceDateWeatherEventsView?>(null) }
     val actions = remember(context) { LauncherActions(context) }
@@ -3568,10 +3586,12 @@ private fun HomePage(
                         )
                     }
                 }
-                // Scrollable results — capped so it never goes behind the dock
+                // Scrollable results — capped so it never goes behind the dock.
+                // Driven by AdaptiveLayout so the cap responds to screen size/rotation/fold.
+                val searchResultsMaxHeight = adaptiveLayout.homeSearchResultsMaxHeightDp
                 Column(
                     modifier = Modifier
-                        .heightIn(max = 340.dp)
+                        .heightIn(max = searchResultsMaxHeight)
                         .verticalScroll(rememberScrollState()),
                 ) {
                 // Divider
@@ -5121,7 +5141,7 @@ private fun PinAppToHomeSheet(
     onDismiss: () -> Unit,
 ) {
     var query by remember { mutableStateOf("") }
-    val maxListHeight = (LocalConfiguration.current.screenHeightDp * 0.45f).dp
+    val maxListHeight = rememberAdaptiveLayout().sheetListMaxHeightDp
     val visibleApps = remember(allApps, hiddenPackages, pinnedPackageNames, query) {
         allApps
             .asSequence()
@@ -5244,7 +5264,7 @@ private fun AddAppToContainerSheet(
     onDismiss: () -> Unit,
 ) {
     var query by remember { mutableStateOf("") }
-    val maxListHeight = (LocalConfiguration.current.screenHeightDp * 0.45f).dp
+    val maxListHeight = rememberAdaptiveLayout().sheetListMaxHeightDp
     val visibleApps = remember(allApps, hiddenPackages, existingPackageNames, query) {
         allApps
             .asSequence()
@@ -6175,6 +6195,7 @@ private fun AppDrawer(
     themePalette: LauncherThemePalette,
 ) {
     val view = LocalView.current
+    val adaptiveLayout = rememberAdaptiveLayout()
     val outerPadH = 12.dp
     val outerPadV = 11.dp
     val colSpacing = themePalette.appGridColumnSpacingDp.dp
@@ -6323,6 +6344,11 @@ private fun AppDrawer(
         modifier = Modifier
             .fillMaxSize()
             .statusBarsPadding()
+            // imePadding: when a software keyboard appears (e.g., rename dialog, some ROMs showing
+            // partial IME on physical-keyboard devices), the column shrinks from the bottom so the
+            // dock and search bar are never hidden behind the keyboard.
+            // On Zinwa Q25 (physical keyboard only) the IME height = 0 → this is a no-op.
+            .imePadding()
             // Flutter `app_grid_theme.dart`: appGridOutterPadding top = 0, bottom = 12 (not 4dp top).
             .padding(start = outerPadH, end = outerPadH, top = 0.dp, bottom = outerPadV)
             .focusRequester(focusRequester)
@@ -6489,7 +6515,9 @@ private fun AppDrawer(
                 Column(
                     modifier = Modifier
                         .fillMaxWidth()
-                        .heightIn(max = 132.dp)
+                        // 132dp ≈ 3 extras rows at default scale; use adaptive % so it doesn't
+                        // overflow on small BB-keyboard screens (500dp height → ~130dp safe).
+                        .heightIn(max = (adaptiveLayout.screenHeightDp * 0.26f).toInt().dp)
                         .verticalScroll(rememberScrollState()),
                 ) {
                     extras.forEach { ex ->
@@ -7184,6 +7212,21 @@ private fun keyToTypedChar(key: Key): Char? = when (key) {
     Key.Eight -> '8'
     Key.Nine -> '9'
     Key.Spacebar -> ' '
+    // BB-keyboard punctuation — physical keys present on Q25 / Titan 2 / Titan 2 Elite.
+    // These allow typed search without needing Alt/Symbol layer activation.
+    Key.Period -> '.'
+    Key.Comma -> ','
+    Key.Apostrophe -> '\''
+    Key.Minus -> '-'
+    Key.Equals -> '+'
+    Key.Slash -> '/'
+    Key.At -> '@'
+    Key.Pound -> '#'
+    Key.Semicolon -> ';'
+    Key.Backslash -> '\\'
+    Key.LeftBracket -> '('
+    Key.RightBracket -> ')'
+    Key.Grave -> '`'
     else -> null
 }
 
@@ -7424,7 +7467,8 @@ private fun FolderTile(
                         modifier = Modifier
                             .align(Alignment.TopEnd)
                             .offset(x = 3.dp, y = (-3).dp)
-                            .size(16.dp)
+                            // sizeIn (not size) so circle grows with glyph at large font-scale
+                            .sizeIn(minWidth = 16.dp, minHeight = 16.dp)
                             .clip(CircleShape)
                             .background(Color(0xFFD32F2F)),
                         contentAlignment = Alignment.Center,
@@ -7648,7 +7692,8 @@ private fun AppTile(
                         modifier = Modifier
                             .align(Alignment.TopEnd)
                             .offset(x = 3.dp, y = (-3).dp)
-                            .size(16.dp)
+                            // sizeIn (not size) so circle grows with glyph at large font-scale
+                            .sizeIn(minWidth = 16.dp, minHeight = 16.dp)
                             .clip(CircleShape)
                             .background(Color(0xFFD32F2F)),
                         contentAlignment = Alignment.Center,
@@ -7820,12 +7865,15 @@ private fun HomeGroupFolderOverlay(
     val tileVerticalPadding = 6.dp
     val iconLabelGap = 5.dp
     val gridVerticalGap = 10.dp
-    val maxGridHeight = (LocalConfiguration.current.screenHeightDp * 0.42f).dp.coerceAtMost(360.dp)
-    val gridHeight = when (gridRows) {
-        1 -> 108.dp
-        2 -> 226.dp
-        else -> maxGridHeight
-    }.coerceAtMost(maxGridHeight)
+    // Compute row height from actual tile content — adapts to theme icon size and font scale.
+    // label: 2 lines at HOME_STRIP_LABEL_LINE_SP (13sp) ≈ 28dp at 100% scale; scale up at large font.
+    val fontScale = LocalConfiguration.current.fontScale
+    val labelEstimateDp = (28f * fontScale.coerceAtLeast(1f)).dp
+    val tileRowHeight = tileVerticalPadding * 2 + tileIconSize + iconLabelGap + labelEstimateDp
+    // Max height from AdaptiveLayout (55% of screen). Old fixed 360dp ceiling wasted tablet space.
+    val maxGridHeight = rememberAdaptiveLayout().folderOverlayMaxHeightDp
+    val gridHeight = (tileRowHeight * gridRows + gridVerticalGap * (gridRows - 1))
+        .coerceAtMost(maxGridHeight)
     ModalBottomSheet(
         onDismissRequest = onDismiss,
         sheetState = sheetState,
@@ -8409,7 +8457,7 @@ private fun AppContextMenu(
        val iconTint = themePalette.settingsMenuBody
     val labelColor = themePalette.settingsMenuTitle
     val menuScrollState = rememberScrollState()
-    val maxMenuBodyHeight = (LocalConfiguration.current.screenHeightDp * 0.58f).dp
+    val maxMenuBodyHeight = rememberAdaptiveLayout().settingsMenuMaxHeightDp
     ModalBottomSheet(
         onDismissRequest = onDismiss,
         sheetState = state,
@@ -8757,7 +8805,8 @@ private fun HomeGroupStripIcon(
                 modifier = Modifier
                     .align(Alignment.TopEnd)
                     .offset(x = 2.dp, y = (-2).dp)
-                    .size(14.dp)
+                    // sizeIn (not size) so circle grows with glyph at large font-scale
+                    .sizeIn(minWidth = 14.dp, minHeight = 14.dp)
                     .clip(CircleShape)
                     .background(Color(0xFFD32F2F)),
                 contentAlignment = Alignment.Center,
@@ -9197,7 +9246,8 @@ private fun HomeShortcutStrip(
             val minLabelBlock = with(density) { (labelSizeSp * 2.3f).sp.toDp() }
             val minCellHeight = 3.dp + iconSize + HOME_STRIP_ICON_LABEL_GAP + 2.dp + minLabelBlock
             val minCellWidth = iconSize + 10.dp
-            val stripCols = 5
+            // AdaptiveLayout: capped at STRIP_TOTAL_SLOTS (5) but safe for very narrow screens.
+            val stripCols = rememberAdaptiveLayout().maxStripCols
             val cardW =
                 ((viewportWidth - stripColSpacing * (stripCols - 1)) / stripCols).coerceAtLeast(minCellWidth)
             val cardH = minCellHeight
@@ -9551,8 +9601,8 @@ private fun DrawerSearchBar(
     LaunchedEffect(query) {
         scroll.scrollTo(scroll.maxValue)
     }
-    // Flutter textFieldHeight 44 + small vertical insets; shorter than dock/navBarHeight (82).
-    val searchBarHeight = 45.dp
+    // Min height from AdaptiveLayout — grows at large font-scale instead of clipping 16sp text.
+    val searchBarMinHeight = rememberAdaptiveLayout().searchBarMinHeightDp
     val fieldBg = Color(0xFF202020)
     val horizontalInset = 7.dp
     val clearIcon = 22.dp
@@ -9560,12 +9610,12 @@ private fun DrawerSearchBar(
     Box(
         modifier = Modifier
             .fillMaxWidth()
-            .height(searchBarHeight)
+            .heightIn(min = searchBarMinHeight)
             .background(fieldBg),
     ) {
         Row(
             modifier = Modifier
-                .fillMaxSize()
+                .fillMaxWidth()
                 .padding(horizontal = horizontalInset, vertical = 3.dp),
             verticalAlignment = Alignment.CenterVertically,
         ) {
@@ -11458,6 +11508,8 @@ private fun IconLayoutSettingsOverlay(
     val context = LocalContext.current
     val iconPackRepo = remember(context) { IconPackRepository(context) }
     val focusRequester = remember { FocusRequester() }
+    // Needed to guard preset selection — prevents applying presets with cells smaller than minimum.
+    val adaptiveLayout = rememberAdaptiveLayout()
     var iconSize by remember(themePalette.appGridIconSizeDp) {
         mutableFloatStateOf(themePalette.appGridIconSizeDp.coerceIn(MIN_APP_ICON_SIZE_DP, MAX_APP_ICON_SIZE_DP))
     }
@@ -11882,11 +11934,19 @@ private fun IconLayoutSettingsOverlay(
                                     },
                                     onConfirm = {
                                         gridMenuExpanded = false
-                                        onGridPreset(GridPreset.entries[gridCursor])
+                                        val chosen = GridPreset.entries[gridCursor]
+                                        // Guard: keyboard Enter should also refuse unsafe presets
+                                        if (adaptiveLayout.isDrawerPresetSafe(chosen.cols, chosen.rows)) {
+                                            onGridPreset(chosen)
+                                        }
                                     },
                                     onSelect = { preset ->
                                         gridMenuExpanded = false
-                                        onGridPreset(preset)
+                                        // onClick on the DropdownMenuItem already has `enabled = isSafe`,
+                                        // but double-check here for safety.
+                                        if (adaptiveLayout.isDrawerPresetSafe(preset.cols, preset.rows)) {
+                                            onGridPreset(preset)
+                                        }
                                     },
                                 )
                             }
@@ -12128,6 +12188,8 @@ private fun GridPresetDropdown(
     val innerFocus = remember { FocusRequester() }
     val presets = GridPreset.entries
     val default = GridPreset.R3C5
+    // Compute once per device so unsafe presets can be flagged in the dropdown.
+    val adaptiveLayout = rememberAdaptiveLayout()
     DropdownMenu(
         expanded = expanded,
         onDismissRequest = onDismiss,
@@ -12156,14 +12218,26 @@ private fun GridPresetDropdown(
     ) {
         LaunchedEffect(expanded) { if (expanded) innerFocus.requestFocus() }
         presets.forEachIndexed { index, preset ->
-            val label = "${preset.cols} × ${preset.rows}" + if (preset == default) " (Default)" else ""
             val isFocused = index == focusedIndex
+            // Flag presets where rows/cols exceed safe limits for this screen size.
+            val isSafe = adaptiveLayout.isDrawerPresetSafe(preset.cols, preset.rows)
+            val suffix = when {
+                preset == default -> " (Default)"
+                !isSafe -> " ⚠"          // overflows on current device
+                else -> ""
+            }
+            val label = "${preset.cols} × ${preset.rows}$suffix"
+            val textColor = when {
+                !isSafe -> Color(0xFF5A5F62)   // grayed-out — not selectable on this device
+                isFocused -> Color.White
+                else -> Color(0xFFE0E3E6)
+            }
             DropdownMenuItem(
                 text = {
                     Row(modifier = Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
                         Text(
                             text = label,
-                            color = if (isFocused) Color.White else Color(0xFFE0E3E6),
+                            color = textColor,
                             fontSize = SETTINGS_VALUE_TEXT_SP,
                             modifier = Modifier.weight(1f),
                         )
@@ -12172,7 +12246,10 @@ private fun GridPresetDropdown(
                         }
                     }
                 },
-                onClick = { onSelect(preset) },
+                // Unsafe presets are not selectable — they would cause cells smaller than
+                // the 66dp minimum, making icons overlap on this screen size.
+                onClick = { if (isSafe) onSelect(preset) },
+                enabled = isSafe,
                 modifier = Modifier.then(
                     if (isFocused) Modifier.background(Color.White.copy(alpha = 0.1f)) else Modifier,
                 ),
@@ -12319,6 +12396,7 @@ private fun SettingsScreenOverlay(
     onOpenAppearanceSettings: () -> Unit,
     themePalette: LauncherThemePalette,
     onDismiss: () -> Unit,
+    onShowDiagnostics: () -> Unit = {},
     /** Sub-overlays (Gesture, Glance, Language, etc.) rendered inside the settings panel
      *  so their BackHandlers are deepest in the composition tree and always fire first. */
     childContent: @Composable () -> Unit = {},
@@ -12328,6 +12406,8 @@ private fun SettingsScreenOverlay(
     val scope = rememberCoroutineScope()
     val focusRequester = remember { FocusRequester() }
     var selectedIndex by remember { mutableStateOf(0) }
+    // 7-tap counter for developer diagnostics easter egg on the title.
+    var diagTapCount by remember { mutableIntStateOf(0) }
     val itemCount = 16
 
     val createBackupDocument = rememberLauncherForActivityResult(
@@ -12467,6 +12547,14 @@ private fun SettingsScreenOverlay(
                         color = themePalette.settingsMenuTitle,
                         fontWeight = FontWeight.Normal,
                     ),
+                    // 7 taps on the title opens the Developer Diagnostics screen.
+                    modifier = Modifier.clickable {
+                        diagTapCount++
+                        if (diagTapCount >= 7) {
+                            diagTapCount = 0
+                            onShowDiagnostics()
+                        }
+                    },
                 )
             }
 
@@ -12881,6 +12969,7 @@ private fun LanguageSettingsOverlay(
 ) {
     BackHandler(enabled = true, onBack = onDismiss)
     val context = LocalContext.current
+    val adaptiveLayout = rememberAdaptiveLayout()
     val selectedCode = LauncherLocale.currentLanguageCode(context).ifEmpty {
         LauncherLocale.normalize(currentLanguageCode)
     }
@@ -12927,7 +13016,7 @@ private fun LanguageSettingsOverlay(
             Surface(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .heightIn(max = (LocalConfiguration.current.screenHeightDp * 0.76f).dp),
+                    .heightIn(max = (adaptiveLayout.screenHeightDp * 0.76f).toInt().dp),
                 shape = RoundedCornerShape(10.dp),
                 color = Color(0xFF24292E),
                 tonalElevation = 8.dp,
@@ -12961,7 +13050,9 @@ private fun LanguageSettingsOverlay(
                         state = langListState,
                         modifier = Modifier
                             .fillMaxWidth()
-                            .heightIn(max = 420.dp),
+                            // AdaptiveLayout.sheetListMaxHeightDp (50% of screen height).
+                            // Old 420dp = 84% on 500dp devices; 50% leaves room for header + bars.
+                            .heightIn(max = adaptiveLayout.sheetListMaxHeightDp),
                     ) {
                         itemsIndexed(LauncherLocale.supportedLanguages) { index, language ->
                             val selected = language.code == selectedCode
