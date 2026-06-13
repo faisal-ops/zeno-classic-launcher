@@ -61,6 +61,10 @@ class LockScreenAccessibilityService : AccessibilityService() {
                     Log.d(TAG, "Lock request received")
                     lockWithAccessibilityAction()
                 }
+                ACTION_REQUEST_NOTIFICATIONS -> {
+                    Log.d(TAG, "Notifications shade request received")
+                    performGlobalAction(GLOBAL_ACTION_NOTIFICATIONS)
+                }
                 Intent.ACTION_SCREEN_ON -> handleScreenOn()
                 Intent.ACTION_SCREEN_OFF -> handleScreenOff()
                 Intent.ACTION_USER_PRESENT -> handleUserPresent()
@@ -80,6 +84,7 @@ class LockScreenAccessibilityService : AccessibilityService() {
 
         val filter = IntentFilter().apply {
             addAction(ACTION_REQUEST_LOCK)
+            addAction(ACTION_REQUEST_NOTIFICATIONS)
             addAction(Intent.ACTION_SCREEN_ON)
             addAction(Intent.ACTION_SCREEN_OFF)
             addAction(Intent.ACTION_USER_PRESENT)
@@ -423,6 +428,7 @@ class LockScreenAccessibilityService : AccessibilityService() {
         private const val POLL_INTERVAL_MS = 150L
 
         const val ACTION_REQUEST_LOCK = "com.zeno.classiclauncher.nlauncher.action.REQUEST_LOCK"
+        const val ACTION_REQUEST_NOTIFICATIONS = "com.zeno.classiclauncher.nlauncher.action.REQUEST_NOTIFICATIONS"
 
         @Volatile
         private var instance: LockScreenAccessibilityService? = null
@@ -431,9 +437,19 @@ class LockScreenAccessibilityService : AccessibilityService() {
             it.lockWithAccessibilityAction()
         } ?: false
 
+        fun tryShowNotifications(): Boolean = instance?.let {
+            it.performGlobalAction(GLOBAL_ACTION_NOTIFICATIONS)
+        } ?: false
+
         fun sendLockRequestBroadcast(context: Context) {
             context.sendBroadcast(
                 Intent(ACTION_REQUEST_LOCK).setPackage(context.packageName),
+            )
+        }
+
+        fun sendNotificationsRequestBroadcast(context: Context) {
+            context.sendBroadcast(
+                Intent(ACTION_REQUEST_NOTIFICATIONS).setPackage(context.packageName),
             )
         }
     }

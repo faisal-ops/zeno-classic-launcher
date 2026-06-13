@@ -112,7 +112,7 @@ internal fun SimpleModeSettingsOverlay(
 
             Spacer(Modifier.height(12.dp))
 
-            // Weather + notification summary toggles
+            // Weather + notification summary + greyscale toggles
             SettingsCard {
                 SettingsToggleRow(
                     title = stringResource(R.string.simple_mode_show_weather_title),
@@ -125,7 +125,14 @@ internal fun SimpleModeSettingsOverlay(
                     checked = prefs.simpleModeShowNotifSummary,
                     onCheckedChange = { vm.setSimpleModeShowNotifSummary(it) },
                 )
+                SettingsDivider()
+                SettingsToggleRow(
+                    title = "Greyscale Mode",
+                    checked = prefs.simpleModeGreyscale,
+                    onCheckedChange = { vm.setSimpleModeGreyscale(it) },
+                )
             }
+
         }
 
         Spacer(Modifier.height(24.dp))

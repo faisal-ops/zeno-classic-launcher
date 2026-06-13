@@ -200,6 +200,8 @@ data class LauncherPrefs(
     val simpleModeShowNotifSummary: Boolean = true,
     /** Ordered package names pinned in Simple Mode. Empty = use built-in defaults. */
     val simpleModeApps: List<String> = emptyList(),
+    /** When true, Minimal Mode forces all app icons to greyscale to reduce dopamine triggers. */
+    val simpleModeGreyscale: Boolean = true,
     /** Global installed-app icon mask used across launcher surfaces. */
     val appIconShape: AppIconShape = AppIconShape.SOFT_SQUARE,
     /** Empty = app/system icons. Otherwise package name of an installed Nova/Apex-style icon pack. */
@@ -284,6 +286,7 @@ class LauncherPrefsRepository(private val context: Context) {
         val SIMPLE_MODE_SHOW_WEATHER = booleanPreferencesKey("simpleModeShowWeather")
         val SIMPLE_MODE_SHOW_NOTIF_SUMMARY = booleanPreferencesKey("simpleModeShowNotifSummary")
         val SIMPLE_MODE_APPS = stringPreferencesKey("simpleModeApps")
+        val SIMPLE_MODE_GREYSCALE = booleanPreferencesKey("simpleModeGreyscale")
         /** Legacy key from earlier builds; read only for migration. */
         val CLASSIC_MODE_LEGACY = booleanPreferencesKey("drawerOnlyMode")
         val APP_ICON_SHAPE = stringPreferencesKey("appIconShape")
@@ -376,6 +379,7 @@ class LauncherPrefsRepository(private val context: Context) {
         val simpleModeShowWeather = p[Keys.SIMPLE_MODE_SHOW_WEATHER] ?: DEFAULT_PREFS.simpleModeShowWeather
         val simpleModeShowNotifSummary = p[Keys.SIMPLE_MODE_SHOW_NOTIF_SUMMARY] ?: DEFAULT_PREFS.simpleModeShowNotifSummary
         val simpleModeApps = parseCsvList(p[Keys.SIMPLE_MODE_APPS])
+        val simpleModeGreyscale = p[Keys.SIMPLE_MODE_GREYSCALE] ?: DEFAULT_PREFS.simpleModeGreyscale
         val appIconShape =
             p[Keys.APP_ICON_SHAPE]?.let { v -> AppIconShape.entries.firstOrNull { it.name == v } }
                 ?: DEFAULT_PREFS.appIconShape
@@ -442,6 +446,7 @@ class LauncherPrefsRepository(private val context: Context) {
             simpleModeShowWeather = simpleModeShowWeather,
             simpleModeShowNotifSummary = simpleModeShowNotifSummary,
             simpleModeApps = simpleModeApps,
+            simpleModeGreyscale = simpleModeGreyscale,
             appIconShape = appIconShape,
             iconPackPackage = iconPackPackage,
             showAppCardBackground = showAppCardBackground,
@@ -765,6 +770,10 @@ class LauncherPrefsRepository(private val context: Context) {
     }
     suspend fun setSimpleModeApps(packages: List<String>) {
         context.dataStore.edit { it[Keys.SIMPLE_MODE_APPS] = packages.joinToString(",") }
+    }
+
+    suspend fun setSimpleModeGreyscale(enabled: Boolean) {
+        context.dataStore.edit { it[Keys.SIMPLE_MODE_GREYSCALE] = enabled }
     }
 
     suspend fun setAppIconShape(shape: AppIconShape) {

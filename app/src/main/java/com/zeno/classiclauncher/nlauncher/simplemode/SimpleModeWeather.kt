@@ -19,6 +19,7 @@ data class NowPlayingState(
     val title: String,
     val artist: String,
     val isPlaying: Boolean,
+    val albumArt: android.graphics.Bitmap? = null,
 )
 
 data class SimpleModeWeatherDay(

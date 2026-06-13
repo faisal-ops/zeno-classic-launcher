@@ -214,10 +214,13 @@ class LauncherViewModel(app: Application) : AndroidViewModel(app) {
         val artist = meta.getString(MediaMetadata.METADATA_KEY_ARTIST)
             ?: meta.getString(MediaMetadata.METADATA_KEY_ALBUM_ARTIST)
             ?: ""
+        val albumArt = meta.getBitmap(MediaMetadata.METADATA_KEY_ALBUM_ART)
+            ?: meta.getBitmap(MediaMetadata.METADATA_KEY_ART)
         NowPlayingState(
             title = title,
             artist = artist,
             isPlaying = session.playbackState?.state == PlaybackState.STATE_PLAYING,
+            albumArt = albumArt,
         )
     }.getOrNull()
 
@@ -246,6 +249,18 @@ class LauncherViewModel(app: Application) : AndroidViewModel(app) {
             val activeStates = setOf(PlaybackState.STATE_PLAYING, PlaybackState.STATE_PAUSED, PlaybackState.STATE_BUFFERING)
             sessions.firstOrNull { it.playbackState?.state in activeStates }
                 ?.transportControls?.skipToNext()
+        }
+    }
+
+    fun mediaPreviousTrack() {
+        runCatching {
+            val app = getApplication<Application>()
+            val msm = app.getSystemService(MediaSessionManager::class.java) ?: return
+            val cn = ComponentName(app, BadgeNotificationListener::class.java)
+            val sessions = msm.getActiveSessions(cn)
+            val activeStates = setOf(PlaybackState.STATE_PLAYING, PlaybackState.STATE_PAUSED, PlaybackState.STATE_BUFFERING)
+            sessions.firstOrNull { it.playbackState?.state in activeStates }
+                ?.transportControls?.skipToPrevious()
         }
     }
 
@@ -1426,6 +1441,10 @@ class LauncherViewModel(app: Application) : AndroidViewModel(app) {
     }
     fun setSimpleModeApps(packages: List<String>) {
         viewModelScope.launch { prefsRepo.setSimpleModeApps(packages) }
+    }
+
+    fun setSimpleModeGreyscale(enabled: Boolean) {
+        viewModelScope.launch { prefsRepo.setSimpleModeGreyscale(enabled) }
     }
 
     fun setAppIconShape(shape: AppIconShape) {
