@@ -68,7 +68,11 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.drawBehind
+import androidx.compose.foundation.Canvas
+import androidx.compose.ui.geometry.CornerRadius
+import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Size
+import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.foundation.focusable
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
@@ -83,6 +87,11 @@ import androidx.compose.ui.input.key.onPreviewKeyEvent
 import androidx.compose.ui.input.key.type
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.semantics.Role
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.onClick
+import androidx.compose.ui.semantics.role
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
@@ -97,6 +106,8 @@ import com.zeno.classiclauncher.nlauncher.ui.LauncherViewModel
 import kotlinx.coroutines.delay
 import java.time.LocalDateTime
 import java.time.format.DateTimeFormatter
+import androidx.compose.ui.res.stringResource
+import com.zeno.classiclauncher.nlauncher.R
 import java.util.Locale
 
 // ─── Focus bar colors (matching prototype) ───────────────────────────────────
@@ -156,29 +167,40 @@ internal fun SimpleModeScreen(vm: LauncherViewModel) {
     var clockDate by remember { mutableStateOf(currentDateString()) }
     var batteryPct by remember { mutableIntStateOf(readBatteryPct(context)) }
     var batteryCharging by remember { mutableStateOf(readBatteryCharging(context)) }
+
+    // Battery: update immediately from the sticky broadcast, then listen for changes.
+    // BroadcastReceiver is far cheaper than polling — ACTION_BATTERY_CHANGED is a sticky
+    // broadcast so registerReceiver() returns the current state instantly on registration.
+    androidx.compose.runtime.DisposableEffect(Unit) {
+        val receiver = object : android.content.BroadcastReceiver() {
+            override fun onReceive(ctx: android.content.Context?, intent: Intent?) {
+                batteryPct = readBatteryPct(context)
+                batteryCharging = readBatteryCharging(context)
+            }
+        }
+        context.registerReceiver(receiver, IntentFilter(Intent.ACTION_BATTERY_CHANGED))
+        onDispose { runCatching { context.unregisterReceiver(receiver) } }
+    }
+
+    // Clock: tick every second, synced to the wall-clock second boundary to avoid drift.
     LaunchedEffect(Unit) {
         while (true) {
-            delay(10_000L)
             clockTime = currentTimeString(is24h)
             clockAmPm = if (is24h) "" else currentAmPmString()
             clockDate = currentDateString()
-            batteryPct = readBatteryPct(context)
-            batteryCharging = readBatteryCharging(context)
+            val now = System.currentTimeMillis()
+            delay(1_000L - (now % 1_000L))
         }
     }
-    // Tick immediately on first composition
-    LaunchedEffect(Unit) {
-        clockTime = currentTimeString(is24h)
-        clockAmPm = if (is24h) "" else currentAmPmString()
-        clockDate = currentDateString()
-    }
 
-    // Fetch total screen-on time using SCREEN_INTERACTIVE/NON_INTERACTIVE events — matches
-    // Digital Wellbeing exactly. Avoids per-app sum which double-counts overlapping sessions.
+    // Screen time: fetch once on entry, then refresh every 60 seconds.
     var totalScreenTimeMs by remember { mutableLongStateOf(0L) }
     LaunchedEffect(Unit) {
-        kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) {
-            totalScreenTimeMs = UsageStatsRepository.getTodayScreenOnTime(context)
+        while (true) {
+            kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) {
+                totalScreenTimeMs = UsageStatsRepository.getTodayScreenOnTime(context)
+            }
+            delay(60_000L)
         }
     }
 
@@ -199,6 +221,7 @@ internal fun SimpleModeScreen(vm: LauncherViewModel) {
     var showAppsEditor by rememberSaveable { mutableStateOf(false) }
     var showSimpleModeSettings by rememberSaveable { mutableStateOf(false) }
     var replacingIndex by rememberSaveable { mutableIntStateOf(-1) }
+    var showQuickSettings by rememberSaveable { mutableStateOf(false) }
 
     // Consume back press silently — minimal mode is a home screen, back should do nothing
     BackHandler {}
@@ -212,7 +235,7 @@ internal fun SimpleModeScreen(vm: LauncherViewModel) {
 
     val screenFocus = remember { FocusRequester() }
     LaunchedEffect(Unit) { runCatching { screenFocus.requestFocus() } }
-    val anyOverlayOpen = showAppsEditor || showSimpleModeSettings || replacingIndex >= 0 || showSearchOverlay
+    val anyOverlayOpen = showAppsEditor || showSimpleModeSettings || replacingIndex >= 0 || showSearchOverlay || showQuickSettings
     LaunchedEffect(anyOverlayOpen) {
         if (!anyOverlayOpen) runCatching { screenFocus.requestFocus() }
     }
@@ -248,7 +271,7 @@ internal fun SimpleModeScreen(vm: LauncherViewModel) {
                     onVerticalDrag = { _, delta ->
                         swipeAccum += delta
                         if (swipeAccum > 60f) {
-                            LockScreenAccessibilityService.tryShowNotifications()
+                            showQuickSettings = true
                             swipeAccum = 0f
                         }
                     },
@@ -325,6 +348,7 @@ internal fun SimpleModeScreen(vm: LauncherViewModel) {
                 },
                 batteryPct = if (batteryPct >= 0) batteryPct else null,
                 batteryCharging = batteryCharging,
+                greyscale = prefs.simpleModeGreyscale,
                 screenTimeMs = if (totalScreenTimeMs > 0L) totalScreenTimeMs else null,
                 onClockTap = {
                     resolveClockPackage(context)?.let { vm.launchApp(it) }
@@ -462,6 +486,20 @@ internal fun SimpleModeScreen(vm: LauncherViewModel) {
                 onDismiss = { showSearchOverlay = false },
             )
         }
+        if (showQuickSettings) {
+            com.zeno.classiclauncher.nlauncher.ui.QuickSettingsOverlay(
+                allApps = allApps,
+                hiddenPackages = prefs.hiddenPackages,
+                qrScannerPackage = prefs.quickSettingsQrScannerPackage,
+                savedTileOrder = prefs.quickSettingsTileOrder,
+                themePalette = com.zeno.classiclauncher.nlauncher.theme.LauncherThemePalette.fromJson(prefs.themeJson),
+                hapticsEnabled = prefs.hapticsEnabled,
+                hapticIntensity = prefs.hapticIntensity,
+                onDismiss = { showQuickSettings = false },
+                onSetQrScannerPackage = vm::setQuickSettingsQrScannerPackage,
+                onSetTileOrder = vm::setQuickSettingsTileOrder,
+            )
+        }
     }
 }
 
@@ -479,6 +517,7 @@ private fun SimpleModeHeader(
     currentTemp: String?,
     batteryPct: Int?,
     batteryCharging: Boolean,
+    greyscale: Boolean,
     screenTimeMs: Long?,
     onClockTap: () -> Unit,
     onWeatherTap: () -> Unit,
@@ -500,7 +539,7 @@ private fun SimpleModeHeader(
                 verticalAlignment = Alignment.CenterVertically,
             ) {
                 if (batteryPct != null) {
-                    BatteryPill(pct = batteryPct, charging = batteryCharging)
+                    BatteryPill(pct = batteryPct, charging = batteryCharging, greyscale = greyscale)
                 }
                 if (screenTimeMs != null) {
                     Text(
@@ -512,13 +551,20 @@ private fun SimpleModeHeader(
                 }
             }
             // Center — time digits only (no AM/PM), so the digits are pixel-perfectly centered.
+            val clockCd = stringResource(R.string.cd_simple_clock, time)
             Text(
                 text = time,
                 fontSize = 36.sp,
                 fontWeight = FontWeight.W300,
                 color = NORMAL_TEXT,
                 letterSpacing = (-1).sp,
-                modifier = Modifier.pointerInput(Unit) { detectTapGestures(onTap = { onClockTap() }) },
+                modifier = Modifier
+                    .semantics {
+                        role = Role.Button
+                        contentDescription = clockCd
+                        onClick(label = "Open clock") { onClockTap(); true }
+                    }
+                    .pointerInput(Unit) { detectTapGestures(onTap = { onClockTap() }) },
             )
             // Right side — AM/PM at start, gear at end, both inside the right weight(1f) box.
             Box(
@@ -536,11 +582,15 @@ private fun SimpleModeHeader(
                 }
                 Icon(
                     imageVector = Icons.Outlined.Settings,
-                    contentDescription = "Settings",
+                    contentDescription = stringResource(R.string.action_settings_label),
                     tint = Color(0x2EFFFFFF),
                     modifier = Modifier
                         .size(28.dp)
                         .padding(2.dp)
+                        .semantics {
+                            role = Role.Button
+                            onClick(label = "Open settings") { onGearTap(); true }
+                        }
                         .pointerInput(Unit) {
                             detectTapGestures(
                                 onTap = { onGearTap() },
@@ -634,10 +684,16 @@ private fun SimpleModeListView(
                 )
             } else {
                 // Empty slot — tap to pick an app for this position
+                val emptySlotCd = stringResource(R.string.cd_simple_empty_slot)
                 Box(
                     modifier = Modifier
                         .fillMaxWidth()
                         .height(38.dp)
+                        .semantics {
+                            role = Role.Button
+                            contentDescription = emptySlotCd
+                            onClick(label = "Add app") { onLongPress(index); true }
+                        }
                         .pointerInput(Unit) {
                             detectTapGestures(onTap = { onLongPress(index) })
                         }
@@ -693,6 +749,11 @@ private fun SimpleModeListRow(
             .background(if (selected) FOCUS_BG else Color.Transparent)
             .drawBehind {
                 if (selected) drawRect(color = FOCUS_ACCENT, size = Size(4.dp.toPx(), size.height))
+            }
+            .semantics {
+                role = Role.Button
+                contentDescription = app.label
+                onClick(label = "Open ${app.label}") { onClick(); true }
             }
             .pointerInput(Unit) {
                 detectTapGestures(onTap = { onClick() }, onLongPress = { onLongPress() })
@@ -933,7 +994,7 @@ private fun SimpleModeNowPlayingBar(
             }
             Icon(
                 imageVector = Icons.Rounded.SkipPrevious,
-                contentDescription = "Previous",
+                contentDescription = stringResource(R.string.action_previous),
                 tint = NORMAL_TEXT,
                 modifier = Modifier.size(40.dp).clickable { onPrevious() },
             )
@@ -947,7 +1008,7 @@ private fun SimpleModeNowPlayingBar(
             Spacer(Modifier.width(8.dp))
             Icon(
                 imageVector = Icons.Rounded.SkipNext,
-                contentDescription = "Next",
+                contentDescription = stringResource(R.string.action_next),
                 tint = NORMAL_TEXT,
                 modifier = Modifier.size(40.dp).clickable { onNext() },
             )
@@ -972,29 +1033,67 @@ private fun readBatteryCharging(context: android.content.Context): Boolean {
 }
 
 @Composable
-private fun BatteryPill(pct: Int, charging: Boolean) {
-    val bgColor = when {
-        pct >= 50 -> Color(0xFF3DDC84) // green
-        pct >= 20 -> Color(0xFFFFB300) // amber
-        else      -> Color(0xFFE53935) // red
+private fun BatteryPill(pct: Int, charging: Boolean, greyscale: Boolean = false) {
+    val fillColor = when {
+        greyscale -> Color(0xFF888888)
+        pct >= 50 -> Color(0xFF4DB89A)  // muted teal
+        pct >= 20 -> Color(0xFFD4933A)  // muted amber
+        else      -> Color(0xFFC45050)  // muted red
     }
+    val outlineColor = Color(0xFF9EA8B3)
+    val textColor = Color(0xFFE8EDF2)
+
     Row(
-        modifier = Modifier
-            .clip(RoundedCornerShape(4.dp))
-            .background(bgColor)
-            .padding(horizontal = 5.dp, vertical = 2.dp),
+        modifier = Modifier.semantics(mergeDescendants = true) {
+            contentDescription = "Battery $pct percent${if (charging) ", charging" else ""}"
+        },
         verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(4.dp),
     ) {
+        Canvas(modifier = Modifier.width(24.dp).height(12.dp)) {
+            val nubW   = 3.dp.toPx()
+            val nubH   = size.height * 0.45f
+            val bodyW  = size.width - nubW
+            val bodyH  = size.height
+            val sw     = 1.5.dp.toPx()
+            val r      = CornerRadius(2.dp.toPx())
+
+            // Body outline
+            drawRoundRect(
+                color = outlineColor,
+                size = Size(bodyW, bodyH),
+                cornerRadius = r,
+                style = Stroke(width = sw),
+            )
+
+            // Fill proportional to charge level
+            val maxFillW = bodyW - sw * 2
+            val fillW = (maxFillW * (pct / 100f)).coerceAtLeast(0f)
+            if (fillW > 0f) {
+                drawRoundRect(
+                    color = fillColor,
+                    topLeft = Offset(sw, sw),
+                    size = Size(fillW, bodyH - sw * 2),
+                    cornerRadius = CornerRadius(1.5.dp.toPx()),
+                )
+            }
+
+            // Positive terminal nub on the right
+            drawRoundRect(
+                color = outlineColor,
+                topLeft = Offset(bodyW, (bodyH - nubH) / 2f),
+                size = Size(nubW, nubH),
+                cornerRadius = CornerRadius(1.dp.toPx()),
+            )
+        }
+
         Text(
-            text = "$pct",
+            text = if (charging) "$pct⚡" else "$pct%",
             fontSize = 11.sp,
             fontWeight = FontWeight.SemiBold,
-            color = Color.Black,
+            color = textColor,
             lineHeight = 13.sp,
         )
-        if (charging) {
-            Text(text = "⚡", fontSize = 9.sp, lineHeight = 11.sp, color = Color.Black)
-        }
     }
 }
 
@@ -1110,7 +1209,7 @@ private fun SimpleModeSearchOverlay(
                         .focusRequester(fieldFocus),
                     decorationBox = { inner ->
                         if (query.text.isEmpty()) {
-                            Text("Search apps…", fontSize = 16.sp, color = MUTED_TEXT)
+                            Text(stringResource(R.string.search_apps_ellipsis), fontSize = 16.sp, color = MUTED_TEXT)
                         }
                         inner()
                     },

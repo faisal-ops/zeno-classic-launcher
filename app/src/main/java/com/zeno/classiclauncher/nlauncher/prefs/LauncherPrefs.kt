@@ -161,10 +161,12 @@ data class LauncherPrefs(
     val doubleTapToSleepEnabled: Boolean = true,
     /** Skip "tap to unlock" overlay on screen-on and auto-submit PIN after 4 digits. Default on. */
     val autoUnlockEnabled: Boolean = true,
+    /** Number of PIN digits to wait for before auto-submitting. 4 for standard PIN, 6 for longer. */
+    val autoUnlockPinDigits: Int = 4,
     /** Package to launch on swipe-up gesture on home. Empty = disabled. */
     val swipeUpPackage: String = "",
     /** Package to launch on swipe-right gesture on home. Empty = disabled. */
-    val swipeRightPackage: String = "com.blackberry.hub",
+    val swipeRightPackage: String = "",
     /** Package to launch on double-tap on home (only when doubleTapToSleepEnabled is false). */
     val doubleTapPackage: String = "",
     /** Show today's screen-time badge (e.g. "2h") on app icons in the drawer. */
@@ -267,6 +269,7 @@ class LauncherPrefsRepository(private val context: Context) {
         val HOME_WIDGET_ROWS = intPreferencesKey("homeWidgetRows")
         val DOUBLE_TAP_SLEEP = booleanPreferencesKey("doubleTapToSleepEnabled")
         val AUTO_UNLOCK = booleanPreferencesKey("autoUnlockEnabled")
+        val AUTO_UNLOCK_PIN_DIGITS = intPreferencesKey("autoUnlockPinDigits")
         val SWIPE_UP_PKG = stringPreferencesKey("swipeUpPackage")
         val SWIPE_RIGHT_PKG = stringPreferencesKey("swipeRightPackage")
         val DOUBLE_TAP_PKG = stringPreferencesKey("doubleTapPackage")
@@ -360,8 +363,9 @@ class LauncherPrefsRepository(private val context: Context) {
         }
         val doubleTapSleep = p[Keys.DOUBLE_TAP_SLEEP] ?: DEFAULT_PREFS.doubleTapToSleepEnabled
         val autoUnlock = p[Keys.AUTO_UNLOCK] ?: DEFAULT_PREFS.autoUnlockEnabled
+        val autoUnlockPinDigits = (p[Keys.AUTO_UNLOCK_PIN_DIGITS] ?: DEFAULT_PREFS.autoUnlockPinDigits).coerceIn(4, 8)
         val swipeUpPkg = p[Keys.SWIPE_UP_PKG]?.trim() ?: ""
-        val swipeRightPkg = p[Keys.SWIPE_RIGHT_PKG]?.trim() ?: "com.blackberry.hub"
+        val swipeRightPkg = p[Keys.SWIPE_RIGHT_PKG]?.trim() ?: ""
         val doubleTapPkg = p[Keys.DOUBLE_TAP_PKG]?.trim() ?: ""
         val showUsageStatsBadge = p[Keys.SHOW_USAGE_STATS_BADGE] ?: DEFAULT_PREFS.showUsageStatsBadge
         val showIconNotifBadge = p[Keys.SHOW_ICON_NOTIF_BADGE] ?: DEFAULT_PREFS.showIconNotifBadge
@@ -427,6 +431,7 @@ class LauncherPrefsRepository(private val context: Context) {
             homeWidget = homeWidget,
             doubleTapToSleepEnabled = doubleTapSleep,
             autoUnlockEnabled = autoUnlock,
+            autoUnlockPinDigits = autoUnlockPinDigits,
             swipeUpPackage = swipeUpPkg,
             swipeRightPackage = swipeRightPkg,
             doubleTapPackage = doubleTapPkg,
@@ -697,6 +702,10 @@ class LauncherPrefsRepository(private val context: Context) {
 
     suspend fun setAutoUnlockEnabled(enabled: Boolean) {
         context.dataStore.edit { it[Keys.AUTO_UNLOCK] = enabled }
+    }
+
+    suspend fun setAutoUnlockPinDigits(digits: Int) {
+        context.dataStore.edit { it[Keys.AUTO_UNLOCK_PIN_DIGITS] = digits.coerceIn(4, 8) }
     }
 
     suspend fun setSwipeUpPackage(pkg: String) {

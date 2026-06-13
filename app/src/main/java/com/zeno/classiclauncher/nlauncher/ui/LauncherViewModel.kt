@@ -41,6 +41,7 @@ import com.zeno.classiclauncher.nlauncher.prefs.DEFAULT_THEME_JSON
 import com.zeno.classiclauncher.nlauncher.prefs.LauncherBackup
 import com.zeno.classiclauncher.nlauncher.prefs.SimpleModeLayout
 import com.zeno.classiclauncher.nlauncher.prefs.SimpleModeMaxApps
+import com.zeno.classiclauncher.nlauncher.R
 import android.content.ComponentName
 import android.media.MediaMetadata
 import android.media.session.MediaSessionManager
@@ -158,8 +159,13 @@ class LauncherViewModel(app: Application) : AndroidViewModel(app) {
     private val _nowPlaying = MutableStateFlow<NowPlayingState?>(null)
     val nowPlaying: StateFlow<NowPlayingState?> = _nowPlaying.asStateFlow()
 
+    // Cached track identity so artwork Bitmap is only re-decoded when the track actually changes.
+    private var lastTrackKey: String? = null
+    private var cachedAlbumArt: android.graphics.Bitmap? = null
+
     init {
-        // Weather: re-fetch on pref change; retry every 30s on failure, refresh every 30min on success
+        // Weather: re-fetch on pref change; exponential backoff on failure (30s → 60s → … → 15min),
+        // then refresh every 30 minutes on success.
         viewModelScope.launch {
             prefs
                 .map { p ->
@@ -172,6 +178,7 @@ class LauncherViewModel(app: Application) : AndroidViewModel(app) {
                 .distinctUntilChanged()
                 .flatMapLatest { (shouldFetch, locMode, coords) ->
                     if (!shouldFetch) flowOf(emptyList()) else flow {
+                        var failCount = 0
                         while (true) {
                             val result = withContext(Dispatchers.IO) {
                                 fetchSimpleModeWeather(
@@ -182,7 +189,15 @@ class LauncherViewModel(app: Application) : AndroidViewModel(app) {
                                 )
                             }
                             emit(result)
-                            delay(if (result.isNotEmpty()) 30 * 60_000L else 30_000L)
+                            if (result.isNotEmpty()) {
+                                failCount = 0
+                                delay(30 * 60_000L)
+                            } else {
+                                failCount++
+                                // Double the wait each failure, cap at 15 minutes.
+                                val backoffMs = minOf(30_000L shl (failCount - 1).coerceAtMost(8), 15 * 60_000L)
+                                delay(backoffMs)
+                            }
                         }
                     }
                 }
@@ -208,19 +223,30 @@ class LauncherViewModel(app: Application) : AndroidViewModel(app) {
             PlaybackState.STATE_PAUSED,
             PlaybackState.STATE_BUFFERING,
         )
-        val session = sessions.firstOrNull { it.playbackState?.state in activeStates } ?: return null
+        val session = sessions.firstOrNull { it.playbackState?.state in activeStates }
+        if (session == null) {
+            lastTrackKey = null
+            cachedAlbumArt = null
+            return null
+        }
         val meta = session.metadata ?: return null
         val title = meta.getString(MediaMetadata.METADATA_KEY_TITLE) ?: return null
         val artist = meta.getString(MediaMetadata.METADATA_KEY_ARTIST)
             ?: meta.getString(MediaMetadata.METADATA_KEY_ALBUM_ARTIST)
             ?: ""
-        val albumArt = meta.getBitmap(MediaMetadata.METADATA_KEY_ALBUM_ART)
-            ?: meta.getBitmap(MediaMetadata.METADATA_KEY_ART)
+        // Re-decode artwork only when the track identity changes — avoids a fresh Bitmap
+        // allocation every 2-second poll tick while the same song is playing.
+        val trackKey = "$title|$artist"
+        if (trackKey != lastTrackKey) {
+            lastTrackKey = trackKey
+            cachedAlbumArt = meta.getBitmap(MediaMetadata.METADATA_KEY_ALBUM_ART)
+                ?: meta.getBitmap(MediaMetadata.METADATA_KEY_ART)
+        }
         NowPlayingState(
             title = title,
             artist = artist,
             isPlaying = session.playbackState?.state == PlaybackState.STATE_PLAYING,
-            albumArt = albumArt,
+            albumArt = cachedAlbumArt,
         )
     }.getOrNull()
 
@@ -412,7 +438,7 @@ class LauncherViewModel(app: Application) : AndroidViewModel(app) {
                         .mapNotNull { pkg -> byPkg[pkg]?.label }
                         .minWithOrNull { a, b -> collator.compare(a, b) }
                     if (!addedLabel.isNullOrBlank()) {
-                        _newAppAddedToast.value = "New app added: $addedLabel"
+                        _newAppAddedToast.value = getApplication<Application>().getString(R.string.new_app_added, addedLabel)
                     }
 
                     if (!isStrictDrawerAlphabeticalMode()) return@collect
@@ -1345,6 +1371,10 @@ class LauncherViewModel(app: Application) : AndroidViewModel(app) {
 
     fun setAutoUnlockEnabled(enabled: Boolean) {
         viewModelScope.launch { prefsRepo.setAutoUnlockEnabled(enabled) }
+    }
+
+    fun setAutoUnlockPinDigits(digits: Int) {
+        viewModelScope.launch { prefsRepo.setAutoUnlockPinDigits(digits) }
     }
 
     fun setSwipeUpPackage(pkg: String) {

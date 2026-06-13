@@ -45,6 +45,8 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.zIndex
+import androidx.compose.ui.res.stringResource
+import com.zeno.classiclauncher.nlauncher.R
 import com.zeno.classiclauncher.nlauncher.theme.LauncherThemePalette
 
 @Composable
@@ -111,12 +113,12 @@ fun AppDrawerBadgesOverlay(
                 IconButton(onClick = onDismiss) {
                     Icon(
                         Icons.AutoMirrored.Rounded.ArrowBack,
-                        contentDescription = "Back",
+                        contentDescription = stringResource(R.string.action_back),
                         tint = themePalette.settingsMenuTitle,
                     )
                 }
                 Text(
-                    "App Icon Badges",
+                    stringResource(R.string.icon_badges_title),
                     style = MaterialTheme.typography.headlineMedium.copy(
                         color = themePalette.settingsMenuTitle,
                         fontWeight = FontWeight.Normal,
@@ -131,17 +133,17 @@ fun AppDrawerBadgesOverlay(
                 verticalArrangement = Arrangement.spacedBy(16.dp),
             ) {
                 Text(
-                    "Choose what small badges appear on app icons in the drawer.",
+                    stringResource(R.string.badge_overlay_description),
                     style = MaterialTheme.typography.bodyMedium,
                     color = subtitleColor,
                 )
 
                 BadgeSwitchRow(
-                    title = "Usage stats badge",
+                    title = stringResource(R.string.badge_usage_stats_title),
                     subtitle = if (showUsageStatsBadge) {
-                        "On — screen-time appears on app icons"
+                        stringResource(R.string.badge_usage_stats_on)
                     } else {
-                        "Off"
+                        stringResource(R.string.settings_off)
                     },
                     checked = showUsageStatsBadge,
                     focused = focusedItem == 0,
@@ -150,13 +152,13 @@ fun AppDrawerBadgesOverlay(
                 )
 
                 BadgeSwitchRow(
-                    title = "Notification badge",
+                    title = stringResource(R.string.icon_badges_title),
                     subtitle = when {
                         !notificationAccessReady ->
-                            "Requires notification access — enable Unread badges in Permissions first"
+                            stringResource(R.string.badge_notif_permission_required)
                         showIconNotifBadge ->
-                            "On — red star appears when an app has unread notifications"
-                        else -> "Off"
+                            stringResource(R.string.badge_notif_on)
+                        else -> stringResource(R.string.settings_off)
                     },
                     checked = showIconNotifBadge && notificationAccessReady,
                     enabled = notificationAccessReady,

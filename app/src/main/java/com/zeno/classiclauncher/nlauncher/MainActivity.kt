@@ -20,6 +20,7 @@ import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.lifecycleScope
 import androidx.lifecycle.repeatOnLifecycle
+import com.zeno.classiclauncher.nlauncher.R
 import com.zeno.classiclauncher.nlauncher.locale.LauncherLocale
 import com.zeno.classiclauncher.nlauncher.simplemode.SimpleModeScreen
 import com.zeno.classiclauncher.nlauncher.ui.BbTheme
@@ -92,7 +93,7 @@ class MainActivity : ComponentActivity() {
         }
     }
 
-    /** Catch KEYCODE_ENDCALL at the Activity level — Compose onPreviewKeyEvent may not receive it
+    /** Catch KEYCODE_CALL at the Activity level — Compose onPreviewKeyEvent may not receive it
      *  if the system (PhoneWindowManager) intercepts or delivers it only on ACTION_UP. */
     @Suppress("RestrictedApi")
     override fun dispatchKeyEvent(event: android.view.KeyEvent): Boolean {
@@ -152,7 +153,7 @@ class MainActivity : ComponentActivity() {
             } else {
                 Toast.makeText(
                     this@MainActivity,
-                    "Home shortcuts full (max 3)",
+                    getString(R.string.home_shortcuts_full),
                     Toast.LENGTH_SHORT,
                 ).show()
             }

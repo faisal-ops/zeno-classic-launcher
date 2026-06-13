@@ -25,6 +25,7 @@ class FlipClockDreamService : DreamService() {
 
     override fun onAttachedToWindow() {
         super.onAttachedToWindow()
+        @Suppress("DEPRECATION") // DreamService has no setShowWhenLocked(); flag is the only API
         window?.addFlags(WindowManager.LayoutParams.FLAG_SHOW_WHEN_LOCKED)
         setInteractive(false)
         setFullscreen(true)
@@ -94,6 +95,10 @@ private class FlipClockDreamView(context: Context) : View(context) {
         setShadowLayer(24f, 0f, 10f, Color.argb(200, 0, 0, 0))
         style = Paint.Style.FILL
     }
+    private val colonPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+        color = Color.rgb(160, 160, 165)
+        style = Paint.Style.FILL
+    }
     private val flapShadowPaint = Paint(Paint.ANTI_ALIAS_FLAG)
 
     private val bounds  = Rect()
@@ -107,7 +112,12 @@ private class FlipClockDreamView(context: Context) : View(context) {
     private val minuteState = TileState()
 
     private val ticker = object : Runnable {
-        override fun run() { tick(); postDelayed(this, 1000L) }
+        override fun run() {
+            tick()
+            // Sync to wall-clock second boundary to avoid cumulative drift.
+            val delay = 1000L - (System.currentTimeMillis() % 1000L)
+            postDelayed(this, delay)
+        }
     }
 
     fun start() { removeCallbacks(ticker); post(ticker) }
@@ -169,6 +179,14 @@ private class FlipClockDreamView(context: Context) : View(context) {
 
         drawFlipTile(canvas, RectF(startX, startY, startX + tileWidth, startY + tileHeight), hourState, period)
         drawFlipTile(canvas, RectF(startX + tileWidth + tileGap, startY, startX + totalWidth, startY + tileHeight), minuteState, "")
+
+        // ── Colon separator ─────────────────────────────────────────────────
+        val colonX   = startX + tileWidth + tileGap / 2f
+        val colonCY  = startY + tileHeight / 2f
+        val dotR     = tileHeight * 0.07f
+        val dotOff   = tileHeight * 0.18f
+        canvas.drawCircle(colonX, colonCY - dotOff, dotR, colonPaint)
+        canvas.drawCircle(colonX, colonCY + dotOff, dotR, colonPaint)
 
         smallPaint.textSize = min(tileHeight * 0.13f, 28f)
         val dateText = now.format(dateFormatter).uppercase(Locale.getDefault()).replace(",", "")
@@ -329,7 +347,7 @@ private class FlipClockDreamView(context: Context) : View(context) {
 
         if (cornerLabel.isNotEmpty()) {
             smallPaint.textAlign = Paint.Align.LEFT
-            smallPaint.textSize  = rect.height() * 0.10f
+            smallPaint.textSize  = rect.height() * 0.14f
             canvas.drawText(
                 cornerLabel,
                 rect.left   + rect.width()  * 0.07f,

@@ -13,7 +13,7 @@ object LauncherBackup {
     const val FORMAT_KEY = "format"
     const val FORMAT_VALUE = "classiclauncher_backup"
     const val VERSION_KEY = "version"
-    const val CURRENT_VERSION = 24
+    const val CURRENT_VERSION = 25
 
     private object PrefKey {
         const val CUSTOM_QUICK_SETTINGS_ENABLED = "customQuickSettingsEnabled"
@@ -98,6 +98,17 @@ object LauncherBackup {
         p.put(PrefKey.QUICK_SETTINGS_QR_SCANNER_PACKAGE, prefs.quickSettingsQrScannerPackage)
         p.put(PrefKey.QUICK_SETTINGS_TILE_ORDER, JSONArray(prefs.quickSettingsTileOrder))
         p.put("classicMode", prefs.classicMode)
+        p.put("simpleModeEnabled", prefs.simpleModeEnabled)
+        p.put("simpleModeLayout", prefs.simpleModeLayout.name)
+        p.put("simpleModeMaxApps", prefs.simpleModeMaxApps.name)
+        p.put("simpleModeShowIcons", prefs.simpleModeShowIcons)
+        p.put("simpleModeShowWeather", prefs.simpleModeShowWeather)
+        p.put("simpleModeShowNotifSummary", prefs.simpleModeShowNotifSummary)
+        p.put("simpleModeApps", JSONArray(prefs.simpleModeApps))
+        p.put("simpleModeGreyscale", prefs.simpleModeGreyscale)
+        p.put("autoUnlockEnabled", prefs.autoUnlockEnabled)
+        p.put("autoUnlockPinDigits", prefs.autoUnlockPinDigits)
+        p.put("drawerSortMode", prefs.drawerSortMode)
         p.put("appIconShape", prefs.appIconShape.name)
         p.put("iconPackPackage", prefs.iconPackPackage)
         p.put("showAppCardBackground", prefs.showAppCardBackground)
@@ -220,6 +231,24 @@ object LauncherBackup {
             p.has("classicMode") -> p.optBoolean("classicMode", false)
             else -> p.optBoolean("drawerOnlyMode", false)
         }
+        val simpleModeEnabled = p.optBoolean("simpleModeEnabled", false)
+        val simpleModeLayout = p.optString("simpleModeLayout", "LIST").let { name ->
+            SimpleModeLayout.entries.firstOrNull { it.name == name } ?: SimpleModeLayout.LIST
+        }
+        val simpleModeMaxApps = p.optString("simpleModeMaxApps", "AUTO").let { name ->
+            SimpleModeMaxApps.entries.firstOrNull { it.name == name } ?: SimpleModeMaxApps.AUTO
+        }
+        val simpleModeShowIcons = p.optBoolean("simpleModeShowIcons", true)
+        val simpleModeShowWeather = p.optBoolean("simpleModeShowWeather", true)
+        val simpleModeShowNotifSummary = p.optBoolean("simpleModeShowNotifSummary", true)
+        val simpleModeApps = p.optJSONArray("simpleModeApps")?.let { arr ->
+            buildList { for (i in 0 until arr.length()) add(arr.optString(i, "").trim()) }
+                .filter { it.isNotEmpty() }
+        } ?: emptyList()
+        val simpleModeGreyscale = p.optBoolean("simpleModeGreyscale", true)
+        val autoUnlockEnabled = p.optBoolean("autoUnlockEnabled", true)
+        val autoUnlockPinDigits = p.optInt("autoUnlockPinDigits", 4).coerceIn(4, 8)
+        val drawerSortMode = p.optString("drawerSortMode", "ALPHABETICAL").trim()
         val appIconShape =
             p.optString("appIconShape", "").let { name ->
                 AppIconShape.entries.firstOrNull { it.name == name } ?: AppIconShape.SOFT_SQUARE
@@ -329,6 +358,17 @@ object LauncherBackup {
             quickSettingsQrScannerPackage = quickSettingsQrScannerPackage,
             quickSettingsTileOrder = quickSettingsTileOrder,
             classicMode = classicMode,
+            simpleModeEnabled = simpleModeEnabled,
+            simpleModeLayout = simpleModeLayout,
+            simpleModeMaxApps = simpleModeMaxApps,
+            simpleModeShowIcons = simpleModeShowIcons,
+            simpleModeShowWeather = simpleModeShowWeather,
+            simpleModeShowNotifSummary = simpleModeShowNotifSummary,
+            simpleModeApps = simpleModeApps,
+            simpleModeGreyscale = simpleModeGreyscale,
+            autoUnlockEnabled = autoUnlockEnabled,
+            autoUnlockPinDigits = autoUnlockPinDigits,
+            drawerSortMode = drawerSortMode,
             appIconShape = appIconShape,
             iconPackPackage = iconPackPackage,
             showAppCardBackground = showAppCardBackground,

@@ -51,20 +51,32 @@ object UsageStatsRepository {
         val startOfDay = midnightToday()
 
         val events = usm.queryEvents(startOfDay, now) ?: return 0L
+
+        // Build the user-facing package set once before iterating — getLaunchIntentForPackage
+        // is an IPC call and must not be called inside the event loop (hundreds of calls).
+        val launcherPkg = context.packageName
+        val userFacingPkgs = mutableSetOf<String>()
         val event = UsageEvents.Event()
         val resumedAt = mutableMapOf<String, Long>()
         var total = 0L
+
+        // First pass: collect all unique packages from events that are not the launcher itself.
+        val allEventPkgs = mutableSetOf<String>()
+        val eventsCopy = usm.queryEvents(startOfDay, now) ?: return 0L
+        while (eventsCopy.hasNextEvent()) {
+            eventsCopy.getNextEvent(event)
+            if (event.packageName != launcherPkg) allEventPkgs.add(event.packageName)
+        }
+        for (pkg in allEventPkgs) {
+            if (pm.getLaunchIntentForPackage(pkg) != null) userFacingPkgs.add(pkg)
+        }
 
         while (events.hasNextEvent()) {
             events.getNextEvent(event)
             val pkg = event.packageName
             when (event.eventType) {
                 UsageEvents.Event.ACTIVITY_RESUMED -> {
-                    // Exclude our own launcher — it's always "resumed" on home screen and would
-                    // inflate the total by hours during testing. All other launchable apps count.
-                    if (pkg != context.packageName &&
-                        pm.getLaunchIntentForPackage(pkg) != null
-                    ) {
+                    if (pkg in userFacingPkgs) {
                         resumedAt[pkg] = event.timeStamp
                     }
                 }

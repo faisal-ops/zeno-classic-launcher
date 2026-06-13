@@ -49,6 +49,8 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.core.graphics.drawable.toBitmap
+import androidx.compose.ui.res.stringResource
+import com.zeno.classiclauncher.nlauncher.R
 import com.zeno.classiclauncher.nlauncher.apps.AppEntry
 
 private val SELECTOR_BG = Color(0xFF0D0D0D)
@@ -137,7 +139,7 @@ internal fun SimpleModeAppSelector(
                 singleLine = true,
                 decorationBox = { inner ->
                     if (query.isEmpty()) {
-                        Text("Search apps…", fontSize = 16.sp, color = Color(0xFF555555))
+                        Text(stringResource(R.string.search_apps_ellipsis), fontSize = 16.sp, color = Color(0xFF555555))
                     }
                     inner()
                 },

@@ -170,4 +170,93 @@
     <string name="lock_accessibility_service_label">Zeno Classic</string>
     <string name="flip_clock_dream_label">Zeno Flip Clock</string>
     <string name="lock_accessibility_service_description">Locks the screen when you double-tap the home workspace—the same as the power button so face unlock works. Only window events from Zeno Classic are observed; screen content is not read.</string>
+    <!-- Common UI actions -->
+    <string name="action_back">Back</string>
+    <string name="action_clear">Clear</string>
+    <string name="action_clear_search">Clear search</string>
+    <string name="action_cancel">Cancel</string>
+    <string name="action_save">Save</string>
+    <string name="action_create">Create</string>
+    <string name="action_remove">Remove</string>
+    <string name="action_delete">Delete</string>
+    <string name="action_add_app">Add app</string>
+    <string name="action_settings_label">Settings</string>
+    <string name="action_edit_quick_settings">Edit quick settings</string>
+    <string name="action_previous">Previous</string>
+    <string name="action_next">Next</string>
+    <!-- App context-menu labels -->
+    <string name="action_open">Open</string>
+    <string name="action_app_info">App info</string>
+    <string name="action_hide">Hide</string>
+    <string name="action_unhide">Unhide</string>
+    <string name="action_arrange">Arrange</string>
+    <string name="action_new_group">New Group</string>
+    <string name="action_remove_from">Remove from %1$s</string>
+    <string name="action_add_to">Add to %1$s</string>
+    <string name="action_pin_to_home_strip">Pin to Home Strip</string>
+    <string name="action_remove_from_home_strip">Remove from Home Strip</string>
+    <!-- Dock shortcut editor actions -->
+    <string name="action_change_shortcut">Change shortcut</string>
+    <string name="action_change_icon">Change icon</string>
+    <string name="action_reset_icon">Reset icon</string>
+    <string name="action_hide_from_dock">Hide from dock</string>
+    <string name="action_reset_to_default">Reset to default</string>
+    <!-- Dialogs -->
+    <string name="dialog_remove_widget_title">Remove widget?</string>
+    <string name="dialog_remove_widget_body">It\'ll be removed from your home screen.</string>
+    <string name="dialog_new_group_title">New group</string>
+    <string name="dialog_rename_group_title">Rename group</string>
+    <string name="dialog_rename_folder_title">Rename folder</string>
+    <string name="dialog_group_name_hint">Group name</string>
+    <string name="dialog_name_hint">Name</string>
+    <string name="dialog_new_group_name_hint">New group name</string>
+    <!-- Content descriptions -->
+    <string name="cd_sound_profile">Sound profile</string>
+    <string name="cd_drawer_sort">Sort: %1$s</string>
+    <string name="cd_simple_clock">Time: %1$s. Tap to open clock.</string>
+    <string name="cd_simple_empty_slot">Empty slot. Tap to add an app.</string>
+    <!-- Search placeholders -->
+    <string name="search_widgets_hint">Search widgets</string>
+    <string name="search_apps_ellipsis">Search apps…</string>
+    <!-- Haptic slider labels -->
+    <string name="haptic_light">Light</string>
+    <string name="haptic_strong">Strong</string>
+    <!-- Badge overlay -->
+    <string name="badge_overlay_description">Choose what small badges appear on app icons in the drawer.</string>
+    <string name="badge_usage_stats_title">Usage stats badge</string>
+    <string name="badge_usage_stats_on">On — screen-time appears on app icons</string>
+    <string name="badge_notif_on">On — red star appears when an app has unread notifications</string>
+    <string name="badge_notif_permission_required">Requires notification access — enable Unread badges in Permissions first</string>
+    <!-- Lock wake overlay -->
+    <string name="lock_enable_helper_label">Enable Optional Lock Helper (Accessibility)</string>
+    <!-- Gesture overlay -->
+    <string name="gesture_swipe_right_label">Swipe right</string>
+    <!-- Toast messages (LauncherScreen) -->
+    <string name="new_app_added">New app added: %1$s</string>
+    <string name="drawer_usage_access_prompt">Enable Usage Access for Zeno Classic in Settings</string>
+    <string name="blackberry_hub_not_installed">BlackBerry Hub not installed</string>
+    <string name="drawer_no_apps_found">No apps found</string>
+    <string name="widget_save_failed">Could not save widget</string>
+    <string name="widget_remove_failed">Could not remove widget</string>
+    <string name="app_hidden_toast">App hidden · Type "private" in drawer to view</string>
+    <string name="home_groups_already_exist">Groups already exist</string>
+    <string name="home_strip_pinned">Pinned to Home Strip</string>
+    <string name="home_strip_full">Home Strip is full (5 items)</string>
+    <string name="home_strip_full_short">Home Strip is full</string>
+    <string name="could_not_open_tile">Could not open %1$s</string>
+    <string name="could_not_open_screen">Could not open that screen</string>
+    <string name="could_not_open_play_store">Could not open Play Store</string>
+    <!-- Toast messages -->
+    <string name="home_shortcuts_full">Home shortcuts full (max 3)</string>
+    <string name="backup_saved">Backup saved</string>
+    <string name="backup_failed">Backup failed: %1$s</string>
+    <string name="settings_restored_from_backup">Settings restored from backup</string>
+    <string name="backup_invalid_file">Invalid or unsupported backup file</string>
+    <string name="lock_not_configured_toast">If lock does not work on this device, enable “Zeno Classic lock helper” in Accessibility.</string>
+    <string name="lock_helper_retry_failed_toast">Lock helper didn’t lock the screen—open Zeno Classic once or toggle “Zeno Classic lock helper” off and on.</string>
+    <!-- GPS warning in backup export -->
+    <string name="backup_gps_warning_title">GPS coordinates in backup</string>
+    <string name="backup_gps_warning_body">Your manual weather location (GPS coordinates) will be included in the exported file. Share this file only with trusted recipients.</string>
+    <string name="backup_gps_warning_export">Export anyway</string>
+    <string name="backup_gps_warning_cancel">Cancel</string>
 </resources>

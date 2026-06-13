@@ -13,6 +13,7 @@ import android.graphics.drawable.BitmapDrawable
 import android.graphics.drawable.Drawable
 import android.os.Build
 import com.zeno.classiclauncher.nlauncher.R
+import kotlinx.coroutines.channels.BufferOverflow
 import kotlinx.coroutines.channels.awaitClose
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableSharedFlow
@@ -28,8 +29,10 @@ class AppsRepository(private val context: Context) {
     /** Warm size for typical device app counts; reduces map resize churn when listing the grid. */
     private val iconCache = ConcurrentHashMap<String, Drawable>(256)
 
-    /** Emitting to this triggers a full app list reload (e.g. after custom icon change). */
-    private val refreshTrigger = MutableSharedFlow<Unit>(extraBufferCapacity = 1)
+    /** Emitting to this triggers a full app list reload (e.g. after custom icon change).
+     *  DROP_OLDEST ensures tryEmit never silently fails — two rapid invalidations both
+     *  result in a reload, just coalesced into one. */
+    private val refreshTrigger = MutableSharedFlow<Unit>(extraBufferCapacity = 1, onBufferOverflow = BufferOverflow.DROP_OLDEST)
 
     /** Evicts [pkg] from the icon cache and signals [appsFlow] to re-emit. */
     fun invalidateAndRefresh(pkg: String) {

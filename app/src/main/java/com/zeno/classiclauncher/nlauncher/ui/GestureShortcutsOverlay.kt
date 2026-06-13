@@ -249,7 +249,7 @@ fun GestureShortcutsOverlay(
                     verticalAlignment = Alignment.CenterVertically,
                 ) {
                     IconButton(onClick = { activePicker = GesturePicker.None }) {
-                        Icon(Icons.AutoMirrored.Rounded.ArrowBack, contentDescription = "Back", tint = themePalette.settingsMenuTitle)
+                        Icon(Icons.AutoMirrored.Rounded.ArrowBack, contentDescription = stringResource(R.string.action_back), tint = themePalette.settingsMenuTitle)
                     }
                     Text(title, style = MaterialTheme.typography.titleMedium.copy(color = themePalette.settingsMenuTitle, fontWeight = FontWeight.SemiBold))
                 }
@@ -363,7 +363,7 @@ fun GestureShortcutsOverlay(
                     verticalAlignment = Alignment.CenterVertically,
                 ) {
                     IconButton(onClick = onDismiss) {
-                        Icon(Icons.AutoMirrored.Rounded.ArrowBack, contentDescription = "Back", tint = themePalette.settingsMenuTitle)
+                        Icon(Icons.AutoMirrored.Rounded.ArrowBack, contentDescription = stringResource(R.string.action_back), tint = themePalette.settingsMenuTitle)
                     }
                     Text(
                         stringResource(R.string.settings_home_gestures_title),
@@ -474,7 +474,7 @@ fun GestureShortcutsOverlay(
                             )
                             Spacer(Modifier.width(8.dp))
                             Column(modifier = Modifier.weight(1f)) {
-                                Text("Swipe right", color = themePalette.settingsMenuTitle, fontSize = 15.sp, fontWeight = FontWeight.Medium)
+                                Text(stringResource(R.string.gesture_swipe_right_label), color = themePalette.settingsMenuTitle, fontSize = 15.sp, fontWeight = FontWeight.Medium)
                                 Spacer(Modifier.height(2.dp))
                                 Text(
                                     if (swipeRightPackage.isEmpty()) stringResource(R.string.settings_not_configured)

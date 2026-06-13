@@ -51,6 +51,7 @@ class LockScreenAccessibilityService : AccessibilityService() {
 
     @Volatile private var isScreenOn = false
     @Volatile private var autoUnlockEnabled = true
+    @Volatile private var pinLength = PIN_LENGTH
     private var dismissAttempted = false
     private var pollingActive = false
 
@@ -95,7 +96,8 @@ class LockScreenAccessibilityService : AccessibilityService() {
         serviceScope.launch {
             LauncherPrefsRepository(applicationContext).prefsFlow.collect { prefs ->
                 autoUnlockEnabled = prefs.autoUnlockEnabled
-                Log.d(TAG, "autoUnlockEnabled updated → $autoUnlockEnabled")
+                pinLength = prefs.autoUnlockPinDigits
+                Log.d(TAG, "prefs updated — autoUnlockEnabled=$autoUnlockEnabled pinLength=$pinLength")
             }
         }
         Log.d(TAG, "Service connected — flagRetrieveInteractiveWindows set")
@@ -153,7 +155,10 @@ class LockScreenAccessibilityService : AccessibilityService() {
         runCatching {
             val intent = packageManager
                 .getLaunchIntentForPackage(packageName)
-                ?.apply { addFlags(Intent.FLAG_ACTIVITY_REORDER_TO_FRONT) }
+                ?.apply {
+                    // FLAG_ACTIVITY_NEW_TASK is required when starting an Activity from a Service.
+                    addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_REORDER_TO_FRONT)
+                }
             if (intent != null) startActivity(intent)
             else Log.w(TAG, "No launch intent found for $packageName")
         }.onFailure { Log.w(TAG, "Failed to bring launcher to front: $it") }
@@ -201,9 +206,9 @@ class LockScreenAccessibilityService : AccessibilityService() {
                     // PIN field not found yet — keep polling
                     handler.postDelayed(this, POLL_INTERVAL_MS)
                 }
-                len >= PIN_LENGTH -> {
+                len >= pinLength -> {
                     pollingActive = false
-                    Log.d(TAG, "PIN complete ($len chars) — confirming")
+                    Log.d(TAG, "PIN complete ($len chars, expected $pinLength) — confirming")
                     triggerPinConfirm()
                 }
                 else -> handler.postDelayed(this, POLL_INTERVAL_MS)
@@ -242,26 +247,31 @@ class LockScreenAccessibilityService : AccessibilityService() {
     /**
      * BFS over the node tree. Returns the character count of the first password/editable
      * node that has non-null text, or -1 if none found.
-     * Each non-root node is recycled after processing.
+     * Each non-root node is recycled after processing; the finally block recycles any
+     * remaining queued nodes if an exception interrupts the traversal.
      */
     private fun bfsForPasswordLength(root: AccessibilityNodeInfo): Int {
         val queue = ArrayDeque<AccessibilityNodeInfo>()
         queue.add(root)
-        while (queue.isNotEmpty()) {
-            val node = queue.removeFirst()
-            val isTarget = node.isPassword || (node.isEditable && node.isFocused)
-            if (isTarget && node.text != null) {
-                val len = node.text.length
-                Log.d(TAG, "  bfs PIN node cls=${node.className} len=$len isPassword=${node.isPassword}")
-                // Recycle queued nodes before returning
-                queue.forEach { it.recycle() }
+        try {
+            while (queue.isNotEmpty()) {
+                val node = queue.removeFirst()
+                val isTarget = node.isPassword || (node.isEditable && node.isFocused)
+                if (isTarget && node.text != null) {
+                    val len = node.text.length
+                    Log.d(TAG, "  bfs PIN node cls=${node.className} len=$len isPassword=${node.isPassword}")
+                    queue.forEach { it.recycle() }
+                    if (node !== root) node.recycle()
+                    return len
+                }
+                for (i in 0 until node.childCount) {
+                    node.getChild(i)?.let { queue.add(it) }
+                }
                 if (node !== root) node.recycle()
-                return len
             }
-            for (i in 0 until node.childCount) {
-                node.getChild(i)?.let { queue.add(it) }
-            }
-            if (node !== root) node.recycle()
+        } catch (e: Exception) {
+            Log.w(TAG, "bfsForPasswordLength exception: $e")
+            queue.forEach { runCatching { it.recycle() } }
         }
         return -1
     }
@@ -320,14 +330,12 @@ class LockScreenAccessibilityService : AccessibilityService() {
     }
 
     private fun isBedtimeModeActive(): Boolean = try {
-        // bedtime_mode setting is set by Digital Wellbeing — on a fresh boot it may still be 0
-        // for several seconds while Digital Wellbeing initialises, even though the bedtime
-        // ZenRule is already active. zen_mode is restored from disk immediately by
-        // NotificationManager, so we use it as a fallback to catch the boot race condition.
-        val bedtimeSetting = Settings.Secure.getInt(contentResolver, "bedtime_mode", 0) == 1
-        val zenActive = Settings.Global.getInt(contentResolver, "zen_mode", 0) != 0
-        val active = bedtimeSetting || zenActive
-        Log.d(TAG, "isBedtimeModeActive — bedtimeSetting=$bedtimeSetting zenActive=$zenActive → $active")
+        // Check only bedtime_mode, not zen_mode. zen_mode is active for any DND activation
+        // (meetings, driving, manual DND) — using it as a proxy causes the lock screen to
+        // stay visible for all DND modes, not just bedtime. Accept the rare boot-race edge
+        // case (Digital Wellbeing initialising) rather than suppressing unlock for every DND.
+        val active = Settings.Secure.getInt(contentResolver, "bedtime_mode", 0) == 1
+        Log.d(TAG, "isBedtimeModeActive — $active")
         active
     } catch (e: Exception) {
         Log.w(TAG, "bedtime_mode check failed: $e")
@@ -422,6 +430,7 @@ class LockScreenAccessibilityService : AccessibilityService() {
 
     companion object {
         private const val TAG = "ZenoUnlock"
+        /** Default PIN digit count used before prefs are loaded. Overridden at runtime by [pinLength]. */
         private const val PIN_LENGTH = 4
         private const val DISMISS_DELAY_MS = 400L        // wait for screen to fully render
         private const val POLLING_START_DELAY_MS = 800L  // wait for PIN bouncer to appear after swipe

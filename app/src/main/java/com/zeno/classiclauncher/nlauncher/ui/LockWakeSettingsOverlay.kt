@@ -53,6 +53,8 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.zIndex
+import androidx.compose.ui.res.stringResource
+import com.zeno.classiclauncher.nlauncher.R
 import com.zeno.classiclauncher.nlauncher.power.SleepManager
 import com.zeno.classiclauncher.nlauncher.theme.LauncherThemePalette
 
@@ -129,7 +131,7 @@ fun LockWakeSettingsOverlay(
                 IconButton(onClick = onDismiss) {
                     Icon(
                         Icons.AutoMirrored.Rounded.ArrowBack,
-                        contentDescription = "Back",
+                        contentDescription = stringResource(R.string.action_back),
                         tint = themePalette.settingsMenuTitle,
                     )
                 }
@@ -177,7 +179,7 @@ fun LockWakeSettingsOverlay(
 
                 if (doubleTapEnabled && !lockHelperOn) {
                     TextButton(onClick = { openAccessibilitySettings() }) {
-                        Text("Enable Optional Lock Helper (Accessibility)", color = themePalette.settingsMenuBody)
+                        Text(stringResource(R.string.lock_enable_helper_label), color = themePalette.settingsMenuBody)
                     }
                 }
 

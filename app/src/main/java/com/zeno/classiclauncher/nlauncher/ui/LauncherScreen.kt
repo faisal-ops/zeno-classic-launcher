@@ -752,7 +752,7 @@ fun LauncherScreen(
                     showWidgetPicker = false
                 } else {
                     runCatching { appWidgetHost.deleteAppWidgetId(widgetId) }
-                    Toast.makeText(context, "Could not save widget", Toast.LENGTH_SHORT).show()
+                    Toast.makeText(context, context.getString(R.string.widget_save_failed), Toast.LENGTH_SHORT).show()
                 }
             },
         )
@@ -766,7 +766,7 @@ fun LauncherScreen(
                 showWidgetConfigMode = false
                 showRemoveWidgetConfirm = false
             } else {
-                Toast.makeText(context, "Could not remove widget", Toast.LENGTH_SHORT).show()
+                Toast.makeText(context, context.getString(R.string.widget_remove_failed), Toast.LENGTH_SHORT).show()
             }
         }
     }
@@ -1221,7 +1221,7 @@ fun LauncherScreen(
                             } else {
                                 Toast.makeText(
                                     context,
-                                    "Enable Usage Access for Zeno Classic in Settings",
+                                    context.getString(R.string.drawer_usage_access_prompt),
                                     Toast.LENGTH_LONG,
                                 ).show()
                                 context.startActivity(
@@ -1506,7 +1506,7 @@ fun LauncherScreen(
                     val isCurrentlyHidden = prefs.hiddenPackages.contains(selectedApp.packageName)
                     vm.setHidden(selectedApp.packageName, !isCurrentlyHidden)
                     if (!isCurrentlyHidden) {
-                        Toast.makeText(context, "App hidden · Type \"private\" in drawer to view", Toast.LENGTH_SHORT).show()
+                        Toast.makeText(context, context.getString(R.string.app_hidden_toast), Toast.LENGTH_SHORT).show()
                     }
                     showAppMenu = null
                     appMenuFromHomeShortcut = false
@@ -1545,7 +1545,7 @@ fun LauncherScreen(
                 },
                 onCreateDrawerFolder = { title ->
                     if (groupNameExists(title)) {
-                        Toast.makeText(context, "Groups already exist", Toast.LENGTH_SHORT).show()
+                        Toast.makeText(context, context.getString(R.string.home_groups_already_exist), Toast.LENGTH_SHORT).show()
                         false
                     } else {
                         val visualIdx = gridCells.indexOfFirst { cell ->
@@ -1588,7 +1588,7 @@ fun LauncherScreen(
                         val ok = vm.pinDrawerFolderToHomeStrip(folderMenuCell.id)
                         Toast.makeText(
                             context,
-                            if (ok) "Pinned to Home Strip" else "Home Strip is full",
+                            if (ok) context.getString(R.string.home_strip_pinned) else context.getString(R.string.home_strip_full_short),
                             Toast.LENGTH_SHORT,
                         ).show()
                         drawerFolderMenu = null
@@ -1743,7 +1743,7 @@ fun LauncherScreen(
                         val ok = vm.pinHomeGroupToHomeStrip(homeGroupMenuTarget.id)
                         Toast.makeText(
                             context,
-                            if (ok) "Pinned to Home Strip" else "Home Strip is full",
+                            if (ok) context.getString(R.string.home_strip_pinned) else context.getString(R.string.home_strip_full_short),
                             Toast.LENGTH_SHORT,
                         ).show()
                         showHomeGroupMenu = null
@@ -1853,6 +1853,7 @@ fun LauncherScreen(
                 onToggleHaptics = { vm.setHapticsEnabled(!prefs.hapticsEnabled) },
                 hapticIntensity = prefs.hapticIntensity,
                 onSetHapticIntensity = vm::setHapticIntensity,
+                manualGpsCoords = prefs.glanceWeatherManualLatitude.isNotEmpty(),
                 onExportBackup = vm::exportBackupJson,
                 onImportBackup = vm::importBackupJson,
                 onResetTheme = vm::resetTheme,
@@ -2005,7 +2006,7 @@ fun LauncherScreen(
                             onToggleHomeStrip = vm::setHomeStripEnabled,
                             onCreateGroup = { name ->
                                 if (groupNameExists(name)) {
-                                    Toast.makeText(context, "Groups already exist", Toast.LENGTH_SHORT).show()
+                                    Toast.makeText(context, context.getString(R.string.home_groups_already_exist), Toast.LENGTH_SHORT).show()
                                 } else {
                                     vm.createHomeGroup(name)
                                 }
@@ -2094,6 +2095,7 @@ fun LauncherScreen(
                 onNotificationBadgesEnabled = vm::setNotificationBadgesEnabled,
                 onDoubleTapSleepEnabled = vm::setDoubleTapToSleepEnabled,
                 onAutoUnlockEnabled = vm::setAutoUnlockEnabled,
+                onAutoUnlockPinDigits = vm::setAutoUnlockPinDigits,
                 onGlanceEnabled = vm::setGlanceEnabled,
                 onGlanceShowCalendar = vm::setGlanceShowCalendar,
             )
@@ -2147,7 +2149,7 @@ fun LauncherScreen(
                         ) {
                             Icon(Icons.Rounded.Tune, contentDescription = null, tint = Color.White, modifier = Modifier.size(20.dp))
                             Spacer(Modifier.width(14.dp))
-                            Text("Change shortcut", color = Color.White, fontSize = 15.sp)
+                            Text(stringResource(R.string.action_change_shortcut), color = Color.White, fontSize = 15.sp)
                         }
                         HorizontalDivider(color = Color(0x22FFFFFF))
                         // Change icon
@@ -2170,7 +2172,7 @@ fun LauncherScreen(
                         ) {
                             Icon(Icons.Rounded.Image, contentDescription = null, tint = Color.White, modifier = Modifier.size(20.dp))
                             Spacer(Modifier.width(14.dp))
-                            Text("Change icon", color = Color.White, fontSize = 15.sp)
+                            Text(stringResource(R.string.action_change_icon), color = Color.White, fontSize = 15.sp)
                         }
                         if (hasDockCustomIcon) {
                             HorizontalDivider(color = Color(0x22FFFFFF))
@@ -2186,7 +2188,7 @@ fun LauncherScreen(
                             ) {
                                 Icon(Icons.Outlined.Close, contentDescription = null, tint = Color(0xFF8E95A3), modifier = Modifier.size(20.dp))
                                 Spacer(Modifier.width(14.dp))
-                                Text("Reset icon", color = Color(0xFF8E95A3), fontSize = 15.sp)
+                                Text(stringResource(R.string.action_reset_icon), color = Color(0xFF8E95A3), fontSize = 15.sp)
                             }
                         }
                         HorizontalDivider(color = Color(0x22FFFFFF))
@@ -2204,7 +2206,7 @@ fun LauncherScreen(
                             ) {
                                 Icon(Icons.Rounded.VisibilityOff, contentDescription = null, tint = Color(0xFFFF6B6B), modifier = Modifier.size(20.dp))
                                 Spacer(Modifier.width(14.dp))
-                                Text("Hide from dock", color = Color(0xFFFF6B6B), fontSize = 15.sp)
+                                Text(stringResource(R.string.action_hide_from_dock), color = Color(0xFFFF6B6B), fontSize = 15.sp)
                             }
                         } else {
                             Row(
@@ -2223,7 +2225,7 @@ fun LauncherScreen(
                             ) {
                                 Icon(Icons.Rounded.VisibilityOff, contentDescription = null, tint = Color(0xFFFF6B6B), modifier = Modifier.size(20.dp))
                                 Spacer(Modifier.width(14.dp))
-                                Text("Reset to default", color = Color(0xFFFF6B6B), fontSize = 15.sp)
+                                Text(stringResource(R.string.action_reset_to_default), color = Color(0xFFFF6B6B), fontSize = 15.sp)
                             }
                         }
                     }
@@ -2364,16 +2366,16 @@ fun LauncherScreen(
                 containerColor = Color(0xFF111820),
                 titleContentColor = Color(0xFFEAF2F8),
                 textContentColor = Color(0xFFB7C2CF),
-                title = { Text("Remove widget?") },
-                text = { Text("It'll be removed from your home screen.") },
+                title = { Text(stringResource(R.string.dialog_remove_widget_title)) },
+                text = { Text(stringResource(R.string.dialog_remove_widget_body)) },
                 confirmButton = {
                     TextButton(onClick = { removeHomeWidget() }) {
-                        Text("Remove", color = Color(0xFFFF9EAA), fontWeight = FontWeight.SemiBold)
+                        Text(stringResource(R.string.action_remove), color = Color(0xFFFF9EAA), fontWeight = FontWeight.SemiBold)
                     }
                 },
                 dismissButton = {
                     TextButton(onClick = { showRemoveWidgetConfirm = false }) {
-                        Text("Cancel", color = Color(0xFF9AE2FF))
+                        Text(stringResource(R.string.action_cancel), color = Color(0xFF9AE2FF))
                     }
                 },
             )
@@ -2399,9 +2401,9 @@ fun LauncherScreen(
             val onCreateGroup = {
                 val name = newHomeGroupName
                 if (groupNameExists(name)) {
-                    Toast.makeText(context, "Groups already exist", Toast.LENGTH_SHORT).show()
+                    Toast.makeText(context, context.getString(R.string.home_groups_already_exist), Toast.LENGTH_SHORT).show()
                 } else if (!prefs.canAddHomeStripItem()) {
-                    Toast.makeText(context, "Home Strip is full (5 items)", Toast.LENGTH_SHORT).show()
+                    Toast.makeText(context, context.getString(R.string.home_strip_full), Toast.LENGTH_SHORT).show()
                     showNewHomeGroupDialog = false
                 } else {
                     vm.createHomeGroup(name)
@@ -2414,13 +2416,13 @@ fun LauncherScreen(
                 containerColor = themePalette.settingsBg,
                 titleContentColor = themePalette.settingsMenuTitle,
                 textContentColor = themePalette.settingsMenuBody,
-                title = { Text("New group", color = themePalette.settingsMenuTitle) },
+                title = { Text(stringResource(R.string.dialog_new_group_title), color = themePalette.settingsMenuTitle) },
                 text = {
                     OutlinedTextField(
                         value = newHomeGroupName,
                         onValueChange = { newHomeGroupName = capitalizeFirstLetterForGroupInput(it) },
                         singleLine = true,
-                        label = { Text("Group name", color = themePalette.settingsMenuBody) },
+                        label = { Text(stringResource(R.string.dialog_group_name_hint), color = themePalette.settingsMenuBody) },
                         keyboardOptions = KeyboardOptions(
                             capitalization = KeyboardCapitalization.Sentences,
                             imeAction = ImeAction.Done,
@@ -2444,11 +2446,11 @@ fun LauncherScreen(
                     )
                 },
                 confirmButton = {
-                    TextButton(onClick = onCreateGroup) { Text("Create", color = themePalette.settingsMenuBody) }
+                    TextButton(onClick = onCreateGroup) { Text(stringResource(R.string.action_create), color = themePalette.settingsMenuBody) }
                 },
                 dismissButton = {
                     TextButton(onClick = { showNewHomeGroupDialog = false }) {
-                        Text("Cancel", color = themePalette.settingsMenuBody)
+                        Text(stringResource(R.string.action_cancel), color = themePalette.settingsMenuBody)
                     }
                 },
             )
@@ -3305,7 +3307,7 @@ private fun HomePage(
                                 } else {
                                     android.widget.Toast.makeText(
                                         context,
-                                        "BlackBerry Hub not installed",
+                                        context.getString(R.string.blackberry_hub_not_installed),
                                         android.widget.Toast.LENGTH_SHORT,
                                     ).show()
                                     onOpenGestureSettings()
@@ -3589,7 +3591,7 @@ private fun HomePage(
                     ) {
                         Icon(
                             Icons.Outlined.Close,
-                            contentDescription = "Clear",
+                            contentDescription = stringResource(R.string.action_clear),
                             tint = Color.White,
                             modifier = Modifier.size(13.dp),
                         )
@@ -3675,7 +3677,7 @@ private fun HomePage(
                             modifier = Modifier.size(11.dp),
                         )
                         Spacer(Modifier.width(5.dp))
-                        Text("Settings", color = Color(0xFF8E95A3), fontSize = 11.sp, fontWeight = FontWeight.Medium)
+                        Text(stringResource(R.string.action_settings_label), color = Color(0xFF8E95A3), fontSize = 11.sp, fontWeight = FontWeight.Medium)
                     }
                     settingsResults.forEachIndexed { settingsIdx, entry ->
                         val absoluteIdx = searchResults.size + settingsIdx
@@ -3727,7 +3729,7 @@ private fun HomePage(
                 // No results text
                 if (searchResults.isEmpty() && settingsResults.isEmpty()) {
                     Text(
-                        text = "No apps found",
+                        text = stringResource(R.string.drawer_no_apps_found),
                         color = Color(0xFF8E95A3),
                         fontSize = 14.sp,
                         modifier = Modifier.padding(horizontal = 14.dp, vertical = 8.dp),
@@ -3810,7 +3812,7 @@ private fun SoundProfileHeaderIcon(
     ) {
         Icon(
             imageVector = icon,
-            contentDescription = "Sound profile",
+            contentDescription = stringResource(R.string.cd_sound_profile),
             tint = iconTint,
             modifier = Modifier.size(31.dp),
         )
@@ -3834,7 +3836,7 @@ private fun qsHorizontalEdgePadding(view: android.view.View, density: Density, e
 }
 
 @Composable
-private fun QuickSettingsOverlay(
+internal fun QuickSettingsOverlay(
     allApps: List<AppEntry>,
     hiddenPackages: Set<String>,
     qrScannerPackage: String,
@@ -4473,13 +4475,13 @@ private fun QuickSettingsOverlay(
             Handler(Looper.getMainLooper()).postDelayed({
                 val ok = tile.onTap()
                 if (!ok) {
-                    Toast.makeText(context, "Could not open ${tile.title}", Toast.LENGTH_SHORT).show()
+                    Toast.makeText(context, context.getString(R.string.could_not_open_tile, tile.title), Toast.LENGTH_SHORT).show()
                 }
             }, 120L)
         } else {
             val ok = tile.onTap()
             if (!ok) {
-                Toast.makeText(context, "Could not open ${tile.title}", Toast.LENGTH_SHORT).show()
+                Toast.makeText(context, context.getString(R.string.could_not_open_tile, tile.title), Toast.LENGTH_SHORT).show()
             } else if (tile.closeOnSuccess) {
                 onDismiss()
             }
@@ -4760,7 +4762,7 @@ private fun QuickSettingsOverlay(
                 ) {
                     Icon(
                         imageVector = Icons.Rounded.Tune,
-                        contentDescription = "Edit quick settings",
+                        contentDescription = stringResource(R.string.action_edit_quick_settings),
                         tint = Color(0x80E6EBF2),
                         modifier = Modifier
                             .size(28.dp)
@@ -4853,7 +4855,7 @@ private fun QuickSettingsTileEditorOverlay(
                 IconButton(onClick = onDismiss) {
                     Icon(
                         imageVector = Icons.AutoMirrored.Rounded.ArrowBack,
-                        contentDescription = "Back",
+                        contentDescription = stringResource(R.string.action_back),
                         tint = Color(0xFFEAF0F6),
                     )
                 }
@@ -5179,7 +5181,7 @@ private fun PinAppToHomeSheet(
                 .navigationBarsPadding(),
         ) {
             Text(
-                "Pin to Home Strip",
+                stringResource(R.string.action_pin_to_home_strip),
                 style = MaterialTheme.typography.titleLarge.copy(fontWeight = FontWeight.SemiBold),
                 color = themePalette.settingsMenuTitle,
             )
@@ -5850,7 +5852,7 @@ private fun HomeWidgetPickerSheet(
                     onValueChange = { query = it },
                     singleLine = true,
                     placeholder = {
-                        Text("Search widgets", color = Color(0xFFB7BCC3), fontSize = 20.sp)
+                        Text(stringResource(R.string.search_widgets_hint), color = Color(0xFFB7BCC3), fontSize = 20.sp)
                     },
                     colors = TextFieldDefaults.colors(
                         focusedTextColor = Color(0xFFEAF1FB),
@@ -6517,7 +6519,7 @@ private fun AppDrawer(
         if (searchQuery.isNotEmpty()) {
             val extras = remember(searchQuery) {
                 buildSearchExtras(drawerContext, searchQuery) {
-                    Toast.makeText(drawerContext, "Could not open that screen", Toast.LENGTH_SHORT).show()
+                    Toast.makeText(drawerContext, drawerContext.getString(R.string.could_not_open_screen), Toast.LENGTH_SHORT).show()
                 }
             }
             if (extras.isNotEmpty()) {
@@ -6559,7 +6561,7 @@ private fun AppDrawer(
             }
             if (gridCells.isEmpty()) {
                 Text(
-                    text = "No apps found",
+                    text = stringResource(R.string.drawer_no_apps_found),
                     color = themePalette.settingsMenuBody,
                     style = MaterialTheme.typography.bodyLarge,
                     modifier = Modifier
@@ -6623,7 +6625,7 @@ private fun AppDrawer(
                         }
                         Icon(
                             imageVector = sortIcon,
-                            contentDescription = "Sort: ${drawerSortModeLabel(drawerSortMode)}",
+                            contentDescription = stringResource(R.string.cd_drawer_sort, drawerSortModeLabel(drawerSortMode)),
                             tint = if (drawerSortMode == DrawerSortMode.MOST_USED) {
                                 themePalette.settingsMenuTitle
                             } else {
@@ -7178,7 +7180,7 @@ private fun openPlayStoreSearch(context: android.content.Context, query: String)
         .onFailure {
             runCatching { context.startActivity(webIntent) }
                 .onFailure {
-                    Toast.makeText(context, "Could not open Play Store", Toast.LENGTH_SHORT).show()
+                    Toast.makeText(context, context.getString(R.string.could_not_open_play_store), Toast.LENGTH_SHORT).show()
                 }
         }
 }
@@ -7952,7 +7954,7 @@ private fun HomeGroupFolderOverlay(
                         ) {
                             Icon(
                                 imageVector = Icons.Rounded.Add,
-                                contentDescription = "Add app",
+                                contentDescription = stringResource(R.string.action_add_app),
                                 tint = Color(0xFF91B3DA),
                                 modifier = Modifier.size(18.dp),
                             )
@@ -8113,7 +8115,7 @@ private fun HomeGroupFolderOverlay(
                                     ) {
                                         Icon(
                                             imageVector = Icons.Rounded.Add,
-                                            contentDescription = "Add app",
+                                            contentDescription = stringResource(R.string.action_add_app),
                                             tint = Color(0xFF91B3DA),
                                             modifier = Modifier.size(24.dp),
                                         )
@@ -8141,7 +8143,7 @@ private fun HomeGroupFolderOverlay(
                     value = renameText,
                     onValueChange = { renameText = capitalizeFirstLetterForGroupInput(it) },
                     singleLine = true,
-                    label = { Text("Name", color = themePalette.settingsMenuBody) },
+                    label = { Text(stringResource(R.string.dialog_name_hint), color = themePalette.settingsMenuBody) },
                     keyboardOptions = KeyboardOptions(
                         capitalization = KeyboardCapitalization.Sentences,
                         imeAction = ImeAction.Done,
@@ -8169,11 +8171,11 @@ private fun HomeGroupFolderOverlay(
                         onRenameGroup(renameText)
                         renameOpen = false
                     },
-                ) { Text("Save", color = themePalette.settingsMenuBody) }
+                ) { Text(stringResource(R.string.action_save), color = themePalette.settingsMenuBody) }
             },
             dismissButton = {
                 TextButton(onClick = { renameOpen = false }) {
-                    Text("Cancel", color = themePalette.settingsMenuBody)
+                    Text(stringResource(R.string.action_cancel), color = themePalette.settingsMenuBody)
                 }
             },
         )
@@ -8243,7 +8245,7 @@ private fun HomeGroupContextMenu(
                 MenuRow(Icons.Rounded.SwapVert, sideLabel, onClick = onMoveSide)
             }
             if (showPinToHomeStrip) {
-                MenuRow(Icons.Rounded.BookmarkAdd, "Pin to Home Strip", onClick = onPinToHomeStrip)
+                MenuRow(Icons.Rounded.BookmarkAdd, stringResource(R.string.action_pin_to_home_strip), onClick = onPinToHomeStrip)
             }
             MenuRow(Icons.Outlined.Delete, "Delete group", onClick = onDeleteGroup)
         }
@@ -8257,13 +8259,13 @@ private fun HomeGroupContextMenu(
             containerColor = themePalette.settingsBg,
             titleContentColor = themePalette.settingsMenuTitle,
             textContentColor = themePalette.settingsMenuBody,
-            title = { Text("Rename group", color = themePalette.settingsMenuTitle) },
+            title = { Text(stringResource(R.string.dialog_rename_group_title), color = themePalette.settingsMenuTitle) },
             text = {
                 OutlinedTextField(
                     value = renameText,
                     onValueChange = { renameText = capitalizeFirstLetterForGroupInput(it) },
                     singleLine = true,
-                    label = { Text("Name", color = themePalette.settingsMenuBody) },
+                    label = { Text(stringResource(R.string.dialog_name_hint), color = themePalette.settingsMenuBody) },
                     keyboardOptions = KeyboardOptions(
                         capitalization = KeyboardCapitalization.Sentences,
                         imeAction = ImeAction.Done,
@@ -8292,7 +8294,7 @@ private fun HomeGroupContextMenu(
             },
             dismissButton = {
                 TextButton(onClick = { renameOpen = false }) {
-                    Text("Cancel", color = themePalette.settingsMenuBody)
+                    Text(stringResource(R.string.action_cancel), color = themePalette.settingsMenuBody)
                 }
             },
         )
@@ -8371,9 +8373,9 @@ private fun FolderDrawerContextMenu(
                 "Rename folder",
                 onClick = { renameOpen = true },
             )
-            MenuRow(Icons.Rounded.SwapVert, "Arrange", onClick = onReorderApps)
+            MenuRow(Icons.Rounded.SwapVert, stringResource(R.string.action_arrange), onClick = onReorderApps)
             if (showPinToHomeStrip) {
-                MenuRow(Icons.Rounded.BookmarkAdd, "Pin to Home Strip", onClick = onPinToHomeStrip)
+                MenuRow(Icons.Rounded.BookmarkAdd, stringResource(R.string.action_pin_to_home_strip), onClick = onPinToHomeStrip)
             }
             MenuRow(Icons.Outlined.Delete, "Delete folder", onClick = onDeleteFolder)
         }
@@ -8387,13 +8389,13 @@ private fun FolderDrawerContextMenu(
             containerColor = themePalette.settingsBg,
             titleContentColor = themePalette.settingsMenuTitle,
             textContentColor = themePalette.settingsMenuBody,
-            title = { Text("Rename folder", color = themePalette.settingsMenuTitle) },
+            title = { Text(stringResource(R.string.dialog_rename_folder_title), color = themePalette.settingsMenuTitle) },
             text = {
                 OutlinedTextField(
                     value = renameText,
                     onValueChange = { renameText = capitalizeFirstLetterForGroupInput(it) },
                     singleLine = true,
-                    label = { Text("Name", color = themePalette.settingsMenuBody) },
+                    label = { Text(stringResource(R.string.dialog_name_hint), color = themePalette.settingsMenuBody) },
                     keyboardOptions = KeyboardOptions(
                         capitalization = KeyboardCapitalization.Sentences,
                         imeAction = ImeAction.Done,
@@ -8422,11 +8424,11 @@ private fun FolderDrawerContextMenu(
                         renameOpen = false
                         onDismiss()
                     },
-                ) { Text("Save", color = themePalette.settingsMenuBody) }
+                ) { Text(stringResource(R.string.action_save), color = themePalette.settingsMenuBody) }
             },
             dismissButton = {
                 TextButton(onClick = { renameOpen = false }) {
-                    Text("Cancel", color = themePalette.settingsMenuBody)
+                    Text(stringResource(R.string.action_cancel), color = themePalette.settingsMenuBody)
                 }
             },
         )
@@ -8518,24 +8520,24 @@ private fun AppContextMenu(
                     .heightIn(max = maxMenuBodyHeight)
                     .verticalScroll(menuScrollState),
             ) {
-                MenuRow(Icons.AutoMirrored.Rounded.OpenInNew, "Open", onLaunch)
-                MenuRow(Icons.Rounded.Info, "App info", onInfo)
+                MenuRow(Icons.AutoMirrored.Rounded.OpenInNew, stringResource(R.string.action_open), onLaunch)
+                MenuRow(Icons.Rounded.Info, stringResource(R.string.action_app_info), onInfo)
                 MenuRow(
                     if (isHidden) Icons.Rounded.Visibility else Icons.Rounded.VisibilityOff,
-                    if (isHidden) "Unhide" else "Hide",
+                    if (isHidden) stringResource(R.string.action_unhide) else stringResource(R.string.action_hide),
                     onHideToggle,
                 )
-                MenuRow(Icons.Rounded.SwapVert, "Arrange", onReorder)
+                MenuRow(Icons.Rounded.SwapVert, stringResource(R.string.action_arrange), onReorder)
                 if (!app.internal) {
-                    MenuRow(Icons.Rounded.Image, "Change icon", onChangeIcon)
+                    MenuRow(Icons.Rounded.Image, stringResource(R.string.action_change_icon), onChangeIcon)
                     if (hasCustomIcon) {
-                        MenuRow(Icons.Rounded.SettingsBackupRestore, "Reset icon", onResetIcon)
+                        MenuRow(Icons.Rounded.SettingsBackupRestore, stringResource(R.string.action_reset_icon), onResetIcon)
                     }
                 }
                 if (drawerFolderActionsEnabled) {
                     MenuRow(
                         Icons.Rounded.Folder,
-                        "New Group",
+                        stringResource(R.string.action_new_group),
                         onClick = {
                             newDrawerFolderName = ""
                             newDrawerFolderDialogOpen = true
@@ -8548,13 +8550,13 @@ private fun AppContextMenu(
                         if (inGroup) {
                             MenuRow(
                                 Icons.Outlined.BookmarkRemove,
-                                "Remove from ${g.title}",
+                                stringResource(R.string.action_remove_from, g.title),
                                 { onRemoveFromHomeGroup(g.id) },
                             )
                         } else {
                             MenuRow(
                                 Icons.Rounded.BookmarkAdd,
-                                "Add to ${g.title}",
+                                stringResource(R.string.action_add_to, g.title),
                                 { onAddToHomeGroup(g.id) },
                             )
                         }
@@ -8564,7 +8566,7 @@ private fun AppContextMenu(
                     for ((folderId, label) in drawerFolders) {
                         MenuRow(
                             Icons.Rounded.BookmarkAdd,
-                            "Add to $label",
+                            stringResource(R.string.action_add_to, label),
                             onClick = {
                                 onAddToDrawerFolder(folderId)
                                 onDismiss()
@@ -8573,10 +8575,10 @@ private fun AppContextMenu(
                     }
                 }
                 if (addHomeShortcutEnabled) {
-                    MenuRow(Icons.AutoMirrored.Rounded.PlaylistAdd, "Pin to Home Strip", onAddHomeShortcut)
+                    MenuRow(Icons.AutoMirrored.Rounded.PlaylistAdd, stringResource(R.string.action_pin_to_home_strip), onAddHomeShortcut)
                 }
                 if (removeHomeShortcutEnabled) {
-                    MenuRow(Icons.Outlined.Close, "Remove from Home Strip", onRemoveHomeShortcut)
+                    MenuRow(Icons.Outlined.Close, stringResource(R.string.action_remove_from_home_strip), onRemoveHomeShortcut)
                 }
                 Spacer(Modifier.height(12.dp))
             }
@@ -8590,13 +8592,13 @@ private fun AppContextMenu(
             containerColor = themePalette.settingsBg,
             titleContentColor = themePalette.settingsMenuTitle,
             textContentColor = themePalette.settingsMenuBody,
-            title = { Text("New Group", color = themePalette.settingsMenuTitle) },
+            title = { Text(stringResource(R.string.action_new_group), color = themePalette.settingsMenuTitle) },
             text = {
                 OutlinedTextField(
                     value = newDrawerFolderName,
                     onValueChange = { newDrawerFolderName = capitalizeFirstLetterForGroupInput(it) },
                     singleLine = true,
-                    label = { Text("Group name", color = themePalette.settingsMenuBody) },
+                    label = { Text(stringResource(R.string.dialog_group_name_hint), color = themePalette.settingsMenuBody) },
                     keyboardOptions = KeyboardOptions(
                         capitalization = KeyboardCapitalization.Sentences,
                         imeAction = ImeAction.Done,
@@ -8626,11 +8628,11 @@ private fun AppContextMenu(
                             onDismiss()
                         }
                     },
-                ) { Text("Create", color = themePalette.settingsMenuBody) }
+                ) { Text(stringResource(R.string.action_create), color = themePalette.settingsMenuBody) }
             },
             dismissButton = {
                 TextButton(onClick = { newDrawerFolderDialogOpen = false }) {
-                    Text("Cancel", color = themePalette.settingsMenuBody)
+                    Text(stringResource(R.string.action_cancel), color = themePalette.settingsMenuBody)
                 }
             },
         )
@@ -9649,7 +9651,7 @@ private fun DrawerSearchBar(
             ) {
                 Icon(
                     Icons.Outlined.Close,
-                    contentDescription = "Clear search",
+                    contentDescription = stringResource(R.string.action_clear_search),
                     tint = Color.White,
                     modifier = Modifier.size(14.dp),
                 )
@@ -10195,7 +10197,7 @@ private fun DockShortcutPickerOverlay(
                 IconButton(onClick = onDismiss) {
                     Icon(
                         Icons.AutoMirrored.Rounded.ArrowBack,
-                        contentDescription = "Back",
+                        contentDescription = stringResource(R.string.action_back),
                         tint = themePalette.settingsMenuTitle,
                         modifier = Modifier.size(26.dp),
                     )
@@ -10363,7 +10365,7 @@ private fun AppPickerOverlay(
                 IconButton(onClick = onDismiss) {
                     Icon(
                         Icons.AutoMirrored.Rounded.ArrowBack,
-                        contentDescription = "Back",
+                        contentDescription = stringResource(R.string.action_back),
                         tint = themePalette.settingsMenuTitle,
                         modifier = Modifier.size(26.dp),
                     )
@@ -10553,7 +10555,7 @@ private fun HomeGroupsSettingsOverlay(
                 IconButton(onClick = onDismiss) {
                     Icon(
                         Icons.AutoMirrored.Rounded.ArrowBack,
-                        contentDescription = "Back",
+                        contentDescription = stringResource(R.string.action_back),
                         tint = themePalette.settingsMenuTitle,
                         modifier = Modifier.size(26.dp),
                     )
@@ -10631,7 +10633,7 @@ private fun HomeGroupsSettingsOverlay(
                         value = newName,
                         onValueChange = { newName = capitalizeFirstLetterForGroupInput(it) },
                         singleLine = true,
-                        label = { Text("New group name", color = themePalette.settingsMenuBody) },
+                        label = { Text(stringResource(R.string.dialog_new_group_name_hint), color = themePalette.settingsMenuBody) },
                         modifier = Modifier.weight(1f),
                         keyboardOptions = KeyboardOptions(
                             capitalization = KeyboardCapitalization.Sentences,
@@ -10705,7 +10707,7 @@ private fun HomeGroupsSettingsOverlay(
                                 )
                             }
                             TextButton(onClick = { onDeleteGroup(g.id) }) {
-                                Text("Delete", color = Color(0xFFFF6B6B))
+                                Text(stringResource(R.string.action_delete), color = Color(0xFFFF6B6B))
                             }
                         }
                     }
@@ -10841,7 +10843,7 @@ private fun GlanceSettingsOverlay(
                 IconButton(onClick = onDismiss) {
                     Icon(
                         Icons.AutoMirrored.Rounded.ArrowBack,
-                        contentDescription = "Back",
+                        contentDescription = stringResource(R.string.action_back),
                         tint = themePalette.settingsMenuTitle,
                         modifier = Modifier.size(26.dp),
                     )
@@ -11031,7 +11033,7 @@ private fun IconAppearanceSettingsOverlay(
                 IconButton(onClick = onDismiss) {
                     Icon(
                         Icons.AutoMirrored.Rounded.ArrowBack,
-                        contentDescription = "Back",
+                        contentDescription = stringResource(R.string.action_back),
                         tint = themePalette.settingsMenuTitle,
                         modifier = Modifier.size(26.dp),
                     )
@@ -11260,7 +11262,7 @@ private fun IconPreviewToggleOverlay(
                 IconButton(onClick = onDismiss) {
                     Icon(
                         Icons.AutoMirrored.Rounded.ArrowBack,
-                        contentDescription = "Back",
+                        contentDescription = stringResource(R.string.action_back),
                         tint = Color.White,
                         modifier = Modifier.size(26.dp),
                     )
@@ -11662,7 +11664,7 @@ private fun IconLayoutSettingsOverlay(
                 IconButton(onClick = onDismiss) {
                     Icon(
                         Icons.AutoMirrored.Rounded.ArrowBack,
-                        contentDescription = "Back",
+                        contentDescription = stringResource(R.string.action_back),
                         tint = Color.White,
                         modifier = Modifier.size(26.dp),
                     )
@@ -12386,6 +12388,7 @@ private fun SettingsScreenOverlay(
     onOpenLanguageSettings: () -> Unit,
     onSetWallpaper: () -> Unit,
     onToggleHaptics: () -> Unit,
+    manualGpsCoords: Boolean,
     onExportBackup: () -> String,
     /** @return true if backup was accepted and will be applied. */
     onImportBackup: (String) -> Boolean,
@@ -12418,6 +12421,8 @@ private fun SettingsScreenOverlay(
     // 7-tap counter for developer diagnostics easter egg on the title.
     var diagTapCount by remember { mutableIntStateOf(0) }
     val itemCount = 16
+    var showGpsExportWarn by remember { mutableStateOf(false) }
+    var pendingExportFilename by remember { mutableStateOf("") }
 
     val createBackupDocument = rememberLauncherForActivityResult(
         ActivityResultContracts.CreateDocument("application/json")
@@ -12428,9 +12433,9 @@ private fun SettingsScreenOverlay(
             val out = context.contentResolver.openOutputStream(uri)
                 ?: error("Could not open file for writing")
             out.use { it.write(json.toByteArray(Charsets.UTF_8)) }
-            Toast.makeText(context, "Backup saved", Toast.LENGTH_SHORT).show()
+            Toast.makeText(context, context.getString(R.string.backup_saved), Toast.LENGTH_SHORT).show()
         }.onFailure {
-            Toast.makeText(context, "Backup failed: ${it.message ?: "unknown error"}", Toast.LENGTH_SHORT).show()
+            Toast.makeText(context, context.getString(R.string.backup_failed, it.message ?: "unknown error"), Toast.LENGTH_SHORT).show()
         }
     }
 
@@ -12444,9 +12449,9 @@ private fun SettingsScreenOverlay(
                 ins.readBytes().toString(Charsets.UTF_8)
             } ?: return@runCatching
             if (onImportBackup(text)) {
-                Toast.makeText(context, "Settings restored from backup", Toast.LENGTH_SHORT).show()
+                Toast.makeText(context, context.getString(R.string.settings_restored_from_backup), Toast.LENGTH_SHORT).show()
             } else {
-                Toast.makeText(context, "Invalid or unsupported backup file", Toast.LENGTH_SHORT).show()
+                Toast.makeText(context, context.getString(R.string.backup_invalid_file), Toast.LENGTH_SHORT).show()
             }
         }
     }
@@ -12479,7 +12484,12 @@ private fun SettingsScreenOverlay(
             // BACKUP
             14 -> {
                 val name = "classiclauncher_backup_" + SimpleDateFormat("yyyyMMdd_HHmmss", Locale.US).format(Date()) + ".json"
-                createBackupDocument.launch(name)
+                if (manualGpsCoords) {
+                    pendingExportFilename = name
+                    showGpsExportWarn = true
+                } else {
+                    createBackupDocument.launch(name)
+                }
             }
             15 -> openBackupFromDownloads.launch(SettingsDownloads.openBackupJsonPickerIntent())
         }
@@ -12499,6 +12509,25 @@ private fun SettingsScreenOverlay(
     val cardBg = Color(0xFF1E2430)
     val cardShape = RoundedCornerShape(16.dp)
     val subtitleColor = Color(0xFF8E95A3)
+
+    if (showGpsExportWarn) {
+        androidx.compose.material3.AlertDialog(
+            onDismissRequest = { showGpsExportWarn = false },
+            title = { Text(stringResource(R.string.backup_gps_warning_title)) },
+            text = { Text(stringResource(R.string.backup_gps_warning_body)) },
+            confirmButton = {
+                androidx.compose.material3.TextButton(onClick = {
+                    showGpsExportWarn = false
+                    createBackupDocument.launch(pendingExportFilename)
+                }) { Text(stringResource(R.string.backup_gps_warning_export)) }
+            },
+            dismissButton = {
+                androidx.compose.material3.TextButton(onClick = { showGpsExportWarn = false }) {
+                    Text(stringResource(R.string.backup_gps_warning_cancel))
+                }
+            },
+        )
+    }
 
     Surface(
         modifier = Modifier
@@ -12542,7 +12571,7 @@ private fun SettingsScreenOverlay(
                 IconButton(onClick = onDismiss) {
                     Icon(
                         Icons.AutoMirrored.Rounded.ArrowBack,
-                        contentDescription = "Back",
+                        contentDescription = stringResource(R.string.action_back),
                         tint = themePalette.settingsMenuTitle,
                         modifier = Modifier.size(26.dp),
                     )
@@ -12865,13 +12894,13 @@ private fun SettingsScreenOverlay(
                                     modifier = Modifier.fillMaxWidth(),
                                     horizontalArrangement = Arrangement.SpaceBetween,
                                 ) {
-                                    Text("Light", style = MaterialTheme.typography.labelSmall, color = subtitleColor)
+                                    Text(stringResource(R.string.haptic_light), style = MaterialTheme.typography.labelSmall, color = subtitleColor)
                                     Text(
                                         "Intensity: $hapticIntensity",
                                         style = MaterialTheme.typography.labelSmall,
                                         color = themePalette.settingsMenuTitle,
                                     )
-                                    Text("Strong", style = MaterialTheme.typography.labelSmall, color = subtitleColor)
+                                    Text(stringResource(R.string.haptic_strong), style = MaterialTheme.typography.labelSmall, color = subtitleColor)
                                 }
                                 Slider(
                                     value = hapticIntensity.toFloat(),
@@ -13405,7 +13434,7 @@ private fun AppSpotlightOverlay(
                         Spacer(Modifier.width(8.dp))
                         Icon(
                             Icons.Outlined.Close,
-                            contentDescription = "Clear",
+                            contentDescription = stringResource(R.string.action_clear),
                             tint = Color(0xAAFFFFFF),
                             modifier = Modifier
                                 .size(16.dp)
