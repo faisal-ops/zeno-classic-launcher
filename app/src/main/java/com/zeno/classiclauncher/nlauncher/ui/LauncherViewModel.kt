@@ -39,17 +39,17 @@ import com.zeno.classiclauncher.nlauncher.prefs.MailBadgeCandidates
 import com.zeno.classiclauncher.nlauncher.prefs.SecondShortcutTarget
 import com.zeno.classiclauncher.nlauncher.prefs.DEFAULT_THEME_JSON
 import com.zeno.classiclauncher.nlauncher.prefs.LauncherBackup
-import com.zeno.classiclauncher.nlauncher.prefs.SimpleModeLayout
-import com.zeno.classiclauncher.nlauncher.prefs.SimpleModeMaxApps
+import com.zeno.classiclauncher.nlauncher.prefs.MinimalModeLayout
+import com.zeno.classiclauncher.nlauncher.prefs.MinimalModeMaxApps
 import com.zeno.classiclauncher.nlauncher.R
 import android.content.ComponentName
 import android.media.MediaMetadata
 import android.media.session.MediaSessionManager
 import android.media.session.PlaybackState
 import com.zeno.classiclauncher.nlauncher.badges.BadgeNotificationListener
-import com.zeno.classiclauncher.nlauncher.simplemode.NowPlayingState
-import com.zeno.classiclauncher.nlauncher.simplemode.SimpleModeWeatherDay
-import com.zeno.classiclauncher.nlauncher.simplemode.fetchSimpleModeWeather
+import com.zeno.classiclauncher.nlauncher.minimalmode.NowPlayingState
+import com.zeno.classiclauncher.nlauncher.minimalmode.MinimalModeWeatherDay
+import com.zeno.classiclauncher.nlauncher.minimalmode.fetchMinimalModeWeather
 import com.zeno.classiclauncher.nlauncher.theme.LauncherThemePalette
 import com.zeno.classiclauncher.nlauncher.usage.UsageStatsRepository
 import kotlinx.coroutines.delay
@@ -153,8 +153,8 @@ class LauncherViewModel(app: Application) : AndroidViewModel(app) {
             iconPackRepo.applyIconPack(list, pr.iconPackPackage, pr.customIconPackages)
         }.stateIn(viewModelScope, VIEWMODEL_SHARING, emptyList())
 
-    private val _simpleModeForecast = MutableStateFlow<List<SimpleModeWeatherDay>>(emptyList())
-    val simpleModeForecast: StateFlow<List<SimpleModeWeatherDay>> = _simpleModeForecast.asStateFlow()
+    private val _minimalModeForecast = MutableStateFlow<List<MinimalModeWeatherDay>>(emptyList())
+    val minimalModeForecast: StateFlow<List<MinimalModeWeatherDay>> = _minimalModeForecast.asStateFlow()
 
     private val _nowPlaying = MutableStateFlow<NowPlayingState?>(null)
     val nowPlaying: StateFlow<NowPlayingState?> = _nowPlaying.asStateFlow()
@@ -170,7 +170,7 @@ class LauncherViewModel(app: Application) : AndroidViewModel(app) {
             prefs
                 .map { p ->
                     Triple(
-                        p.simpleModeEnabled && p.simpleModeShowWeather,
+                        p.minimalModeEnabled && p.minimalModeShowWeather,
                         p.glanceWeatherLocationMode,
                         p.glanceWeatherManualLatitude to p.glanceWeatherManualLongitude,
                     )
@@ -181,7 +181,7 @@ class LauncherViewModel(app: Application) : AndroidViewModel(app) {
                         var failCount = 0
                         while (true) {
                             val result = withContext(Dispatchers.IO) {
-                                fetchSimpleModeWeather(
+                                fetchMinimalModeWeather(
                                     getApplication<Application>().applicationContext,
                                     locMode,
                                     coords.first,
@@ -201,7 +201,7 @@ class LauncherViewModel(app: Application) : AndroidViewModel(app) {
                         }
                     }
                 }
-                .collect { _simpleModeForecast.value = it }
+                .collect { _minimalModeForecast.value = it }
         }
 
         // Now-playing: poll media sessions every 2 seconds
@@ -1451,30 +1451,59 @@ class LauncherViewModel(app: Application) : AndroidViewModel(app) {
         viewModelScope.launch { prefsRepo.setClassicMode(enabled) }
     }
 
-    fun setSimpleModeEnabled(enabled: Boolean) {
-        viewModelScope.launch { prefsRepo.setSimpleModeEnabled(enabled) }
+    fun setMinimalModeEnabled(enabled: Boolean) {
+        viewModelScope.launch { prefsRepo.setMinimalModeEnabled(enabled) }
     }
-    fun setSimpleModeLayout(layout: SimpleModeLayout) {
-        viewModelScope.launch { prefsRepo.setSimpleModeLayout(layout) }
+    fun setMinimalModeLayout(layout: MinimalModeLayout) {
+        viewModelScope.launch { prefsRepo.setMinimalModeLayout(layout) }
     }
-    fun setSimpleModeMaxApps(maxApps: SimpleModeMaxApps) {
-        viewModelScope.launch { prefsRepo.setSimpleModeMaxApps(maxApps) }
+    fun setMinimalModeMaxApps(maxApps: MinimalModeMaxApps) {
+        viewModelScope.launch { prefsRepo.setMinimalModeMaxApps(maxApps) }
     }
-    fun setSimpleModeShowIcons(show: Boolean) {
-        viewModelScope.launch { prefsRepo.setSimpleModeShowIcons(show) }
+    fun setMinimalModeShowIcons(show: Boolean) {
+        viewModelScope.launch { prefsRepo.setMinimalModeShowIcons(show) }
     }
-    fun setSimpleModeShowWeather(show: Boolean) {
-        viewModelScope.launch { prefsRepo.setSimpleModeShowWeather(show) }
+    fun setMinimalModeShowWeather(show: Boolean) {
+        viewModelScope.launch { prefsRepo.setMinimalModeShowWeather(show) }
     }
-    fun setSimpleModeShowNotifSummary(show: Boolean) {
-        viewModelScope.launch { prefsRepo.setSimpleModeShowNotifSummary(show) }
+    fun setMinimalModeShowNotifSummary(show: Boolean) {
+        viewModelScope.launch { prefsRepo.setMinimalModeShowNotifSummary(show) }
     }
-    fun setSimpleModeApps(packages: List<String>) {
-        viewModelScope.launch { prefsRepo.setSimpleModeApps(packages) }
+    fun setMinimalModeApps(packages: List<String>) {
+        viewModelScope.launch { prefsRepo.setMinimalModeApps(packages) }
     }
 
-    fun setSimpleModeGreyscale(enabled: Boolean) {
-        viewModelScope.launch { prefsRepo.setSimpleModeGreyscale(enabled) }
+    fun setMinimalModeGreyscale(enabled: Boolean) {
+        viewModelScope.launch { prefsRepo.setMinimalModeGreyscale(enabled) }
+    }
+
+    fun setRootGranted(granted: Boolean) {
+        viewModelScope.launch { prefsRepo.setRootGranted(granted) }
+    }
+
+    fun setCustomStatusBarEnabled(enabled: Boolean) {
+        viewModelScope.launch {
+            prefsRepo.setCustomStatusBarEnabled(enabled)
+            // Use root to push the system status bar area off-screen (wm overscan),
+            // making our NormalModeTopBar the only visible bar.
+            // wm overscan reset restores the original display area on disable.
+            if (enabled) {
+                val heightPx = systemStatusBarHeightPx()
+                com.zeno.classiclauncher.nlauncher.root.RootManager.execute(
+                    "wm overscan 0,-${heightPx},0,0"
+                )
+            } else {
+                com.zeno.classiclauncher.nlauncher.root.RootManager.execute("wm overscan reset")
+            }
+        }
+    }
+
+    private fun systemStatusBarHeightPx(): Int {
+        val id = android.content.res.Resources.getSystem()
+            .getIdentifier("status_bar_height", "dimen", "android")
+        return if (id > 0)
+            android.content.res.Resources.getSystem().getDimensionPixelSize(id)
+        else 80
     }
 
     fun setAppIconShape(shape: AppIconShape) {

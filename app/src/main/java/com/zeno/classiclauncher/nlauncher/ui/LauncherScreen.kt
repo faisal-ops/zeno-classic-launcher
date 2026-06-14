@@ -715,6 +715,7 @@ fun LauncherScreen(
     var showAppDrawerBadges by remember { mutableStateOf(false) }
     var showIconAppearanceSettings by remember { mutableStateOf(false) }
     var showMinimalModeSettings by remember { mutableStateOf(false) }
+    var showRootSettings by remember { mutableStateOf(false) }
     var showModesFromQs by remember { mutableStateOf(false) }
     var showDevDiagnostics by remember { mutableStateOf(false) }
     var showHomeActions by remember { mutableStateOf(false) }
@@ -971,6 +972,7 @@ fun LauncherScreen(
             drawerFolderMenu != null -> drawerFolderMenu = null
             dockQuickActionSlot != null -> dockQuickActionSlot = null
             showDockSlotPicker != null -> showDockSlotPicker = null
+            showRootSettings -> showRootSettings = false
             showPermissionsSettings -> showPermissionsSettings = false
             showGestureSettings -> showGestureSettings = false
             showAppDrawerBadges -> showAppDrawerBadges = false
@@ -1004,7 +1006,34 @@ fun LauncherScreen(
     // End-call / red button: navigated via Activity dispatchKeyEvent → ViewModel → here.
     val navigateHomeEvent by vm.navigateHomeEvent.collectAsStateWithLifecycle()
     androidx.compose.runtime.LaunchedEffect(navigateHomeEvent) {
-        if (navigateHomeEvent > 0) pagerState.animateScrollToPage(0)
+        if (navigateHomeEvent > 0) {
+            // Dismiss all overlays so home/end-call button returns to the home screen
+            showSettings = false
+            showRootSettings = false
+            showPermissionsSettings = false
+            showGlanceSettings = false
+            showHomeGroupsSettings = false
+            showGestureSettings = false
+            showLanguageSettings = false
+            showAppDrawerBadges = false
+            showIconAppearanceSettings = false
+            showMinimalModeSettings = false
+            showModesFromQs = false
+            showDevDiagnostics = false
+            showHomeActions = false
+            showPinAppToHome = false
+            showWidgetPicker = false
+            showWidgetResizeSheet = false
+            showWidgetConfigMode = false
+            showRemoveWidgetConfirm = false
+            showNewHomeGroupDialog = false
+            showQuickSettingsOverlay = false
+            showSpotlightOverlay = false
+            showAppMenu = null
+            showHomeGroupMenu = null
+            showDockSlotPicker = null
+            pagerState.animateScrollToPage(0)
+        }
     }
 
     val dismissLauncherQsEvent by vm.dismissLauncherQsEvent.collectAsStateWithLifecycle()
@@ -1073,7 +1102,12 @@ fun LauncherScreen(
         }
     ) {
         Column(modifier = Modifier.fillMaxSize()) {
-            // Do not add top Spacer here: HomePage uses statusBarsPadding(); an extra inset stacked a large gap under the status bar.
+            // Custom status bar: shown in place of the system status bar (which is hidden in MainActivity).
+            // statusBarsPadding() in child pages returns 0 when system bar is hidden, so content
+            // naturally starts below this bar with no double-padding.
+            if (prefs.customStatusBarEnabled && prefs.rootGranted) {
+                com.zeno.classiclauncher.nlauncher.root.NormalModeTopBar()
+            }
             HorizontalPager(
                 state = pagerState,
                 modifier = Modifier.weight(1f),
@@ -1779,7 +1813,7 @@ fun LauncherScreen(
         val settingsStackedOverlayOpen =
             showPermissionsSettings || showGlanceSettings ||
                 showHomeGroupsSettings || showDockSlotPicker != null ||
-                showGestureSettings || showLanguageSettings || showAppDrawerBadges || showIconAppearanceSettings || showMinimalModeSettings
+                showGestureSettings || showLanguageSettings || showAppDrawerBadges || showIconAppearanceSettings || showMinimalModeSettings || showRootSettings
         val settingsOn = stringResource(R.string.settings_on)
         val settingsOff = stringResource(R.string.settings_off)
         val settingsConfigured = stringResource(R.string.settings_configured)
@@ -1863,6 +1897,8 @@ fun LauncherScreen(
                     LauncherLocale.languageTitle(LauncherLocale.currentLanguageCode(context))
                 },
                 onOpenLanguageSettings = { showLanguageSettings = true },
+                rootGranted = prefs.rootGranted,
+                onOpenRootSettings = { showRootSettings = true },
                 onSetWallpaper = {
                     runCatching {
                         context.startActivity(Intent("android.settings.WALLPAPER_SETTINGS").addFlags(Intent.FLAG_ACTIVITY_NEW_TASK))
@@ -1966,6 +2002,24 @@ fun LauncherScreen(
                         com.zeno.classiclauncher.nlauncher.minimalmode.MinimalModeSettingsOverlay(
                             vm = vm,
                             onDismiss = { showMinimalModeSettings = false },
+                        )
+                    }
+                    if (showRootSettings) {
+                        com.zeno.classiclauncher.nlauncher.root.RootAccessScreen(
+                            rootGranted = prefs.rootGranted,
+                            customStatusBarEnabled = prefs.customStatusBarEnabled,
+                            onDismiss = { showRootSettings = false },
+                            onRootGranted = {
+                                vm.setRootGranted(true)
+                                vm.setCustomStatusBarEnabled(true)
+                            },
+                            onRootRevoked = {
+                                vm.setRootGranted(false)
+                                vm.setCustomStatusBarEnabled(false)
+                            },
+                            onCustomStatusBarToggled = { enabled ->
+                                vm.setCustomStatusBarEnabled(enabled)
+                            },
                         )
                     }
                     if (showGestureSettings) {
@@ -12482,6 +12536,8 @@ private fun SettingsScreenOverlay(
     onOpenPermissionsSettings: () -> Unit,
     languageSubtitle: String,
     onOpenLanguageSettings: () -> Unit,
+    rootGranted: Boolean,
+    onOpenRootSettings: () -> Unit,
     onSetWallpaper: () -> Unit,
     onToggleHaptics: () -> Unit,
     manualGpsCoords: Boolean,
@@ -12516,7 +12572,7 @@ private fun SettingsScreenOverlay(
     var selectedIndex by remember { mutableStateOf(0) }
     // 7-tap counter for developer diagnostics easter egg on the title.
     var diagTapCount by remember { mutableIntStateOf(0) }
-    val itemCount = 16
+    val itemCount = 17
     var showGpsExportWarn by remember { mutableStateOf(false) }
     var pendingExportFilename by remember { mutableStateOf("") }
 
@@ -12557,7 +12613,7 @@ private fun SettingsScreenOverlay(
         // settings list — the sub-overlay's own LaunchedEffect will request focus.
         // Actions that stay on the settings list (toggles, resets, backups): reclaim
         // focus so trackpad DPAD navigation continues to work.
-        val opensSubOverlay = index in setOf(0, 1, 3, 4, 8, 9, 10, 12, 13)
+        val opensSubOverlay = index in setOf(0, 1, 3, 4, 8, 9, 10, 12, 13, 14)
         when (index) {
             // HOME SCREEN
             0 -> onOpenAppearanceSettings()
@@ -12577,8 +12633,9 @@ private fun SettingsScreenOverlay(
             11 -> onToggleHaptics()
             12 -> onOpenLanguageSettings()
             13 -> onOpenPermissionsSettings()
+            14 -> onOpenRootSettings()
             // BACKUP
-            14 -> {
+            15 -> {
                 val name = "classiclauncher_backup_" + SimpleDateFormat("yyyyMMdd_HHmmss", Locale.US).format(Date()) + ".json"
                 if (manualGpsCoords) {
                     pendingExportFilename = name
@@ -12587,7 +12644,7 @@ private fun SettingsScreenOverlay(
                     createBackupDocument.launch(name)
                 }
             }
-            15 -> openBackupFromDownloads.launch(SettingsDownloads.openBackupJsonPickerIntent())
+            16 -> openBackupFromDownloads.launch(SettingsDownloads.openBackupJsonPickerIntent())
         }
         doNavFeedback(view, hapticsEnabled, hapticIntensity)
         if (!opensSubOverlay) {
@@ -13094,6 +13151,28 @@ private fun SettingsScreenOverlay(
                     }
                 }
 
+                Spacer(Modifier.height(8.dp))
+                Column(Modifier.bringIntoViewRequester(rowBringers[14])) {
+                    SettingsCategoryCard(cardBg = cardBg, cardShape = cardShape, selected = selectedIndex == 14) {
+                        SettingsRow(
+                            icon = Icons.Rounded.Security,
+                            title = stringResource(R.string.settings_root_access_title),
+                            subtitle = if (rootGranted) stringResource(R.string.settings_root_access_granted) else stringResource(R.string.settings_root_access_subtitle),
+                            selected = selectedIndex == 14,
+                            themePalette = themePalette,
+                            subtitleColor = if (rootGranted) Color(0xFF34C759) else subtitleColor,
+                            onClick = { activate(14) },
+                            trailingContent = {
+                                Text(
+                                    text = "›",
+                                    fontSize = 20.sp,
+                                    color = if (selectedIndex == 14) Color(0xFF84D5F6) else Color(0xFF7A8290),
+                                )
+                            },
+                        )
+                    }
+                }
+
                 Spacer(Modifier.height(12.dp))
                 HorizontalDivider(color = Color(0xFF2A3040), thickness = 0.5.dp)
                 Spacer(Modifier.height(12.dp))
@@ -13105,30 +13184,30 @@ private fun SettingsScreenOverlay(
                     color = subtitleColor,
                     modifier = Modifier.padding(start = 4.dp, bottom = 6.dp),
                 )
-                Column(Modifier.bringIntoViewRequester(rowBringers[14])) {
-                    SettingsCategoryCard(cardBg = cardBg, cardShape = cardShape, selected = selectedIndex == 14) {
-                        SettingsRow(
-                            icon = Icons.Rounded.SettingsBackupRestore,
-                            title = stringResource(R.string.settings_export_title),
-                            subtitle = stringResource(R.string.settings_export_subtitle),
-                            selected = selectedIndex == 14,
-                            themePalette = themePalette,
-                            subtitleColor = subtitleColor,
-                            onClick = { activate(14) },
-                        )
-                    }
-                }
-                Spacer(Modifier.height(8.dp))
                 Column(Modifier.bringIntoViewRequester(rowBringers[15])) {
                     SettingsCategoryCard(cardBg = cardBg, cardShape = cardShape, selected = selectedIndex == 15) {
                         SettingsRow(
                             icon = Icons.Rounded.SettingsBackupRestore,
-                            title = stringResource(R.string.settings_import_title),
-                            subtitle = stringResource(R.string.settings_import_subtitle),
+                            title = stringResource(R.string.settings_export_title),
+                            subtitle = stringResource(R.string.settings_export_subtitle),
                             selected = selectedIndex == 15,
                             themePalette = themePalette,
                             subtitleColor = subtitleColor,
                             onClick = { activate(15) },
+                        )
+                    }
+                }
+                Spacer(Modifier.height(8.dp))
+                Column(Modifier.bringIntoViewRequester(rowBringers[16])) {
+                    SettingsCategoryCard(cardBg = cardBg, cardShape = cardShape, selected = selectedIndex == 16) {
+                        SettingsRow(
+                            icon = Icons.Rounded.SettingsBackupRestore,
+                            title = stringResource(R.string.settings_import_title),
+                            subtitle = stringResource(R.string.settings_import_subtitle),
+                            selected = selectedIndex == 16,
+                            themePalette = themePalette,
+                            subtitleColor = subtitleColor,
+                            onClick = { activate(16) },
                         )
                     }
                 }
