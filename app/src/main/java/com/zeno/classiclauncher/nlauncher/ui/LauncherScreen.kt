@@ -122,6 +122,8 @@ import androidx.compose.material.icons.outlined.QueryStats
 import androidx.compose.material.icons.outlined.SortByAlpha
 import androidx.compose.material.icons.outlined.Search
 import androidx.compose.material.icons.outlined.Menu
+import androidx.compose.material.icons.outlined.Settings
+import androidx.compose.material.icons.rounded.LocationOn
 import androidx.compose.material.icons.outlined.ViewList
 import androidx.compose.material.icons.outlined.MailOutline
 import androidx.compose.material.icons.outlined.Vibration
@@ -231,6 +233,7 @@ import androidx.compose.ui.layout.boundsInRoot
 import androidx.compose.ui.layout.onGloballyPositioned
 import androidx.compose.ui.zIndex
 import androidx.compose.ui.draw.alpha
+import androidx.compose.ui.draw.drawWithContent
 import androidx.compose.ui.draw.rotate
 import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.draw.clip
@@ -711,7 +714,8 @@ fun LauncherScreen(
     var showLanguageSettings by remember { mutableStateOf(false) }
     var showAppDrawerBadges by remember { mutableStateOf(false) }
     var showIconAppearanceSettings by remember { mutableStateOf(false) }
-    var showSimpleModeSettings by remember { mutableStateOf(false) }
+    var showMinimalModeSettings by remember { mutableStateOf(false) }
+    var showModesFromQs by remember { mutableStateOf(false) }
     var showDevDiagnostics by remember { mutableStateOf(false) }
     var showHomeActions by remember { mutableStateOf(false) }
     var showPinAppToHome by remember { mutableStateOf(false) }
@@ -957,6 +961,7 @@ fun LauncherScreen(
     // and recents are handled elsewhere; no moveTaskToBack (avoids feeling like “recent apps”).
     BackHandler(enabled = true) {
         when {
+            showModesFromQs -> showModesFromQs = false
             showQuickSettingsOverlay -> showQuickSettingsOverlay = false
             showAppMenu != null -> {
                 showAppMenu = null
@@ -970,7 +975,7 @@ fun LauncherScreen(
             showGestureSettings -> showGestureSettings = false
             showAppDrawerBadges -> showAppDrawerBadges = false
             showIconAppearanceSettings -> showIconAppearanceSettings = false
-            showSimpleModeSettings -> showSimpleModeSettings = false
+            showMinimalModeSettings -> showMinimalModeSettings = false
             showHomeGroupsSettings -> showHomeGroupsSettings = false
             showGlanceSettings -> showGlanceSettings = false
             showSettings -> showSettings = false
@@ -1038,6 +1043,14 @@ fun LauncherScreen(
     CompositionLocalProvider(LocalTrackpadActive provides trackpadActive) {
     Box(modifier = Modifier
         .fillMaxSize()
+        .then(
+            if (prefs.minimalModeGreyscale)
+                Modifier.drawWithContent {
+                    drawContent()
+                    drawRect(color = Color.Black, blendMode = androidx.compose.ui.graphics.BlendMode.Saturation)
+                }
+            else Modifier
+        )
         .onPreviewKeyEvent { ev ->
             if (ev.type != KeyEventType.KeyDown) return@onPreviewKeyEvent false
             val nk = ev.nativeKeyEvent
@@ -1766,7 +1779,7 @@ fun LauncherScreen(
         val settingsStackedOverlayOpen =
             showPermissionsSettings || showGlanceSettings ||
                 showHomeGroupsSettings || showDockSlotPicker != null ||
-                showGestureSettings || showLanguageSettings || showAppDrawerBadges || showIconAppearanceSettings || showSimpleModeSettings
+                showGestureSettings || showLanguageSettings || showAppDrawerBadges || showIconAppearanceSettings || showMinimalModeSettings
         val settingsOn = stringResource(R.string.settings_on)
         val settingsOff = stringResource(R.string.settings_off)
         val settingsConfigured = stringResource(R.string.settings_configured)
@@ -1903,8 +1916,8 @@ fun LauncherScreen(
                 appIconShape = prefs.appIconShape,
                 onSetAppIconShape = vm::setAppIconShape,
                 onOpenAppearanceSettings = { showIconAppearanceSettings = true },
-                simpleModeEnabled = prefs.simpleModeEnabled,
-                onOpenSimpleModeSettings = { showSimpleModeSettings = true },
+                minimalModeEnabled = prefs.minimalModeEnabled,
+                onOpenMinimalModeSettings = { showMinimalModeSettings = true },
                 homeStripEnabled = prefs.homeStripEnabled,
                 onToggleHomeStrip = { vm.setHomeStripEnabled(!prefs.homeStripEnabled) },
                 dockSecondEnabled = prefs.dockSecondEnabled,
@@ -1949,10 +1962,10 @@ fun LauncherScreen(
                             onShowIconNotifBadgeChange = vm::setShowIconNotifBadge,
                         )
                     }
-                    if (showSimpleModeSettings) {
-                        com.zeno.classiclauncher.nlauncher.simplemode.SimpleModeSettingsOverlay(
+                    if (showMinimalModeSettings) {
+                        com.zeno.classiclauncher.nlauncher.minimalmode.MinimalModeSettingsOverlay(
                             vm = vm,
-                            onDismiss = { showSimpleModeSettings = false },
+                            onDismiss = { showMinimalModeSettings = false },
                         )
                     }
                     if (showGestureSettings) {
@@ -2247,9 +2260,18 @@ fun LauncherScreen(
                 themePalette = themePalette,
                 hapticsEnabled = prefs.hapticsEnabled,
                 hapticIntensity = prefs.hapticIntensity,
+                greyscaleEnabled = prefs.minimalModeGreyscale,
+                onOpenModes = { showQuickSettingsOverlay = false; showModesFromQs = true },
                 onDismiss = { showQuickSettingsOverlay = false },
                 onSetQrScannerPackage = vm::setQuickSettingsQrScannerPackage,
                 onSetTileOrder = vm::setQuickSettingsTileOrder,
+                onToggleGreyscale = { vm.setMinimalModeGreyscale(!prefs.minimalModeGreyscale) },
+            )
+        }
+        if (showModesFromQs) {
+            com.zeno.classiclauncher.nlauncher.minimalmode.MinimalModeSettingsOverlay(
+                vm = vm,
+                onDismiss = { showModesFromQs = false },
             )
         }
 
@@ -3849,9 +3871,12 @@ internal fun QuickSettingsOverlay(
     themePalette: LauncherThemePalette,
     hapticsEnabled: Boolean,
     hapticIntensity: Int,
+    greyscaleEnabled: Boolean,
+    onOpenModes: () -> Unit,
     onDismiss: () -> Unit,
     onSetQrScannerPackage: (String) -> Unit,
     onSetTileOrder: (List<String>) -> Unit,
+    onToggleGreyscale: () -> Unit,
 ) {
     val context = LocalContext.current
     val view = LocalView.current
@@ -3879,6 +3904,7 @@ internal fun QuickSettingsOverlay(
     val quickSettingsAutoRotateTitle = stringResource(R.string.quick_settings_auto_rotate)
     val quickSettingsNfcTitle = stringResource(R.string.quick_settings_nfc)
     val quickSettingsExtraDimTitle = stringResource(R.string.quick_settings_extra_dim)
+    val quickSettingsLocationTitle = stringResource(R.string.quick_settings_location)
     val quickSettingsScreenRecordTitle = stringResource(R.string.quick_settings_screen_record)
     val quickSettingsScreenCastTitle = stringResource(R.string.quick_settings_screen_cast)
     val quickSettingsGreyscaleTitle = stringResource(R.string.quick_settings_greyscale)
@@ -3894,6 +3920,7 @@ internal fun QuickSettingsOverlay(
     val quickSettingsWifiNamePermissionDenied = stringResource(R.string.quick_settings_wifi_name_permission_denied)
     val quickSettingsTorchToggleFailed = stringResource(R.string.quick_settings_torch_toggle_failed)
     val quickSettingsCameraPermissionDenied = stringResource(R.string.quick_settings_camera_permission_denied)
+    val quickSettingsKeyboardMouse = stringResource(R.string.quick_settings_keyboard_mouse)
     val quickSettingsKeyboardModeFailed = stringResource(R.string.quick_settings_keyboard_mode_failed)
     val quickSettingsKeyboardModePermissionPrompt = stringResource(R.string.quick_settings_keyboard_mode_permission_prompt)
     val quickSettingsBluetoothBlocked = stringResource(R.string.quick_settings_bluetooth_blocked)
@@ -3938,6 +3965,8 @@ internal fun QuickSettingsOverlay(
     var autoRotateOn by remember { mutableStateOf(actions.isAutoRotateEnabled()) }
     var nfcOn by remember { mutableStateOf(actions.isNfcEnabled()) }
     var extraDimOn by remember { mutableStateOf(actions.isExtraDimEnabled()) }
+    // greyscaleOn removed — now driven by prefs.minimalModeGreyscale via onToggleGreyscale
+    var locationOn by remember { mutableStateOf(actions.isLocationEnabled()) }
     var torchOn by remember { mutableStateOf(actions.isTorchEnabled()) }
     val cameraPermissionLauncher = rememberLauncherForActivityResult(
         contract = ActivityResultContracts.RequestPermission(),
@@ -3991,6 +4020,7 @@ internal fun QuickSettingsOverlay(
         autoRotateOn = actions.isAutoRotateEnabled()
         nfcOn = actions.isNfcEnabled()
         extraDimOn = actions.isExtraDimEnabled()
+        locationOn = actions.isLocationEnabled()
         torchOn = actions.isTorchEnabled()
         batteryPct = actions.batteryPercent()
         if (android.os.SystemClock.elapsedRealtime() - soundProfileSetAt > 2_000L) {
@@ -4096,18 +4126,11 @@ internal fun QuickSettingsOverlay(
                 actionLabel = "Toggle",
                 onLongPress = actions::openDisplaySettings,
                 onTap = {
-                    if (ContextCompat.checkSelfPermission(context, Manifest.permission.CAMERA) != PackageManager.PERMISSION_GRANTED) {
-                        cameraPermissionLauncher.launch(Manifest.permission.CAMERA)
-                        true
-                    } else {
-                        when (val r = actions.toggleTorch()) {
-                            is ToggleResult.Changed -> { torchOn = r.enabled; true }
-                            ToggleResult.Unsupported -> {
-                                if (actions.hasTorchHardware()) Toast.makeText(context, quickSettingsTorchToggleFailed, Toast.LENGTH_SHORT).show()
-                                else actions.openDisplaySettings()
-                                true
-                            }
-                            else -> true
+                    when (val r = actions.toggleTorch()) {
+                        is ToggleResult.Changed -> { torchOn = r.enabled; true }
+                        else -> {
+                            Toast.makeText(context, quickSettingsTorchToggleFailed, Toast.LENGTH_SHORT).show()
+                            true
                         }
                     }
                 },
@@ -4161,7 +4184,7 @@ internal fun QuickSettingsOverlay(
                             true
                         }
                         ToggleResult.Unsupported -> {
-                            Toast.makeText(context, quickSettingsBluetoothBlocked, Toast.LENGTH_LONG).show()
+                            actions.openBluetoothSettings()
                             true
                         }
                     }
@@ -4201,8 +4224,8 @@ internal fun QuickSettingsOverlay(
             QuickTile(
                 id = "keyboard_mode",
                 icon = Icons.Rounded.Tune,
-                title = keyboardMode,
-                subtitle = "",
+                title = quickSettingsKeyboardMouse,
+                subtitle = keyboardMode.replaceFirstChar { it.uppercase() },
                 highlighted = true,
                 closeOnSuccess = false,
                 showChevron = true,
@@ -4242,20 +4265,6 @@ internal fun QuickSettingsOverlay(
                     }
                     true
                 },
-            ),
-        )
-        add(
-            QuickTile(
-                id = "internet",
-                icon = Icons.Rounded.Wifi,
-                title = quickSettingsInternetTitle,
-                subtitle = internetSubtitle,
-                highlighted = internetHighlighted,
-                closeOnSuccess = false,
-                showChevron = true,
-                actionLabel = "Panel",
-                onLongPress = actions::openInternetSettings,
-                onTap = actions::openInternetPanel,
             ),
         )
         add(
@@ -4316,18 +4325,6 @@ internal fun QuickSettingsOverlay(
                 actionLabel = "Settings",
                 onLongPress = actions::openAirplaneModeSettings,
                 onTap = actions::openAirplaneModeSettings,
-            ),
-        )
-        add(
-            QuickTile(
-                id = "dnd",
-                icon = Icons.Rounded.VisibilityOff,
-                title = quickSettingsDndTitle,
-                subtitle = if (dndOn) quickSettingsOn else quickSettingsOff,
-                highlighted = dndOn,
-                actionLabel = "Settings",
-                onLongPress = actions::openDoNotDisturbSettings,
-                onTap = actions::openDoNotDisturbSettings,
             ),
         )
         add(
@@ -4399,12 +4396,25 @@ internal fun QuickSettingsOverlay(
                             nfcOn = r.enabled
                             Handler(Looper.getMainLooper()).postDelayed({
                                 nfcOn = actions.isNfcEnabled()
-                            }, 500L)
+                            }, 1000L)
                             true
                         }
-                        else -> actions.openNfcSettings()
+                        else -> { actions.openNfcSettings(); true }
                     }
                 },
+            ),
+        )
+        add(
+            QuickTile(
+                id = "location",
+                icon = Icons.Rounded.LocationOn,
+                title = quickSettingsLocationTitle,
+                subtitle = if (locationOn) quickSettingsOn else quickSettingsOff,
+                highlighted = locationOn,
+                showChevron = true,
+                actionLabel = "Settings",
+                onLongPress = actions::openLocationSettings,
+                onTap = { actions.openLocationSettings(); locationOn = actions.isLocationEnabled(); true },
             ),
         )
         add(
@@ -4414,25 +4424,29 @@ internal fun QuickSettingsOverlay(
                 title = quickSettingsExtraDimTitle,
                 subtitle = if (extraDimOn) quickSettingsOn else quickSettingsOff,
                 highlighted = extraDimOn,
-                actionLabel = "Settings",
+                closeOnSuccess = false,
+                actionLabel = "Toggle",
                 onLongPress = actions::openExtraDimSettings,
-                onTap = actions::openExtraDimSettings,
+                onTap = {
+                    when (val r = actions.toggleExtraDim()) {
+                        is ToggleResult.Changed -> { extraDimOn = r.enabled; true }
+                        else -> { actions.openExtraDimSettings(); true }
+                    }
+                },
             ),
         )
-        if (hasScreenRecordSettings) {
-            add(
-                QuickTile(
-                    id = "screen_record",
-                    icon = Icons.Rounded.TouchApp,
-                    title = quickSettingsScreenRecordTitle,
-                    subtitle = quickSettingsStart,
-                    showChevron = true,
-                    actionLabel = "Settings",
-                    onLongPress = actions::openScreenRecordSettings,
-                    onTap = actions::openScreenRecordSettings,
-                ),
-            )
-        }
+        add(
+            QuickTile(
+                id = "screen_record",
+                icon = Icons.Rounded.TouchApp,
+                title = quickSettingsScreenRecordTitle,
+                subtitle = quickSettingsStart,
+                showChevron = true,
+                actionLabel = "Start",
+                onLongPress = actions::openScreenRecordSettings,
+                onTap = actions::openScreenRecordSettings,
+            ),
+        )
         add(
             QuickTile(
                 id = "screen_cast",
@@ -4445,33 +4459,33 @@ internal fun QuickSettingsOverlay(
                 onTap = actions::openCastSettings,
             ),
         )
-        if (hasWellbeing) {
-            add(
-                QuickTile(
-                    id = "grayscale",
-                    icon = Icons.Rounded.FilterBAndW,
-                    title = quickSettingsGreyscaleTitle,
-                    subtitle = "",
-                    showChevron = true,
-                    closeOnSuccess = false,
-                    actionLabel = "App",
-                    onLongPress = actions::openDigitalWellbeingHome,
-                    onTap = actions::openDigitalWellbeingHome,
-                ),
-            )
-        } else {
-            add(
-                QuickTile(
-                    id = "bedtime",
-                    icon = Icons.Rounded.AddAlarm,
-                    title = quickSettingsBedtimeTitle,
-                    subtitle = quickSettingsOff,
-                    actionLabel = "Settings",
-                    onLongPress = actions::openBedtimeSettings,
-                    onTap = actions::openBedtimeSettings,
-                ),
-            )
-        }
+        add(
+            QuickTile(
+                id = "grayscale",
+                icon = Icons.Rounded.FilterBAndW,
+                title = quickSettingsGreyscaleTitle,
+                subtitle = if (greyscaleEnabled) quickSettingsOn else quickSettingsOff,
+                highlighted = greyscaleEnabled,
+                closeOnSuccess = false,
+                actionLabel = "Toggle",
+                onTap = {
+                    onToggleGreyscale()
+                    true
+                },
+            ),
+        )
+        add(
+            QuickTile(
+                id = "bedtime",
+                icon = Icons.Rounded.AddAlarm,
+                title = quickSettingsBedtimeTitle,
+                subtitle = quickSettingsOff,
+                showChevron = true,
+                actionLabel = "Settings",
+                onLongPress = actions::openBedtimeSettings,
+                onTap = actions::openBedtimeSettings,
+            ),
+        )
     }
     val orderedTileIds = remember { mutableStateListOf<String>() }
     val defaultTileIds = defaultQuickTiles.map { it.id }
@@ -4614,7 +4628,7 @@ internal fun QuickSettingsOverlay(
             .zIndex(520f)
             .then(dismissSwipeModifier),
     ) {
-        Box(Modifier.fillMaxSize().background(Color(0xE6000000)))
+        Box(Modifier.fillMaxSize().background(Color(0xE6000000)).clickable(onClick = onDismiss))
         // Stronger dim from the top edge through the date row so wallpaper does not show through.
         Box(
             modifier = Modifier
@@ -4642,6 +4656,7 @@ internal fun QuickSettingsOverlay(
                     .padding(start = qsPadStart, end = qsPadEnd, top = 4.dp, bottom = 4.dp)
                     .focusRequester(qsKeyFocusRequester)
                     .focusable()
+                    .clickable(interactionSource = remember { MutableInteractionSource() }, indication = null, onClick = onDismiss)
                     .onPreviewKeyEvent { ev ->
                     if (showTileEditor) return@onPreviewKeyEvent false
                     if (ev.type != KeyEventType.KeyDown) return@onPreviewKeyEvent false
@@ -4772,18 +4787,33 @@ internal fun QuickSettingsOverlay(
                     }
                     },
             ) {
-                Text(
-                    dateText,
-                    style = MaterialTheme.typography.titleLarge.copy(
-                        color = Color(0xFFE6EBF2),
-                        fontWeight = FontWeight.Normal,
-                        fontSize = 18.sp,
-                        lineHeight = 18.sp,
-                    ),
+                Row(
                     modifier = Modifier
                         .fillMaxWidth()
                         .padding(top = 6.dp, bottom = 2.dp),
-                )
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    Text(
+                        dateText,
+                        style = MaterialTheme.typography.titleLarge.copy(
+                            color = Color(0xFFE6EBF2),
+                            fontWeight = FontWeight.Normal,
+                            fontSize = 18.sp,
+                            lineHeight = 18.sp,
+                        ),
+                        modifier = Modifier.weight(1f),
+                    )
+                    Icon(
+                        imageVector = Icons.Outlined.Settings,
+                        contentDescription = stringResource(R.string.cd_qs_open_settings),
+                        tint = Color(0x66FFFFFF),
+                        modifier = Modifier
+                            .size(22.dp)
+                            .pointerInput(Unit) {
+                                detectTapGestures(onTap = { onOpenModes() })
+                            },
+                    )
+                }
                 Box(
                     modifier = Modifier
                         .fillMaxWidth()
@@ -11160,6 +11190,9 @@ private fun IconAppearanceSettingsOverlay(
                             selectedIndex = 0
                             showIconLayoutSettings = true
                         },
+                        trailingContent = {
+                            Text("›", fontSize = 20.sp, color = if (selectedIndex == 0) Color(0xFF84D5F6) else Color(0xFF7A8290))
+                        },
                     )
                 }
                 SettingsCategoryCard(cardBg = cardBg, cardShape = cardShape, selected = selectedIndex == 1) {
@@ -11174,6 +11207,9 @@ private fun IconAppearanceSettingsOverlay(
                             selectedIndex = 1
                             showCardBackgroundSettings = true
                         },
+                        trailingContent = {
+                            Text("›", fontSize = 20.sp, color = if (selectedIndex == 1) Color(0xFF84D5F6) else Color(0xFF7A8290))
+                        },
                     )
                 }
                 SettingsCategoryCard(cardBg = cardBg, cardShape = cardShape, selected = selectedIndex == 2) {
@@ -11187,6 +11223,9 @@ private fun IconAppearanceSettingsOverlay(
                         onClick = {
                             selectedIndex = 2
                             showBadgeSettings = true
+                        },
+                        trailingContent = {
+                            Text("›", fontSize = 20.sp, color = if (selectedIndex == 2) Color(0xFF84D5F6) else Color(0xFF7A8290))
                         },
                     )
                 }
@@ -12454,8 +12493,8 @@ private fun SettingsScreenOverlay(
     onOpenGestureSettings: () -> Unit,
     onOpenScreenSaverSettings: () -> Unit,
     drawerBadgesSubtitle: String,
-    simpleModeEnabled: Boolean,
-    onOpenSimpleModeSettings: () -> Unit,
+    minimalModeEnabled: Boolean,
+    onOpenMinimalModeSettings: () -> Unit,
     homeStripEnabled: Boolean,
     onToggleHomeStrip: () -> Unit,
     dockSecondEnabled: Boolean,
@@ -12522,7 +12561,7 @@ private fun SettingsScreenOverlay(
         when (index) {
             // HOME SCREEN
             0 -> onOpenAppearanceSettings()
-            1 -> onOpenSimpleModeSettings()
+            1 -> onOpenMinimalModeSettings()
             2 -> onToggleHomeStrip()
             3 -> onOpenGestureSettings()
             // DISPLAY
@@ -12719,6 +12758,13 @@ private fun SettingsScreenOverlay(
                             themePalette = themePalette,
                             subtitleColor = subtitleColor,
                             onClick = { activate(0) },
+                            trailingContent = {
+                                Text(
+                                    text = "›",
+                                    fontSize = 20.sp,
+                                    color = if (selectedIndex == 0) Color(0xFF84D5F6) else Color(0xFF7A8290),
+                                )
+                            },
                         )
                     }
                 }
@@ -12727,11 +12773,11 @@ private fun SettingsScreenOverlay(
                     SettingsCategoryCard(cardBg = cardBg, cardShape = cardShape, selected = selectedIndex == 1) {
                         SettingsRow(
                             icon = Icons.Outlined.ViewList,
-                            title = stringResource(R.string.settings_simple_mode_title),
-                            subtitle = if (simpleModeEnabled) {
+                            title = stringResource(R.string.settings_minimal_mode_title),
+                            subtitle = if (minimalModeEnabled) {
                                 stringResource(R.string.settings_on)
                             } else {
-                                stringResource(R.string.settings_simple_mode_subtitle)
+                                stringResource(R.string.settings_minimal_mode_subtitle)
                             },
                             selected = selectedIndex == 1,
                             themePalette = themePalette,
@@ -12784,6 +12830,13 @@ private fun SettingsScreenOverlay(
                             themePalette = themePalette,
                             subtitleColor = subtitleColor,
                             onClick = { activate(3) },
+                            trailingContent = {
+                                Text(
+                                    text = "›",
+                                    fontSize = 20.sp,
+                                    color = if (selectedIndex == 3) Color(0xFF84D5F6) else Color(0xFF7A8290),
+                                )
+                            },
                         )
                     }
                 }
@@ -12809,6 +12862,13 @@ private fun SettingsScreenOverlay(
                             themePalette = themePalette,
                             subtitleColor = subtitleColor,
                             onClick = { activate(4) },
+                            trailingContent = {
+                                Text(
+                                    text = "›",
+                                    fontSize = 20.sp,
+                                    color = if (selectedIndex == 4) Color(0xFF84D5F6) else Color(0xFF7A8290),
+                                )
+                            },
                         )
                     }
                 }
@@ -12883,6 +12943,13 @@ private fun SettingsScreenOverlay(
                             themePalette = themePalette,
                             subtitleColor = subtitleColor,
                             onClick = { activate(8) },
+                            trailingContent = {
+                                Text(
+                                    text = "›",
+                                    fontSize = 20.sp,
+                                    color = if (selectedIndex == 8) Color(0xFF84D5F6) else Color(0xFF7A8290),
+                                )
+                            },
                         )
                     }
                 }
@@ -12901,6 +12968,13 @@ private fun SettingsScreenOverlay(
                             themePalette = themePalette,
                             subtitleColor = subtitleColor,
                             onClick = { selectedIndex = 9; activate(9) },
+                            trailingContent = {
+                                Text(
+                                    text = "›",
+                                    fontSize = 20.sp,
+                                    color = if (selectedIndex == 9) Color(0xFF84D5F6) else Color(0xFF7A8290),
+                                )
+                            },
                         )
                     }
                 }
@@ -12915,6 +12989,13 @@ private fun SettingsScreenOverlay(
                             themePalette = themePalette,
                             subtitleColor = subtitleColor,
                             onClick = { activate(10) },
+                            trailingContent = {
+                                Text(
+                                    text = "›",
+                                    fontSize = 20.sp,
+                                    color = if (selectedIndex == 10) Color(0xFF84D5F6) else Color(0xFF7A8290),
+                                )
+                            },
                         )
                     }
                 }
@@ -12981,6 +13062,13 @@ private fun SettingsScreenOverlay(
                             themePalette = themePalette,
                             subtitleColor = subtitleColor,
                             onClick = { activate(12) },
+                            trailingContent = {
+                                Text(
+                                    text = "›",
+                                    fontSize = 20.sp,
+                                    color = if (selectedIndex == 12) Color(0xFF84D5F6) else Color(0xFF7A8290),
+                                )
+                            },
                         )
                     }
                 }
@@ -12995,6 +13083,13 @@ private fun SettingsScreenOverlay(
                             themePalette = themePalette,
                             subtitleColor = subtitleColor,
                             onClick = { activate(13) },
+                            trailingContent = {
+                                Text(
+                                    text = "›",
+                                    fontSize = 20.sp,
+                                    color = if (selectedIndex == 13) Color(0xFF84D5F6) else Color(0xFF7A8290),
+                                )
+                            },
                         )
                     }
                 }

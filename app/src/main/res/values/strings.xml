@@ -57,11 +57,11 @@
     <string name="quick_settings_notifications_tile">Notifications</string>
     <string name="quick_settings_bluetooth">Bluetooth</string>
     <string name="quick_settings_mobile_data">Mobile data</string>
-    <string name="quick_settings_qr_tile">QR code scanner</string>
+    <string name="quick_settings_qr_tile">QR Scanner</string>
     <string name="quick_settings_wireless_debugging">Wireless debugging</string>
     <string name="quick_settings_battery">Battery</string>
     <string name="quick_settings_aeroplane_mode">Aeroplane mode</string>
-    <string name="quick_settings_torch">Torch</string>
+    <string name="quick_settings_torch">Flashlight</string>
     <string name="quick_settings_my_vault">My vault</string>
     <string name="quick_settings_battery_saver_on">Saver on</string>
     <string name="quick_settings_dnd">Do Not Disturb</string>
@@ -82,6 +82,8 @@
     <string name="quick_settings_wifi_name_permission_denied">Location permission denied for Wi-Fi name</string>
     <string name="quick_settings_torch_toggle_failed">Could not toggle torch</string>
     <string name="quick_settings_camera_permission_denied">Camera permission denied for torch</string>
+    <string name="quick_settings_location">Location</string>
+    <string name="quick_settings_keyboard_mouse">Keyboard/Mouse</string>
     <string name="quick_settings_keyboard_mode_permission_prompt">Allow Modify system settings, then tap keyboard tile again.</string>
     <string name="quick_settings_keyboard_mode_failed">Could not apply keyboard mode change. Long-press opens settings.</string>
     <string name="quick_settings_bluetooth_blocked">Android blocked direct Bluetooth toggling. Long-press this tile to open Bluetooth settings.</string>
@@ -118,26 +120,29 @@
     <string name="settings_icon_layout_title">Icon Layout</string>
     <string name="settings_icon_layout_subtitle">Grid, shape, cards, badges</string>
     <string name="settings_classic_mode_title">Classic Mode</string>
-    <string name="settings_simple_mode_title">Modes</string>
-    <string name="settings_simple_mode_subtitle">Classic · Minimal</string>
-    <string name="simple_mode_settings_title">Modes</string>
-    <string name="simple_mode_enable">Minimal Mode</string>
-    <string name="simple_mode_layout_title">Layout</string>
-    <string name="simple_mode_layout_list">List</string>
-    <string name="simple_mode_layout_grid">Grid</string>
-    <string name="simple_mode_max_apps_title">Max Apps</string>
-    <string name="simple_mode_max_apps_auto">Auto</string>
-    <string name="simple_mode_show_icons_title">Show Icons</string>
-    <string name="simple_mode_show_weather_title">Show Weather</string>
-    <string name="simple_mode_show_summary_title">Show Notification Summary</string>
-    <string name="simple_mode_edit_apps_title">Edit Apps</string>
-    <string name="simple_mode_edit_apps_hint">Space to toggle · ← → to reorder</string>
-    <string name="simple_mode_no_notifications">No New Notifications</string>
-    <string name="simple_mode_missed_calls">Missed Calls</string>
-    <string name="simple_mode_new_messages">New Messages</string>
-    <string name="simple_mode_whatsapp_messages">WhatsApp Messages</string>
-    <string name="simple_mode_new_emails">New Emails</string>
-    <string name="simple_mode_new_notifications">New Notifications</string>
+    <string name="settings_zeno_mode_title">Zeno Mode</string>
+    <string name="settings_zeno_mode_subtitle">Default launcher experience</string>
+    <string name="settings_minimal_mode_title">Modes</string>
+    <string name="settings_minimal_mode_subtitle">Classic · Minimal</string>
+    <string name="cd_qs_open_settings">Open settings</string>
+    <string name="minimal_mode_settings_title">Modes</string>
+    <string name="minimal_mode_enable">Minimal Mode</string>
+    <string name="minimal_mode_layout_title">Layout</string>
+    <string name="minimal_mode_layout_list">List</string>
+    <string name="minimal_mode_layout_grid">Grid</string>
+    <string name="minimal_mode_max_apps_title">Max Apps</string>
+    <string name="minimal_mode_max_apps_auto">Auto</string>
+    <string name="minimal_mode_show_icons_title">Show Icons</string>
+    <string name="minimal_mode_show_weather_title">Show Weather</string>
+    <string name="minimal_mode_show_summary_title">Show Notification Summary</string>
+    <string name="minimal_mode_edit_apps_title">Edit Apps</string>
+    <string name="minimal_mode_edit_apps_hint">Space to toggle · ← → to reorder</string>
+    <string name="minimal_mode_no_notifications">No New Notifications</string>
+    <string name="minimal_mode_missed_calls">Missed Calls</string>
+    <string name="minimal_mode_new_messages">New Messages</string>
+    <string name="minimal_mode_whatsapp_messages">WhatsApp Messages</string>
+    <string name="minimal_mode_new_emails">New Emails</string>
+    <string name="minimal_mode_new_notifications">New Notifications</string>
     <string name="settings_home_strip_title">Home Strip</string>
     <string name="settings_home_gestures_title">Home Gestures</string>
     <string name="settings_glance_strip_title">Glance Strip</string>
@@ -224,14 +229,12 @@
     <string name="action_pause">Pause</string>
 
     <!-- Minimal Mode UI -->
-    <string name="simple_mode_greyscale_title">Greyscale Mode</string>
-    <string name="simple_mode_add_app_slot">+ Add app</string>
-    <string name="simple_mode_editor_save_hint">Enter to save · %1$d/12 selected</string>
+    <string name="minimal_mode_greyscale_title">Greyscale Mode</string>
+    <string name="minimal_mode_add_app_slot">+ Add app</string>
+    <string name="minimal_mode_editor_save_hint">Enter to save · %1$d/12 selected</string>
 
     <!-- QS tile titles (short forms used in Minimal Mode grid) -->
     <string name="quick_settings_mobile_network">Mobile network</string>
-    <string name="quick_settings_flashlight">Flashlight</string>
-    <string name="quick_settings_qr_scanner">QR Scanner</string>
 
     <!-- QR app picker -->
     <string name="qr_scanner_picker_title">Choose QR Scanner App</string>

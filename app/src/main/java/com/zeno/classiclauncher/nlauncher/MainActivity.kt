@@ -8,7 +8,7 @@ import android.os.Bundle
 import android.telecom.TelecomManager
 import android.view.WindowManager
 import android.widget.Toast
-import androidx.activity.ComponentActivity
+import androidx.appcompat.app.AppCompatActivity
 import androidx.activity.compose.setContent
 import androidx.activity.viewModels
 import androidx.compose.runtime.getValue
@@ -22,13 +22,13 @@ import androidx.lifecycle.lifecycleScope
 import androidx.lifecycle.repeatOnLifecycle
 import com.zeno.classiclauncher.nlauncher.R
 import com.zeno.classiclauncher.nlauncher.locale.LauncherLocale
-import com.zeno.classiclauncher.nlauncher.simplemode.SimpleModeScreen
+import com.zeno.classiclauncher.nlauncher.minimalmode.MinimalModeScreen
 import com.zeno.classiclauncher.nlauncher.ui.BbTheme
 import com.zeno.classiclauncher.nlauncher.ui.LauncherScreen
 import com.zeno.classiclauncher.nlauncher.ui.LauncherViewModel
 import kotlinx.coroutines.launch
 
-class MainActivity : ComponentActivity() {
+class MainActivity : AppCompatActivity() {
 
     private val viewModel: LauncherViewModel by viewModels()
 
@@ -47,8 +47,8 @@ class MainActivity : ComponentActivity() {
         setContent {
             BbTheme {
                 val prefs by viewModel.prefs.collectAsStateWithLifecycle()
-                if (prefs.simpleModeEnabled) {
-                    SimpleModeScreen(vm = viewModel)
+                if (prefs.minimalModeEnabled) {
+                    MinimalModeScreen(vm = viewModel)
                 } else {
                     LauncherScreen(vm = viewModel)
                 }
@@ -58,7 +58,7 @@ class MainActivity : ComponentActivity() {
         lifecycleScope.launch {
             repeatOnLifecycle(Lifecycle.State.STARTED) {
                 viewModel.prefs.collect { prefs ->
-                    applyStatusBarVisibility(prefs.simpleModeEnabled)
+                    applyStatusBarVisibility(prefs.minimalModeEnabled)
                 }
             }
         }
@@ -66,12 +66,12 @@ class MainActivity : ComponentActivity() {
 
     override fun onResume() {
         super.onResume()
-        applyStatusBarVisibility(viewModel.prefs.value.simpleModeEnabled)
+        applyStatusBarVisibility(viewModel.prefs.value.minimalModeEnabled)
     }
 
     override fun onWindowFocusChanged(hasFocus: Boolean) {
         super.onWindowFocusChanged(hasFocus)
-        if (hasFocus) applyStatusBarVisibility(viewModel.prefs.value.simpleModeEnabled)
+        if (hasFocus) applyStatusBarVisibility(viewModel.prefs.value.minimalModeEnabled)
     }
 
     /**
