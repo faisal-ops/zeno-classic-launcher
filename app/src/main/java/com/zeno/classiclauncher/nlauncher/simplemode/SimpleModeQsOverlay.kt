@@ -133,27 +133,40 @@ internal fun SimpleModeQsOverlay(
         onDispose { lifecycleOwner.lifecycle.removeObserver(observer) }
     }
 
+    val strRing       = stringResource(R.string.sound_profile_ring)
+    val strVibrate    = stringResource(R.string.sound_profile_vibrate)
+    val strDnd        = stringResource(R.string.quick_settings_dnd)
+    val strOn         = stringResource(R.string.settings_on)
+    val strOff        = stringResource(R.string.settings_off)
     val soundSubtitle = when (soundProfile) {
-        SoundProfileMode.RING    -> "Ring"
-        SoundProfileMode.VIBRATE -> "Vibrate"
-        SoundProfileMode.DND     -> "Do Not Disturb"
+        SoundProfileMode.RING    -> strRing
+        SoundProfileMode.VIBRATE -> strVibrate
+        SoundProfileMode.DND     -> strDnd
     }
     val soundIcon = when (soundProfile) {
         SoundProfileMode.RING    -> Icons.Rounded.Notifications
         SoundProfileMode.VIBRATE -> Icons.Rounded.Vibration
         SoundProfileMode.DND     -> Icons.Rounded.NotificationsOff
     }
+    val strSettings     = stringResource(R.string.quick_settings_system_settings)
+    val strMobileNet    = stringResource(R.string.quick_settings_mobile_network)
+    val strWifi         = stringResource(R.string.quick_settings_wifi)
+    val strFlashlight   = stringResource(R.string.quick_settings_flashlight)
+    val strNotifications = stringResource(R.string.quick_settings_notifications_tile)
+    val strBluetooth    = stringResource(R.string.quick_settings_bluetooth)
+    val strQrScanner    = stringResource(R.string.quick_settings_qr_scanner)
+    val strHotspot      = stringResource(R.string.quick_settings_hotspot)
     val tiles = listOf(
-        SmQsTile("settings",     Icons.Rounded.Settings,      "Settings",       "",            active = false) { actions.openSystemSettings() },
-        SmQsTile("mobile_data",  Icons.Rounded.CellTower,     "Mobile network", carrierName,   active = mobileDataOn) { actions.openMobileNetworkSettings(); refresh() },
-        SmQsTile("wifi",         Icons.Rounded.Wifi,          "Wi-Fi",          wifiSubtitle,  active = wifiOn) { actions.openInternetPanel(); refresh() },
-        SmQsTile("torch",        Icons.Rounded.Lightbulb,     "Flashlight",     "",            active = torchOn) {
+        SmQsTile("settings",     Icons.Rounded.Settings,       strSettings,      "",            active = false) { actions.openSystemSettings() },
+        SmQsTile("mobile_data",  Icons.Rounded.CellTower,      strMobileNet,     carrierName,   active = mobileDataOn) { actions.openMobileNetworkSettings(); refresh() },
+        SmQsTile("wifi",         Icons.Rounded.Wifi,           strWifi,          wifiSubtitle,  active = wifiOn) { actions.openInternetPanel(); refresh() },
+        SmQsTile("torch",        Icons.Rounded.Lightbulb,      strFlashlight,    "",            active = torchOn) {
             when (val r = actions.toggleTorch()) {
                 is ToggleResult.Changed -> torchOn = r.enabled
                 else -> Toast.makeText(context, context.getString(R.string.quick_settings_torch_toggle_failed), Toast.LENGTH_SHORT).show()
             }
         },
-        SmQsTile("notifications", soundIcon,                  "Notifications",  soundSubtitle, active = soundProfile == SoundProfileMode.RING) {
+        SmQsTile("notifications", soundIcon,                   strNotifications, soundSubtitle, active = soundProfile == SoundProfileMode.RING) {
             val next = when (soundProfile) {
                 SoundProfileMode.RING    -> SoundProfileMode.VIBRATE
                 SoundProfileMode.VIBRATE -> SoundProfileMode.DND
@@ -167,7 +180,7 @@ internal fun SimpleModeQsOverlay(
                 actions.openDoNotDisturbSettings()
             }
         },
-        SmQsTile("bluetooth",    Icons.Rounded.Bluetooth,     "Bluetooth",      if (bluetoothOn) "On" else "Off", active = bluetoothOn) {
+        SmQsTile("bluetooth",    Icons.Rounded.Bluetooth,      strBluetooth,     if (bluetoothOn) strOn else strOff, active = bluetoothOn) {
             runCatching {
                 context.startActivity(
                     android.content.Intent(android.provider.Settings.ACTION_BLUETOOTH_SETTINGS)
@@ -176,12 +189,12 @@ internal fun SimpleModeQsOverlay(
             }
             refresh()
         },
-        SmQsTile("qr",           Icons.Outlined.QrCodeScanner,"QR Scanner",     "",            active = false) {
+        SmQsTile("qr",           Icons.Outlined.QrCodeScanner, strQrScanner,     "",            active = false) {
             val pkg = qrScannerPackage.trim()
             val launched = if (pkg.isNotEmpty()) actions.launchApp(pkg) else actions.openQrScanner()
             if (!launched) showQrPicker = true
         },
-        SmQsTile("hotspot",      Icons.Rounded.WifiTethering, "Hotspot",        "",            active = hotspotOn) { actions.openHotspotSettings(); refresh() },
+        SmQsTile("hotspot",      Icons.Rounded.WifiTethering,  strHotspot,       "",            active = hotspotOn) { actions.openHotspotSettings(); refresh() },
     )
 
     BackHandler(enabled = showQrPicker, onBack = { showQrPicker = false })
@@ -251,7 +264,7 @@ internal fun SimpleModeQsOverlay(
                     )
                     Icon(
                         imageVector = Icons.Outlined.Settings,
-                        contentDescription = "Minimal Mode Settings",
+                        contentDescription = stringResource(R.string.cd_minimal_mode_settings),
                         tint = Color(0x66FFFFFF),
                         modifier = Modifier
                             .size(22.dp)
@@ -321,14 +334,14 @@ private fun SmQrAppPicker(
                 )
             }
             Column(modifier = Modifier.weight(1f)) {
-                Text("Choose QR Scanner App", color = Color(0xFFE6EBF2), fontSize = 18.sp, fontWeight = FontWeight.SemiBold)
-                Text("Tap to set as your QR tile app", color = Color(0xFF7A8899), fontSize = 13.sp)
+                Text(stringResource(R.string.qr_scanner_picker_title), color = Color(0xFFE6EBF2), fontSize = 18.sp, fontWeight = FontWeight.SemiBold)
+                Text(stringResource(R.string.qr_scanner_picker_subtitle), color = Color(0xFF7A8899), fontSize = 13.sp)
             }
         }
         androidx.compose.material3.OutlinedTextField(
             value = query,
             onValueChange = { query = it },
-            placeholder = { Text("Search apps…", color = Color(0xFF7A8899), fontSize = 14.sp) },
+            placeholder = { Text(stringResource(R.string.search_apps_ellipsis), color = Color(0xFF7A8899), fontSize = 14.sp) },
             singleLine = true,
             modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 6.dp),
             colors = androidx.compose.material3.OutlinedTextFieldDefaults.colors(

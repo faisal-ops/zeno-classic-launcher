@@ -3886,6 +3886,9 @@ internal fun QuickSettingsOverlay(
     val quickSettingsStart = stringResource(R.string.quick_settings_start)
     val quickSettingsOn = stringResource(R.string.settings_on)
     val quickSettingsOff = stringResource(R.string.settings_off)
+    val soundProfileRingLabel = stringResource(R.string.sound_profile_ring)
+    val soundProfileVibrateLabel = stringResource(R.string.sound_profile_vibrate)
+    val soundProfileDndLabel = stringResource(R.string.quick_settings_dnd)
     val quickSettingsTapToAllowControl = stringResource(R.string.quick_settings_tap_to_allow_control)
     val quickSettingsBluetoothPermissionDenied = stringResource(R.string.quick_settings_bluetooth_permission_denied)
     val quickSettingsWifiNamePermissionDenied = stringResource(R.string.quick_settings_wifi_name_permission_denied)
@@ -4037,9 +4040,9 @@ internal fun QuickSettingsOverlay(
         SoundProfileMode.DND     -> Icons.Rounded.NotificationsOff
     }
     val soundSubtitle = when (soundProfile) {
-        SoundProfileMode.RING    -> "Ring"
-        SoundProfileMode.VIBRATE -> "Vibrate"
-        SoundProfileMode.DND     -> "Do Not Disturb"
+        SoundProfileMode.RING    -> soundProfileRingLabel
+        SoundProfileMode.VIBRATE -> soundProfileVibrateLabel
+        SoundProfileMode.DND     -> soundProfileDndLabel
     }
     val defaultQuickTiles = buildList {
         // ── First 8: mirror Minimal Mode tiles ───────────────────────────────
@@ -4809,7 +4812,7 @@ internal fun QuickSettingsOverlay(
                     }
                 }
                 val maxPageRows = pages.maxOfOrNull { (it.size + 1) / 2 } ?: 0
-                val pagerHeight = (maxPageRows * 70 + (maxPageRows - 1).coerceAtLeast(0) * 8).dp
+                val pagerHeight = (maxPageRows * 72 + (maxPageRows - 1).coerceAtLeast(0) * 5).dp
                 HorizontalPager(
                     state = pagerState,
                     modifier = Modifier
@@ -4819,8 +4822,8 @@ internal fun QuickSettingsOverlay(
                     LazyVerticalGrid(
                         columns = GridCells.Fixed(2),
                         modifier = Modifier.fillMaxSize(),
-                        horizontalArrangement = Arrangement.spacedBy(8.dp),
-                        verticalArrangement = Arrangement.spacedBy(8.dp),
+                        horizontalArrangement = Arrangement.spacedBy(5.dp),
+                        verticalArrangement = Arrangement.spacedBy(5.dp),
                     ) {
                         itemsIndexed(items = pages[page], key = { _, t -> t.id }) { _, tile ->
                             ClassicQuickTile(
@@ -5110,8 +5113,10 @@ private fun ClassicQuickTile(
     onLongPress: () -> Unit,
     enableGestures: Boolean = true,
 ) {
-    val darkCell = Color(0xFF191D22)
-    val iconBoxColor = if (tile.highlighted) Color(0xFF145A77) else darkCell
+    val darkCell  = Color(0xFF191D22)
+    val activeBg  = Color(0xFF145A77)
+    val tileBg    = if (tile.highlighted) activeBg else darkCell
+    val iconBoxBg = if (tile.highlighted) Color(0x33000000) else Color(0xFF1A2530)
     val tileModifier =
         if (enableGestures) {
             Modifier.pointerInput(tile.id) {
@@ -5132,23 +5137,25 @@ private fun ClassicQuickTile(
     Row(
         modifier = Modifier
             .fillMaxWidth()
-            .height(70.dp)
-            .clip(RoundedCornerShape(10.dp))
+            .height(72.dp)
+            .clip(RoundedCornerShape(3.dp))
+            .background(tileBg)
             .then(tileModifier),
         verticalAlignment = Alignment.CenterVertically,
     ) {
+        // Icon box — square left section
         Box(
             modifier = Modifier
-                .width(68.dp)
+                .width(72.dp)
                 .fillMaxHeight()
-                .background(iconBoxColor),
+                .background(iconBoxBg),
             contentAlignment = Alignment.Center,
         ) {
             Icon(
                 imageVector = tile.icon,
                 contentDescription = null,
                 tint = Color(0xFFEAF0F6),
-                modifier = Modifier.size(28.dp),
+                modifier = Modifier.size(32.dp),
             )
             if (tile.highlighted) {
                 Box(
@@ -5160,58 +5167,31 @@ private fun ClassicQuickTile(
                 )
             }
         }
-        Row(
+        // Text column — inherits tileBg from Row
+        Column(
             modifier = Modifier
                 .weight(1f)
                 .fillMaxHeight()
-                .background(darkCell)
-                .padding(horizontal = 10.dp, vertical = 8.dp),
-            verticalAlignment = Alignment.CenterVertically,
+                .padding(horizontal = 8.dp),
+            verticalArrangement = Arrangement.Center,
         ) {
-            Column(modifier = Modifier.weight(1f)) {
-                Row(verticalAlignment = Alignment.CenterVertically) {
-                    Text(
-                        tile.title,
-                        color = Color(0xFFEAF0F6),
-                        style = MaterialTheme.typography.titleMedium.copy(
-                            fontWeight = FontWeight.SemiBold,
-                            fontSize = 15.sp,
-                            lineHeight = 16.sp,
-                        ),
-                        maxLines = 1,
-                        overflow = TextOverflow.Ellipsis,
-                        modifier = Modifier.weight(1f, fill = false),
-                    )
-                    if (tile.actionLabel.isNotBlank()) {
-                        Spacer(Modifier.width(6.dp))
-                        Text(
-                            tile.actionLabel,
-                            color = if (tile.highlighted) Color(0xFFBDEFFF) else Color(0xFF8EA0AA),
-                            style = MaterialTheme.typography.labelSmall.copy(
-                                fontSize = 9.sp,
-                                lineHeight = 10.sp,
-                                fontWeight = FontWeight.SemiBold,
-                            ),
-                            maxLines = 1,
-                            modifier = Modifier
-                                .clip(RoundedCornerShape(7.dp))
-                                .background(if (tile.highlighted) Color(0x3327BDEB) else Color(0x33242C33))
-                                .padding(horizontal = 5.dp, vertical = 2.dp),
-                        )
-                    }
-                }
-                if (tile.subtitle.isNotBlank()) {
-                    Text(
-                        tile.subtitle,
-                        color = Color(0xFFAEB8C5),
-                        style = MaterialTheme.typography.bodyMedium.copy(
-                            fontSize = 11.sp,
-                            lineHeight = 12.sp,
-                        ),
-                        maxLines = 1,
-                        overflow = TextOverflow.Ellipsis,
-                    )
-                }
+            Text(
+                tile.title,
+                color = Color(0xFFEAF0F6),
+                fontSize = 13.sp,
+                fontWeight = FontWeight.SemiBold,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+            )
+            if (tile.subtitle.isNotBlank()) {
+                Text(
+                    tile.subtitle,
+                    color = Color(0xFFAEB8C5),
+                    fontSize = 12.sp,
+                    fontWeight = FontWeight.Normal,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                )
             }
         }
     }

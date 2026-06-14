@@ -165,7 +165,7 @@ internal fun SimpleModeScreen(vm: LauncherViewModel) {
         resolveSimpleModeApps(prefs.simpleModeApps, allApps).take(7)
     }
 
-    var focusedIndex by rememberSaveable(visibleApps.size) {
+    var focusedIndex by rememberSaveable(visibleApps.joinToString(",") { it.packageName }) {
         mutableIntStateOf(0)
     }
 
@@ -562,7 +562,7 @@ internal fun SimpleModeTopBar(
             if (soundProfile == SoundProfileMode.DND) {
                 Icon(
                     imageVector = Icons.Rounded.DoNotDisturb,
-                    contentDescription = "Do Not Disturb",
+                    contentDescription = stringResource(R.string.quick_settings_dnd),
                     tint = Color(0xFFEAF0F6),
                     modifier = Modifier.size(16.dp),
                 )
@@ -570,7 +570,7 @@ internal fun SimpleModeTopBar(
             } else if (soundProfile == SoundProfileMode.VIBRATE) {
                 Icon(
                     imageVector = Icons.Rounded.Vibration,
-                    contentDescription = "Vibrate",
+                    contentDescription = stringResource(R.string.sound_profile_vibrate),
                     tint = Color(0xFFEAF0F6),
                     modifier = Modifier.size(16.dp),
                 )
@@ -578,7 +578,7 @@ internal fun SimpleModeTopBar(
             }
             Icon(
                 imageVector = if (wifiEnabled) Icons.Rounded.Wifi else Icons.Rounded.WifiOff,
-                contentDescription = "Wi-Fi",
+                contentDescription = stringResource(R.string.quick_settings_wifi),
                 tint = if (wifiEnabled) Color(0xFFEAF0F6) else Color(0x2EFFFFFF),
                 modifier = Modifier
                     .size(22.dp)
@@ -672,7 +672,7 @@ private fun SimpleModeHeader(
                 }
             } else {
                 Text(
-                    text = "No New Notifications",
+                    text = stringResource(R.string.simple_mode_no_notifications),
                     fontSize = 12.sp,
                     color = MUTED_TEXT,
                 )
@@ -723,7 +723,7 @@ private fun SimpleModeListView(
                     contentAlignment = Alignment.CenterStart,
                 ) {
                     Text(
-                        text = "+ Add app",
+                        text = stringResource(R.string.simple_mode_add_app_slot),
                         fontSize = 18.sp,
                         color = Color(0xFF2C3540),
                     )
@@ -907,7 +907,7 @@ private fun SimpleModeNowPlayingBar(
             Spacer(Modifier.width(8.dp))
             Icon(
                 imageVector = if (state.isPlaying) Icons.Rounded.Pause else Icons.Rounded.PlayArrow,
-                contentDescription = if (state.isPlaying) "Pause" else "Play",
+                contentDescription = stringResource(if (state.isPlaying) R.string.action_pause else R.string.action_play),
                 tint = NORMAL_TEXT,
                 modifier = Modifier.size(46.dp).clickable { onPlayPause() },
             )

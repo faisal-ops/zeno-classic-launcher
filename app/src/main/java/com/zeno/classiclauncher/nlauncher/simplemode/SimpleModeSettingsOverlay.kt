@@ -12,7 +12,6 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.statusBarsPadding
-import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
@@ -36,7 +35,6 @@ import com.zeno.classiclauncher.nlauncher.ui.LauncherViewModel
 private val SETTINGS_BG = Color(0xFF0E131B)
 private val CARD_BG = Color(0xFF161D2A)
 private val TITLE_COLOR = Color(0xFFE8EEF7)
-private val SUBTITLE_COLOR = Color(0xFF6B7280)
 private val ACCENT_COLOR = Color(0xFF4A90D9)
 
 @Composable
@@ -111,7 +109,7 @@ internal fun SimpleModeSettingsOverlay(
                 )
                 SettingsDivider()
                 SettingsToggleRow(
-                    title = "Greyscale Mode",
+                    title = stringResource(R.string.simple_mode_greyscale_title),
                     checked = prefs.simpleModeGreyscale,
                     onCheckedChange = { vm.setSimpleModeGreyscale(it) },
                 )
@@ -169,16 +167,6 @@ private fun SettingsToggleRow(
 }
 
 @Composable
-private fun SettingsLabelRow(title: String) {
-    Text(
-        text = title,
-        fontSize = 13.sp,
-        color = SUBTITLE_COLOR,
-        modifier = Modifier.padding(horizontal = 16.dp, vertical = 10.dp),
-    )
-}
-
-@Composable
 private fun SettingsDivider() {
     Spacer(
         modifier = Modifier
@@ -189,34 +177,3 @@ private fun SettingsDivider() {
     )
 }
 
-@Composable
-private fun <T> SegmentedChoice(
-    options: List<Pair<String, T>>,
-    selected: T,
-    onSelect: (T) -> Unit,
-) {
-    Row(
-        modifier = Modifier
-            .fillMaxWidth()
-            .padding(horizontal = 16.dp)
-            .padding(bottom = 12.dp),
-    ) {
-        options.forEachIndexed { i, (label, value) ->
-            val isSelected = value == selected
-            Text(
-                text = label,
-                fontSize = 14.sp,
-                fontWeight = if (isSelected) FontWeight.SemiBold else FontWeight.Normal,
-                color = if (isSelected) ACCENT_COLOR else Color(0xFF6B7280),
-                modifier = Modifier
-                    .weight(1f)
-                    .clip(RoundedCornerShape(6.dp))
-                    .background(if (isSelected) Color(0xFF1A2A3A) else Color.Transparent)
-                    .clickable { onSelect(value) }
-                    .padding(vertical = 8.dp, horizontal = 4.dp),
-                textAlign = androidx.compose.ui.text.style.TextAlign.Center,
-            )
-            if (i < options.size - 1) Spacer(Modifier.width(4.dp))
-        }
-    }
-}

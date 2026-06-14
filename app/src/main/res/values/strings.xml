@@ -214,11 +214,35 @@
     <string name="dialog_group_name_hint">Group name</string>
     <string name="dialog_name_hint">Name</string>
     <string name="dialog_new_group_name_hint">New group name</string>
+    <!-- Sound profile labels (used in QS tiles and top-bar icons) -->
+    <string name="sound_profile_ring">Ring</string>
+    <string name="sound_profile_vibrate">Vibrate</string>
+    <!-- DND label: reuse quick_settings_dnd = "Do Not Disturb" -->
+
+    <!-- Media playback controls -->
+    <string name="action_play">Play</string>
+    <string name="action_pause">Pause</string>
+
+    <!-- Minimal Mode UI -->
+    <string name="simple_mode_greyscale_title">Greyscale Mode</string>
+    <string name="simple_mode_add_app_slot">+ Add app</string>
+    <string name="simple_mode_editor_save_hint">Enter to save · %1$d/12 selected</string>
+
+    <!-- QS tile titles (short forms used in Minimal Mode grid) -->
+    <string name="quick_settings_mobile_network">Mobile network</string>
+    <string name="quick_settings_flashlight">Flashlight</string>
+    <string name="quick_settings_qr_scanner">QR Scanner</string>
+
+    <!-- QR app picker -->
+    <string name="qr_scanner_picker_title">Choose QR Scanner App</string>
+    <string name="qr_scanner_picker_subtitle">Tap to set as your QR tile app</string>
+
     <!-- Content descriptions -->
     <string name="cd_sound_profile">Sound profile</string>
     <string name="cd_drawer_sort">Sort: %1$s</string>
     <string name="cd_simple_clock">Time: %1$s. Tap to open clock.</string>
     <string name="cd_simple_empty_slot">Empty slot. Tap to add an app.</string>
+    <string name="cd_minimal_mode_settings">Minimal Mode Settings</string>
     <!-- Search placeholders -->
     <string name="search_widgets_hint">Search widgets</string>
     <string name="search_apps_ellipsis">Search apps…</string>

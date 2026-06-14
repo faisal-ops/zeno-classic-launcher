@@ -64,9 +64,10 @@ internal fun SimpleModeAppsEditor(
     onSave: (List<String>) -> Unit,
     onDismiss: () -> Unit,
 ) {
-    // Work on a local mutable copy
-    var currentSelected by rememberSaveable { mutableStateOf(selectedPackages.toMutableList()) }
-    var focusedIndex by rememberSaveable { mutableIntStateOf(0) }
+    val selectedKey = selectedPackages.joinToString(",")
+    // Work on a local mutable copy; reset when the incoming list changes (editor reopened)
+    var currentSelected by rememberSaveable(selectedKey) { mutableStateOf(selectedPackages.toMutableList()) }
+    var focusedIndex by rememberSaveable(selectedKey) { mutableIntStateOf(0) }
     val listState = rememberLazyListState()
 
     // Sorted: selected (in order) first, then remaining alphabetically
@@ -185,7 +186,7 @@ internal fun SimpleModeAppsEditor(
 
             Spacer(Modifier.height(12.dp))
             Text(
-                text = "Enter to save  ·  ${currentSelected.size}/12 selected",
+                text = stringResource(R.string.simple_mode_editor_save_hint, currentSelected.size),
                 fontSize = 12.sp,
                 color = SUBTITLE_COLOR,
                 modifier = Modifier.padding(bottom = 8.dp),

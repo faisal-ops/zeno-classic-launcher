@@ -63,6 +63,8 @@ class LauncherActions(private val context: Context) {
     private val launcherPrefs by lazy { context.getSharedPreferences("launcher_actions", Context.MODE_PRIVATE) }
     private val keyboardModeUiKey = "keyboard_mode_ui"
     private val soundProfileKey = "sound_profile_mode"
+    private val mainHandler = android.os.Handler(android.os.Looper.getMainLooper())
+    private var pendingSoundReapply: Runnable? = null
 
     fun launchApp(packageName: String): Boolean {
         // Some dialer apps expose a launcher activity that only shows "set default phone app".
@@ -525,18 +527,22 @@ class LauncherActions(private val context: Context) {
                 // Android's ZenModeHelper asynchronously restores the pre-DND ringer mode
                 // (usually VIBRATE) when the filter is cleared. Re-apply NORMAL after 400 ms
                 // to override that restoration before any ON_RESUME refresh can read stale state.
-                android.os.Handler(android.os.Looper.getMainLooper()).postDelayed({
-                    runCatching { am.ringerMode = AudioManager.RINGER_MODE_NORMAL }
-                }, 400)
+                pendingSoundReapply?.let { mainHandler.removeCallbacks(it) }
+                Runnable { runCatching { am.ringerMode = AudioManager.RINGER_MODE_NORMAL } }.also {
+                    pendingSoundReapply = it
+                    mainHandler.postDelayed(it, 400)
+                }
                 true
             }
             SoundProfileMode.VIBRATE -> {
                 if (nm?.isNotificationPolicyAccessGranted == true)
                     runCatching { nm.setInterruptionFilter(NotificationManager.INTERRUPTION_FILTER_ALL) }
                 runCatching { am.ringerMode = AudioManager.RINGER_MODE_VIBRATE }
-                android.os.Handler(android.os.Looper.getMainLooper()).postDelayed({
-                    runCatching { am.ringerMode = AudioManager.RINGER_MODE_VIBRATE }
-                }, 400)
+                pendingSoundReapply?.let { mainHandler.removeCallbacks(it) }
+                Runnable { runCatching { am.ringerMode = AudioManager.RINGER_MODE_VIBRATE } }.also {
+                    pendingSoundReapply = it
+                    mainHandler.postDelayed(it, 400)
+                }
                 true
             }
             // DND = INTERRUPTION_FILTER_NONE — full Do Not Disturb.
