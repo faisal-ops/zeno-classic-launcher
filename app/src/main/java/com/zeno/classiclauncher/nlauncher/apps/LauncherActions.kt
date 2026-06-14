@@ -521,14 +521,23 @@ class LauncherActions(private val context: Context) {
             SoundProfileMode.RING -> {
                 if (nm?.isNotificationPolicyAccessGranted == true)
                     runCatching { nm.setInterruptionFilter(NotificationManager.INTERRUPTION_FILTER_ALL) }
-                runCatching { am.ringerMode = AudioManager.RINGER_MODE_NORMAL }.isSuccess &&
-                    am.ringerMode == AudioManager.RINGER_MODE_NORMAL
+                runCatching { am.ringerMode = AudioManager.RINGER_MODE_NORMAL }
+                // Android's ZenModeHelper asynchronously restores the pre-DND ringer mode
+                // (usually VIBRATE) when the filter is cleared. Re-apply NORMAL after 400 ms
+                // to override that restoration before any ON_RESUME refresh can read stale state.
+                android.os.Handler(android.os.Looper.getMainLooper()).postDelayed({
+                    runCatching { am.ringerMode = AudioManager.RINGER_MODE_NORMAL }
+                }, 400)
+                true
             }
             SoundProfileMode.VIBRATE -> {
                 if (nm?.isNotificationPolicyAccessGranted == true)
                     runCatching { nm.setInterruptionFilter(NotificationManager.INTERRUPTION_FILTER_ALL) }
-                runCatching { am.ringerMode = AudioManager.RINGER_MODE_VIBRATE }.isSuccess &&
-                    am.ringerMode == AudioManager.RINGER_MODE_VIBRATE
+                runCatching { am.ringerMode = AudioManager.RINGER_MODE_VIBRATE }
+                android.os.Handler(android.os.Looper.getMainLooper()).postDelayed({
+                    runCatching { am.ringerMode = AudioManager.RINGER_MODE_VIBRATE }
+                }, 400)
+                true
             }
             // DND = INTERRUPTION_FILTER_NONE — full Do Not Disturb.
             SoundProfileMode.DND -> {

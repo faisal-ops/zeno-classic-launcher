@@ -48,8 +48,12 @@ import androidx.compose.material.icons.outlined.Battery2Bar
 import androidx.compose.material.icons.outlined.Battery4Bar
 import androidx.compose.material.icons.outlined.Battery6Bar
 import androidx.compose.material.icons.outlined.BatteryFull
-import androidx.compose.material.icons.outlined.Settings
 import androidx.compose.material.icons.rounded.Pause
+import androidx.compose.material.icons.rounded.DoNotDisturb
+import androidx.compose.material.icons.rounded.Vibration
+import androidx.compose.material.icons.rounded.Wifi
+import androidx.compose.material.icons.rounded.WifiOff
+import com.zeno.classiclauncher.nlauncher.apps.SoundProfileMode
 import androidx.compose.material.icons.rounded.PlayArrow
 import androidx.compose.material.icons.rounded.SkipNext
 import androidx.compose.material.icons.rounded.SkipPrevious
@@ -92,6 +96,8 @@ import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.onClick
 import androidx.compose.ui.semantics.role
 import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.layout.onGloballyPositioned
+import androidx.compose.ui.layout.positionInRoot
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
@@ -99,9 +105,9 @@ import androidx.compose.ui.unit.sp
 import androidx.core.graphics.drawable.toBitmap
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.zeno.classiclauncher.nlauncher.apps.AppEntry
+import com.zeno.classiclauncher.nlauncher.apps.LauncherActions
 import com.zeno.classiclauncher.nlauncher.prefs.GlanceWeatherUnit
 import androidx.compose.foundation.layout.widthIn
-import com.zeno.classiclauncher.nlauncher.prefs.SimpleModeLayout
 import com.zeno.classiclauncher.nlauncher.ui.LauncherViewModel
 import kotlinx.coroutines.delay
 import java.time.LocalDateTime
@@ -153,9 +159,10 @@ internal fun SimpleModeScreen(vm: LauncherViewModel) {
     val hasUnreadWhatsApp by vm.hasUnreadWhatsApp.collectAsStateWithLifecycle()
     val packagesWithUnread by vm.packagesWithUnread.collectAsStateWithLifecycle()
     val context = LocalContext.current
+    val actions = remember(context) { LauncherActions(context) }
     val is24h = remember { DateFormat.is24HourFormat(context) }
     val visibleApps = remember(prefs.simpleModeApps, allApps) {
-        resolveSimpleModeApps(prefs.simpleModeApps, allApps).take(9)
+        resolveSimpleModeApps(prefs.simpleModeApps, allApps).take(7)
     }
 
     var focusedIndex by rememberSaveable(visibleApps.size) {
@@ -167,6 +174,9 @@ internal fun SimpleModeScreen(vm: LauncherViewModel) {
     var clockDate by remember { mutableStateOf(currentDateString()) }
     var batteryPct by remember { mutableIntStateOf(readBatteryPct(context)) }
     var batteryCharging by remember { mutableStateOf(readBatteryCharging(context)) }
+    var wifiOn by remember { mutableStateOf(actions.isWifiEnabled() == true) }
+    var soundProfile by remember { mutableStateOf(actions.currentSoundProfile()) }
+    var topBarBottomPx by remember { mutableIntStateOf(0) }
 
     // Battery: update immediately from the sticky broadcast, then listen for changes.
     // BroadcastReceiver is far cheaper than polling — ACTION_BATTERY_CHANGED is a sticky
@@ -179,6 +189,21 @@ internal fun SimpleModeScreen(vm: LauncherViewModel) {
             }
         }
         context.registerReceiver(receiver, IntentFilter(Intent.ACTION_BATTERY_CHANGED))
+        onDispose { runCatching { context.unregisterReceiver(receiver) } }
+    }
+
+    // Sound profile: react to ringer mode and DND filter changes instantly
+    androidx.compose.runtime.DisposableEffect(Unit) {
+        val receiver = object : android.content.BroadcastReceiver() {
+            override fun onReceive(ctx: android.content.Context?, intent: Intent?) {
+                soundProfile = actions.currentSoundProfile()
+            }
+        }
+        val filter = IntentFilter().apply {
+            addAction(android.media.AudioManager.RINGER_MODE_CHANGED_ACTION)
+            addAction(android.app.NotificationManager.ACTION_INTERRUPTION_FILTER_CHANGED)
+        }
+        context.registerReceiver(receiver, filter)
         onDispose { runCatching { context.unregisterReceiver(receiver) } }
     }
 
@@ -278,33 +303,14 @@ internal fun SimpleModeScreen(vm: LauncherViewModel) {
                 )
             }
             .onPreviewKeyEvent { event ->
-                // List shows max 6, grid shows all 9 — cap navigation to what's visible
-                val appCount = if (prefs.simpleModeLayout == SimpleModeLayout.LIST) {
-                    minOf(visibleApps.size, 6)
-                } else {
-                    visibleApps.size
-                }
-                val isGrid = prefs.simpleModeLayout == SimpleModeLayout.GRID
+                val appCount = visibleApps.size
                 when {
                     event.type == KeyEventType.KeyDown && event.key == Key.DirectionDown -> {
-                        val next = if (isGrid) focusedIndex + GRID_COLS else focusedIndex + 1
-                        if (next < appCount) focusedIndex = next
+                        if (focusedIndex + 1 < appCount) focusedIndex++
                         true
                     }
                     event.type == KeyEventType.KeyDown && event.key == Key.DirectionUp -> {
-                        val prev = if (isGrid) focusedIndex - GRID_COLS else focusedIndex - 1
-                        if (prev >= 0) focusedIndex = prev
-                        true
-                    }
-                    event.type == KeyEventType.KeyDown && event.key == Key.DirectionRight && isGrid -> {
-                        // stay in same row: only move if not already on last column
-                        if (focusedIndex % GRID_COLS < GRID_COLS - 1 && focusedIndex + 1 < appCount)
-                            focusedIndex++
-                        true
-                    }
-                    event.type == KeyEventType.KeyDown && event.key == Key.DirectionLeft && isGrid -> {
-                        // stay in same row: only move if not already on first column
-                        if (focusedIndex % GRID_COLS > 0) focusedIndex--
+                        if (focusedIndex - 1 >= 0) focusedIndex--
                         true
                     }
                     event.type == KeyEventType.KeyDown && event.key == Key.Enter -> {
@@ -331,7 +337,6 @@ internal fun SimpleModeScreen(vm: LauncherViewModel) {
             modifier = Modifier
                 .fillMaxSize()
                 .statusBarsPadding()
-                .navigationBarsPadding()
                 .padding(horizontal = 14.dp)
                 .padding(top = 4.dp, bottom = 10.dp),
         ) {
@@ -350,49 +355,32 @@ internal fun SimpleModeScreen(vm: LauncherViewModel) {
                 batteryCharging = batteryCharging,
                 greyscale = prefs.simpleModeGreyscale,
                 screenTimeMs = if (totalScreenTimeMs > 0L) totalScreenTimeMs else null,
+                wifiEnabled = wifiOn,
+                soundProfile = soundProfile,
                 onClockTap = {
                     resolveClockPackage(context)?.let { vm.launchApp(it) }
                 },
                 onWeatherTap = {
                     resolveWeatherPackage(context)?.let { vm.launchApp(it) }
                 },
+                onWifiTap = { actions.openInternetPanel(); wifiOn = actions.isWifiEnabled() == true },
                 onUnreadAppTap = { pkg -> vm.launchApp(pkg) },
-                onGearTap = { showSimpleModeSettings = true },
-                onGearLongPress = {
-                    context.startActivity(
-                        Intent(Settings.ACTION_SETTINGS).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
-                    )
-                },
+                onTopBarPositioned = { topBarBottomPx = it },
             )
 
             Spacer(Modifier.height(8.dp))
 
-            // ── App list / grid ───────────────────────────────────────────────
-            when (prefs.simpleModeLayout) {
-                SimpleModeLayout.LIST -> SimpleModeListView(
-                    modifier = Modifier.weight(1f),
-                    apps = visibleApps.take(6),
-                    focusedIndex = focusedIndex,
-                    showIcons = false,
-                    onTap = { idx ->
-                        focusedIndex = idx
-                        visibleApps.getOrNull(idx)?.let { vm.launchApp(it.packageName) }
-                    },
-                    onLongPress = { idx -> replacingIndex = idx },
-                )
-                SimpleModeLayout.GRID -> SimpleModeGridView(
-                    modifier = Modifier.weight(1f),
-                    apps = visibleApps,
-                    focusedIndex = focusedIndex,
-                    showIcons = true,
-                    packagesWithUnread = packagesWithUnread,
-                    onTap = { idx ->
-                        focusedIndex = idx
-                        visibleApps.getOrNull(idx)?.let { vm.launchApp(it.packageName) }
-                    },
-                    onLongPress = { idx -> replacingIndex = idx },
-                )
-            }
+            // ── App list ──────────────────────────────────────────────────────
+            SimpleModeListView(
+                modifier = Modifier.weight(1f),
+                apps = visibleApps,
+                focusedIndex = if (showQuickSettings) -1 else focusedIndex,
+                onTap = { idx ->
+                    focusedIndex = idx
+                    visibleApps.getOrNull(idx)?.let { vm.launchApp(it.packageName) }
+                },
+                onLongPress = { idx -> replacingIndex = idx },
+            )
 
             // ── Footer: swipeable weather ↔ player ───────────────────────────
             // hasWeatherPref = weather pref is on (footer space always reserved to avoid layout shift)
@@ -487,23 +475,118 @@ internal fun SimpleModeScreen(vm: LauncherViewModel) {
             )
         }
         if (showQuickSettings) {
-            com.zeno.classiclauncher.nlauncher.ui.QuickSettingsOverlay(
-                allApps = allApps,
-                hiddenPackages = prefs.hiddenPackages,
+            SimpleModeQsOverlay(
+                topBarBottomPx = topBarBottomPx,
                 qrScannerPackage = prefs.quickSettingsQrScannerPackage,
-                savedTileOrder = prefs.quickSettingsTileOrder,
-                themePalette = com.zeno.classiclauncher.nlauncher.theme.LauncherThemePalette.fromJson(prefs.themeJson),
-                hapticsEnabled = prefs.hapticsEnabled,
-                hapticIntensity = prefs.hapticIntensity,
-                onDismiss = { showQuickSettings = false },
+                allApps = allApps,
                 onSetQrScannerPackage = vm::setQuickSettingsQrScannerPackage,
-                onSetTileOrder = vm::setQuickSettingsTileOrder,
+                onOpenSettings = { showQuickSettings = false; showSimpleModeSettings = true },
+                onDismiss = { showQuickSettings = false },
             )
         }
     }
 }
 
 // ─── Header ───────────────────────────────────────────────────────────────────
+
+@Composable
+internal fun SimpleModeTopBar(
+    time: String,
+    amPm: String,
+    batteryPct: Int?,
+    batteryCharging: Boolean,
+    greyscale: Boolean,
+    screenTimeMs: Long?,
+    wifiEnabled: Boolean,
+    soundProfile: SoundProfileMode,
+    onClockTap: () -> Unit,
+    onWifiTap: () -> Unit,
+) {
+    // 3-column Row: weight(1f) on both sides guarantees clock is truly centered.
+    Row(
+        modifier = Modifier.fillMaxWidth(),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        // Left side — battery + screen time
+        Row(
+            modifier = Modifier.weight(1f),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            if (batteryPct != null) {
+                BatteryPill(pct = batteryPct, charging = batteryCharging, greyscale = greyscale)
+            }
+            if (screenTimeMs != null) {
+                Text(
+                    text = "  ·  ${UsageStatsRepository.formatUsageShort(screenTimeMs)}",
+                    fontSize = 13.sp,
+                    fontWeight = FontWeight.Medium,
+                    color = Color(0xFF9AA0A8),
+                )
+            }
+        }
+        // Center — time + AM/PM inline
+        val clockCd = stringResource(R.string.cd_simple_clock, time)
+        Row(
+            verticalAlignment = Alignment.Top,
+            modifier = Modifier
+                .semantics(mergeDescendants = true) {
+                    role = Role.Button
+                    contentDescription = clockCd
+                    onClick(label = "Open clock") { onClockTap(); true }
+                }
+                .pointerInput(Unit) { detectTapGestures(onTap = { onClockTap() }) },
+        ) {
+            Text(
+                text = time,
+                fontSize = 24.sp,
+                fontWeight = FontWeight.W300,
+                color = NORMAL_TEXT,
+                letterSpacing = (-0.5).sp,
+            )
+            if (amPm.isNotEmpty()) {
+                Text(
+                    text = amPm,
+                    fontSize = 11.sp,
+                    fontWeight = FontWeight.W300,
+                    color = MUTED_TEXT,
+                    modifier = Modifier.padding(top = 4.dp, start = 2.dp),
+                )
+            }
+        }
+        // Right side — DND/Vibrate indicator + wifi icon
+        Row(
+            modifier = Modifier.weight(1f),
+            horizontalArrangement = Arrangement.End,
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            if (soundProfile == SoundProfileMode.DND) {
+                Icon(
+                    imageVector = Icons.Rounded.DoNotDisturb,
+                    contentDescription = "Do Not Disturb",
+                    tint = Color(0xFFEAF0F6),
+                    modifier = Modifier.size(16.dp),
+                )
+                Spacer(Modifier.width(6.dp))
+            } else if (soundProfile == SoundProfileMode.VIBRATE) {
+                Icon(
+                    imageVector = Icons.Rounded.Vibration,
+                    contentDescription = "Vibrate",
+                    tint = Color(0xFFEAF0F6),
+                    modifier = Modifier.size(16.dp),
+                )
+                Spacer(Modifier.width(6.dp))
+            }
+            Icon(
+                imageVector = if (wifiEnabled) Icons.Rounded.Wifi else Icons.Rounded.WifiOff,
+                contentDescription = "Wi-Fi",
+                tint = if (wifiEnabled) Color(0xFFEAF0F6) else Color(0x2EFFFFFF),
+                modifier = Modifier
+                    .size(22.dp)
+                    .pointerInput(Unit) { detectTapGestures(onTap = { onWifiTap() }) },
+            )
+        }
+    }
+}
 
 @Composable
 private fun SimpleModeHeader(
@@ -519,87 +602,31 @@ private fun SimpleModeHeader(
     batteryCharging: Boolean,
     greyscale: Boolean,
     screenTimeMs: Long?,
+    wifiEnabled: Boolean,
+    soundProfile: SoundProfileMode,
     onClockTap: () -> Unit,
     onWeatherTap: () -> Unit,
-    onGearTap: () -> Unit,
-    onGearLongPress: () -> Unit,
+    onWifiTap: () -> Unit,
+    onTopBarPositioned: (Int) -> Unit = {},
 ) {
     Column(modifier = Modifier.fillMaxWidth()) {
 
-        // ── Top bar: [battery · stats] LEFT · [clock] CENTER · [gear] RIGHT ────
-        // 3-column Row: weight(1f) on both sides guarantees clock is truly centered.
-        // All children share the same verticalAlignment = CenterVertically baseline.
-        Row(
-            modifier = Modifier.fillMaxWidth(),
-            verticalAlignment = Alignment.CenterVertically,
-        ) {
-            // Left side — battery + screen time
-            Row(
-                modifier = Modifier.weight(1f),
-                verticalAlignment = Alignment.CenterVertically,
-            ) {
-                if (batteryPct != null) {
-                    BatteryPill(pct = batteryPct, charging = batteryCharging, greyscale = greyscale)
-                }
-                if (screenTimeMs != null) {
-                    Text(
-                        text = "  ·  ${UsageStatsRepository.formatUsageShort(screenTimeMs)}",
-                        fontSize = 13.sp,
-                        fontWeight = FontWeight.Medium,
-                        color = Color(0xFF9AA0A8),
-                    )
-                }
-            }
-            // Center — time digits only (no AM/PM), so the digits are pixel-perfectly centered.
-            val clockCd = stringResource(R.string.cd_simple_clock, time)
-            Text(
-                text = time,
-                fontSize = 36.sp,
-                fontWeight = FontWeight.W300,
-                color = NORMAL_TEXT,
-                letterSpacing = (-1).sp,
-                modifier = Modifier
-                    .semantics {
-                        role = Role.Button
-                        contentDescription = clockCd
-                        onClick(label = "Open clock") { onClockTap(); true }
-                    }
-                    .pointerInput(Unit) { detectTapGestures(onTap = { onClockTap() }) },
-            )
-            // Right side — AM/PM at start, gear at end, both inside the right weight(1f) box.
-            Box(
-                modifier = Modifier.weight(1f),
-                contentAlignment = Alignment.CenterEnd,
-            ) {
-                if (amPm.isNotEmpty()) {
-                    Text(
-                        text = " $amPm",
-                        fontSize = 11.sp,
-                        fontWeight = FontWeight.W300,
-                        color = MUTED_TEXT,
-                        modifier = Modifier.align(Alignment.CenterStart),
-                    )
-                }
-                Icon(
-                    imageVector = Icons.Outlined.Settings,
-                    contentDescription = stringResource(R.string.action_settings_label),
-                    tint = Color(0x2EFFFFFF),
-                    modifier = Modifier
-                        .size(28.dp)
-                        .padding(2.dp)
-                        .semantics {
-                            role = Role.Button
-                            onClick(label = "Open settings") { onGearTap(); true }
-                        }
-                        .pointerInput(Unit) {
-                            detectTapGestures(
-                                onTap = { onGearTap() },
-                                onLongPress = { onGearLongPress() },
-                            )
-                        },
-                )
-            }
-        }
+        Box(modifier = Modifier.onGloballyPositioned { coords ->
+            onTopBarPositioned((coords.positionInRoot().y + coords.size.height).toInt())
+        }) {
+        SimpleModeTopBar(
+            time = time,
+            amPm = amPm,
+            batteryPct = batteryPct,
+            batteryCharging = batteryCharging,
+            greyscale = greyscale,
+            screenTimeMs = screenTimeMs,
+            wifiEnabled = wifiEnabled,
+            soundProfile = soundProfile,
+            onClockTap = onClockTap,
+            onWifiTap = onWifiTap,
+        )
+        } // end measurement Box
 
         // ── Date/weather · notifications — centered ───────────────────────────
         Column(
@@ -661,34 +688,29 @@ private fun SimpleModeListView(
     modifier: Modifier,
     apps: List<AppEntry>,
     focusedIndex: Int,
-    showIcons: Boolean,
     onTap: (Int) -> Unit,
     onLongPress: (Int) -> Unit,
 ) {
-    // Always fill at least 6 slots so rows don't stretch too tall on short lists
-    val slotCount = maxOf(apps.size, 6)
     Column(
         modifier = modifier.fillMaxWidth(),
-        verticalArrangement = Arrangement.SpaceEvenly,
+        verticalArrangement = Arrangement.spacedBy(4.dp),
     ) {
-        repeat(slotCount) { index ->
+        repeat(7) { index ->
             val app = apps.getOrNull(index)
             if (app != null) {
                 SimpleModeListRow(
                     app = app,
                     selected = index == focusedIndex,
                     distanceFromFocus = kotlin.math.abs(index - focusedIndex),
-                    showIcon = showIcons,
                     onClick = { onTap(index) },
                     onLongPress = { onLongPress(index) },
                 )
             } else {
-                // Empty slot — tap to pick an app for this position
                 val emptySlotCd = stringResource(R.string.cd_simple_empty_slot)
                 Box(
                     modifier = Modifier
                         .fillMaxWidth()
-                        .height(38.dp)
+                        .height(50.dp)
                         .semantics {
                             role = Role.Button
                             contentDescription = emptySlotCd
@@ -697,13 +719,13 @@ private fun SimpleModeListView(
                         .pointerInput(Unit) {
                             detectTapGestures(onTap = { onLongPress(index) })
                         }
-                        .padding(start = 20.dp),
+                        .padding(start = 16.dp),
                     contentAlignment = Alignment.CenterStart,
                 ) {
                     Text(
                         text = "+ Add app",
-                        fontSize = 16.sp,
-                        color = Color(0xFF333333),
+                        fontSize = 18.sp,
+                        color = Color(0xFF2C3540),
                     )
                 }
             }
@@ -716,12 +738,10 @@ private fun SimpleModeListRow(
     app: AppEntry,
     selected: Boolean,
     distanceFromFocus: Int,
-    showIcon: Boolean,
     onClick: () -> Unit,
     onLongPress: () -> Unit,
 ) {
     val density = LocalDensity.current
-    // unselected = 8dp right, selected = 16dp right → drifts further right on focus
     val tx = remember { Animatable(with(density) { if (selected) 16.dp.toPx() else 8.dp.toPx() }) }
     LaunchedEffect(selected) {
         tx.animateTo(
@@ -729,7 +749,6 @@ private fun SimpleModeListRow(
             animationSpec = tween(durationMillis = 200),
         )
     }
-    // Proximity fade: items further from focus dim out, drawing the eye to the selection
     val targetAlpha = when (distanceFromFocus) {
         0 -> 1f
         1 -> 0.55f
@@ -745,6 +764,7 @@ private fun SimpleModeListRow(
     Box(
         modifier = Modifier
             .fillMaxWidth()
+            .height(50.dp)
             .graphicsLayer { alpha = rowAlpha }
             .background(if (selected) FOCUS_BG else Color.Transparent)
             .drawBehind {
@@ -758,16 +778,14 @@ private fun SimpleModeListRow(
             .pointerInput(Unit) {
                 detectTapGestures(onTap = { onClick() }, onLongPress = { onLongPress() })
             },
+        contentAlignment = Alignment.CenterStart,
     ) {
-        // ▌ pinned 1dp after the 4dp blue accent bar, does not drift
         if (selected) {
             Text(
                 text = "▌",
                 fontSize = 16.sp,
                 color = Color.Black,
-                modifier = Modifier
-                    .align(Alignment.CenterStart)
-                    .padding(start = 7.dp),
+                modifier = Modifier.padding(start = 7.dp),
             )
         }
         Row(
@@ -789,118 +807,6 @@ private fun SimpleModeListRow(
     }
 }
 
-// ─── Grid view ────────────────────────────────────────────────────────────────
-
-private const val GRID_COLS = 3
-private const val GRID_ROWS = 3
-
-@Composable
-private fun SimpleModeGridView(
-    modifier: Modifier,
-    apps: List<AppEntry>,
-    focusedIndex: Int,
-    showIcons: Boolean,
-    packagesWithUnread: Set<String>,
-    onTap: (Int) -> Unit,
-    onLongPress: (Int) -> Unit,
-) {
-    Column(
-        modifier = modifier.fillMaxWidth(),
-        verticalArrangement = Arrangement.spacedBy(5.dp),
-    ) {
-        for (row in 0 until GRID_ROWS) {
-            Row(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .weight(1f),
-                horizontalArrangement = Arrangement.spacedBy(5.dp),
-            ) {
-                for (col in 0 until GRID_COLS) {
-                    val index = row * GRID_COLS + col
-                    val app = apps.getOrNull(index)
-                    if (app != null) {
-                        SimpleModeGridCell(
-                            modifier = Modifier.weight(1f),
-                            app = app,
-                            selected = index == focusedIndex,
-                            showIcon = showIcons,
-                            hasUnread = app.packageName in packagesWithUnread,
-                            onClick = { onTap(index) },
-                            onLongPress = { onLongPress(index) },
-                        )
-                    } else {
-                        // Empty slot — tap to pick an app for this position
-                        Box(
-                            modifier = Modifier
-                                .weight(1f)
-                                .fillMaxHeight()
-                                .clip(RoundedCornerShape(10.dp))
-                                .background(Color(0xFF181818))
-                                .pointerInput(Unit) {
-                                    detectTapGestures(onTap = { onLongPress(index) })
-                                },
-                            contentAlignment = Alignment.Center,
-                        ) {
-                            Text(text = "+", fontSize = 20.sp, color = Color(0xFF484848))
-                        }
-                    }
-                }
-            }
-        }
-    }
-}
-
-@Composable
-private fun SimpleModeGridCell(
-    modifier: Modifier = Modifier,
-    app: AppEntry,
-    selected: Boolean,
-    showIcon: Boolean,
-    hasUnread: Boolean,
-    onClick: () -> Unit,
-    onLongPress: () -> Unit,
-) {
-    Column(
-        modifier = modifier
-            .fillMaxHeight()
-            .clip(RoundedCornerShape(10.dp))
-            .background(if (selected) FOCUS_BG else Color(0xFF111111))
-            .pointerInput(Unit) {
-                detectTapGestures(onTap = { onClick() }, onLongPress = { onLongPress() })
-            }
-            .padding(4.dp),
-        horizontalAlignment = Alignment.CenterHorizontally,
-        verticalArrangement = Arrangement.Center,
-    ) {
-        if (showIcon) {
-            val bmp = remember(app.packageName) {
-                app.icon?.toBitmap(128, 128)
-            }
-            if (bmp != null) {
-                com.zeno.classiclauncher.nlauncher.badges.AppIconWithBadge(
-                    hasUnread = hasUnread,
-                    badgeDiameter = 12.dp,
-                    glyphSp = 7f,
-                ) {
-                    androidx.compose.foundation.Image(
-                        painter = BitmapPainter(bmp.asImageBitmap()),
-                        contentDescription = null,
-                        modifier = Modifier.size(40.dp),
-                    )
-                }
-                Spacer(Modifier.height(3.dp))
-            }
-        }
-        Text(
-            text = app.label,
-            fontSize = 10.sp,
-            fontWeight = FontWeight.Medium,
-            color = if (selected) FOCUS_TEXT else NORMAL_TEXT,
-            maxLines = 1,
-            overflow = TextOverflow.Ellipsis,
-        )
-    }
-}
 
 // ─── Weather row ──────────────────────────────────────────────────────────────
 
@@ -1034,14 +940,9 @@ private fun readBatteryCharging(context: android.content.Context): Boolean {
 
 @Composable
 private fun BatteryPill(pct: Int, charging: Boolean, greyscale: Boolean = false) {
-    val fillColor = when {
-        greyscale -> Color(0xFF888888)
-        pct >= 50 -> Color(0xFF4DB89A)  // muted teal
-        pct >= 20 -> Color(0xFFD4933A)  // muted amber
-        else      -> Color(0xFFC45050)  // muted red
-    }
-    val outlineColor = Color(0xFF9EA8B3)
-    val textColor = Color(0xFFE8EDF2)
+    val fillColor   = if (greyscale) Color(0xFF888888) else Color(0xFFE8EDF2)
+    val outlineColor = if (greyscale) Color(0xFF888888) else Color(0xFF9EA8B3)
+    val textColor   = if (greyscale) Color(0xFF888888) else Color(0xFFE8EDF2)
 
     Row(
         modifier = Modifier.semantics(mergeDescendants = true) {
@@ -1050,15 +951,14 @@ private fun BatteryPill(pct: Int, charging: Boolean, greyscale: Boolean = false)
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.spacedBy(4.dp),
     ) {
-        Canvas(modifier = Modifier.width(24.dp).height(12.dp)) {
-            val nubW   = 3.dp.toPx()
-            val nubH   = size.height * 0.45f
-            val bodyW  = size.width - nubW
-            val bodyH  = size.height
-            val sw     = 1.5.dp.toPx()
-            val r      = CornerRadius(2.dp.toPx())
+        Canvas(modifier = Modifier.width(32.dp).height(18.dp)) {
+            val nubW  = 4.dp.toPx()
+            val nubH  = size.height * 0.45f
+            val bodyW = size.width - nubW
+            val bodyH = size.height
+            val sw    = 2.dp.toPx()
+            val r     = CornerRadius(3.dp.toPx())
 
-            // Body outline
             drawRoundRect(
                 color = outlineColor,
                 size = Size(bodyW, bodyH),
@@ -1066,7 +966,6 @@ private fun BatteryPill(pct: Int, charging: Boolean, greyscale: Boolean = false)
                 style = Stroke(width = sw),
             )
 
-            // Fill proportional to charge level
             val maxFillW = bodyW - sw * 2
             val fillW = (maxFillW * (pct / 100f)).coerceAtLeast(0f)
             if (fillW > 0f) {
@@ -1074,25 +973,24 @@ private fun BatteryPill(pct: Int, charging: Boolean, greyscale: Boolean = false)
                     color = fillColor,
                     topLeft = Offset(sw, sw),
                     size = Size(fillW, bodyH - sw * 2),
-                    cornerRadius = CornerRadius(1.5.dp.toPx()),
+                    cornerRadius = CornerRadius(2.dp.toPx()),
                 )
             }
 
-            // Positive terminal nub on the right
             drawRoundRect(
                 color = outlineColor,
                 topLeft = Offset(bodyW, (bodyH - nubH) / 2f),
                 size = Size(nubW, nubH),
-                cornerRadius = CornerRadius(1.dp.toPx()),
+                cornerRadius = CornerRadius(1.5.dp.toPx()),
             )
         }
 
         Text(
             text = if (charging) "$pct⚡" else "$pct%",
-            fontSize = 11.sp,
+            fontSize = 12.sp,
             fontWeight = FontWeight.SemiBold,
             color = textColor,
-            lineHeight = 13.sp,
+            lineHeight = 14.sp,
         )
     }
 }

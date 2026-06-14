@@ -31,7 +31,6 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.zeno.classiclauncher.nlauncher.R
-import com.zeno.classiclauncher.nlauncher.prefs.SimpleModeLayout
 import com.zeno.classiclauncher.nlauncher.ui.LauncherViewModel
 
 private val SETTINGS_BG = Color(0xFF0E131B)
@@ -95,21 +94,6 @@ internal fun SimpleModeSettingsOverlay(
 
         // Sub-options: only shown when Minimal Mode is on
         if (prefs.simpleModeEnabled) {
-            Spacer(Modifier.height(12.dp))
-
-            // Layout
-            SettingsCard {
-                SettingsLabelRow(title = stringResource(R.string.simple_mode_layout_title))
-                SegmentedChoice(
-                    options = listOf(
-                        stringResource(R.string.simple_mode_layout_list) to SimpleModeLayout.LIST,
-                        stringResource(R.string.simple_mode_layout_grid) to SimpleModeLayout.GRID,
-                    ),
-                    selected = prefs.simpleModeLayout,
-                    onSelect = { vm.setSimpleModeLayout(it) },
-                )
-            }
-
             Spacer(Modifier.height(12.dp))
 
             // Weather + notification summary + greyscale toggles

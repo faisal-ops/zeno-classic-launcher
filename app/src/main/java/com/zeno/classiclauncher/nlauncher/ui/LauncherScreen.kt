@@ -148,7 +148,12 @@ import androidx.compose.material.icons.rounded.AddAlarm
 import androidx.compose.material.icons.rounded.ArrowDropDown
 import androidx.compose.material.icons.rounded.EventBusy
 import androidx.compose.material.icons.rounded.AspectRatio
+import androidx.compose.material.icons.rounded.CellTower
+import androidx.compose.material.icons.rounded.Lightbulb
 import androidx.compose.material.icons.rounded.Notifications
+import androidx.compose.material.icons.rounded.NotificationsOff
+import androidx.compose.material.icons.rounded.Vibration
+import androidx.compose.material.icons.rounded.WifiTethering
 import androidx.compose.material.icons.rounded.NightlightRound
 import androidx.compose.material.icons.rounded.Folder
 import androidx.compose.material.icons.rounded.Lock
@@ -3948,9 +3953,15 @@ internal fun QuickSettingsOverlay(
     var showQrScannerPicker by remember { mutableStateOf(false) }
     var preciseWifiPromptAttempted by remember { mutableStateOf(false) }
     var batteryPct by remember { mutableStateOf(actions.batteryPercent()) }
+    var soundProfile by remember { mutableStateOf(actions.currentSoundProfile()) }
+    var soundProfileSetAt by remember { mutableLongStateOf(0L) }
     val hasBitwarden = remember(actions) { actions.isBitwardenInstalled() }
     val hasWellbeing = remember(actions) { actions.isDigitalWellbeingInstalled() }
     val hasScreenRecordSettings = remember(actions) { actions.canOpenScreenRecordSettings() }
+    val quickSettingsSystemSettingsTitle = stringResource(R.string.quick_settings_system_settings)
+    val quickSettingsWifiTitle = stringResource(R.string.quick_settings_wifi)
+    val quickSettingsNotificationsTileTitle = stringResource(R.string.quick_settings_notifications_tile)
+    val quickSettingsMobileDataTitle = stringResource(R.string.quick_settings_mobile_data)
     fun refreshQuickSettingsState(promptForPreciseWifi: Boolean) {
         dateText = dateFormatter.format(Date())
         wifiSubtitle = actions.currentWifiSsidLabel()
@@ -3979,6 +3990,9 @@ internal fun QuickSettingsOverlay(
         extraDimOn = actions.isExtraDimEnabled()
         torchOn = actions.isTorchEnabled()
         batteryPct = actions.batteryPercent()
+        if (android.os.SystemClock.elapsedRealtime() - soundProfileSetAt > 2_000L) {
+            soundProfile = actions.currentSoundProfile()
+        }
         actions.currentKeyboardMode()?.let {
             keyboardMode = it
             actions.persistKeyboardModeLabel(it)
@@ -4017,7 +4031,169 @@ internal fun QuickSettingsOverlay(
             actions.launchApp(pkg) || actions.openQrScanner()
         }
     }
+    val soundIcon = when (soundProfile) {
+        SoundProfileMode.RING    -> Icons.Rounded.Notifications
+        SoundProfileMode.VIBRATE -> Icons.Rounded.Vibration
+        SoundProfileMode.DND     -> Icons.Rounded.NotificationsOff
+    }
+    val soundSubtitle = when (soundProfile) {
+        SoundProfileMode.RING    -> "Ring"
+        SoundProfileMode.VIBRATE -> "Vibrate"
+        SoundProfileMode.DND     -> "Do Not Disturb"
+    }
     val defaultQuickTiles = buildList {
+        // ── First 8: mirror Minimal Mode tiles ───────────────────────────────
+        add(
+            QuickTile(
+                id = "system_settings",
+                icon = Icons.Rounded.Settings,
+                title = quickSettingsSystemSettingsTitle,
+                subtitle = "",
+                showChevron = true,
+                actionLabel = "Open",
+                onTap = { actions.openSystemSettings(); true },
+            ),
+        )
+        add(
+            QuickTile(
+                id = "mobile_data",
+                icon = Icons.Rounded.CellTower,
+                title = quickSettingsMobileDataTitle,
+                subtitle = carrierSubtitle,
+                highlighted = mobileDataEnabled != false,
+                closeOnSuccess = false,
+                showChevron = true,
+                actionLabel = "Settings",
+                onLongPress = actions::openMobileNetworkSettings,
+                onTap = { actions.openMobileNetworkSettings(); true },
+            ),
+        )
+        add(
+            QuickTile(
+                id = "wifi",
+                icon = Icons.Rounded.Wifi,
+                title = quickSettingsWifiTitle,
+                subtitle = if (wifiEnabled != false) wifiSubtitle else quickSettingsOff,
+                highlighted = wifiEnabled != false && wifiSubtitle != "Disconnected",
+                closeOnSuccess = false,
+                showChevron = true,
+                actionLabel = "Panel",
+                onLongPress = actions::openInternetSettings,
+                onTap = actions::openInternetPanel,
+            ),
+        )
+        add(
+            QuickTile(
+                id = "torch",
+                icon = Icons.Rounded.Lightbulb,
+                title = quickSettingsTorchTitle,
+                subtitle = if (torchOn) quickSettingsOn else quickSettingsOff,
+                highlighted = torchOn,
+                closeOnSuccess = false,
+                actionLabel = "Toggle",
+                onLongPress = actions::openDisplaySettings,
+                onTap = {
+                    if (ContextCompat.checkSelfPermission(context, Manifest.permission.CAMERA) != PackageManager.PERMISSION_GRANTED) {
+                        cameraPermissionLauncher.launch(Manifest.permission.CAMERA)
+                        true
+                    } else {
+                        when (val r = actions.toggleTorch()) {
+                            is ToggleResult.Changed -> { torchOn = r.enabled; true }
+                            ToggleResult.Unsupported -> {
+                                if (actions.hasTorchHardware()) Toast.makeText(context, quickSettingsTorchToggleFailed, Toast.LENGTH_SHORT).show()
+                                else actions.openDisplaySettings()
+                                true
+                            }
+                            else -> true
+                        }
+                    }
+                },
+            ),
+        )
+        add(
+            QuickTile(
+                id = "notifications",
+                icon = soundIcon,
+                title = quickSettingsNotificationsTileTitle,
+                subtitle = soundSubtitle,
+                highlighted = soundProfile == SoundProfileMode.RING,
+                closeOnSuccess = false,
+                actionLabel = "Toggle",
+                onTap = {
+                    val next = when (soundProfile) {
+                        SoundProfileMode.RING    -> SoundProfileMode.VIBRATE
+                        SoundProfileMode.VIBRATE -> SoundProfileMode.DND
+                        SoundProfileMode.DND     -> SoundProfileMode.RING
+                    }
+                    val ok = actions.applySoundProfile(next)
+                    if (ok) {
+                        soundProfile = next
+                        soundProfileSetAt = android.os.SystemClock.elapsedRealtime()
+                    } else if (next == SoundProfileMode.DND && !actions.hasDoNotDisturbAccess()) {
+                        actions.openDoNotDisturbSettings()
+                    }
+                    true
+                },
+            ),
+        )
+        add(
+            QuickTile(
+                id = "bluetooth",
+                icon = Icons.Rounded.Bluetooth,
+                title = quickSettingsBluetoothTitle,
+                subtitle = btSubtitle,
+                highlighted = bluetoothEnabled == true,
+                closeOnSuccess = false,
+                actionLabel = "Toggle",
+                onLongPress = actions::openBluetoothSettings,
+                onTap = {
+                    when (val r = actions.toggleBluetooth()) {
+                        is ToggleResult.Changed -> {
+                            bluetoothEnabled = r.enabled
+                            Handler(Looper.getMainLooper()).postDelayed({ bluetoothEnabled = actions.isBluetoothEnabled() }, 500L)
+                            true
+                        }
+                        ToggleResult.PermissionRequired -> {
+                            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) btPermissionLauncher.launch(Manifest.permission.BLUETOOTH_CONNECT)
+                            true
+                        }
+                        ToggleResult.Unsupported -> {
+                            Toast.makeText(context, quickSettingsBluetoothBlocked, Toast.LENGTH_LONG).show()
+                            true
+                        }
+                    }
+                },
+            ),
+        )
+        add(
+            QuickTile(
+                id = "qr_scanner",
+                icon = Icons.Outlined.Search,
+                title = quickSettingsQrTileTitle,
+                subtitle = "",
+                showChevron = true,
+                closeOnSuccess = false,
+                actionLabel = "Scan",
+                onLongPress = { showQrScannerPicker = true; true },
+                onTap = {
+                    if (!launchConfiguredQrScanner()) showQrScannerPicker = true
+                    true
+                },
+            ),
+        )
+        add(
+            QuickTile(
+                id = "hotspot",
+                icon = Icons.Rounded.WifiTethering,
+                title = quickSettingsHotspotTitle,
+                subtitle = if (hotspotOn) quickSettingsOn else quickSettingsOff,
+                highlighted = hotspotOn,
+                actionLabel = "Settings",
+                onLongPress = actions::openHotspotSettings,
+                onTap = actions::openHotspotSettings,
+            ),
+        )
+        // ── Remaining tiles ───────────────────────────────────────────────────
         add(
             QuickTile(
                 id = "keyboard_mode",
@@ -4077,59 +4253,6 @@ internal fun QuickSettingsOverlay(
                 actionLabel = "Panel",
                 onLongPress = actions::openInternetSettings,
                 onTap = actions::openInternetPanel,
-            ),
-        )
-        add(
-            QuickTile(
-                id = "bluetooth",
-                icon = Icons.Rounded.Bluetooth,
-                title = quickSettingsBluetoothTitle,
-                subtitle = btSubtitle,
-                highlighted = bluetoothEnabled == true,
-                closeOnSuccess = false,
-                actionLabel = "Toggle",
-                onLongPress = actions::openBluetoothSettings,
-                onTap = {
-                    when (val r = actions.toggleBluetooth()) {
-                        is ToggleResult.Changed -> {
-                            bluetoothEnabled = r.enabled
-                            Handler(Looper.getMainLooper()).postDelayed({
-                                bluetoothEnabled = actions.isBluetoothEnabled()
-                            }, 500L)
-                            true
-                        }
-                        ToggleResult.PermissionRequired -> {
-                            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
-                                btPermissionLauncher.launch(Manifest.permission.BLUETOOTH_CONNECT)
-                            }
-                            true
-                        }
-                        ToggleResult.Unsupported -> {
-                            Toast.makeText(
-                                context,
-                                quickSettingsBluetoothBlocked,
-                                Toast.LENGTH_LONG,
-                            ).show()
-                            true
-                        }
-                    }
-                },
-            ),
-        )
-        add(
-            QuickTile(
-                id = "qr_scanner",
-                icon = Icons.Outlined.Search,
-                title = quickSettingsQrTileTitle,
-                subtitle = "",
-                showChevron = true,
-                closeOnSuccess = false,
-                actionLabel = "App",
-                onLongPress = {
-                    showQrScannerPicker = true
-                    true
-                },
-                onTap = { launchConfiguredQrScanner() },
             ),
         )
         add(
@@ -4194,40 +4317,6 @@ internal fun QuickSettingsOverlay(
         )
         add(
             QuickTile(
-                id = "torch",
-                icon = Icons.Rounded.WbSunny,
-                title = quickSettingsTorchTitle,
-                subtitle = if (torchOn) quickSettingsOn else quickSettingsOff,
-                highlighted = torchOn,
-                closeOnSuccess = false,
-                actionLabel = "Toggle",
-                onLongPress = actions::openDisplaySettings,
-                onTap = {
-                    if (ContextCompat.checkSelfPermission(context, Manifest.permission.CAMERA) != PackageManager.PERMISSION_GRANTED) {
-                        cameraPermissionLauncher.launch(Manifest.permission.CAMERA)
-                        true
-                    } else {
-                        when (val r = actions.toggleTorch()) {
-                            is ToggleResult.Changed -> {
-                                torchOn = r.enabled
-                                true
-                            }
-                            ToggleResult.Unsupported -> {
-                                if (actions.hasTorchHardware()) {
-                                    Toast.makeText(context, quickSettingsTorchToggleFailed, Toast.LENGTH_SHORT).show()
-                                } else {
-                                    actions.openDisplaySettings()
-                                }
-                                true
-                            }
-                            else -> true
-                        }
-                    }
-                },
-            ),
-        )
-        add(
-            QuickTile(
                 id = "dnd",
                 icon = Icons.Rounded.VisibilityOff,
                 title = quickSettingsDndTitle,
@@ -4248,18 +4337,6 @@ internal fun QuickSettingsOverlay(
                 actionLabel = "Details",
                 onLongPress = actions::openStorageSettings,
                 onTap = actions::openStorageSettings,
-            ),
-        )
-        add(
-            QuickTile(
-                id = "hotspot",
-                icon = Icons.Rounded.SwapVert,
-                title = quickSettingsHotspotTitle,
-                subtitle = if (hotspotOn) quickSettingsOn else quickSettingsOff,
-                highlighted = hotspotOn,
-                actionLabel = "Settings",
-                onLongPress = actions::openHotspotSettings,
-                onTap = actions::openHotspotSettings,
             ),
         )
         add(
