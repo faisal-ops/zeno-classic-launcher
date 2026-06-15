@@ -73,9 +73,14 @@ import com.zeno.classiclauncher.nlauncher.apps.AppEntry
 import com.zeno.classiclauncher.nlauncher.apps.LauncherActions
 import com.zeno.classiclauncher.nlauncher.apps.SoundProfileMode
 import com.zeno.classiclauncher.nlauncher.apps.ToggleResult
+import androidx.compose.runtime.rememberCoroutineScope
 import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 
 @Composable
 internal fun MinimalModeQsOverlay(
@@ -88,6 +93,7 @@ internal fun MinimalModeQsOverlay(
 ) {
     val context = LocalContext.current
     val density = LocalDensity.current
+    val scope = rememberCoroutineScope()
     val actions = remember(context) { LauncherActions(context) }
     val lifecycleOwner = LocalLifecycleOwner.current
     val dateFormatter = remember { SimpleDateFormat("EEEE, MMMM d", Locale.getDefault()) }
@@ -181,13 +187,27 @@ internal fun MinimalModeQsOverlay(
             }
         },
         SmQsTile("bluetooth",    Icons.Rounded.Bluetooth,      strBluetooth,     if (bluetoothOn) strOn else strOff, active = bluetoothOn) {
-            runCatching {
-                context.startActivity(
-                    android.content.Intent(android.provider.Settings.ACTION_BLUETOOTH_SETTINGS)
-                        .addFlags(android.content.Intent.FLAG_ACTIVITY_NEW_TASK)
-                )
+            val enabling = !bluetoothOn
+            bluetoothOn = enabling
+            scope.launch {
+                runCatching {
+                    val arg = if (enabling) "enable" else "disable"
+                    val exit = withContext(Dispatchers.IO) {
+                        ProcessBuilder("cmd", "bluetooth_manager", arg).start().waitFor()
+                    }
+                    if (exit != 0) {
+                        bluetoothOn = !enabling
+                        context.startActivity(
+                            android.content.Intent(android.provider.Settings.ACTION_BLUETOOTH_SETTINGS)
+                                .addFlags(android.content.Intent.FLAG_ACTIVITY_NEW_TASK)
+                        )
+                    }
+                }.onFailure {
+                    bluetoothOn = !enabling
+                }
+                delay(1200L)
+                bluetoothOn = runCatching { btAdapter?.isEnabled == true }.getOrDefault(enabling)
             }
-            refresh()
         },
         SmQsTile("qr",           Icons.Outlined.QrCodeScanner, strQrScanner,     "",            active = false) {
             val pkg = qrScannerPackage.trim()

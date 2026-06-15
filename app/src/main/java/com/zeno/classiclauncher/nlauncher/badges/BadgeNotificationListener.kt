@@ -9,9 +9,28 @@ import android.service.notification.StatusBarNotification
  */
 class BadgeNotificationListener : NotificationListenerService() {
 
+    companion object {
+        private var instance: BadgeNotificationListener? = null
+
+        fun cancelForPackage(pkg: String) {
+            val svc = instance ?: return
+            runCatching {
+                svc.activeNotifications
+                    ?.filter { it.packageName == pkg }
+                    ?.forEach { svc.cancelNotification(it.key) }
+            }
+        }
+    }
+
     override fun onListenerConnected() {
         super.onListenerConnected()
+        instance = this
         NotificationRepository.replaceAllActive(activeNotifications)
+    }
+
+    override fun onListenerDisconnected() {
+        super.onListenerDisconnected()
+        instance = null
     }
 
     override fun onNotificationPosted(sbn: StatusBarNotification?) {

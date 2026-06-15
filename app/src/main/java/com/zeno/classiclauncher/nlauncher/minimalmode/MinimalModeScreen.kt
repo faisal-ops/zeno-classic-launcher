@@ -7,6 +7,7 @@ import android.app.Notification
 import android.app.RemoteInput
 import android.os.BatteryManager
 import android.os.Bundle
+import com.zeno.classiclauncher.nlauncher.badges.BadgeNotificationListener
 import com.zeno.classiclauncher.nlauncher.badges.NotificationRepository
 import android.text.format.DateFormat
 import androidx.activity.compose.BackHandler
@@ -385,7 +386,12 @@ internal fun MinimalModeScreen(vm: LauncherViewModel) {
                 onWifiTap = { actions.openInternetPanel(); wifiOn = actions.isWifiEnabled() == true },
                 onUnreadAppTap = { pkg ->
                     val hasReply = buildQuickReplyItems(pkg).any { it.action != null }
-                    if (hasReply) quickReplyPackage = pkg else vm.launchApp(pkg)
+                    if (hasReply) {
+                        quickReplyPackage = pkg
+                    } else {
+                        BadgeNotificationListener.cancelForPackage(pkg)
+                        vm.launchApp(pkg)
+                    }
                 },
                 onTopBarPositioned = { topBarBottomPx = it },
             )
@@ -513,7 +519,10 @@ internal fun MinimalModeScreen(vm: LauncherViewModel) {
                     app = qrApp,
                     context = context,
                     packagesWithUnread = packagesWithUnread,
-                    onDismiss = { quickReplyPackage = null },
+                    onDismiss = {
+                        BadgeNotificationListener.cancelForPackage(pkg)
+                        quickReplyPackage = null
+                    },
                 )
             }
         }
