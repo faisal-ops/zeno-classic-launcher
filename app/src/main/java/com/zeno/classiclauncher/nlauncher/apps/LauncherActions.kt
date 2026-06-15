@@ -199,9 +199,13 @@ class LauncherActions(private val context: Context) {
         startActivityNewTask(Intent(Settings.ACTION_WIFI_SETTINGS)) ||
             openSystemSettings()
 
-    fun openBluetoothSettings(): Boolean =
-        startActivityNewTask(Intent(Settings.ACTION_BLUETOOTH_SETTINGS)) ||
+    fun openBluetoothSettings(): Boolean {
+        // "android.settings.panel.action.BLUETOOTH" shows the overlay panel (Use Bluetooth + Pair
+        // new device). Constant removed from compile SDK 35+ but intent still works at runtime.
+        if (startActivityNewTask(Intent("android.settings.panel.action.BLUETOOTH"))) return true
+        return startActivityNewTask(Intent(Settings.ACTION_BLUETOOTH_SETTINGS)) ||
             openSystemSettings()
+    }
 
     fun openMobileNetworkSettings(): Boolean =
         startActivityNewTask(Intent(Settings.ACTION_NETWORK_OPERATOR_SETTINGS)) ||
@@ -812,8 +816,21 @@ class LauncherActions(private val context: Context) {
         }
     }
 
-    fun isHotspotEnabled(): Boolean =
-        readGlobalInt("tethering_on") > 0 || readGlobalInt("hotspot_on") > 0
+    fun isHotspotEnabled(): Boolean {
+        // Primary: NetworkInterface — pure Java, no permissions, no API-level restrictions.
+        // Dedicated AP interfaces (ap0, softap0, etc.) are only UP when hotspot is active.
+        // wlan* interfaces are skipped here — they are also UP in STA (client) mode.
+        val ifaces = runCatching { java.net.NetworkInterface.getNetworkInterfaces()?.toList() }.getOrNull()
+        if (ifaces?.any { iface ->
+            val name = iface.name ?: ""
+            iface.isUp && (name.startsWith("ap") || name.startsWith("softap"))
+        } == true) return true
+        // Fallback: Settings.Global wifi_ap_state (12 = ENABLING, 13 = ENABLED)
+        val apState = readGlobalInt("wifi_ap_state")
+        if (apState == 12 || apState == 13) return true
+        // Legacy keys used by some older ROMs
+        return readGlobalInt("tethering_on") > 0 || readGlobalInt("hotspot_on") > 0
+    }
 
     fun isNfcEnabled(): Boolean {
         val adapter = context.getSystemService<android.nfc.NfcManager>()?.defaultAdapter

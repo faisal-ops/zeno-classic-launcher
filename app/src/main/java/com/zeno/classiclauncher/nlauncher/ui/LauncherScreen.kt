@@ -319,6 +319,7 @@ import com.zeno.classiclauncher.nlauncher.prefs.LauncherPrefs
 import com.zeno.classiclauncher.nlauncher.prefs.AppIconShape
 import com.zeno.classiclauncher.nlauncher.prefs.SecondShortcutTarget
 import com.zeno.classiclauncher.nlauncher.R
+import com.zeno.classiclauncher.nlauncher.root.RootManager
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
@@ -3975,6 +3976,7 @@ internal fun QuickSettingsOverlay(
     val dateFormatter = remember { SimpleDateFormat("EEEE, MMMM d", Locale.getDefault()) }
     var dateText by remember { mutableStateOf(dateFormatter.format(Date())) }
     var bluetoothEnabled by remember { mutableStateOf(actions.isBluetoothEnabled()) }
+    var showBluetoothPanel by remember { mutableStateOf(false) }
     val btPermissionLauncher = rememberLauncherForActivityResult(
         contract = ActivityResultContracts.RequestPermission(),
     ) { granted ->
@@ -4083,6 +4085,19 @@ internal fun QuickSettingsOverlay(
             wifiPermissionLauncher.launch(Manifest.permission.ACCESS_COARSE_LOCATION)
         }
         refreshQuickSettingsState(promptForPreciseWifi = true)
+        // On rooted devices, read the true keyboard mode from the proc file once on startup
+        if (rootedQsEnabled) {
+            val raw = RootManager.readLine("cat /proc/q20_switch_key_mouse")
+            val mode = when (raw) {
+                "1" -> "keyboard"
+                "0" -> "mouse"
+                else -> null
+            }
+            if (mode != null) {
+                keyboardMode = mode
+                actions.persistKeyboardModeLabel(mode)
+            }
+        }
     }
     DisposableEffect(lifecycleOwner) {
         val observer = LifecycleEventObserver { _, event ->
@@ -4121,6 +4136,7 @@ internal fun QuickSettingsOverlay(
         SoundProfileMode.VIBRATE -> soundProfileVibrateLabel
         SoundProfileMode.DND     -> soundProfileDndLabel
     }
+    val qsScope = rememberCoroutineScope()
     val defaultQuickTiles = buildList {
         // ── First 8: mirror Minimal Mode tiles ───────────────────────────────
         add(
@@ -4174,15 +4190,30 @@ internal fun QuickSettingsOverlay(
                 onLongPress = actions::openWifiSettings,
                 onTap = {
                     if (rootedQsEnabled) {
-                        when (val r = actions.toggleWifi()) {
-                            is ToggleResult.Changed -> {
-                                wifiEnabled = r.enabled
-                                Handler(Looper.getMainLooper()).postDelayed({
-                                    wifiEnabled = actions.isWifiEnabled()
-                                    wifiSubtitle = actions.currentWifiSsidLabel()
-                                }, 1000L)
+                        val next = wifiEnabled == false
+                        wifiEnabled = next
+                        if (next) wifiSubtitle = "Connecting…"
+                        qsScope.launch {
+                            val ok = RootManager.execute("svc wifi ${if (next) "enable" else "disable"}")
+                            if (!ok) { wifiEnabled = !next; wifiSubtitle = actions.currentWifiSsidLabel(); return@launch }
+                            delay(1500L)
+                            wifiEnabled = actions.isWifiEnabled()
+                            if (next) {
+                                // Keep "Connecting…" until SSID appears; only show "Disconnected" after all polls
+                                var connected = false
+                                repeat(4) {
+                                    val label = actions.currentWifiSsidLabel()
+                                    if (label != "Disconnected") {
+                                        wifiSubtitle = label
+                                        connected = true
+                                        return@repeat
+                                    }
+                                    delay(2000L)
+                                }
+                                if (!connected) wifiSubtitle = actions.currentWifiSsidLabel()
+                            } else {
+                                wifiSubtitle = actions.currentWifiSsidLabel()
                             }
-                            else -> actions.openInternetPanel()
                         }
                     } else {
                         actions.openInternetPanel()
@@ -4247,23 +4278,30 @@ internal fun QuickSettingsOverlay(
                 highlighted = bluetoothEnabled == true,
                 closeOnSuccess = false,
                 actionLabel = "Toggle",
-                onLongPress = actions::openBluetoothSettings,
+                onLongPress = { showBluetoothPanel = true; true },
                 onTap = {
-                    when (val r = actions.toggleBluetooth()) {
-                        is ToggleResult.Changed -> {
-                            bluetoothEnabled = r.enabled
-                            Handler(Looper.getMainLooper()).postDelayed({ bluetoothEnabled = actions.isBluetoothEnabled() }, 500L)
-                            true
+                    if (rootedQsEnabled) {
+                        val next = bluetoothEnabled != true
+                        bluetoothEnabled = next
+                        qsScope.launch {
+                            val ok = RootManager.execute("svc bluetooth ${if (next) "enable" else "disable"}")
+                            if (!ok) { bluetoothEnabled = !next; return@launch }
+                            delay(1500L)
+                            bluetoothEnabled = actions.isBluetoothEnabled()
                         }
-                        ToggleResult.PermissionRequired -> {
-                            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) btPermissionLauncher.launch(Manifest.permission.BLUETOOTH_CONNECT)
-                            true
-                        }
-                        ToggleResult.Unsupported -> {
-                            actions.openBluetoothSettings()
-                            true
+                    } else {
+                        when (val r = actions.toggleBluetooth()) {
+                            is ToggleResult.Changed -> {
+                                bluetoothEnabled = r.enabled
+                                Handler(Looper.getMainLooper()).postDelayed({ bluetoothEnabled = actions.isBluetoothEnabled() }, 500L)
+                            }
+                            ToggleResult.PermissionRequired -> {
+                                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) btPermissionLauncher.launch(Manifest.permission.BLUETOOTH_CONNECT)
+                            }
+                            ToggleResult.Unsupported -> actions.openBluetoothSettings()
                         }
                     }
+                    true
                 },
             ),
         )
@@ -4293,16 +4331,39 @@ internal fun QuickSettingsOverlay(
                 actionLabel = "Toggle",
                 onLongPress = actions::openHotspotSettings,
                 onTap = {
-                    if (rootedQsEnabled && Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
-                        // TETHER_PRIVILEGED is system-only; open the panel overlay with toggle.
-                        val opened = runCatching {
-                            context.startActivity(
-                                Intent("android.settings.WIFI_SHARING")
-                                    .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
-                            )
-                            true
-                        }.getOrDefault(false)
-                        if (!opened) actions.openHotspotSettings()
+                    if (rootedQsEnabled) {
+                        val next = !hotspotOn
+                        hotspotOn = next
+                        qsScope.launch {
+                            if (next) {
+                                val cfg = RootManager.readHotspotConfig()
+                                val startCmd = if (cfg != null) {
+                                    val (ssid, sec, pass) = cfg
+                                    if (sec == "open")
+                                        "cmd wifi start-softap \"$ssid\" open \"\" -b any"
+                                    else
+                                        "cmd wifi start-softap \"$ssid\" $sec \"$pass\" -b any"
+                                } else {
+                                    "cmd wifi start-softap Hotspot wpa2 hotspot123 -b any"
+                                }
+                                val ok = RootManager.execute(startCmd)
+                                if (!ok) { hotspotOn = false; return@launch }
+                                var enabled = false
+                                repeat(5) {
+                                    delay(2000L)
+                                    if (actions.isHotspotEnabled()) { enabled = true; return@repeat }
+                                    val link = RootManager.readLine("ip link show | grep -E 'ap[0-9]|softap' | grep 'state UP'")
+                                    if (!link.isNullOrBlank()) { enabled = true; return@repeat }
+                                }
+                                hotspotOn = enabled
+                                if (!enabled) actions.openHotspotSettings()
+                            } else {
+                                val ok = RootManager.execute("cmd wifi stop-softap")
+                                if (!ok) { hotspotOn = true; return@launch }
+                                delay(1500L)
+                                hotspotOn = actions.isHotspotEnabled()
+                            }
+                        }
                     } else {
                         actions.openHotspotSettings()
                     }
@@ -4315,8 +4376,8 @@ internal fun QuickSettingsOverlay(
             QuickTile(
                 id = "keyboard_mode",
                 icon = Icons.Rounded.Tune,
-                title = quickSettingsKeyboardMouse,
-                subtitle = keyboardMode.replaceFirstChar { it.uppercase() },
+                title = keyboardMode.replaceFirstChar { it.uppercase() },
+                subtitle = "",
                 highlighted = true,
                 closeOnSuccess = false,
                 showChevron = true,
@@ -4325,33 +4386,47 @@ internal fun QuickSettingsOverlay(
                 onTap = {
                     val currentMode = actions.currentKeyboardMode() ?: keyboardMode
                     val nextMode = if (currentMode == "keyboard") "mouse" else "keyboard"
-                    logQuickSettings { "keyboardTileTap current=$currentMode label=$keyboardMode next=$nextMode" }
-                    val ok = actions.setKeyboardMode(nextMode)
-                    if (ok) {
-                        keyboardMode = actions.currentKeyboardMode() ?: nextMode
-                        actions.persistKeyboardModeLabel(keyboardMode)
-                        logQuickSettings { "keyboardTileApplied mode=$keyboardMode" }
-                        Handler(Looper.getMainLooper()).postDelayed({
-                            actions.currentKeyboardMode()?.let {
-                                keyboardMode = it
-                                logQuickSettings { "keyboardTileRefreshed mode=$it" }
+                    if (rootedQsEnabled) {
+                        keyboardMode = nextMode
+                        actions.persistKeyboardModeLabel(nextMode)
+                        qsScope.launch {
+                            // 1 = keyboard, 0 = mouse (confirmed from /proc/q20_switch_key_mouse)
+                            val value = if (nextMode == "keyboard") "1" else "0"
+                            val ok = RootManager.execute("echo $value > /proc/q20_switch_key_mouse")
+                            if (!ok) {
+                                keyboardMode = currentMode
+                                actions.persistKeyboardModeLabel(currentMode)
                             }
-                        }, 600L)
+                        }
                     } else {
-                        logQuickSettings { "keyboardTileFailed next=$nextMode canWrite=${actions.canWriteSystemSettings()}" }
-                        if (!actions.canWriteSystemSettings()) {
-                            actions.requestWriteSettingsPermission()
-                            Toast.makeText(
-                                context,
-                                quickSettingsKeyboardModePermissionPrompt,
-                                Toast.LENGTH_LONG,
-                            ).show()
+                        logQuickSettings { "keyboardTileTap current=$currentMode label=$keyboardMode next=$nextMode" }
+                        val ok = actions.setKeyboardMode(nextMode)
+                        if (ok) {
+                            keyboardMode = actions.currentKeyboardMode() ?: nextMode
+                            actions.persistKeyboardModeLabel(keyboardMode)
+                            logQuickSettings { "keyboardTileApplied mode=$keyboardMode" }
+                            Handler(Looper.getMainLooper()).postDelayed({
+                                actions.currentKeyboardMode()?.let {
+                                    keyboardMode = it
+                                    logQuickSettings { "keyboardTileRefreshed mode=$it" }
+                                }
+                            }, 600L)
                         } else {
-                            Toast.makeText(
-                                context,
-                                quickSettingsKeyboardModeFailed,
-                                Toast.LENGTH_LONG,
-                            ).show()
+                            logQuickSettings { "keyboardTileFailed next=$nextMode canWrite=${actions.canWriteSystemSettings()}" }
+                            if (!actions.canWriteSystemSettings()) {
+                                actions.requestWriteSettingsPermission()
+                                Toast.makeText(
+                                    context,
+                                    quickSettingsKeyboardModePermissionPrompt,
+                                    Toast.LENGTH_LONG,
+                                ).show()
+                            } else {
+                                Toast.makeText(
+                                    context,
+                                    quickSettingsKeyboardModeFailed,
+                                    Toast.LENGTH_LONG,
+                                ).show()
+                            }
                         }
                     }
                     true
@@ -5090,6 +5165,117 @@ internal fun QuickSettingsOverlay(
             )
         }
     }
+
+    if (showBluetoothPanel) {
+        BluetoothPanelDialog(
+            bluetoothEnabled = bluetoothEnabled == true,
+            onToggle = { checked ->
+                bluetoothEnabled = checked
+                if (rootedQsEnabled) {
+                    qsScope.launch {
+                        val ok = RootManager.execute("svc bluetooth ${if (checked) "enable" else "disable"}")
+                        if (!ok) { bluetoothEnabled = !checked; return@launch }
+                        delay(1500L)
+                        bluetoothEnabled = actions.isBluetoothEnabled()
+                    }
+                } else {
+                    when (val r = actions.toggleBluetooth()) {
+                        is ToggleResult.Changed -> {
+                            bluetoothEnabled = r.enabled
+                            Handler(Looper.getMainLooper()).postDelayed(
+                                { bluetoothEnabled = actions.isBluetoothEnabled() }, 500L
+                            )
+                        }
+                        ToggleResult.PermissionRequired -> {
+                            bluetoothEnabled = !checked
+                            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S)
+                                btPermissionLauncher.launch(Manifest.permission.BLUETOOTH_CONNECT)
+                        }
+                        ToggleResult.Unsupported -> bluetoothEnabled = !checked
+                    }
+                }
+            },
+            onPairNewDevice = { actions.openBluetoothSettings() },
+            onDismiss = { showBluetoothPanel = false },
+        )
+    }
+}
+
+@Composable
+private fun BluetoothPanelDialog(
+    bluetoothEnabled: Boolean,
+    onToggle: (Boolean) -> Unit,
+    onPairNewDevice: () -> Unit,
+    onDismiss: () -> Unit,
+) {
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        containerColor = Color(0xFF111820),
+        shape = RoundedCornerShape(28.dp),
+        title = {
+            Column {
+                Text(
+                    "Bluetooth",
+                    color = Color(0xFFEAF2F8),
+                    fontSize = 22.sp,
+                    fontWeight = FontWeight.Medium,
+                )
+                Spacer(Modifier.height(4.dp))
+                Text(
+                    "Tap to connect or disconnect a device",
+                    color = Color(0xFFB7C2CF),
+                    fontSize = 14.sp,
+                )
+            }
+        },
+        text = {
+            Column {
+                HorizontalDivider(color = Color(0xFF2A3441))
+                Spacer(Modifier.height(4.dp))
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    Text("Use Bluetooth", color = Color(0xFFEAF2F8), fontSize = 16.sp)
+                    Switch(
+                        checked = bluetoothEnabled,
+                        onCheckedChange = onToggle,
+                        colors = SwitchDefaults.colors(
+                            checkedThumbColor = Color(0xFF111820),
+                            checkedTrackColor = Color(0xFF9AE2FF),
+                            uncheckedThumbColor = Color(0xFFB7C2CF),
+                            uncheckedTrackColor = Color(0xFF2A3441),
+                        ),
+                    )
+                }
+                Spacer(Modifier.height(4.dp))
+                HorizontalDivider(color = Color(0xFF2A3441))
+                Spacer(Modifier.height(8.dp))
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .clickable { onPairNewDevice() }
+                        .padding(vertical = 8.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    Icon(
+                        Icons.Rounded.Add,
+                        contentDescription = null,
+                        tint = Color(0xFFEAF2F8),
+                        modifier = Modifier.size(20.dp),
+                    )
+                    Spacer(Modifier.width(12.dp))
+                    Text("Pair new device", color = Color(0xFFEAF2F8), fontSize = 16.sp)
+                }
+            }
+        },
+        confirmButton = {
+            TextButton(onClick = onDismiss) {
+                Text("Done", color = Color(0xFFEAF2F8), fontWeight = FontWeight.SemiBold)
+            }
+        },
+    )
 }
 
 @Composable

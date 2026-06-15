@@ -453,4 +453,42 @@ object RootManager {
             process.waitFor() == 0
         }.getOrDefault(false)
     }
+
+    suspend fun readLine(command: String): String? = withContext(Dispatchers.IO) {
+        runCatching {
+            val process = Runtime.getRuntime().exec("su")
+            DataOutputStream(process.outputStream).use { os ->
+                os.writeBytes("$command\n")
+                os.writeBytes("exit\n")
+                os.flush()
+            }
+            val output = process.inputStream.bufferedReader().readLine()
+            process.waitFor()
+            output?.trim()
+        }.getOrNull()
+    }
+
+    // Returns "ssid|securityType|passphrase" from saved WifiConfigStoreSoftAp.xml, or null.
+    suspend fun readHotspotConfig(): Triple<String, String, String>? = withContext(Dispatchers.IO) {
+        val raw = readLine(
+            "F=/data/misc/apexdata/com.android.wifi/WifiConfigStoreSoftAp.xml;" +
+            "S=\$(grep -oE '[^>]+</string>' \$F | head -1 | sed 's/<\\/string>//;s/\"//g;s/&quot;//g');" +
+            "T=\$(grep -oE 'SecurityType\" value=\"[0-9]+' \$F | grep -oE '[0-9]+\$');" +
+            "P=\$(grep -oE 'Passphrase\">[^<]+' \$F | sed 's/Passphrase\">//');" +
+            "printf '%s|%s|%s' \"\$S\" \"\$T\" \"\$P\""
+        ) ?: return@withContext null
+        val parts = raw.split("|")
+        val ssid = parts.getOrNull(0)?.takeIf { it.isNotBlank() } ?: return@withContext null
+        val secType = parts.getOrNull(1)?.trim() ?: "2"
+        val pass = parts.getOrNull(2) ?: ""
+        val secStr = when (secType) {
+            "0" -> "open"
+            "3" -> "wpa3"
+            "4" -> "wpa3_transition"
+            "5" -> "owe"
+            "6" -> "owe_transition"
+            else -> "wpa2"
+        }
+        Triple(ssid, secStr, pass)
+    }
 }
