@@ -4,9 +4,7 @@ import android.Manifest
 import android.annotation.SuppressLint
 import android.util.Log
 import android.app.NotificationManager
-import android.bluetooth.BluetoothDevice
 import android.bluetooth.BluetoothManager
-import android.bluetooth.BluetoothProfile
 import android.app.WallpaperManager
 import android.content.ComponentName
 import android.content.Context
@@ -213,74 +211,6 @@ class LauncherActions(private val context: Context) {
         startActivityNewTask(Intent("android.settings.BLUETOOTH_PAIRING_SETTINGS")) ||
             startActivityNewTask(Intent(Settings.ACTION_BLUETOOTH_SETTINGS)) ||
             openSystemSettings()
-
-    @SuppressLint("MissingPermission")
-    fun connectBluetoothDevice(address: String) {
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S &&
-            ContextCompat.checkSelfPermission(context, Manifest.permission.BLUETOOTH_CONNECT)
-                != PackageManager.PERMISSION_GRANTED
-        ) return
-        val adapter = context.applicationContext
-            .getSystemService(BluetoothManager::class.java)?.adapter ?: return
-        val device = runCatching { adapter.getRemoteDevice(address) }.getOrNull() ?: return
-        val profiles = buildList {
-            add(BluetoothProfile.A2DP)
-            add(BluetoothProfile.HEADSET)
-            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) add(4) // HID_HOST (public since API 33)
-        }
-        for (profile in profiles) {
-            adapter.getProfileProxy(context, object : BluetoothProfile.ServiceListener {
-                override fun onServiceConnected(p: Int, proxy: BluetoothProfile) {
-                    runCatching {
-                        proxy.javaClass
-                            .getMethod("connect", BluetoothDevice::class.java)
-                            .invoke(proxy, device)
-                    }
-                }
-                override fun onServiceDisconnected(p: Int) {}
-            }, profile)
-        }
-    }
-
-    fun openBluetoothDeviceDetails(address: String): Boolean {
-        // Open the per-device details page via SubSettings + BluetoothDeviceDetailsFragment
-        val intent = Intent(Intent.ACTION_MAIN).apply {
-            component = ComponentName(
-                "com.android.settings",
-                "com.android.settings.SubSettings",
-            )
-            putExtra(":android:show_fragment", "com.android.settings.bluetooth.BluetoothDeviceDetailsFragment")
-            putExtra("device_address", address)
-        }
-        return startActivityNewTask(intent) ||
-            startActivityNewTask(Intent(Settings.ACTION_BLUETOOTH_SETTINGS)) ||
-            openSystemSettings()
-    }
-
-    data class BtDevice(val name: String, val address: String, val isConnected: Boolean)
-
-    @SuppressLint("MissingPermission")
-    fun getPairedBluetoothDevices(): List<BtDevice> {
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S &&
-            ContextCompat.checkSelfPermission(context, Manifest.permission.BLUETOOTH_CONNECT)
-                != PackageManager.PERMISSION_GRANTED
-        ) return emptyList()
-        val btManager = context.applicationContext.getSystemService(BluetoothManager::class.java)
-            ?: return emptyList()
-        val bonded = runCatching { btManager.adapter?.bondedDevices }.getOrNull()
-            ?: return emptyList()
-        return bonded.mapNotNull { device ->
-            val name = runCatching { device.name }.getOrNull()?.takeIf { it.isNotBlank() }
-                ?: return@mapNotNull null
-            val isConnected = runCatching {
-                device.javaClass.getMethod("isConnected").invoke(device) as Boolean
-            }.getOrElse {
-                btManager.getConnectionState(device, android.bluetooth.BluetoothProfile.GATT) ==
-                    android.bluetooth.BluetoothProfile.STATE_CONNECTED
-            }
-            BtDevice(name = name, address = device.address, isConnected = isConnected)
-        }.sortedWith(compareByDescending<BtDevice> { it.isConnected }.thenBy { it.name })
-    }
 
     fun openMobileNetworkSettings(): Boolean =
         startActivityNewTask(Intent(Settings.ACTION_NETWORK_OPERATOR_SETTINGS)) ||

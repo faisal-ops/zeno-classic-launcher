@@ -7,7 +7,6 @@ import android.app.Notification
 import android.app.RemoteInput
 import android.os.BatteryManager
 import android.os.Bundle
-import android.provider.Settings
 import com.zeno.classiclauncher.nlauncher.badges.NotificationRepository
 import android.text.format.DateFormat
 import androidx.activity.compose.BackHandler
@@ -20,7 +19,6 @@ import androidx.compose.ui.draw.drawWithContent
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.input.TextFieldValue
 import com.zeno.classiclauncher.nlauncher.power.LockScreenAccessibilityService
-import com.zeno.classiclauncher.nlauncher.power.SleepManager
 import com.zeno.classiclauncher.nlauncher.usage.UsageStatsRepository
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
