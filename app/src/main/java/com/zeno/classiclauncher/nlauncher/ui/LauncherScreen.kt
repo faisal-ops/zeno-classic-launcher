@@ -1102,12 +1102,6 @@ fun LauncherScreen(
         }
     ) {
         Column(modifier = Modifier.fillMaxSize()) {
-            // Custom status bar: shown in place of the system status bar (which is hidden in MainActivity).
-            // statusBarsPadding() in child pages returns 0 when system bar is hidden, so content
-            // naturally starts below this bar with no double-padding.
-            if (prefs.customStatusBarEnabled && prefs.rootGranted) {
-                com.zeno.classiclauncher.nlauncher.root.NormalModeTopBar()
-            }
             HorizontalPager(
                 state = pagerState,
                 modifier = Modifier.weight(1f),
@@ -2007,18 +2001,15 @@ fun LauncherScreen(
                     if (showRootSettings) {
                         com.zeno.classiclauncher.nlauncher.root.RootAccessScreen(
                             rootGranted = prefs.rootGranted,
-                            customStatusBarEnabled = prefs.customStatusBarEnabled,
+                            rootedQsEnabled = prefs.rootedQsEnabled,
                             onDismiss = { showRootSettings = false },
-                            onRootGranted = {
-                                vm.setRootGranted(true)
-                                vm.setCustomStatusBarEnabled(true)
-                            },
+                            onRootGranted = { vm.setRootGranted(true) },
                             onRootRevoked = {
                                 vm.setRootGranted(false)
-                                vm.setCustomStatusBarEnabled(false)
+                                vm.setRootedQsEnabled(false)
                             },
-                            onCustomStatusBarToggled = { enabled ->
-                                vm.setCustomStatusBarEnabled(enabled)
+                            onRootedQsToggled = { enabled ->
+                                vm.setRootedQsEnabled(enabled)
                             },
                         )
                     }
@@ -2315,6 +2306,7 @@ fun LauncherScreen(
                 hapticsEnabled = prefs.hapticsEnabled,
                 hapticIntensity = prefs.hapticIntensity,
                 greyscaleEnabled = prefs.minimalModeGreyscale,
+                rootedQsEnabled = prefs.rootGranted && prefs.rootedQsEnabled,
                 onOpenModes = { showQuickSettingsOverlay = false; showModesFromQs = true },
                 onDismiss = { showQuickSettingsOverlay = false },
                 onSetQrScannerPackage = vm::setQuickSettingsQrScannerPackage,
@@ -3926,6 +3918,7 @@ internal fun QuickSettingsOverlay(
     hapticsEnabled: Boolean,
     hapticIntensity: Int,
     greyscaleEnabled: Boolean,
+    rootedQsEnabled: Boolean,
     onOpenModes: () -> Unit,
     onDismiss: () -> Unit,
     onSetQrScannerPackage: (String) -> Unit,
@@ -4149,10 +4142,24 @@ internal fun QuickSettingsOverlay(
                 subtitle = carrierSubtitle,
                 highlighted = mobileDataEnabled != false,
                 closeOnSuccess = false,
-                showChevron = true,
-                actionLabel = "Settings",
+                actionLabel = "Toggle",
                 onLongPress = actions::openMobileNetworkSettings,
-                onTap = { actions.openMobileNetworkSettings(); true },
+                onTap = {
+                    if (rootedQsEnabled) {
+                        when (val r = actions.toggleMobileData()) {
+                            is ToggleResult.Changed -> {
+                                mobileDataEnabled = r.enabled
+                                Handler(Looper.getMainLooper()).postDelayed({
+                                    mobileDataEnabled = actions.isMobileDataEnabled()
+                                }, 1000L)
+                            }
+                            else -> actions.openMobileNetworkSettings()
+                        }
+                    } else {
+                        actions.openMobileNetworkSettings()
+                    }
+                    true
+                },
             ),
         )
         add(
@@ -4163,10 +4170,25 @@ internal fun QuickSettingsOverlay(
                 subtitle = if (wifiEnabled != false) wifiSubtitle else quickSettingsOff,
                 highlighted = wifiEnabled != false && wifiSubtitle != "Disconnected",
                 closeOnSuccess = false,
-                showChevron = true,
-                actionLabel = "Panel",
-                onLongPress = actions::openInternetSettings,
-                onTap = actions::openInternetPanel,
+                actionLabel = "Toggle",
+                onLongPress = actions::openWifiSettings,
+                onTap = {
+                    if (rootedQsEnabled) {
+                        when (val r = actions.toggleWifi()) {
+                            is ToggleResult.Changed -> {
+                                wifiEnabled = r.enabled
+                                Handler(Looper.getMainLooper()).postDelayed({
+                                    wifiEnabled = actions.isWifiEnabled()
+                                    wifiSubtitle = actions.currentWifiSsidLabel()
+                                }, 1000L)
+                            }
+                            else -> actions.openInternetPanel()
+                        }
+                    } else {
+                        actions.openInternetPanel()
+                    }
+                    true
+                },
             ),
         )
         add(
@@ -4268,9 +4290,24 @@ internal fun QuickSettingsOverlay(
                 title = quickSettingsHotspotTitle,
                 subtitle = if (hotspotOn) quickSettingsOn else quickSettingsOff,
                 highlighted = hotspotOn,
-                actionLabel = "Settings",
+                actionLabel = "Toggle",
                 onLongPress = actions::openHotspotSettings,
-                onTap = actions::openHotspotSettings,
+                onTap = {
+                    if (rootedQsEnabled && Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+                        // TETHER_PRIVILEGED is system-only; open the panel overlay with toggle.
+                        val opened = runCatching {
+                            context.startActivity(
+                                Intent("android.settings.WIFI_SHARING")
+                                    .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                            )
+                            true
+                        }.getOrDefault(false)
+                        if (!opened) actions.openHotspotSettings()
+                    } else {
+                        actions.openHotspotSettings()
+                    }
+                    true
+                },
             ),
         )
         // ── Remaining tiles ───────────────────────────────────────────────────
@@ -4329,9 +4366,28 @@ internal fun QuickSettingsOverlay(
                 subtitle = if (wirelessDebugOn) quickSettingsOn else quickSettingsOff,
                 highlighted = wirelessDebugOn,
                 closeOnSuccess = false,
-                actionLabel = "Settings",
+                actionLabel = "Toggle",
                 onLongPress = actions::openWirelessDebuggingSettings,
-                onTap = actions::openWirelessDebuggingSettings,
+                onTap = {
+                    if (rootedQsEnabled) {
+                        val next = !actions.isWirelessDebuggingEnabled()
+                        val ok = runCatching {
+                            Settings.Global.putInt(context.contentResolver, "adb_wifi_enabled", if (next) 1 else 0)
+                            true
+                        }.getOrDefault(false)
+                        if (ok) {
+                            wirelessDebugOn = next
+                            Handler(Looper.getMainLooper()).postDelayed({
+                                wirelessDebugOn = actions.isWirelessDebuggingEnabled()
+                            }, 1000L)
+                        } else {
+                            actions.openWirelessDebuggingSettings()
+                        }
+                    } else {
+                        actions.openWirelessDebuggingSettings()
+                    }
+                    true
+                },
             ),
         )
         add(
@@ -4348,10 +4404,28 @@ internal fun QuickSettingsOverlay(
                 },
                 highlighted = batterySaverOn,
                 closeOnSuccess = false,
-                showChevron = true,
-                actionLabel = "Details",
+                actionLabel = "Toggle",
                 onLongPress = actions::openBatterySaverSettings,
-                onTap = actions::openBatteryUsageSummary,
+                onTap = {
+                    if (rootedQsEnabled) {
+                        val next = !actions.isBatterySaverEnabled()
+                        val ok = runCatching {
+                            Settings.Global.putInt(context.contentResolver, "low_power", if (next) 1 else 0)
+                            true
+                        }.getOrDefault(false)
+                        if (ok) {
+                            batterySaverOn = next
+                            Handler(Looper.getMainLooper()).postDelayed({
+                                batterySaverOn = actions.isBatterySaverEnabled()
+                            }, 1000L)
+                        } else {
+                            actions.openBatterySaverSettings()
+                        }
+                    } else {
+                        actions.openBatteryUsageSummary()
+                    }
+                    true
+                },
             ),
         )
         if (hasBitwarden) {
@@ -4376,9 +4450,32 @@ internal fun QuickSettingsOverlay(
                 title = quickSettingsAeroplaneModeTitle,
                 subtitle = if (airplaneOn) quickSettingsOn else quickSettingsOff,
                 highlighted = airplaneOn,
-                actionLabel = "Settings",
+                closeOnSuccess = false,
+                actionLabel = "Toggle",
                 onLongPress = actions::openAirplaneModeSettings,
-                onTap = actions::openAirplaneModeSettings,
+                onTap = {
+                    if (rootedQsEnabled) {
+                        val next = !actions.isAirplaneModeEnabled()
+                        val ok = runCatching {
+                            Settings.Global.putInt(context.contentResolver, Settings.Global.AIRPLANE_MODE_ON, if (next) 1 else 0)
+                            true
+                        }.getOrDefault(false)
+                        if (ok) {
+                            context.sendBroadcast(
+                                Intent(Intent.ACTION_AIRPLANE_MODE_CHANGED).putExtra("state", next)
+                            )
+                            airplaneOn = next
+                            Handler(Looper.getMainLooper()).postDelayed({
+                                airplaneOn = actions.isAirplaneModeEnabled()
+                            }, 1000L)
+                        } else {
+                            actions.openAirplaneModeSettings()
+                        }
+                    } else {
+                        actions.openAirplaneModeSettings()
+                    }
+                    true
+                },
             ),
         )
         add(
@@ -4400,9 +4497,29 @@ internal fun QuickSettingsOverlay(
                 title = quickSettingsNightLightTitle,
                 subtitle = if (nightLightOn) quickSettingsOn else quickSettingsOff,
                 highlighted = nightLightOn,
-                actionLabel = "Settings",
+                closeOnSuccess = false,
+                actionLabel = "Toggle",
                 onLongPress = actions::openNightLightSettings,
-                onTap = actions::openNightLightSettings,
+                onTap = {
+                    if (rootedQsEnabled) {
+                        val next = !actions.isNightLightEnabled()
+                        val ok = runCatching {
+                            Settings.Secure.putInt(context.contentResolver, "night_display_activated", if (next) 1 else 0)
+                            true
+                        }.getOrDefault(false)
+                        if (ok) {
+                            nightLightOn = next
+                            Handler(Looper.getMainLooper()).postDelayed({
+                                nightLightOn = actions.isNightLightEnabled()
+                            }, 1000L)
+                        } else {
+                            actions.openNightLightSettings()
+                        }
+                    } else {
+                        actions.openNightLightSettings()
+                    }
+                    true
+                },
             ),
         )
         add(
@@ -4522,7 +4639,11 @@ internal fun QuickSettingsOverlay(
                 highlighted = greyscaleEnabled,
                 closeOnSuccess = false,
                 actionLabel = "Toggle",
+                onLongPress = actions::openGreyscaleSettings,
                 onTap = {
+                    // rootedQsEnabled: also writes accessibility_display_daltonizer_enabled to
+                    // Settings.Secure for system-wide effect; pref always toggled regardless.
+                    if (rootedQsEnabled) actions.toggleGreyscale()
                     onToggleGreyscale()
                     true
                 },
@@ -4558,7 +4679,9 @@ internal fun QuickSettingsOverlay(
             orderedTileIds.addAll(reconciledOrder)
         }
     }
-    val tileById = defaultQuickTiles.associateBy { it.id }
+    val tileById = defaultQuickTiles
+        .let { tiles -> if (rootedQsEnabled) tiles else tiles.map { it.copy(onLongPress = null) } }
+        .associateBy { it.id }
     val allQuickTiles = orderedTileIds.mapNotNull { tileById[it] }
     fun moveTile(from: Int, to: Int) {
         if (from == to) return

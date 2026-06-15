@@ -87,10 +87,10 @@ class LauncherBackupExhaustiveTest {
     }
 
     @Test
-    fun roundTrip_simpleModeLayout_preserved() {
-        SimpleModeLayout.entries.forEach { layout ->
-            val prefs = LauncherPrefs(simpleModeLayout = layout)
-            assertEquals("Layout $layout failed to round-trip", layout, roundTrip(prefs).simpleModeLayout)
+    fun roundTrip_minimalModeLayout_preserved() {
+        MinimalModeLayout.entries.forEach { layout ->
+            val prefs = LauncherPrefs(minimalModeLayout = layout)
+            assertEquals("Layout $layout failed to round-trip", layout, roundTrip(prefs).minimalModeLayout)
         }
     }
 
@@ -111,16 +111,16 @@ class LauncherBackupExhaustiveTest {
     }
 
     @Test
-    fun roundTrip_simpleModeApps_emptyList_preserved() {
-        val prefs = LauncherPrefs(simpleModeApps = emptyList())
-        assertTrue(roundTrip(prefs).simpleModeApps.isEmpty())
+    fun roundTrip_minimalModeApps_emptyList_preserved() {
+        val prefs = LauncherPrefs(minimalModeApps = emptyList())
+        assertTrue(roundTrip(prefs).minimalModeApps.isEmpty())
     }
 
     @Test
-    fun roundTrip_simpleModeApps_multipleEntries_preserved() {
+    fun roundTrip_minimalModeApps_multipleEntries_preserved() {
         val apps = listOf("com.android.dialer", "com.android.messaging", "com.android.camera2")
-        val prefs = LauncherPrefs(simpleModeApps = apps)
-        assertEquals(apps, roundTrip(prefs).simpleModeApps)
+        val prefs = LauncherPrefs(minimalModeApps = apps)
+        assertEquals(apps, roundTrip(prefs).minimalModeApps)
     }
 
     // ─── Auto-unlock fields ───────────────────────────────────────────────────
@@ -149,11 +149,11 @@ class LauncherBackupExhaustiveTest {
     // ─── Default values for missing keys ─────────────────────────────────────
 
     @Test
-    fun fromJson_missingSimpleModeEnabled_defaultsFalse() {
+    fun fromJson_missingMinimalModeEnabled_defaultsFalse() {
         val json = LauncherBackup.toJson(LauncherPrefs())
-            .replace("\"simpleModeEnabled\": false,", "")
+            .replace("\"minimalModeEnabled\": false,", "")
         val restored = LauncherBackup.fromJson(json).getOrThrow()
-        assertFalse(restored.simpleModeEnabled)
+        assertFalse(restored.minimalModeEnabled)
     }
 
     @Test

@@ -84,9 +84,7 @@ class MainActivity : AppCompatActivity() {
     private fun applyStatusBarVisibility(minimalModeActive: Boolean) {
         if (Build.VERSION.SDK_INT < Build.VERSION_CODES.R) return
         val controller = window.insetsController ?: return
-        val prefs = viewModel.prefs.value
-        val hideForCustomBar = prefs.customStatusBarEnabled && prefs.rootGranted && !minimalModeActive
-        if (minimalModeActive || hideForCustomBar) {
+        if (minimalModeActive) {
             controller.hide(WindowInsets.Type.statusBars())
             controller.systemBarsBehavior =
                 WindowInsetsController.BEHAVIOR_SHOW_TRANSIENT_BARS_BY_SWIPE

@@ -448,7 +448,9 @@ class LauncherActions(private val context: Context) {
             startActivityNewTask(Intent(Settings.ACTION_DISPLAY_SETTINGS))
 
     fun openScreenRecordSettings(): Boolean =
-        startActivityNewTask(Intent("android.settings.SYSTEMUI_QS_TILES_SETTINGS"))
+        startActivityNewTask(Intent("android.settings.SYSTEMUI_QS_TILES_SETTINGS")) ||
+            startActivityNewTask(Intent("com.android.systemui.action.START_SCREEN_RECORDER").setPackage("com.android.systemui")) ||
+            startActivityNewTask(Intent(Settings.ACTION_DISPLAY_SETTINGS))
 
     fun canOpenScreenRecordSettings(): Boolean =
         canResolveActivity(Intent("android.settings.SYSTEMUI_QS_TILES_SETTINGS"))
@@ -650,13 +652,42 @@ class LauncherActions(private val context: Context) {
             val m = NfcAdapter::class.java.getMethod(methodName)
             m.invoke(adapter)
         }
-        if (invoked.isFailure) return ToggleResult.Unsupported
-        return if (adapter.isEnabled != wasEnabled) {
-            ToggleResult.Changed(adapter.isEnabled)
-        } else {
-            ToggleResult.Unsupported
-        }
+        // NFC toggle is async; return optimistically if invocation succeeded
+        return if (invoked.isSuccess) ToggleResult.Changed(targetEnabled) else ToggleResult.Unsupported
     }
+
+    fun toggleExtraDim(): ToggleResult {
+        val next = !isExtraDimEnabled()
+        return runCatching {
+            Settings.Secure.putInt(context.contentResolver, "reduce_bright_colors_activated", if (next) 1 else 0)
+            ToggleResult.Changed(next)
+        }.getOrDefault(ToggleResult.Unsupported)
+    }
+
+    fun isGreyscaleEnabled(): Boolean =
+        readSecureInt("accessibility_display_daltonizer_enabled") > 0
+
+    fun toggleGreyscale(): ToggleResult {
+        val next = !isGreyscaleEnabled()
+        return runCatching {
+            val cr = context.contentResolver
+            if (next) Settings.Secure.putInt(cr, "accessibility_display_daltonizer", 0) // 0 = greyscale
+            Settings.Secure.putInt(cr, "accessibility_display_daltonizer_enabled", if (next) 1 else 0)
+            ToggleResult.Changed(next)
+        }.getOrDefault(ToggleResult.Unsupported)
+    }
+
+    fun openGreyscaleSettings(): Boolean =
+        startActivityNewTask(Intent(Settings.ACTION_ACCESSIBILITY_SETTINGS))
+
+    fun isLocationEnabled(): Boolean {
+        val lm = context.getSystemService(android.location.LocationManager::class.java) ?: return false
+        return if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) lm.isLocationEnabled
+        else lm.isProviderEnabled(android.location.LocationManager.GPS_PROVIDER)
+    }
+
+    fun openLocationSettings(): Boolean =
+        startActivityNewTask(Intent(Settings.ACTION_LOCATION_SOURCE_SETTINGS))
 
     fun currentCarrierName(): String {
         val tm = context.getSystemService(TelephonyManager::class.java)

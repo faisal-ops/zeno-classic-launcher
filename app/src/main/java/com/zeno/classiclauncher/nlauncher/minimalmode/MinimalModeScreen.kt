@@ -2,8 +2,12 @@ package com.zeno.classiclauncher.nlauncher.minimalmode
 
 import android.content.Intent
 import android.content.IntentFilter
+import android.app.Notification
+import android.app.RemoteInput
 import android.os.BatteryManager
+import android.os.Bundle
 import android.provider.Settings
+import com.zeno.classiclauncher.nlauncher.badges.NotificationRepository
 import android.text.format.DateFormat
 import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.gestures.detectVerticalDragGestures
@@ -247,6 +251,7 @@ internal fun MinimalModeScreen(vm: LauncherViewModel) {
     var showMinimalModeSettings by rememberSaveable { mutableStateOf(false) }
     var replacingIndex by rememberSaveable { mutableIntStateOf(-1) }
     var showQuickSettings by rememberSaveable { mutableStateOf(false) }
+    var quickReplyPackage by rememberSaveable { mutableStateOf<String?>(null) }
 
     // Consume back press silently — minimal mode is a home screen, back should do nothing
     BackHandler {}
@@ -260,7 +265,7 @@ internal fun MinimalModeScreen(vm: LauncherViewModel) {
 
     val screenFocus = remember { FocusRequester() }
     LaunchedEffect(Unit) { runCatching { screenFocus.requestFocus() } }
-    val anyOverlayOpen = showAppsEditor || showMinimalModeSettings || replacingIndex >= 0 || showSearchOverlay || showQuickSettings
+    val anyOverlayOpen = showAppsEditor || showMinimalModeSettings || replacingIndex >= 0 || showSearchOverlay || showQuickSettings || quickReplyPackage != null
     LaunchedEffect(anyOverlayOpen) {
         if (!anyOverlayOpen) runCatching { screenFocus.requestFocus() }
     }
@@ -364,7 +369,10 @@ internal fun MinimalModeScreen(vm: LauncherViewModel) {
                     resolveWeatherPackage(context)?.let { vm.launchApp(it) }
                 },
                 onWifiTap = { actions.openInternetPanel(); wifiOn = actions.isWifiEnabled() == true },
-                onUnreadAppTap = { pkg -> vm.launchApp(pkg) },
+                onUnreadAppTap = { pkg ->
+                    val hasReply = buildQuickReplyItems(pkg).any { it.action != null }
+                    if (hasReply) quickReplyPackage = pkg else vm.launchApp(pkg)
+                },
                 onTopBarPositioned = { topBarBottomPx = it },
             )
 
@@ -483,6 +491,17 @@ internal fun MinimalModeScreen(vm: LauncherViewModel) {
                 onOpenSettings = { showQuickSettings = false; showMinimalModeSettings = true },
                 onDismiss = { showQuickSettings = false },
             )
+        }
+        quickReplyPackage?.let { pkg ->
+            val qrApp = allApps.find { it.packageName == pkg }
+            if (qrApp != null) {
+                QuickReplyOverlay(
+                    app = qrApp,
+                    context = context,
+                    packagesWithUnread = packagesWithUnread,
+                    onDismiss = { quickReplyPackage = null },
+                )
+            }
         }
     }
 }
@@ -1150,6 +1169,211 @@ private fun MinimalModeSearchOverlay(
         }
 
         LaunchedEffect(Unit) { runCatching { fieldFocus.requestFocus() } }
+    }
+}
+
+// ─── Quick Reply overlay ──────────────────────────────────────────────────────
+
+private data class QuickReplyItem(
+    val notifKey: String,
+    val title: String,
+    val text: String,
+    val action: Notification.Action?,
+    val remoteInputs: Array<RemoteInput>?,
+    val remoteInputResultKey: String?,
+)
+
+private fun buildQuickReplyItems(pkg: String): List<QuickReplyItem> =
+    NotificationRepository.snapshotActiveMap()
+        .values
+        .filter { it.packageName == pkg }
+        .sortedByDescending { it.postTime }
+        .take(5)
+        .map { sbn ->
+            val n = sbn.notification
+            val title = (n.extras?.getCharSequence(Notification.EXTRA_TITLE) ?: "").toString()
+            val text = (n.extras?.getCharSequence(Notification.EXTRA_TEXT) ?: "").toString()
+            val replyAction = n.actions?.firstOrNull { a -> a.remoteInputs?.isNotEmpty() == true }
+            QuickReplyItem(
+                notifKey = sbn.key,
+                title = title,
+                text = text,
+                action = replyAction,
+                remoteInputs = replyAction?.remoteInputs,
+                remoteInputResultKey = replyAction?.remoteInputs?.firstOrNull()?.resultKey,
+            )
+        }
+
+@Composable
+private fun QuickReplyOverlay(
+    app: AppEntry,
+    context: android.content.Context,
+    packagesWithUnread: Set<String>,
+    onDismiss: () -> Unit,
+) {
+    val items = remember(app.packageName, packagesWithUnread) {
+        buildQuickReplyItems(app.packageName)
+    }
+    val replyItem = remember(items) { items.firstOrNull { it.action != null } }
+    var replyText by remember { mutableStateOf("") }
+    var sent by remember { mutableStateOf(false) }
+    val fieldFocus = remember { FocusRequester() }
+
+    val doSend = send@{
+        val item = replyItem ?: return@send
+        val action = item.action ?: return@send
+        val inputs = item.remoteInputs ?: return@send
+        val ri = inputs.firstOrNull() ?: return@send
+        if (replyText.isBlank()) return@send
+        val bundle = Bundle()
+        bundle.putCharSequence(ri.resultKey, replyText)
+        val fillIntent = Intent()
+        RemoteInput.addResultsToIntent(inputs, fillIntent, bundle)
+        val ok = runCatching { action.actionIntent.send(context, 0, fillIntent); true }.getOrDefault(false)
+        if (ok) { sent = true; replyText = "" }
+    }
+
+    BackHandler(onBack = onDismiss)
+
+    Box(
+        modifier = Modifier
+            .fillMaxSize()
+            .background(Color(0xE5000000))
+            .pointerInput(Unit) { detectTapGestures(onTap = { onDismiss() }) },
+        contentAlignment = Alignment.Center,
+    ) {
+        Column(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(horizontal = 20.dp)
+                .clip(RoundedCornerShape(16.dp))
+                .background(Color(0xFF111111))
+                .pointerInput(Unit) { detectTapGestures { /* consume to block background dismiss */ } },
+        ) {
+            // App header row
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(horizontal = 16.dp, vertical = 14.dp),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                val bmp = remember(app.packageName) { app.icon?.toBitmap(48, 48) }
+                if (bmp != null) {
+                    androidx.compose.foundation.Image(
+                        painter = BitmapPainter(bmp.asImageBitmap()),
+                        contentDescription = null,
+                        modifier = Modifier.size(28.dp).clip(RoundedCornerShape(6.dp)),
+                    )
+                    Spacer(Modifier.width(10.dp))
+                }
+                Text(
+                    text = app.label,
+                    fontSize = 17.sp,
+                    fontWeight = FontWeight.SemiBold,
+                    color = NORMAL_TEXT,
+                    modifier = Modifier.weight(1f),
+                )
+            }
+
+            Box(modifier = Modifier.fillMaxWidth().height(1.dp).background(DIVIDER_COLOR))
+
+            // Notification list
+            items.forEach { item ->
+                Column(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(horizontal = 16.dp, vertical = 10.dp),
+                ) {
+                    if (item.title.isNotEmpty()) {
+                        Text(
+                            text = item.title,
+                            fontSize = 13.sp,
+                            fontWeight = FontWeight.Medium,
+                            color = NORMAL_TEXT,
+                        )
+                    }
+                    if (item.text.isNotEmpty()) {
+                        Text(
+                            text = item.text,
+                            fontSize = 13.sp,
+                            color = MUTED_TEXT,
+                            maxLines = 3,
+                            overflow = TextOverflow.Ellipsis,
+                            lineHeight = 18.sp,
+                        )
+                    }
+                }
+                Box(modifier = Modifier.fillMaxWidth().height(1.dp).background(DIVIDER_COLOR))
+            }
+
+            // Reply field — only shown when a notification exposes a RemoteInput action
+            if (replyItem != null) {
+                if (sent) {
+                    Text(
+                        text = "Sent ✓",
+                        fontSize = 13.sp,
+                        color = Color(0xFF34C759),
+                        modifier = Modifier.padding(horizontal = 16.dp, vertical = 10.dp),
+                    )
+                } else {
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(horizontal = 16.dp, vertical = 10.dp)
+                            .onPreviewKeyEvent { event ->
+                                if (event.type == KeyEventType.KeyDown &&
+                                    event.key == Key.Enter &&
+                                    replyText.isNotBlank()
+                                ) {
+                                    doSend()
+                                    true
+                                } else false
+                            },
+                        verticalAlignment = Alignment.CenterVertically,
+                    ) {
+                        BasicTextField(
+                            value = replyText,
+                            onValueChange = { replyText = it },
+                            singleLine = true,
+                            textStyle = TextStyle(color = NORMAL_TEXT, fontSize = 15.sp),
+                            modifier = Modifier
+                                .weight(1f)
+                                .focusRequester(fieldFocus),
+                            decorationBox = { inner ->
+                                if (replyText.isEmpty()) {
+                                    Text("Reply…", fontSize = 15.sp, color = MUTED_TEXT)
+                                }
+                                inner()
+                            },
+                        )
+                        Spacer(Modifier.width(12.dp))
+                        Box(
+                            modifier = Modifier
+                                .clip(RoundedCornerShape(8.dp))
+                                .background(if (replyText.isNotBlank()) FOCUS_ACCENT else Color(0xFF222222))
+                                .pointerInput(replyText) {
+                                    detectTapGestures(onTap = { if (replyText.isNotBlank()) doSend() })
+                                }
+                                .padding(horizontal = 12.dp, vertical = 6.dp),
+                            contentAlignment = Alignment.Center,
+                        ) {
+                            Text(
+                                text = "Send",
+                                fontSize = 13.sp,
+                                fontWeight = FontWeight.SemiBold,
+                                color = if (replyText.isNotBlank()) Color.White else MUTED_TEXT,
+                            )
+                        }
+                    }
+                }
+                Box(modifier = Modifier.fillMaxWidth().height(1.dp).background(DIVIDER_COLOR))
+            }
+
+        }
+    }
+
+    LaunchedEffect(replyItem) {
+        if (replyItem != null) runCatching { fieldFocus.requestFocus() }
     }
 }
 

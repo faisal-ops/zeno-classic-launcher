@@ -21,6 +21,10 @@
         android:maxSdkVersion="30" />
     <uses-permission android:name="android.permission.VIBRATE" />
     <uses-permission android:name="android.permission.SET_WALLPAPER" />
+    <!-- Declared here; granted via root at runtime with: pm grant <pkg> android.permission.STATUS_BAR -->
+    <uses-permission android:name="android.permission.STATUS_BAR" tools:ignore="ProtectedPermissions" />
+    <!-- Overlay permission for custom status bar; granted via root: appops set <pkg> SYSTEM_ALERT_WINDOW allow -->
+    <uses-permission android:name="android.permission.SYSTEM_ALERT_WINDOW" />
     <!-- Pre-Android 10: optional copy to public Pictures (ignored on API 29+). -->
     <uses-permission
         android:name="android.permission.WRITE_EXTERNAL_STORAGE"

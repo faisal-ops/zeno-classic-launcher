@@ -164,6 +164,14 @@ class LauncherViewModel(app: Application) : AndroidViewModel(app) {
     private var cachedAlbumArt: android.graphics.Bitmap? = null
 
     init {
+        // Custom status bar was removed. Reset wm overscan once if the pref is still set from a
+        // previous install, so the system status bar is fully restored.
+        viewModelScope.launch {
+            if (prefsRepo.prefsFlow.first().customStatusBarEnabled) {
+                com.zeno.classiclauncher.nlauncher.root.RootManager.execute("wm overscan reset")
+                prefsRepo.setCustomStatusBarEnabled(false)
+            }
+        }
         // Weather: re-fetch on pref change; exponential backoff on failure (30s → 60s → … → 15min),
         // then refresh every 30 minutes on success.
         viewModelScope.launch {
@@ -1452,7 +1460,10 @@ class LauncherViewModel(app: Application) : AndroidViewModel(app) {
     }
 
     fun setMinimalModeEnabled(enabled: Boolean) {
-        viewModelScope.launch { prefsRepo.setMinimalModeEnabled(enabled) }
+        viewModelScope.launch {
+            prefsRepo.setMinimalModeEnabled(enabled)
+            if (!enabled) prefsRepo.setMinimalModeGreyscale(false)
+        }
     }
     fun setMinimalModeLayout(layout: MinimalModeLayout) {
         viewModelScope.launch { prefsRepo.setMinimalModeLayout(layout) }
@@ -1481,30 +1492,10 @@ class LauncherViewModel(app: Application) : AndroidViewModel(app) {
         viewModelScope.launch { prefsRepo.setRootGranted(granted) }
     }
 
-    fun setCustomStatusBarEnabled(enabled: Boolean) {
-        viewModelScope.launch {
-            prefsRepo.setCustomStatusBarEnabled(enabled)
-            // Use root to push the system status bar area off-screen (wm overscan),
-            // making our NormalModeTopBar the only visible bar.
-            // wm overscan reset restores the original display area on disable.
-            if (enabled) {
-                val heightPx = systemStatusBarHeightPx()
-                com.zeno.classiclauncher.nlauncher.root.RootManager.execute(
-                    "wm overscan 0,-${heightPx},0,0"
-                )
-            } else {
-                com.zeno.classiclauncher.nlauncher.root.RootManager.execute("wm overscan reset")
-            }
-        }
+    fun setRootedQsEnabled(enabled: Boolean) {
+        viewModelScope.launch { prefsRepo.setRootedQsEnabled(enabled) }
     }
 
-    private fun systemStatusBarHeightPx(): Int {
-        val id = android.content.res.Resources.getSystem()
-            .getIdentifier("status_bar_height", "dimen", "android")
-        return if (id > 0)
-            android.content.res.Resources.getSystem().getDimensionPixelSize(id)
-        else 80
-    }
 
     fun setAppIconShape(shape: AppIconShape) {
         viewModelScope.launch { prefsRepo.setAppIconShape(shape) }

@@ -98,14 +98,14 @@ object LauncherBackup {
         p.put(PrefKey.QUICK_SETTINGS_QR_SCANNER_PACKAGE, prefs.quickSettingsQrScannerPackage)
         p.put(PrefKey.QUICK_SETTINGS_TILE_ORDER, JSONArray(prefs.quickSettingsTileOrder))
         p.put("classicMode", prefs.classicMode)
-        p.put("simpleModeEnabled", prefs.simpleModeEnabled)
-        p.put("simpleModeLayout", prefs.simpleModeLayout.name)
-        p.put("simpleModeMaxApps", prefs.simpleModeMaxApps.name)
-        p.put("simpleModeShowIcons", prefs.simpleModeShowIcons)
-        p.put("simpleModeShowWeather", prefs.simpleModeShowWeather)
-        p.put("simpleModeShowNotifSummary", prefs.simpleModeShowNotifSummary)
-        p.put("simpleModeApps", JSONArray(prefs.simpleModeApps))
-        p.put("simpleModeGreyscale", prefs.simpleModeGreyscale)
+        p.put("minimalModeEnabled", prefs.minimalModeEnabled)
+        p.put("minimalModeLayout", prefs.minimalModeLayout.name)
+        p.put("minimalModeMaxApps", prefs.minimalModeMaxApps.name)
+        p.put("minimalModeShowIcons", prefs.minimalModeShowIcons)
+        p.put("minimalModeShowWeather", prefs.minimalModeShowWeather)
+        p.put("minimalModeShowNotifSummary", prefs.minimalModeShowNotifSummary)
+        p.put("minimalModeApps", JSONArray(prefs.minimalModeApps))
+        p.put("minimalModeGreyscale", prefs.minimalModeGreyscale)
         p.put("autoUnlockEnabled", prefs.autoUnlockEnabled)
         p.put("autoUnlockPinDigits", prefs.autoUnlockPinDigits)
         p.put("drawerSortMode", prefs.drawerSortMode)
@@ -231,21 +231,21 @@ object LauncherBackup {
             p.has("classicMode") -> p.optBoolean("classicMode", false)
             else -> p.optBoolean("drawerOnlyMode", false)
         }
-        val simpleModeEnabled = p.optBoolean("simpleModeEnabled", false)
-        val simpleModeLayout = p.optString("simpleModeLayout", "LIST").let { name ->
-            SimpleModeLayout.entries.firstOrNull { it.name == name } ?: SimpleModeLayout.LIST
+        val minimalModeEnabled = p.optBoolean("minimalModeEnabled", false)
+        val minimalModeLayout = p.optString("minimalModeLayout", "LIST").let { name ->
+            MinimalModeLayout.entries.firstOrNull { it.name == name } ?: MinimalModeLayout.LIST
         }
-        val simpleModeMaxApps = p.optString("simpleModeMaxApps", "AUTO").let { name ->
-            SimpleModeMaxApps.entries.firstOrNull { it.name == name } ?: SimpleModeMaxApps.AUTO
+        val minimalModeMaxApps = p.optString("minimalModeMaxApps", "AUTO").let { name ->
+            MinimalModeMaxApps.entries.firstOrNull { it.name == name } ?: MinimalModeMaxApps.AUTO
         }
-        val simpleModeShowIcons = p.optBoolean("simpleModeShowIcons", true)
-        val simpleModeShowWeather = p.optBoolean("simpleModeShowWeather", true)
-        val simpleModeShowNotifSummary = p.optBoolean("simpleModeShowNotifSummary", true)
-        val simpleModeApps = p.optJSONArray("simpleModeApps")?.let { arr ->
+        val minimalModeShowIcons = p.optBoolean("minimalModeShowIcons", true)
+        val minimalModeShowWeather = p.optBoolean("minimalModeShowWeather", true)
+        val minimalModeShowNotifSummary = p.optBoolean("minimalModeShowNotifSummary", true)
+        val minimalModeApps = p.optJSONArray("minimalModeApps")?.let { arr ->
             buildList { for (i in 0 until arr.length()) add(arr.optString(i, "").trim()) }
                 .filter { it.isNotEmpty() }
         } ?: emptyList()
-        val simpleModeGreyscale = p.optBoolean("simpleModeGreyscale", true)
+        val minimalModeGreyscale = p.optBoolean("minimalModeGreyscale", true)
         val autoUnlockEnabled = p.optBoolean("autoUnlockEnabled", true)
         val autoUnlockPinDigits = p.optInt("autoUnlockPinDigits", 4).coerceIn(4, 8)
         val drawerSortMode = p.optString("drawerSortMode", "ALPHABETICAL").trim()
@@ -358,14 +358,14 @@ object LauncherBackup {
             quickSettingsQrScannerPackage = quickSettingsQrScannerPackage,
             quickSettingsTileOrder = quickSettingsTileOrder,
             classicMode = classicMode,
-            simpleModeEnabled = simpleModeEnabled,
-            simpleModeLayout = simpleModeLayout,
-            simpleModeMaxApps = simpleModeMaxApps,
-            simpleModeShowIcons = simpleModeShowIcons,
-            simpleModeShowWeather = simpleModeShowWeather,
-            simpleModeShowNotifSummary = simpleModeShowNotifSummary,
-            simpleModeApps = simpleModeApps,
-            simpleModeGreyscale = simpleModeGreyscale,
+            minimalModeEnabled = minimalModeEnabled,
+            minimalModeLayout = minimalModeLayout,
+            minimalModeMaxApps = minimalModeMaxApps,
+            minimalModeShowIcons = minimalModeShowIcons,
+            minimalModeShowWeather = minimalModeShowWeather,
+            minimalModeShowNotifSummary = minimalModeShowNotifSummary,
+            minimalModeApps = minimalModeApps,
+            minimalModeGreyscale = minimalModeGreyscale,
             autoUnlockEnabled = autoUnlockEnabled,
             autoUnlockPinDigits = autoUnlockPinDigits,
             drawerSortMode = drawerSortMode,

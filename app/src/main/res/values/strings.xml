@@ -119,6 +119,9 @@
     <string name="settings_backup_restore">Backup &amp; Restore</string>
     <string name="settings_icon_layout_title">Icon Layout</string>
     <string name="settings_icon_layout_subtitle">Grid, shape, cards, badges</string>
+    <string name="settings_root_access_title">Root Access</string>
+    <string name="settings_root_access_subtitle">Unlock advanced features</string>
+    <string name="settings_root_access_granted">Granted · Features active</string>
     <string name="settings_classic_mode_title">Classic Mode</string>
     <string name="settings_zeno_mode_title">Zeno Mode</string>
     <string name="settings_zeno_mode_subtitle">Default launcher experience</string>

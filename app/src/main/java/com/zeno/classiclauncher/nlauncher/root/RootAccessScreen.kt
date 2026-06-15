@@ -25,8 +25,8 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.outlined.Lock
 import androidx.compose.material.icons.outlined.LockOpen
 import androidx.compose.material.icons.rounded.CheckCircle
-import androidx.compose.material.icons.rounded.DisplaySettings
 import androidx.compose.material.icons.rounded.Error
+import androidx.compose.material.icons.rounded.GridView
 import androidx.compose.material.icons.rounded.Search
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
@@ -66,11 +66,11 @@ private const val PKG = "com.zeno.classiclauncher.nlauncher"
 @Composable
 internal fun RootAccessScreen(
     rootGranted: Boolean,
-    customStatusBarEnabled: Boolean,
+    rootedQsEnabled: Boolean,
     onDismiss: () -> Unit,
     onRootGranted: () -> Unit,
     onRootRevoked: () -> Unit,
-    onCustomStatusBarToggled: (Boolean) -> Unit = {},
+    onRootedQsToggled: (Boolean) -> Unit = {},
 ) {
     val scope = rememberCoroutineScope()
     var loading by remember { mutableStateOf(false) }
@@ -298,53 +298,14 @@ internal fun RootAccessScreen(
         Spacer(Modifier.height(28.dp))
         Text("Root Features", fontSize = 13.sp, color = SUBTITLE_COLOR, modifier = Modifier.padding(start = 4.dp, bottom = 8.dp))
         RootCard {
-            Row(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(horizontal = 16.dp, vertical = 12.dp),
-                verticalAlignment = Alignment.CenterVertically,
-            ) {
-                Box(
-                    modifier = Modifier
-                        .size(36.dp)
-                        .clip(androidx.compose.foundation.shape.CircleShape)
-                        .background(
-                            if (rootGranted && customStatusBarEnabled) ACCENT.copy(alpha = 0.15f)
-                            else Color(0xFF1F2937)
-                        ),
-                    contentAlignment = Alignment.Center,
-                ) {
-                    Icon(
-                        Icons.Rounded.DisplaySettings,
-                        contentDescription = null,
-                        tint = if (rootGranted && customStatusBarEnabled) ACCENT else SUBTITLE_COLOR,
-                        modifier = Modifier.size(18.dp),
-                    )
-                }
-                Spacer(Modifier.width(12.dp))
-                Column(modifier = Modifier.weight(1f)) {
-                    Text("Custom Status Bar", fontSize = 15.sp, color = TITLE_COLOR, fontWeight = FontWeight.Medium)
-                    Spacer(Modifier.height(2.dp))
-                    Text(
-                        "Replaces system bar with launcher's own — time, battery & wifi in your theme",
-                        fontSize = 12.sp, color = SUBTITLE_COLOR, lineHeight = 16.sp,
-                    )
-                }
-                Spacer(Modifier.width(10.dp))
-                Switch(
-                    checked = rootGranted && customStatusBarEnabled,
-                    onCheckedChange = { if (rootGranted) onCustomStatusBarToggled(it) },
-                    enabled = rootGranted,
-                    colors = SwitchDefaults.colors(
-                        checkedThumbColor = Color.White,
-                        checkedTrackColor = ACCENT,
-                        uncheckedThumbColor = SUBTITLE_COLOR,
-                        uncheckedTrackColor = Color(0xFF1F2937),
-                        disabledCheckedTrackColor = SUBTITLE_COLOR.copy(alpha = 0.3f),
-                        disabledUncheckedTrackColor = Color(0xFF1F2937),
-                    ),
-                )
-            }
+            RootFeatureRow(
+                icon = Icons.Rounded.GridView,
+                title = "Rooted QS Tiles",
+                subtitle = "Tap tiles toggle directly (Wi-Fi, mobile data, battery saver, airplane mode, night light, greyscale…)",
+                active = rootGranted && rootedQsEnabled,
+                enabled = rootGranted,
+                onToggle = { if (rootGranted) onRootedQsToggled(it) },
+            )
         }
 
         Spacer(Modifier.height(32.dp))
@@ -378,4 +339,54 @@ private fun StatusRow(icon: ImageVector, label: String, value: String, valueColo
     }
 }
 
-
+@Composable
+private fun RootFeatureRow(
+    icon: ImageVector,
+    title: String,
+    subtitle: String,
+    active: Boolean,
+    enabled: Boolean,
+    onToggle: (Boolean) -> Unit,
+) {
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(horizontal = 16.dp, vertical = 12.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Box(
+            modifier = Modifier
+                .size(36.dp)
+                .clip(CircleShape)
+                .background(if (active) ACCENT.copy(alpha = 0.15f) else Color(0xFF1F2937)),
+            contentAlignment = Alignment.Center,
+        ) {
+            Icon(
+                icon,
+                contentDescription = null,
+                tint = if (active) ACCENT else SUBTITLE_COLOR,
+                modifier = Modifier.size(18.dp),
+            )
+        }
+        Spacer(Modifier.width(12.dp))
+        Column(modifier = Modifier.weight(1f)) {
+            Text(title, fontSize = 15.sp, color = TITLE_COLOR, fontWeight = FontWeight.Medium)
+            Spacer(Modifier.height(2.dp))
+            Text(subtitle, fontSize = 12.sp, color = SUBTITLE_COLOR, lineHeight = 16.sp)
+        }
+        Spacer(Modifier.width(10.dp))
+        Switch(
+            checked = active,
+            onCheckedChange = onToggle,
+            enabled = enabled,
+            colors = SwitchDefaults.colors(
+                checkedThumbColor = Color.White,
+                checkedTrackColor = ACCENT,
+                uncheckedThumbColor = SUBTITLE_COLOR,
+                uncheckedTrackColor = Color(0xFF1F2937),
+                disabledCheckedTrackColor = SUBTITLE_COLOR.copy(alpha = 0.3f),
+                disabledUncheckedTrackColor = Color(0xFF1F2937),
+            ),
+        )
+    }
+}

@@ -68,20 +68,20 @@ class LauncherPrefsTest {
     }
 
     @Test
-    fun launcherBackup_roundTripsSimpleModePrefs() {
+    fun launcherBackup_roundTripsMinimalModePrefs() {
         val prefs = LauncherPrefs(
-            simpleModeEnabled = true,
-            simpleModeShowWeather = false,
-            simpleModeGreyscale = true,
-            simpleModeApps = listOf("com.android.dialer", "com.android.mms"),
+            minimalModeEnabled = true,
+            minimalModeShowWeather = false,
+            minimalModeGreyscale = true,
+            minimalModeApps = listOf("com.android.dialer", "com.android.mms"),
         )
 
         val restored = LauncherBackup.fromJson(LauncherBackup.toJson(prefs)).getOrThrow()
 
-        assertTrue(restored.simpleModeEnabled)
-        assertFalse(restored.simpleModeShowWeather)
-        assertTrue(restored.simpleModeGreyscale)
-        assertEquals(listOf("com.android.dialer", "com.android.mms"), restored.simpleModeApps)
+        assertTrue(restored.minimalModeEnabled)
+        assertFalse(restored.minimalModeShowWeather)
+        assertTrue(restored.minimalModeGreyscale)
+        assertEquals(listOf("com.android.dialer", "com.android.mms"), restored.minimalModeApps)
     }
 
     @Test
