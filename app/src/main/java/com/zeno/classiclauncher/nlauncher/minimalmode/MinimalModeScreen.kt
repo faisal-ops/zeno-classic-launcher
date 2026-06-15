@@ -57,6 +57,10 @@ import androidx.compose.material.icons.rounded.DoNotDisturb
 import androidx.compose.material.icons.rounded.Vibration
 import androidx.compose.material.icons.rounded.Wifi
 import androidx.compose.material.icons.rounded.WifiOff
+import androidx.compose.material.icons.rounded.Headset
+import android.media.AudioDeviceCallback
+import android.media.AudioDeviceInfo
+import android.media.AudioManager
 import com.zeno.classiclauncher.nlauncher.apps.SoundProfileMode
 import androidx.compose.material.icons.rounded.PlayArrow
 import androidx.compose.material.icons.rounded.SkipNext
@@ -182,6 +186,18 @@ internal fun MinimalModeScreen(vm: LauncherViewModel) {
     var soundProfile by remember { mutableStateOf(actions.currentSoundProfile()) }
     var topBarBottomPx by remember { mutableIntStateOf(0) }
 
+    fun isHeadsetConnected(audioManager: AudioManager): Boolean {
+        val wiredTypes = intArrayOf(
+            AudioDeviceInfo.TYPE_WIRED_HEADSET,
+            AudioDeviceInfo.TYPE_WIRED_HEADPHONES,
+            AudioDeviceInfo.TYPE_USB_HEADSET,
+        )
+        return audioManager.getDevices(AudioManager.GET_DEVICES_OUTPUTS)
+            .any { it.type in wiredTypes }
+    }
+    val audioManager = remember { context.getSystemService(AudioManager::class.java) }
+    var headsetConnected by remember { mutableStateOf(isHeadsetConnected(audioManager)) }
+
     // Battery: update immediately from the sticky broadcast, then listen for changes.
     // BroadcastReceiver is far cheaper than polling — ACTION_BATTERY_CHANGED is a sticky
     // broadcast so registerReceiver() returns the current state instantly on registration.
@@ -224,6 +240,20 @@ internal fun MinimalModeScreen(vm: LauncherViewModel) {
         }
         context.registerReceiver(receiver, filter)
         onDispose { runCatching { context.unregisterReceiver(receiver) } }
+    }
+
+    // Headset: react to wired headset/headphone plug and unplug events.
+    androidx.compose.runtime.DisposableEffect(Unit) {
+        val callback = object : AudioDeviceCallback() {
+            override fun onAudioDevicesAdded(addedDevices: Array<out AudioDeviceInfo>) {
+                headsetConnected = isHeadsetConnected(audioManager)
+            }
+            override fun onAudioDevicesRemoved(removedDevices: Array<out AudioDeviceInfo>) {
+                headsetConnected = isHeadsetConnected(audioManager)
+            }
+        }
+        audioManager.registerAudioDeviceCallback(callback, null)
+        onDispose { audioManager.unregisterAudioDeviceCallback(callback) }
     }
 
     // Clock: tick every second, synced to the wall-clock second boundary to avoid drift.
@@ -377,6 +407,7 @@ internal fun MinimalModeScreen(vm: LauncherViewModel) {
                 screenTimeMs = if (totalScreenTimeMs > 0L) totalScreenTimeMs else null,
                 wifiEnabled = wifiOn,
                 soundProfile = soundProfile,
+                headsetConnected = headsetConnected,
                 onClockTap = {
                     resolveClockPackage(context)?.let { vm.launchApp(it) }
                 },
@@ -541,6 +572,7 @@ internal fun MinimalModeTopBar(
     screenTimeMs: Long?,
     wifiEnabled: Boolean,
     soundProfile: SoundProfileMode,
+    headsetConnected: Boolean,
     onClockTap: () -> Unit,
     onWifiTap: () -> Unit,
 ) {
@@ -618,6 +650,15 @@ internal fun MinimalModeTopBar(
                 )
                 Spacer(Modifier.width(6.dp))
             }
+            if (headsetConnected) {
+                Icon(
+                    imageVector = Icons.Rounded.Headset,
+                    contentDescription = "Headset connected",
+                    tint = Color(0xFFEAF0F6),
+                    modifier = Modifier.size(18.dp),
+                )
+                Spacer(Modifier.width(6.dp))
+            }
             Icon(
                 imageVector = if (wifiEnabled) Icons.Rounded.Wifi else Icons.Rounded.WifiOff,
                 contentDescription = stringResource(R.string.quick_settings_wifi),
@@ -646,6 +687,7 @@ private fun MinimalModeHeader(
     screenTimeMs: Long?,
     wifiEnabled: Boolean,
     soundProfile: SoundProfileMode,
+    headsetConnected: Boolean,
     onClockTap: () -> Unit,
     onWeatherTap: () -> Unit,
     onWifiTap: () -> Unit,
@@ -665,6 +707,7 @@ private fun MinimalModeHeader(
             screenTimeMs = screenTimeMs,
             wifiEnabled = wifiEnabled,
             soundProfile = soundProfile,
+            headsetConnected = headsetConnected,
             onClockTap = onClockTap,
             onWifiTap = onWifiTap,
         )
