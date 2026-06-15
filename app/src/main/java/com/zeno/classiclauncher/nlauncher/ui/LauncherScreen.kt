@@ -272,6 +272,7 @@ import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.IntSize
+import androidx.compose.ui.window.Dialog
 import androidx.compose.ui.window.DialogProperties
 import androidx.compose.ui.window.Popup
 import androidx.compose.ui.window.PopupProperties
@@ -320,9 +321,11 @@ import com.zeno.classiclauncher.nlauncher.prefs.AppIconShape
 import com.zeno.classiclauncher.nlauncher.prefs.SecondShortcutTarget
 import com.zeno.classiclauncher.nlauncher.R
 import com.zeno.classiclauncher.nlauncher.root.RootManager
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 import kotlinx.coroutines.withTimeoutOrNull
 import java.text.SimpleDateFormat
 import java.util.Date
@@ -963,7 +966,7 @@ fun LauncherScreen(
     // and recents are handled elsewhere; no moveTaskToBack (avoids feeling like “recent apps”).
     BackHandler(enabled = true) {
         when {
-            showModesFromQs -> showModesFromQs = false
+            showModesFromQs -> { showModesFromQs = false; showSettings = true }
             showQuickSettingsOverlay -> showQuickSettingsOverlay = false
             showAppMenu != null -> {
                 showAppMenu = null
@@ -2315,10 +2318,14 @@ fun LauncherScreen(
                 onToggleGreyscale = { vm.setMinimalModeGreyscale(!prefs.minimalModeGreyscale) },
             )
         }
-        if (showModesFromQs) {
+        AnimatedVisibility(
+            visible = showModesFromQs,
+            enter = fadeIn(animationSpec = tween(200)),
+            exit = fadeOut(animationSpec = tween(160)),
+        ) {
             com.zeno.classiclauncher.nlauncher.minimalmode.MinimalModeSettingsOverlay(
                 vm = vm,
-                onDismiss = { showModesFromQs = false },
+                onDismiss = { showModesFromQs = false; showSettings = true },
             )
         }
 
@@ -3976,7 +3983,6 @@ internal fun QuickSettingsOverlay(
     val dateFormatter = remember { SimpleDateFormat("EEEE, MMMM d", Locale.getDefault()) }
     var dateText by remember { mutableStateOf(dateFormatter.format(Date())) }
     var bluetoothEnabled by remember { mutableStateOf(actions.isBluetoothEnabled()) }
-    var showBluetoothPanel by remember { mutableStateOf(false) }
     val btPermissionLauncher = rememberLauncherForActivityResult(
         contract = ActivityResultContracts.RequestPermission(),
     ) { granted ->
@@ -4278,7 +4284,12 @@ internal fun QuickSettingsOverlay(
                 highlighted = bluetoothEnabled == true,
                 closeOnSuccess = false,
                 actionLabel = "Toggle",
-                onLongPress = { showBluetoothPanel = true; true },
+                onLongPress = if (rootedQsEnabled) ({
+                    qsScope.launch {
+                        RootManager.execute("am start -n 'com.android.settings/.Settings${'$'}ConnectedDeviceDashboardActivity'")
+                    }
+                    true
+                }) else null,
                 onTap = {
                     if (rootedQsEnabled) {
                         val next = bluetoothEnabled != true
@@ -5166,117 +5177,8 @@ internal fun QuickSettingsOverlay(
         }
     }
 
-    if (showBluetoothPanel) {
-        BluetoothPanelDialog(
-            bluetoothEnabled = bluetoothEnabled == true,
-            onToggle = { checked ->
-                bluetoothEnabled = checked
-                if (rootedQsEnabled) {
-                    qsScope.launch {
-                        val ok = RootManager.execute("svc bluetooth ${if (checked) "enable" else "disable"}")
-                        if (!ok) { bluetoothEnabled = !checked; return@launch }
-                        delay(1500L)
-                        bluetoothEnabled = actions.isBluetoothEnabled()
-                    }
-                } else {
-                    when (val r = actions.toggleBluetooth()) {
-                        is ToggleResult.Changed -> {
-                            bluetoothEnabled = r.enabled
-                            Handler(Looper.getMainLooper()).postDelayed(
-                                { bluetoothEnabled = actions.isBluetoothEnabled() }, 500L
-                            )
-                        }
-                        ToggleResult.PermissionRequired -> {
-                            bluetoothEnabled = !checked
-                            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S)
-                                btPermissionLauncher.launch(Manifest.permission.BLUETOOTH_CONNECT)
-                        }
-                        ToggleResult.Unsupported -> bluetoothEnabled = !checked
-                    }
-                }
-            },
-            onPairNewDevice = { actions.openBluetoothSettings() },
-            onDismiss = { showBluetoothPanel = false },
-        )
-    }
 }
 
-@Composable
-private fun BluetoothPanelDialog(
-    bluetoothEnabled: Boolean,
-    onToggle: (Boolean) -> Unit,
-    onPairNewDevice: () -> Unit,
-    onDismiss: () -> Unit,
-) {
-    AlertDialog(
-        onDismissRequest = onDismiss,
-        containerColor = Color(0xFF111820),
-        shape = RoundedCornerShape(28.dp),
-        title = {
-            Column {
-                Text(
-                    "Bluetooth",
-                    color = Color(0xFFEAF2F8),
-                    fontSize = 22.sp,
-                    fontWeight = FontWeight.Medium,
-                )
-                Spacer(Modifier.height(4.dp))
-                Text(
-                    "Tap to connect or disconnect a device",
-                    color = Color(0xFFB7C2CF),
-                    fontSize = 14.sp,
-                )
-            }
-        },
-        text = {
-            Column {
-                HorizontalDivider(color = Color(0xFF2A3441))
-                Spacer(Modifier.height(4.dp))
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.SpaceBetween,
-                    verticalAlignment = Alignment.CenterVertically,
-                ) {
-                    Text("Use Bluetooth", color = Color(0xFFEAF2F8), fontSize = 16.sp)
-                    Switch(
-                        checked = bluetoothEnabled,
-                        onCheckedChange = onToggle,
-                        colors = SwitchDefaults.colors(
-                            checkedThumbColor = Color(0xFF111820),
-                            checkedTrackColor = Color(0xFF9AE2FF),
-                            uncheckedThumbColor = Color(0xFFB7C2CF),
-                            uncheckedTrackColor = Color(0xFF2A3441),
-                        ),
-                    )
-                }
-                Spacer(Modifier.height(4.dp))
-                HorizontalDivider(color = Color(0xFF2A3441))
-                Spacer(Modifier.height(8.dp))
-                Row(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .clickable { onPairNewDevice() }
-                        .padding(vertical = 8.dp),
-                    verticalAlignment = Alignment.CenterVertically,
-                ) {
-                    Icon(
-                        Icons.Rounded.Add,
-                        contentDescription = null,
-                        tint = Color(0xFFEAF2F8),
-                        modifier = Modifier.size(20.dp),
-                    )
-                    Spacer(Modifier.width(12.dp))
-                    Text("Pair new device", color = Color(0xFFEAF2F8), fontSize = 16.sp)
-                }
-            }
-        },
-        confirmButton = {
-            TextButton(onClick = onDismiss) {
-                Text("Done", color = Color(0xFFEAF2F8), fontWeight = FontWeight.SemiBold)
-            }
-        },
-    )
-}
 
 @Composable
 private fun QuickSettingsTileEditorOverlay(

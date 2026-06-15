@@ -15,10 +15,15 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.statusBarsPadding
+import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.rounded.ArrowBack
+import androidx.compose.material3.Icon
 import androidx.compose.material3.Switch
 import androidx.compose.material3.SwitchDefaults
 import androidx.compose.material3.Text
@@ -94,13 +99,26 @@ internal fun MinimalModeSettingsOverlay(
             .padding(horizontal = 16.dp)
             .verticalScroll(rememberScrollState()),
     ) {
-        Spacer(Modifier.height(20.dp))
-        Text(
-            text = stringResource(R.string.minimal_mode_settings_title),
-            fontSize = 22.sp,
-            fontWeight = FontWeight.SemiBold,
-            color = TITLE_COLOR,
-        )
+        Spacer(Modifier.height(16.dp))
+        Row(
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Icon(
+                Icons.AutoMirrored.Rounded.ArrowBack,
+                contentDescription = "Back",
+                tint = TITLE_COLOR,
+                modifier = Modifier
+                    .size(22.dp)
+                    .clickable { onDismiss() },
+            )
+            Spacer(Modifier.width(12.dp))
+            Text(
+                text = stringResource(R.string.minimal_mode_settings_title),
+                fontSize = 22.sp,
+                fontWeight = FontWeight.SemiBold,
+                color = TITLE_COLOR,
+            )
+        }
         Spacer(Modifier.height(20.dp))
 
         // Zeno Mode — default mode; on when neither Classic nor Minimal is active

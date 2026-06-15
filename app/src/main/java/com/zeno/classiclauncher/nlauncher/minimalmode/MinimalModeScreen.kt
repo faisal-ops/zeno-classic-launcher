@@ -2,6 +2,7 @@ package com.zeno.classiclauncher.nlauncher.minimalmode
 
 import android.content.Intent
 import android.content.IntentFilter
+import android.net.wifi.WifiManager
 import android.app.Notification
 import android.app.RemoteInput
 import android.os.BatteryManager
@@ -206,6 +207,21 @@ internal fun MinimalModeScreen(vm: LauncherViewModel) {
         val filter = IntentFilter().apply {
             addAction(android.media.AudioManager.RINGER_MODE_CHANGED_ACTION)
             addAction(android.app.NotificationManager.ACTION_INTERRUPTION_FILTER_CHANGED)
+        }
+        context.registerReceiver(receiver, filter)
+        onDispose { runCatching { context.unregisterReceiver(receiver) } }
+    }
+
+    // WiFi: react to enable/disable and connection changes instantly
+    androidx.compose.runtime.DisposableEffect(Unit) {
+        val receiver = object : android.content.BroadcastReceiver() {
+            override fun onReceive(ctx: android.content.Context?, intent: Intent?) {
+                wifiOn = actions.isWifiEnabled() == true
+            }
+        }
+        val filter = IntentFilter().apply {
+            addAction(WifiManager.WIFI_STATE_CHANGED_ACTION)
+            addAction(WifiManager.NETWORK_STATE_CHANGED_ACTION)
         }
         context.registerReceiver(receiver, filter)
         onDispose { runCatching { context.unregisterReceiver(receiver) } }
@@ -598,7 +614,7 @@ internal fun MinimalModeTopBar(
             Icon(
                 imageVector = if (wifiEnabled) Icons.Rounded.Wifi else Icons.Rounded.WifiOff,
                 contentDescription = stringResource(R.string.quick_settings_wifi),
-                tint = if (wifiEnabled) Color(0xFFEAF0F6) else Color(0x2EFFFFFF),
+                tint = if (wifiEnabled) Color(0xFFEAF0F6) else Color(0x73FFFFFF),
                 modifier = Modifier
                     .size(22.dp)
                     .pointerInput(Unit) { detectTapGestures(onTap = { onWifiTap() }) },
