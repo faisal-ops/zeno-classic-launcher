@@ -39,6 +39,17 @@ import com.zeno.classiclauncher.nlauncher.prefs.MailBadgeCandidates
 import com.zeno.classiclauncher.nlauncher.prefs.SecondShortcutTarget
 import com.zeno.classiclauncher.nlauncher.prefs.DEFAULT_THEME_JSON
 import com.zeno.classiclauncher.nlauncher.prefs.LauncherBackup
+import com.zeno.classiclauncher.nlauncher.prefs.MinimalModeLayout
+import com.zeno.classiclauncher.nlauncher.prefs.MinimalModeMaxApps
+import com.zeno.classiclauncher.nlauncher.R
+import android.content.ComponentName
+import android.media.MediaMetadata
+import android.media.session.MediaSessionManager
+import android.media.session.PlaybackState
+import com.zeno.classiclauncher.nlauncher.badges.BadgeNotificationListener
+import com.zeno.classiclauncher.nlauncher.minimalmode.NowPlayingState
+import com.zeno.classiclauncher.nlauncher.minimalmode.MinimalModeWeatherDay
+import com.zeno.classiclauncher.nlauncher.minimalmode.fetchMinimalModeWeather
 import com.zeno.classiclauncher.nlauncher.theme.LauncherThemePalette
 import com.zeno.classiclauncher.nlauncher.usage.UsageStatsRepository
 import kotlinx.coroutines.delay
@@ -46,11 +57,17 @@ import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.debounce
 import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.flow.flatMapLatest
+import kotlinx.coroutines.flow.flow
+import kotlinx.coroutines.flow.flowOf
+import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.stateIn
+import kotlinx.coroutines.withContext
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
@@ -135,6 +152,151 @@ class LauncherViewModel(app: Application) : AndroidViewModel(app) {
         combine(rawApps, prefs) { list, pr ->
             iconPackRepo.applyIconPack(list, pr.iconPackPackage, pr.customIconPackages)
         }.stateIn(viewModelScope, VIEWMODEL_SHARING, emptyList())
+
+    private val _minimalModeForecast = MutableStateFlow<List<MinimalModeWeatherDay>>(emptyList())
+    val minimalModeForecast: StateFlow<List<MinimalModeWeatherDay>> = _minimalModeForecast.asStateFlow()
+
+    private val _nowPlaying = MutableStateFlow<NowPlayingState?>(null)
+    val nowPlaying: StateFlow<NowPlayingState?> = _nowPlaying.asStateFlow()
+
+    // Cached track identity so artwork Bitmap is only re-decoded when the track actually changes.
+    private var lastTrackKey: String? = null
+    private var cachedAlbumArt: android.graphics.Bitmap? = null
+
+    init {
+        // Custom status bar was removed. Reset wm overscan once if the pref is still set from a
+        // previous install, so the system status bar is fully restored.
+        viewModelScope.launch {
+            if (prefsRepo.prefsFlow.first().customStatusBarEnabled) {
+                com.zeno.classiclauncher.nlauncher.root.RootManager.execute("wm overscan reset")
+                prefsRepo.setCustomStatusBarEnabled(false)
+            }
+        }
+        // Weather: re-fetch on pref change; exponential backoff on failure (30s → 60s → … → 15min),
+        // then refresh every 30 minutes on success.
+        viewModelScope.launch {
+            prefs
+                .map { p ->
+                    Triple(
+                        p.minimalModeEnabled && p.minimalModeShowWeather,
+                        p.glanceWeatherLocationMode,
+                        p.glanceWeatherManualLatitude to p.glanceWeatherManualLongitude,
+                    )
+                }
+                .distinctUntilChanged()
+                .flatMapLatest { (shouldFetch, locMode, coords) ->
+                    if (!shouldFetch) flowOf(emptyList()) else flow {
+                        var failCount = 0
+                        while (true) {
+                            val result = withContext(Dispatchers.IO) {
+                                fetchMinimalModeWeather(
+                                    getApplication<Application>().applicationContext,
+                                    locMode,
+                                    coords.first,
+                                    coords.second,
+                                )
+                            }
+                            emit(result)
+                            if (result.isNotEmpty()) {
+                                failCount = 0
+                                delay(30 * 60_000L)
+                            } else {
+                                failCount++
+                                // Double the wait each failure, cap at 15 minutes.
+                                val backoffMs = minOf(30_000L shl (failCount - 1).coerceAtMost(8), 15 * 60_000L)
+                                delay(backoffMs)
+                            }
+                        }
+                    }
+                }
+                .collect { _minimalModeForecast.value = it }
+        }
+
+        // Now-playing: poll media sessions every 2 seconds
+        viewModelScope.launch {
+            while (true) {
+                _nowPlaying.value = buildNowPlayingState()
+                delay(2_000L)
+            }
+        }
+    }
+
+    private fun buildNowPlayingState(): NowPlayingState? = runCatching {
+        val app = getApplication<Application>()
+        val msm = app.getSystemService(MediaSessionManager::class.java) ?: return null
+        val cn = ComponentName(app, BadgeNotificationListener::class.java)
+        val sessions = msm.getActiveSessions(cn)
+        val activeStates = setOf(
+            PlaybackState.STATE_PLAYING,
+            PlaybackState.STATE_PAUSED,
+            PlaybackState.STATE_BUFFERING,
+        )
+        val session = sessions.firstOrNull { it.playbackState?.state in activeStates }
+        if (session == null) {
+            lastTrackKey = null
+            cachedAlbumArt = null
+            return null
+        }
+        val meta = session.metadata ?: return null
+        val title = meta.getString(MediaMetadata.METADATA_KEY_TITLE) ?: return null
+        val artist = meta.getString(MediaMetadata.METADATA_KEY_ARTIST)
+            ?: meta.getString(MediaMetadata.METADATA_KEY_ALBUM_ARTIST)
+            ?: ""
+        // Re-decode artwork only when the track identity changes — avoids a fresh Bitmap
+        // allocation every 2-second poll tick while the same song is playing.
+        val trackKey = "$title|$artist"
+        if (trackKey != lastTrackKey) {
+            lastTrackKey = trackKey
+            cachedAlbumArt = meta.getBitmap(MediaMetadata.METADATA_KEY_ALBUM_ART)
+                ?: meta.getBitmap(MediaMetadata.METADATA_KEY_ART)
+        }
+        NowPlayingState(
+            title = title,
+            artist = artist,
+            isPlaying = session.playbackState?.state == PlaybackState.STATE_PLAYING,
+            albumArt = cachedAlbumArt,
+        )
+    }.getOrNull()
+
+    fun mediaPlayPause() {
+        runCatching {
+            val app = getApplication<Application>()
+            val msm = app.getSystemService(MediaSessionManager::class.java) ?: return
+            val cn = ComponentName(app, BadgeNotificationListener::class.java)
+            val sessions = msm.getActiveSessions(cn)
+            val activeStates = setOf(PlaybackState.STATE_PLAYING, PlaybackState.STATE_PAUSED, PlaybackState.STATE_BUFFERING)
+            val ctrl = sessions.firstOrNull { it.playbackState?.state in activeStates } ?: return
+            if (ctrl.playbackState?.state == PlaybackState.STATE_PLAYING) {
+                ctrl.transportControls.pause()
+            } else {
+                ctrl.transportControls.play()
+            }
+        }
+    }
+
+    fun mediaSkipNext() {
+        runCatching {
+            val app = getApplication<Application>()
+            val msm = app.getSystemService(MediaSessionManager::class.java) ?: return
+            val cn = ComponentName(app, BadgeNotificationListener::class.java)
+            val sessions = msm.getActiveSessions(cn)
+            val activeStates = setOf(PlaybackState.STATE_PLAYING, PlaybackState.STATE_PAUSED, PlaybackState.STATE_BUFFERING)
+            sessions.firstOrNull { it.playbackState?.state in activeStates }
+                ?.transportControls?.skipToNext()
+        }
+    }
+
+    fun mediaPreviousTrack() {
+        runCatching {
+            val app = getApplication<Application>()
+            val msm = app.getSystemService(MediaSessionManager::class.java) ?: return
+            val cn = ComponentName(app, BadgeNotificationListener::class.java)
+            val sessions = msm.getActiveSessions(cn)
+            val activeStates = setOf(PlaybackState.STATE_PLAYING, PlaybackState.STATE_PAUSED, PlaybackState.STATE_BUFFERING)
+            sessions.firstOrNull { it.playbackState?.state in activeStates }
+                ?.transportControls?.skipToPrevious()
+        }
+    }
 
     fun hasUsagePermission(): Boolean = UsageStatsRepository.hasPermission(getApplication())
 
@@ -284,7 +446,7 @@ class LauncherViewModel(app: Application) : AndroidViewModel(app) {
                         .mapNotNull { pkg -> byPkg[pkg]?.label }
                         .minWithOrNull { a, b -> collator.compare(a, b) }
                     if (!addedLabel.isNullOrBlank()) {
-                        _newAppAddedToast.value = "New app added: $addedLabel"
+                        _newAppAddedToast.value = getApplication<Application>().getString(R.string.new_app_added, addedLabel)
                     }
 
                     if (!isStrictDrawerAlphabeticalMode()) return@collect
@@ -1113,8 +1275,12 @@ class LauncherViewModel(app: Application) : AndroidViewModel(app) {
         if (request.requestType != LauncherApps.PinItemRequest.REQUEST_TYPE_SHORTCUT) return false
         val info = request.shortcutInfo ?: return false
         val token = homeShortcutStorageToken(info.`package`, info.id)
-        val cur = prefs.value.homeShortcutPackages
-        if (!prefs.value.canAddHomeStripItem()) return false
+        // Read directly from DataStore (not cached StateFlow) — on cold-start the StateFlow
+        // still holds DEFAULT_PREFS (empty shortcuts) while DataStore is loading, so prefs.value
+        // here would wipe all existing shortcuts and store only the new token.
+        val snap = prefsRepo.prefsFlow.first()
+        val cur = snap.homeShortcutPackages
+        if (!snap.canAddHomeStripItem()) return false
         if (token in cur) return true
         prefsRepo.setHomeShortcutPackages(cur + token)
         return true
@@ -1219,6 +1385,10 @@ class LauncherViewModel(app: Application) : AndroidViewModel(app) {
         viewModelScope.launch { prefsRepo.setAutoUnlockEnabled(enabled) }
     }
 
+    fun setAutoUnlockPinDigits(digits: Int) {
+        viewModelScope.launch { prefsRepo.setAutoUnlockPinDigits(digits) }
+    }
+
     fun setSwipeUpPackage(pkg: String) {
         viewModelScope.launch { prefsRepo.setSwipeUpPackage(pkg) }
     }
@@ -1292,6 +1462,83 @@ class LauncherViewModel(app: Application) : AndroidViewModel(app) {
     fun setClassicMode(enabled: Boolean) {
         viewModelScope.launch { prefsRepo.setClassicMode(enabled) }
     }
+
+    fun setMinimalModeEnabled(enabled: Boolean) {
+        viewModelScope.launch {
+            prefsRepo.setMinimalModeEnabled(enabled)
+            if (!enabled) prefsRepo.setMinimalModeGreyscale(false)
+        }
+    }
+    fun setMinimalModeLayout(layout: MinimalModeLayout) {
+        viewModelScope.launch { prefsRepo.setMinimalModeLayout(layout) }
+    }
+    fun setMinimalModeMaxApps(maxApps: MinimalModeMaxApps) {
+        viewModelScope.launch { prefsRepo.setMinimalModeMaxApps(maxApps) }
+    }
+    fun setMinimalModeShowIcons(show: Boolean) {
+        viewModelScope.launch { prefsRepo.setMinimalModeShowIcons(show) }
+    }
+    fun setMinimalModeShowWeather(show: Boolean) {
+        viewModelScope.launch { prefsRepo.setMinimalModeShowWeather(show) }
+    }
+    fun setMinimalModeShowNotifSummary(show: Boolean) {
+        viewModelScope.launch { prefsRepo.setMinimalModeShowNotifSummary(show) }
+    }
+    fun setMinimalModeApps(packages: List<String>) {
+        viewModelScope.launch { prefsRepo.setMinimalModeApps(packages) }
+    }
+
+    fun setMinimalModeGreyscale(enabled: Boolean) {
+        viewModelScope.launch { prefsRepo.setMinimalModeGreyscale(enabled) }
+    }
+
+    // In-memory limit extensions: pkg → expiry timestamp. Cleared on process restart.
+    private val _limitExtensions = MutableStateFlow<Map<String, Long>>(emptyMap())
+    val limitExtensions: StateFlow<Map<String, Long>> = _limitExtensions.asStateFlow()
+
+    fun extendAppLimit(pkg: String) {
+        _limitExtensions.value = _limitExtensions.value + (pkg to (System.currentTimeMillis() + 30 * 60_000L))
+    }
+
+    fun isLimitExtended(pkg: String): Boolean {
+        val expiry = _limitExtensions.value[pkg] ?: return false
+        return System.currentTimeMillis() < expiry
+    }
+
+    fun setMinimalModeSwipeRightApp(pkg: String) {
+        viewModelScope.launch { prefsRepo.setMinimalModeSwipeRightApp(pkg) }
+    }
+
+    fun toggleMinimalModeChallengeApp(pkg: String, add: Boolean) {
+        viewModelScope.launch {
+            val current = prefsRepo.prefsFlow.first().minimalModeChallengeApps.toMutableSet()
+            if (add) current.add(pkg) else current.remove(pkg)
+            prefsRepo.setMinimalModeChallengeApps(current)
+        }
+    }
+
+    fun setMinimalModeAppLimit(pkg: String, limitMs: Long?) {
+        viewModelScope.launch {
+            val raw = prefsRepo.prefsFlow.first().minimalModeAppLimits
+            val current = raw.split(",").filter { it.contains(":") }
+                .mapNotNull { entry ->
+                    val k = entry.substringBefore(":")
+                    val v = entry.substringAfter(":").toLongOrNull()
+                    if (v != null) k to v else null
+                }.toMap().toMutableMap()
+            if (limitMs == null) current.remove(pkg) else current[pkg] = limitMs
+            prefsRepo.setMinimalModeAppLimits(current)
+        }
+    }
+
+    fun setRootGranted(granted: Boolean) {
+        viewModelScope.launch { prefsRepo.setRootGranted(granted) }
+    }
+
+    fun setRootedQsEnabled(enabled: Boolean) {
+        viewModelScope.launch { prefsRepo.setRootedQsEnabled(enabled) }
+    }
+
 
     fun setAppIconShape(shape: AppIconShape) {
         viewModelScope.launch { prefsRepo.setAppIconShape(shape) }

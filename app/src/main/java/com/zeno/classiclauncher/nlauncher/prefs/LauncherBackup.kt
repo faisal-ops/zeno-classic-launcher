@@ -13,7 +13,7 @@ object LauncherBackup {
     const val FORMAT_KEY = "format"
     const val FORMAT_VALUE = "classiclauncher_backup"
     const val VERSION_KEY = "version"
-    const val CURRENT_VERSION = 24
+    const val CURRENT_VERSION = 25
 
     private object PrefKey {
         const val CUSTOM_QUICK_SETTINGS_ENABLED = "customQuickSettingsEnabled"
@@ -98,6 +98,20 @@ object LauncherBackup {
         p.put(PrefKey.QUICK_SETTINGS_QR_SCANNER_PACKAGE, prefs.quickSettingsQrScannerPackage)
         p.put(PrefKey.QUICK_SETTINGS_TILE_ORDER, JSONArray(prefs.quickSettingsTileOrder))
         p.put("classicMode", prefs.classicMode)
+        p.put("minimalModeEnabled", prefs.minimalModeEnabled)
+        p.put("minimalModeLayout", prefs.minimalModeLayout.name)
+        p.put("minimalModeMaxApps", prefs.minimalModeMaxApps.name)
+        p.put("minimalModeShowIcons", prefs.minimalModeShowIcons)
+        p.put("minimalModeShowWeather", prefs.minimalModeShowWeather)
+        p.put("minimalModeShowNotifSummary", prefs.minimalModeShowNotifSummary)
+        p.put("minimalModeApps", JSONArray(prefs.minimalModeApps))
+        p.put("minimalModeGreyscale", prefs.minimalModeGreyscale)
+        p.put("minimalModeChallengeApps", JSONArray(prefs.minimalModeChallengeApps.toList()))
+        p.put("minimalModeAppLimits", prefs.minimalModeAppLimits)
+        p.put("minimalModeSwipeRightApp", prefs.minimalModeSwipeRightApp)
+        p.put("autoUnlockEnabled", prefs.autoUnlockEnabled)
+        p.put("autoUnlockPinDigits", prefs.autoUnlockPinDigits)
+        p.put("drawerSortMode", prefs.drawerSortMode)
         p.put("appIconShape", prefs.appIconShape.name)
         p.put("iconPackPackage", prefs.iconPackPackage)
         p.put("showAppCardBackground", prefs.showAppCardBackground)
@@ -220,6 +234,30 @@ object LauncherBackup {
             p.has("classicMode") -> p.optBoolean("classicMode", false)
             else -> p.optBoolean("drawerOnlyMode", false)
         }
+        val minimalModeEnabled = p.optBoolean("minimalModeEnabled", false)
+        val minimalModeLayout = p.optString("minimalModeLayout", "LIST").let { name ->
+            MinimalModeLayout.entries.firstOrNull { it.name == name } ?: MinimalModeLayout.LIST
+        }
+        val minimalModeMaxApps = p.optString("minimalModeMaxApps", "AUTO").let { name ->
+            MinimalModeMaxApps.entries.firstOrNull { it.name == name } ?: MinimalModeMaxApps.AUTO
+        }
+        val minimalModeShowIcons = p.optBoolean("minimalModeShowIcons", true)
+        val minimalModeShowWeather = p.optBoolean("minimalModeShowWeather", true)
+        val minimalModeShowNotifSummary = p.optBoolean("minimalModeShowNotifSummary", true)
+        val minimalModeApps = p.optJSONArray("minimalModeApps")?.let { arr ->
+            buildList { for (i in 0 until arr.length()) add(arr.optString(i, "").trim()) }
+                .filter { it.isNotEmpty() }
+        } ?: emptyList()
+        val minimalModeGreyscale = p.optBoolean("minimalModeGreyscale", true)
+        val minimalModeChallengeApps = p.optJSONArray("minimalModeChallengeApps")?.let { arr ->
+            buildList { for (i in 0 until arr.length()) add(arr.optString(i, "").trim()) }
+                .filter { it.isNotEmpty() }.toSet()
+        } ?: emptySet()
+        val minimalModeAppLimits = p.optString("minimalModeAppLimits", "").trim()
+        val minimalModeSwipeRightApp = p.optString("minimalModeSwipeRightApp", "").trim()
+        val autoUnlockEnabled = p.optBoolean("autoUnlockEnabled", true)
+        val autoUnlockPinDigits = p.optInt("autoUnlockPinDigits", 4).coerceIn(4, 8)
+        val drawerSortMode = p.optString("drawerSortMode", "ALPHABETICAL").trim()
         val appIconShape =
             p.optString("appIconShape", "").let { name ->
                 AppIconShape.entries.firstOrNull { it.name == name } ?: AppIconShape.SOFT_SQUARE
@@ -329,6 +367,20 @@ object LauncherBackup {
             quickSettingsQrScannerPackage = quickSettingsQrScannerPackage,
             quickSettingsTileOrder = quickSettingsTileOrder,
             classicMode = classicMode,
+            minimalModeEnabled = minimalModeEnabled,
+            minimalModeLayout = minimalModeLayout,
+            minimalModeMaxApps = minimalModeMaxApps,
+            minimalModeShowIcons = minimalModeShowIcons,
+            minimalModeShowWeather = minimalModeShowWeather,
+            minimalModeShowNotifSummary = minimalModeShowNotifSummary,
+            minimalModeApps = minimalModeApps,
+            minimalModeGreyscale = minimalModeGreyscale,
+            minimalModeChallengeApps = minimalModeChallengeApps,
+            minimalModeAppLimits = minimalModeAppLimits,
+            minimalModeSwipeRightApp = minimalModeSwipeRightApp,
+            autoUnlockEnabled = autoUnlockEnabled,
+            autoUnlockPinDigits = autoUnlockPinDigits,
+            drawerSortMode = drawerSortMode,
             appIconShape = appIconShape,
             iconPackPackage = iconPackPackage,
             showAppCardBackground = showAppCardBackground,

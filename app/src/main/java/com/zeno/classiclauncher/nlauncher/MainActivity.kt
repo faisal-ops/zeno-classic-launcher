@@ -6,20 +6,29 @@ import android.content.pm.LauncherApps
 import android.content.pm.PackageManager
 import android.os.Bundle
 import android.telecom.TelecomManager
-import android.view.View
 import android.view.WindowManager
 import android.widget.Toast
-import androidx.activity.ComponentActivity
+import androidx.appcompat.app.AppCompatActivity
 import androidx.activity.compose.setContent
 import androidx.activity.viewModels
+import androidx.compose.runtime.getValue
+import android.os.Build
+import android.view.WindowInsets
+import android.view.WindowInsetsController
+import androidx.core.view.WindowCompat
+import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.lifecycleScope
+import androidx.lifecycle.repeatOnLifecycle
+import com.zeno.classiclauncher.nlauncher.R
+import com.zeno.classiclauncher.nlauncher.locale.LauncherLocale
+import com.zeno.classiclauncher.nlauncher.minimalmode.MinimalModeScreen
 import com.zeno.classiclauncher.nlauncher.ui.BbTheme
 import com.zeno.classiclauncher.nlauncher.ui.LauncherScreen
 import com.zeno.classiclauncher.nlauncher.ui.LauncherViewModel
-import com.zeno.classiclauncher.nlauncher.locale.LauncherLocale
 import kotlinx.coroutines.launch
 
-class MainActivity : ComponentActivity() {
+class MainActivity : AppCompatActivity() {
 
     private val viewModel: LauncherViewModel by viewModels()
 
@@ -29,25 +38,62 @@ class MainActivity : ComponentActivity() {
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
-        // QS / edge-to-edge experiment: lay out under system bars (status bar stays visible;
-        // content can extend behind it). Off by default — flip to true to retest.
-        if (ENABLE_EDGE_TO_EDGE_UNDER_SYSTEM_BARS) {
-            @Suppress("DEPRECATION")
-            window.decorView.systemUiVisibility =
-                View.SYSTEM_UI_FLAG_LAYOUT_STABLE or
-                    View.SYSTEM_UI_FLAG_LAYOUT_FULLSCREEN
-        }
+        // Allow content to extend into status-bar / navigation-bar areas.
+        // statusBarsPadding() / navigationBarsPadding() in each screen handle the insets.
+        WindowCompat.setDecorFitsSystemWindows(window, false)
         handlePinShortcutIntent(intent)
         window.addFlags(WindowManager.LayoutParams.FLAG_SHOW_WALLPAPER)
         window.setBackgroundDrawableResource(android.R.color.transparent)
         setContent {
             BbTheme {
-                LauncherScreen()
+                val prefs by viewModel.prefs.collectAsStateWithLifecycle()
+                if (prefs.minimalModeEnabled) {
+                    MinimalModeScreen(vm = viewModel)
+                } else {
+                    LauncherScreen(vm = viewModel)
+                }
+            }
+        }
+        // React to Minimal Mode toggle at runtime (e.g. user switches in settings overlay)
+        lifecycleScope.launch {
+            repeatOnLifecycle(Lifecycle.State.STARTED) {
+                viewModel.prefs.collect { prefs ->
+                    applyStatusBarVisibility(prefs.minimalModeEnabled)
+                }
             }
         }
     }
 
-    /** Catch KEYCODE_ENDCALL at the Activity level — Compose onPreviewKeyEvent may not receive it
+    override fun onResume() {
+        super.onResume()
+        applyStatusBarVisibility(viewModel.prefs.value.minimalModeEnabled)
+    }
+
+    override fun onWindowFocusChanged(hasFocus: Boolean) {
+        super.onWindowFocusChanged(hasFocus)
+        if (hasFocus) applyStatusBarVisibility(viewModel.prefs.value.minimalModeEnabled)
+    }
+
+    /**
+     * Hides or shows only the status bar based on Minimal Mode state.
+     * Navigation bar is never touched.
+     * BEHAVIOR_SHOW_TRANSIENT_BARS_BY_SWIPING keeps the notification shade accessible
+     * via a downward swipe even when the status bar is hidden.
+     * Requires API 30+; no-op on older devices (minSdk=26, but target devices are API 34/36).
+     */
+    private fun applyStatusBarVisibility(minimalModeActive: Boolean) {
+        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.R) return
+        val controller = window.insetsController ?: return
+        if (minimalModeActive) {
+            controller.hide(WindowInsets.Type.statusBars())
+            controller.systemBarsBehavior =
+                WindowInsetsController.BEHAVIOR_SHOW_TRANSIENT_BARS_BY_SWIPE
+        } else {
+            controller.show(WindowInsets.Type.statusBars())
+        }
+    }
+
+    /** Catch KEYCODE_CALL at the Activity level — Compose onPreviewKeyEvent may not receive it
      *  if the system (PhoneWindowManager) intercepts or delivers it only on ACTION_UP. */
     @Suppress("RestrictedApi")
     override fun dispatchKeyEvent(event: android.view.KeyEvent): Boolean {
@@ -107,14 +153,11 @@ class MainActivity : ComponentActivity() {
             } else {
                 Toast.makeText(
                     this@MainActivity,
-                    "Home shortcuts full (max 3)",
+                    getString(R.string.home_shortcuts_full),
                     Toast.LENGTH_SHORT,
                 ).show()
             }
         }
     }
 
-    private companion object {
-        private const val ENABLE_EDGE_TO_EDGE_UNDER_SYSTEM_BARS = true
-    }
 }

@@ -73,6 +73,10 @@ enum class GlanceWeatherLocationMode {
     MANUAL,
 }
 
+enum class MinimalModeLayout { LIST, GRID }
+
+enum class MinimalModeMaxApps { AUTO, SIX, NINE, TWELVE }
+
 data class HomeWidgetConfig(
     val appWidgetId: Int = -1,
     val providerPackage: String = "",
@@ -157,10 +161,12 @@ data class LauncherPrefs(
     val doubleTapToSleepEnabled: Boolean = true,
     /** Skip "tap to unlock" overlay on screen-on and auto-submit PIN after 4 digits. Default on. */
     val autoUnlockEnabled: Boolean = true,
+    /** Number of PIN digits to wait for before auto-submitting. 4 for standard PIN, 6 for longer. */
+    val autoUnlockPinDigits: Int = 4,
     /** Package to launch on swipe-up gesture on home. Empty = disabled. */
     val swipeUpPackage: String = "",
     /** Package to launch on swipe-right gesture on home. Empty = disabled. */
-    val swipeRightPackage: String = "com.blackberry.hub",
+    val swipeRightPackage: String = "",
     /** Package to launch on double-tap on home (only when doubleTapToSleepEnabled is false). */
     val doubleTapPackage: String = "",
     /** Show today's screen-time badge (e.g. "2h") on app icons in the drawer. */
@@ -187,6 +193,30 @@ data class LauncherPrefs(
      * receivers while this is on.
      */
     val classicMode: Boolean = false,
+    // ── Minimal Mode ──────────────────────────────────────────────────────────────
+    val minimalModeEnabled: Boolean = false,
+    val minimalModeLayout: MinimalModeLayout = MinimalModeLayout.LIST,
+    val minimalModeMaxApps: MinimalModeMaxApps = MinimalModeMaxApps.AUTO,
+    val minimalModeShowIcons: Boolean = true,
+    val minimalModeShowWeather: Boolean = true,
+    val minimalModeShowNotifSummary: Boolean = true,
+    /** Ordered package names pinned in Minimal Mode. Empty = use built-in defaults. */
+    val minimalModeApps: List<String> = emptyList(),
+    /** When true, Minimal Mode forces all app icons to greyscale to reduce dopamine triggers. */
+    val minimalModeGreyscale: Boolean = true,
+    /** Package names that trigger the 5-second friction countdown before launching. */
+    val minimalModeChallengeApps: Set<String> = emptySet(),
+    /** Per-app daily soft limits stored as "pkg:limitMs" joined by comma. */
+    val minimalModeAppLimits: String = "",
+    /** Package opened on swipe-right; empty = auto-detect BB Hub. */
+    val minimalModeSwipeRightApp: String = "",
+    // ── Root ──────────────────────────────────────────────────────────────────────
+    /** True once the user has granted su access to the launcher. */
+    val rootGranted: Boolean = false,
+    /** True when the custom status bar overlay is active (requires root). */
+    val customStatusBarEnabled: Boolean = false,
+    /** True when QS tiles use direct Settings writes (requires WRITE_SECURE_SETTINGS via root). */
+    val rootedQsEnabled: Boolean = false,
     /** Global installed-app icon mask used across launcher surfaces. */
     val appIconShape: AppIconShape = AppIconShape.SOFT_SQUARE,
     /** Empty = app/system icons. Otherwise package name of an installed Nova/Apex-style icon pack. */
@@ -252,6 +282,7 @@ class LauncherPrefsRepository(private val context: Context) {
         val HOME_WIDGET_ROWS = intPreferencesKey("homeWidgetRows")
         val DOUBLE_TAP_SLEEP = booleanPreferencesKey("doubleTapToSleepEnabled")
         val AUTO_UNLOCK = booleanPreferencesKey("autoUnlockEnabled")
+        val AUTO_UNLOCK_PIN_DIGITS = intPreferencesKey("autoUnlockPinDigits")
         val SWIPE_UP_PKG = stringPreferencesKey("swipeUpPackage")
         val SWIPE_RIGHT_PKG = stringPreferencesKey("swipeRightPackage")
         val DOUBLE_TAP_PKG = stringPreferencesKey("doubleTapPackage")
@@ -264,6 +295,20 @@ class LauncherPrefsRepository(private val context: Context) {
         val QUICK_SETTINGS_QR_SCANNER = stringPreferencesKey("quickSettingsQrScannerPackage")
         val QUICK_SETTINGS_TILE_ORDER = stringPreferencesKey("quickSettingsTileOrderCsv")
         val CLASSIC_MODE = booleanPreferencesKey("classicMode")
+        val MINIMAL_MODE = booleanPreferencesKey("minimalMode")
+        val MINIMAL_MODE_LAYOUT = stringPreferencesKey("minimalModeLayout")
+        val MINIMAL_MODE_MAX_APPS = stringPreferencesKey("minimalModeMaxApps")
+        val MINIMAL_MODE_SHOW_ICONS = booleanPreferencesKey("minimalModeShowIcons")
+        val MINIMAL_MODE_SHOW_WEATHER = booleanPreferencesKey("minimalModeShowWeather")
+        val MINIMAL_MODE_SHOW_NOTIF_SUMMARY = booleanPreferencesKey("minimalModeShowNotifSummary")
+        val MINIMAL_MODE_APPS = stringPreferencesKey("minimalModeApps")
+        val MINIMAL_MODE_GREYSCALE = booleanPreferencesKey("minimalModeGreyscale")
+        val MINIMAL_MODE_CHALLENGE_APPS = stringPreferencesKey("minimalModeChallengeApps")
+        val MINIMAL_MODE_APP_LIMITS = stringPreferencesKey("minimalModeAppLimits")
+        val MINIMAL_MODE_SWIPE_RIGHT_APP = stringPreferencesKey("minimalModeSwipeRightApp")
+        val ROOT_GRANTED = booleanPreferencesKey("rootGranted")
+        val CUSTOM_STATUS_BAR_ENABLED = booleanPreferencesKey("customStatusBarEnabled")
+        val ROOTED_QS_ENABLED = booleanPreferencesKey("rootedQsEnabled")
         /** Legacy key from earlier builds; read only for migration. */
         val CLASSIC_MODE_LEGACY = booleanPreferencesKey("drawerOnlyMode")
         val APP_ICON_SHAPE = stringPreferencesKey("appIconShape")
@@ -337,8 +382,9 @@ class LauncherPrefsRepository(private val context: Context) {
         }
         val doubleTapSleep = p[Keys.DOUBLE_TAP_SLEEP] ?: DEFAULT_PREFS.doubleTapToSleepEnabled
         val autoUnlock = p[Keys.AUTO_UNLOCK] ?: DEFAULT_PREFS.autoUnlockEnabled
+        val autoUnlockPinDigits = (p[Keys.AUTO_UNLOCK_PIN_DIGITS] ?: DEFAULT_PREFS.autoUnlockPinDigits).coerceIn(4, 8)
         val swipeUpPkg = p[Keys.SWIPE_UP_PKG]?.trim() ?: ""
-        val swipeRightPkg = p[Keys.SWIPE_RIGHT_PKG]?.trim() ?: "com.blackberry.hub"
+        val swipeRightPkg = p[Keys.SWIPE_RIGHT_PKG]?.trim() ?: ""
         val doubleTapPkg = p[Keys.DOUBLE_TAP_PKG]?.trim() ?: ""
         val showUsageStatsBadge = p[Keys.SHOW_USAGE_STATS_BADGE] ?: DEFAULT_PREFS.showUsageStatsBadge
         val showIconNotifBadge = p[Keys.SHOW_ICON_NOTIF_BADGE] ?: DEFAULT_PREFS.showIconNotifBadge
@@ -349,6 +395,21 @@ class LauncherPrefsRepository(private val context: Context) {
         val quickSettingsQrScannerPackage = p[Keys.QUICK_SETTINGS_QR_SCANNER]?.trim() ?: ""
         val quickSettingsTileOrder = parseCsvList(p[Keys.QUICK_SETTINGS_TILE_ORDER])
         val classicMode = p[Keys.CLASSIC_MODE] ?: p[Keys.CLASSIC_MODE_LEGACY] ?: DEFAULT_PREFS.classicMode
+        val minimalModeEnabled = p[Keys.MINIMAL_MODE] ?: DEFAULT_PREFS.minimalModeEnabled
+        val minimalModeLayout = p[Keys.MINIMAL_MODE_LAYOUT]?.let { v -> MinimalModeLayout.entries.firstOrNull { it.name == v } } ?: DEFAULT_PREFS.minimalModeLayout
+        val minimalModeMaxApps = p[Keys.MINIMAL_MODE_MAX_APPS]?.let { v -> MinimalModeMaxApps.entries.firstOrNull { it.name == v } } ?: DEFAULT_PREFS.minimalModeMaxApps
+        val minimalModeShowIcons = p[Keys.MINIMAL_MODE_SHOW_ICONS] ?: DEFAULT_PREFS.minimalModeShowIcons
+        val minimalModeShowWeather = p[Keys.MINIMAL_MODE_SHOW_WEATHER] ?: DEFAULT_PREFS.minimalModeShowWeather
+        val minimalModeShowNotifSummary = p[Keys.MINIMAL_MODE_SHOW_NOTIF_SUMMARY] ?: DEFAULT_PREFS.minimalModeShowNotifSummary
+        val minimalModeApps = parseCsvList(p[Keys.MINIMAL_MODE_APPS])
+        val minimalModeGreyscale = p[Keys.MINIMAL_MODE_GREYSCALE] ?: DEFAULT_PREFS.minimalModeGreyscale
+        val minimalModeChallengeApps = p[Keys.MINIMAL_MODE_CHALLENGE_APPS]
+            ?.split(",")?.filter { it.isNotBlank() }?.toSet() ?: DEFAULT_PREFS.minimalModeChallengeApps
+        val minimalModeAppLimits = p[Keys.MINIMAL_MODE_APP_LIMITS] ?: DEFAULT_PREFS.minimalModeAppLimits
+        val minimalModeSwipeRightApp = p[Keys.MINIMAL_MODE_SWIPE_RIGHT_APP] ?: DEFAULT_PREFS.minimalModeSwipeRightApp
+        val rootGranted = p[Keys.ROOT_GRANTED] ?: DEFAULT_PREFS.rootGranted
+        val customStatusBarEnabled = p[Keys.CUSTOM_STATUS_BAR_ENABLED] ?: DEFAULT_PREFS.customStatusBarEnabled
+        val rootedQsEnabled = p[Keys.ROOTED_QS_ENABLED] ?: DEFAULT_PREFS.rootedQsEnabled
         val appIconShape =
             p[Keys.APP_ICON_SHAPE]?.let { v -> AppIconShape.entries.firstOrNull { it.name == v } }
                 ?: DEFAULT_PREFS.appIconShape
@@ -396,6 +457,7 @@ class LauncherPrefsRepository(private val context: Context) {
             homeWidget = homeWidget,
             doubleTapToSleepEnabled = doubleTapSleep,
             autoUnlockEnabled = autoUnlock,
+            autoUnlockPinDigits = autoUnlockPinDigits,
             swipeUpPackage = swipeUpPkg,
             swipeRightPackage = swipeRightPkg,
             doubleTapPackage = doubleTapPkg,
@@ -408,6 +470,20 @@ class LauncherPrefsRepository(private val context: Context) {
             quickSettingsQrScannerPackage = quickSettingsQrScannerPackage,
             quickSettingsTileOrder = quickSettingsTileOrder,
             classicMode = classicMode,
+            minimalModeEnabled = minimalModeEnabled,
+            minimalModeLayout = minimalModeLayout,
+            minimalModeMaxApps = minimalModeMaxApps,
+            minimalModeShowIcons = minimalModeShowIcons,
+            minimalModeShowWeather = minimalModeShowWeather,
+            minimalModeShowNotifSummary = minimalModeShowNotifSummary,
+            minimalModeApps = minimalModeApps,
+            minimalModeGreyscale = minimalModeGreyscale,
+            minimalModeChallengeApps = minimalModeChallengeApps,
+            minimalModeAppLimits = minimalModeAppLimits,
+            minimalModeSwipeRightApp = minimalModeSwipeRightApp,
+            rootGranted = rootGranted,
+            customStatusBarEnabled = customStatusBarEnabled,
+            rootedQsEnabled = rootedQsEnabled,
             appIconShape = appIconShape,
             iconPackPackage = iconPackPackage,
             showAppCardBackground = showAppCardBackground,
@@ -660,6 +736,10 @@ class LauncherPrefsRepository(private val context: Context) {
         context.dataStore.edit { it[Keys.AUTO_UNLOCK] = enabled }
     }
 
+    suspend fun setAutoUnlockPinDigits(digits: Int) {
+        context.dataStore.edit { it[Keys.AUTO_UNLOCK_PIN_DIGITS] = digits.coerceIn(4, 8) }
+    }
+
     suspend fun setSwipeUpPackage(pkg: String) {
         context.dataStore.edit { it[Keys.SWIPE_UP_PKG] = pkg.trim() }
     }
@@ -709,6 +789,58 @@ class LauncherPrefsRepository(private val context: Context) {
             s[Keys.CLASSIC_MODE] = enabled
             s.remove(Keys.CLASSIC_MODE_LEGACY)
         }
+    }
+
+    suspend fun setMinimalModeEnabled(enabled: Boolean) {
+        context.dataStore.edit { it[Keys.MINIMAL_MODE] = enabled }
+    }
+    suspend fun setMinimalModeLayout(layout: MinimalModeLayout) {
+        context.dataStore.edit { it[Keys.MINIMAL_MODE_LAYOUT] = layout.name }
+    }
+    suspend fun setMinimalModeMaxApps(maxApps: MinimalModeMaxApps) {
+        context.dataStore.edit { it[Keys.MINIMAL_MODE_MAX_APPS] = maxApps.name }
+    }
+    suspend fun setMinimalModeShowIcons(show: Boolean) {
+        context.dataStore.edit { it[Keys.MINIMAL_MODE_SHOW_ICONS] = show }
+    }
+    suspend fun setMinimalModeShowWeather(show: Boolean) {
+        context.dataStore.edit { it[Keys.MINIMAL_MODE_SHOW_WEATHER] = show }
+    }
+    suspend fun setMinimalModeShowNotifSummary(show: Boolean) {
+        context.dataStore.edit { it[Keys.MINIMAL_MODE_SHOW_NOTIF_SUMMARY] = show }
+    }
+    suspend fun setMinimalModeApps(packages: List<String>) {
+        context.dataStore.edit { it[Keys.MINIMAL_MODE_APPS] = packages.joinToString(",") }
+    }
+
+    suspend fun setMinimalModeGreyscale(enabled: Boolean) {
+        context.dataStore.edit { it[Keys.MINIMAL_MODE_GREYSCALE] = enabled }
+    }
+
+    suspend fun setMinimalModeChallengeApps(packages: Set<String>) {
+        context.dataStore.edit { it[Keys.MINIMAL_MODE_CHALLENGE_APPS] = packages.joinToString(",") }
+    }
+
+    suspend fun setMinimalModeSwipeRightApp(pkg: String) {
+        context.dataStore.edit { it[Keys.MINIMAL_MODE_SWIPE_RIGHT_APP] = pkg }
+    }
+
+    suspend fun setMinimalModeAppLimits(limits: Map<String, Long>) {
+        context.dataStore.edit {
+            it[Keys.MINIMAL_MODE_APP_LIMITS] = limits.entries.joinToString(",") { (k, v) -> "$k:$v" }
+        }
+    }
+
+    suspend fun setRootGranted(granted: Boolean) {
+        context.dataStore.edit { it[Keys.ROOT_GRANTED] = granted }
+    }
+
+    suspend fun setCustomStatusBarEnabled(enabled: Boolean) {
+        context.dataStore.edit { it[Keys.CUSTOM_STATUS_BAR_ENABLED] = enabled }
+    }
+
+    suspend fun setRootedQsEnabled(enabled: Boolean) {
+        context.dataStore.edit { it[Keys.ROOTED_QS_ENABLED] = enabled }
     }
 
     suspend fun setAppIconShape(shape: AppIconShape) {

@@ -88,7 +88,6 @@ import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.layout.wrapContentHeight
-import androidx.compose.foundation.layout.wrapContentWidth
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
@@ -122,6 +121,9 @@ import androidx.compose.material.icons.outlined.QueryStats
 import androidx.compose.material.icons.outlined.SortByAlpha
 import androidx.compose.material.icons.outlined.Search
 import androidx.compose.material.icons.outlined.Menu
+import androidx.compose.material.icons.outlined.Settings
+import androidx.compose.material.icons.rounded.LocationOn
+import androidx.compose.material.icons.outlined.ViewList
 import androidx.compose.material.icons.outlined.MailOutline
 import androidx.compose.material.icons.outlined.Vibration
 import androidx.compose.material.icons.rounded.PhotoCamera
@@ -147,7 +149,12 @@ import androidx.compose.material.icons.rounded.AddAlarm
 import androidx.compose.material.icons.rounded.ArrowDropDown
 import androidx.compose.material.icons.rounded.EventBusy
 import androidx.compose.material.icons.rounded.AspectRatio
+import androidx.compose.material.icons.rounded.CellTower
+import androidx.compose.material.icons.rounded.Lightbulb
 import androidx.compose.material.icons.rounded.Notifications
+import androidx.compose.material.icons.rounded.NotificationsOff
+import androidx.compose.material.icons.rounded.Vibration
+import androidx.compose.material.icons.rounded.WifiTethering
 import androidx.compose.material.icons.rounded.NightlightRound
 import androidx.compose.material.icons.rounded.Folder
 import androidx.compose.material.icons.rounded.Lock
@@ -225,6 +232,7 @@ import androidx.compose.ui.layout.boundsInRoot
 import androidx.compose.ui.layout.onGloballyPositioned
 import androidx.compose.ui.zIndex
 import androidx.compose.ui.draw.alpha
+import androidx.compose.ui.draw.drawWithContent
 import androidx.compose.ui.draw.rotate
 import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.draw.clip
@@ -310,6 +318,7 @@ import com.zeno.classiclauncher.nlauncher.prefs.LauncherPrefs
 import com.zeno.classiclauncher.nlauncher.prefs.AppIconShape
 import com.zeno.classiclauncher.nlauncher.prefs.SecondShortcutTarget
 import com.zeno.classiclauncher.nlauncher.R
+import com.zeno.classiclauncher.nlauncher.root.RootManager
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
@@ -705,6 +714,9 @@ fun LauncherScreen(
     var showLanguageSettings by remember { mutableStateOf(false) }
     var showAppDrawerBadges by remember { mutableStateOf(false) }
     var showIconAppearanceSettings by remember { mutableStateOf(false) }
+    var showMinimalModeSettings by remember { mutableStateOf(false) }
+    var showRootSettings by remember { mutableStateOf(false) }
+    var showModesFromQs by remember { mutableStateOf(false) }
     var showDevDiagnostics by remember { mutableStateOf(false) }
     var showHomeActions by remember { mutableStateOf(false) }
     var showPinAppToHome by remember { mutableStateOf(false) }
@@ -750,7 +762,7 @@ fun LauncherScreen(
                     showWidgetPicker = false
                 } else {
                     runCatching { appWidgetHost.deleteAppWidgetId(widgetId) }
-                    Toast.makeText(context, "Could not save widget", Toast.LENGTH_SHORT).show()
+                    Toast.makeText(context, context.getString(R.string.widget_save_failed), Toast.LENGTH_SHORT).show()
                 }
             },
         )
@@ -764,7 +776,7 @@ fun LauncherScreen(
                 showWidgetConfigMode = false
                 showRemoveWidgetConfirm = false
             } else {
-                Toast.makeText(context, "Could not remove widget", Toast.LENGTH_SHORT).show()
+                Toast.makeText(context, context.getString(R.string.widget_remove_failed), Toast.LENGTH_SHORT).show()
             }
         }
     }
@@ -950,6 +962,7 @@ fun LauncherScreen(
     // and recents are handled elsewhere; no moveTaskToBack (avoids feeling like “recent apps”).
     BackHandler(enabled = true) {
         when {
+            showModesFromQs -> { showModesFromQs = false; showSettings = true }
             showQuickSettingsOverlay -> showQuickSettingsOverlay = false
             showAppMenu != null -> {
                 showAppMenu = null
@@ -959,10 +972,12 @@ fun LauncherScreen(
             drawerFolderMenu != null -> drawerFolderMenu = null
             dockQuickActionSlot != null -> dockQuickActionSlot = null
             showDockSlotPicker != null -> showDockSlotPicker = null
+            showRootSettings -> showRootSettings = false
             showPermissionsSettings -> showPermissionsSettings = false
             showGestureSettings -> showGestureSettings = false
             showAppDrawerBadges -> showAppDrawerBadges = false
             showIconAppearanceSettings -> showIconAppearanceSettings = false
+            showMinimalModeSettings -> showMinimalModeSettings = false
             showHomeGroupsSettings -> showHomeGroupsSettings = false
             showGlanceSettings -> showGlanceSettings = false
             showSettings -> showSettings = false
@@ -991,7 +1006,34 @@ fun LauncherScreen(
     // End-call / red button: navigated via Activity dispatchKeyEvent → ViewModel → here.
     val navigateHomeEvent by vm.navigateHomeEvent.collectAsStateWithLifecycle()
     androidx.compose.runtime.LaunchedEffect(navigateHomeEvent) {
-        if (navigateHomeEvent > 0) pagerState.animateScrollToPage(0)
+        if (navigateHomeEvent > 0) {
+            // Dismiss all overlays so home/end-call button returns to the home screen
+            showSettings = false
+            showRootSettings = false
+            showPermissionsSettings = false
+            showGlanceSettings = false
+            showHomeGroupsSettings = false
+            showGestureSettings = false
+            showLanguageSettings = false
+            showAppDrawerBadges = false
+            showIconAppearanceSettings = false
+            showMinimalModeSettings = false
+            showModesFromQs = false
+            showDevDiagnostics = false
+            showHomeActions = false
+            showPinAppToHome = false
+            showWidgetPicker = false
+            showWidgetResizeSheet = false
+            showWidgetConfigMode = false
+            showRemoveWidgetConfirm = false
+            showNewHomeGroupDialog = false
+            showQuickSettingsOverlay = false
+            showSpotlightOverlay = false
+            showAppMenu = null
+            showHomeGroupMenu = null
+            showDockSlotPicker = null
+            pagerState.animateScrollToPage(0)
+        }
     }
 
     val dismissLauncherQsEvent by vm.dismissLauncherQsEvent.collectAsStateWithLifecycle()
@@ -1030,6 +1072,14 @@ fun LauncherScreen(
     CompositionLocalProvider(LocalTrackpadActive provides trackpadActive) {
     Box(modifier = Modifier
         .fillMaxSize()
+        .then(
+            if (prefs.minimalModeGreyscale)
+                Modifier.drawWithContent {
+                    drawContent()
+                    drawRect(color = Color.Black, blendMode = androidx.compose.ui.graphics.BlendMode.Saturation)
+                }
+            else Modifier
+        )
         .onPreviewKeyEvent { ev ->
             if (ev.type != KeyEventType.KeyDown) return@onPreviewKeyEvent false
             val nk = ev.nativeKeyEvent
@@ -1051,8 +1101,39 @@ fun LauncherScreen(
             false // never consume — just observe
         }
     ) {
-        Column(modifier = Modifier.fillMaxSize()) {
-            // Do not add top Spacer here: HomePage uses statusBarsPadding(); an extra inset stacked a large gap under the status bar.
+        Column(modifier = Modifier
+            .fillMaxSize()
+            .pointerInput(Unit) {
+                // Intercept downward-dominant swipes in the Initial pass (runs before the
+                // HorizontalPager's Main-pass drag detection) so the pager never interprets
+                // the incidental horizontal component of a QS-open swipe as a page scroll
+                // to the app drawer.
+                awaitPointerEventScope {
+                    while (true) {
+                        val down = awaitFirstDown(requireUnconsumed = false, pass = PointerEventPass.Initial)
+                        val startX = down.position.x
+                        val startY = down.position.y
+                        var verticalLocked = false
+                        var decidedHorizontal = false
+                        while (true) {
+                            val ev = awaitPointerEvent(PointerEventPass.Initial)
+                            val ch = ev.changes.firstOrNull() ?: break
+                            if (!ch.pressed) break
+                            val dx = ch.position.x - startX
+                            val dy = ch.position.y - startY
+                            val slop = 40.dp.toPx()
+                            if (!verticalLocked && !decidedHorizontal) {
+                                when {
+                                    dy > slop && dy > kotlin.math.abs(dx) * 1.5f -> verticalLocked = true
+                                    kotlin.math.abs(dx) > slop -> decidedHorizontal = true
+                                }
+                            }
+                            if (verticalLocked) ev.changes.forEach { it.consume() }
+                        }
+                    }
+                }
+            }
+        ) {
             HorizontalPager(
                 state = pagerState,
                 modifier = Modifier.weight(1f),
@@ -1218,7 +1299,7 @@ fun LauncherScreen(
                             } else {
                                 Toast.makeText(
                                     context,
-                                    "Enable Usage Access for Zeno Classic in Settings",
+                                    context.getString(R.string.drawer_usage_access_prompt),
                                     Toast.LENGTH_LONG,
                                 ).show()
                                 context.startActivity(
@@ -1503,7 +1584,7 @@ fun LauncherScreen(
                     val isCurrentlyHidden = prefs.hiddenPackages.contains(selectedApp.packageName)
                     vm.setHidden(selectedApp.packageName, !isCurrentlyHidden)
                     if (!isCurrentlyHidden) {
-                        Toast.makeText(context, "App hidden · Type \"private\" in drawer to view", Toast.LENGTH_SHORT).show()
+                        Toast.makeText(context, context.getString(R.string.app_hidden_toast), Toast.LENGTH_SHORT).show()
                     }
                     showAppMenu = null
                     appMenuFromHomeShortcut = false
@@ -1542,7 +1623,7 @@ fun LauncherScreen(
                 },
                 onCreateDrawerFolder = { title ->
                     if (groupNameExists(title)) {
-                        Toast.makeText(context, "Groups already exist", Toast.LENGTH_SHORT).show()
+                        Toast.makeText(context, context.getString(R.string.home_groups_already_exist), Toast.LENGTH_SHORT).show()
                         false
                     } else {
                         val visualIdx = gridCells.indexOfFirst { cell ->
@@ -1585,7 +1666,7 @@ fun LauncherScreen(
                         val ok = vm.pinDrawerFolderToHomeStrip(folderMenuCell.id)
                         Toast.makeText(
                             context,
-                            if (ok) "Pinned to Home Strip" else "Home Strip is full",
+                            if (ok) context.getString(R.string.home_strip_pinned) else context.getString(R.string.home_strip_full_short),
                             Toast.LENGTH_SHORT,
                         ).show()
                         drawerFolderMenu = null
@@ -1740,7 +1821,7 @@ fun LauncherScreen(
                         val ok = vm.pinHomeGroupToHomeStrip(homeGroupMenuTarget.id)
                         Toast.makeText(
                             context,
-                            if (ok) "Pinned to Home Strip" else "Home Strip is full",
+                            if (ok) context.getString(R.string.home_strip_pinned) else context.getString(R.string.home_strip_full_short),
                             Toast.LENGTH_SHORT,
                         ).show()
                         showHomeGroupMenu = null
@@ -1758,7 +1839,7 @@ fun LauncherScreen(
         val settingsStackedOverlayOpen =
             showPermissionsSettings || showGlanceSettings ||
                 showHomeGroupsSettings || showDockSlotPicker != null ||
-                showGestureSettings || showLanguageSettings || showAppDrawerBadges || showIconAppearanceSettings
+                showGestureSettings || showLanguageSettings || showAppDrawerBadges || showIconAppearanceSettings || showMinimalModeSettings || showRootSettings
         val settingsOn = stringResource(R.string.settings_on)
         val settingsOff = stringResource(R.string.settings_off)
         val settingsConfigured = stringResource(R.string.settings_configured)
@@ -1842,6 +1923,8 @@ fun LauncherScreen(
                     LauncherLocale.languageTitle(LauncherLocale.currentLanguageCode(context))
                 },
                 onOpenLanguageSettings = { showLanguageSettings = true },
+                rootGranted = prefs.rootGranted,
+                onOpenRootSettings = { showRootSettings = true },
                 onSetWallpaper = {
                     runCatching {
                         context.startActivity(Intent("android.settings.WALLPAPER_SETTINGS").addFlags(Intent.FLAG_ACTIVITY_NEW_TASK))
@@ -1850,6 +1933,7 @@ fun LauncherScreen(
                 onToggleHaptics = { vm.setHapticsEnabled(!prefs.hapticsEnabled) },
                 hapticIntensity = prefs.hapticIntensity,
                 onSetHapticIntensity = vm::setHapticIntensity,
+                manualGpsCoords = prefs.glanceWeatherManualLatitude.isNotEmpty(),
                 onExportBackup = vm::exportBackupJson,
                 onImportBackup = vm::importBackupJson,
                 onResetTheme = vm::resetTheme,
@@ -1894,8 +1978,8 @@ fun LauncherScreen(
                 appIconShape = prefs.appIconShape,
                 onSetAppIconShape = vm::setAppIconShape,
                 onOpenAppearanceSettings = { showIconAppearanceSettings = true },
-                classicMode = prefs.classicMode,
-                onToggleClassicMode = { vm.setClassicMode(!prefs.classicMode) },
+                minimalModeEnabled = prefs.minimalModeEnabled,
+                onOpenMinimalModeSettings = { showMinimalModeSettings = true },
                 homeStripEnabled = prefs.homeStripEnabled,
                 onToggleHomeStrip = { vm.setHomeStripEnabled(!prefs.homeStripEnabled) },
                 dockSecondEnabled = prefs.dockSecondEnabled,
@@ -1938,6 +2022,27 @@ fun LauncherScreen(
                             onDismiss = { showAppDrawerBadges = false },
                             onShowUsageStatsBadgeChange = vm::setShowUsageStatsBadge,
                             onShowIconNotifBadgeChange = vm::setShowIconNotifBadge,
+                        )
+                    }
+                    if (showMinimalModeSettings) {
+                        com.zeno.classiclauncher.nlauncher.minimalmode.MinimalModeSettingsOverlay(
+                            vm = vm,
+                            onDismiss = { showMinimalModeSettings = false },
+                        )
+                    }
+                    if (showRootSettings) {
+                        com.zeno.classiclauncher.nlauncher.root.RootAccessScreen(
+                            rootGranted = prefs.rootGranted,
+                            rootedQsEnabled = prefs.rootedQsEnabled,
+                            onDismiss = { showRootSettings = false },
+                            onRootGranted = { vm.setRootGranted(true) },
+                            onRootRevoked = {
+                                vm.setRootGranted(false)
+                                vm.setRootedQsEnabled(false)
+                            },
+                            onRootedQsToggled = { enabled ->
+                                vm.setRootedQsEnabled(enabled)
+                            },
                         )
                     }
                     if (showGestureSettings) {
@@ -1996,7 +2101,7 @@ fun LauncherScreen(
                             onToggleHomeStrip = vm::setHomeStripEnabled,
                             onCreateGroup = { name ->
                                 if (groupNameExists(name)) {
-                                    Toast.makeText(context, "Groups already exist", Toast.LENGTH_SHORT).show()
+                                    Toast.makeText(context, context.getString(R.string.home_groups_already_exist), Toast.LENGTH_SHORT).show()
                                 } else {
                                     vm.createHomeGroup(name)
                                 }
@@ -2085,6 +2190,7 @@ fun LauncherScreen(
                 onNotificationBadgesEnabled = vm::setNotificationBadgesEnabled,
                 onDoubleTapSleepEnabled = vm::setDoubleTapToSleepEnabled,
                 onAutoUnlockEnabled = vm::setAutoUnlockEnabled,
+                onAutoUnlockPinDigits = vm::setAutoUnlockPinDigits,
                 onGlanceEnabled = vm::setGlanceEnabled,
                 onGlanceShowCalendar = vm::setGlanceShowCalendar,
             )
@@ -2138,7 +2244,7 @@ fun LauncherScreen(
                         ) {
                             Icon(Icons.Rounded.Tune, contentDescription = null, tint = Color.White, modifier = Modifier.size(20.dp))
                             Spacer(Modifier.width(14.dp))
-                            Text("Change shortcut", color = Color.White, fontSize = 15.sp)
+                            Text(stringResource(R.string.action_change_shortcut), color = Color.White, fontSize = 15.sp)
                         }
                         HorizontalDivider(color = Color(0x22FFFFFF))
                         // Change icon
@@ -2161,7 +2267,7 @@ fun LauncherScreen(
                         ) {
                             Icon(Icons.Rounded.Image, contentDescription = null, tint = Color.White, modifier = Modifier.size(20.dp))
                             Spacer(Modifier.width(14.dp))
-                            Text("Change icon", color = Color.White, fontSize = 15.sp)
+                            Text(stringResource(R.string.action_change_icon), color = Color.White, fontSize = 15.sp)
                         }
                         if (hasDockCustomIcon) {
                             HorizontalDivider(color = Color(0x22FFFFFF))
@@ -2177,7 +2283,7 @@ fun LauncherScreen(
                             ) {
                                 Icon(Icons.Outlined.Close, contentDescription = null, tint = Color(0xFF8E95A3), modifier = Modifier.size(20.dp))
                                 Spacer(Modifier.width(14.dp))
-                                Text("Reset icon", color = Color(0xFF8E95A3), fontSize = 15.sp)
+                                Text(stringResource(R.string.action_reset_icon), color = Color(0xFF8E95A3), fontSize = 15.sp)
                             }
                         }
                         HorizontalDivider(color = Color(0x22FFFFFF))
@@ -2195,7 +2301,7 @@ fun LauncherScreen(
                             ) {
                                 Icon(Icons.Rounded.VisibilityOff, contentDescription = null, tint = Color(0xFFFF6B6B), modifier = Modifier.size(20.dp))
                                 Spacer(Modifier.width(14.dp))
-                                Text("Hide from dock", color = Color(0xFFFF6B6B), fontSize = 15.sp)
+                                Text(stringResource(R.string.action_hide_from_dock), color = Color(0xFFFF6B6B), fontSize = 15.sp)
                             }
                         } else {
                             Row(
@@ -2214,7 +2320,7 @@ fun LauncherScreen(
                             ) {
                                 Icon(Icons.Rounded.VisibilityOff, contentDescription = null, tint = Color(0xFFFF6B6B), modifier = Modifier.size(20.dp))
                                 Spacer(Modifier.width(14.dp))
-                                Text("Reset to default", color = Color(0xFFFF6B6B), fontSize = 15.sp)
+                                Text(stringResource(R.string.action_reset_to_default), color = Color(0xFFFF6B6B), fontSize = 15.sp)
                             }
                         }
                     }
@@ -2231,9 +2337,23 @@ fun LauncherScreen(
                 themePalette = themePalette,
                 hapticsEnabled = prefs.hapticsEnabled,
                 hapticIntensity = prefs.hapticIntensity,
+                greyscaleEnabled = prefs.minimalModeGreyscale,
+                rootedQsEnabled = prefs.rootGranted && prefs.rootedQsEnabled,
+                onOpenModes = { showQuickSettingsOverlay = false; showModesFromQs = true },
                 onDismiss = { showQuickSettingsOverlay = false },
                 onSetQrScannerPackage = vm::setQuickSettingsQrScannerPackage,
                 onSetTileOrder = vm::setQuickSettingsTileOrder,
+                onToggleGreyscale = { vm.setMinimalModeGreyscale(!prefs.minimalModeGreyscale) },
+            )
+        }
+        AnimatedVisibility(
+            visible = showModesFromQs,
+            enter = fadeIn(animationSpec = tween(200)),
+            exit = fadeOut(animationSpec = tween(160)),
+        ) {
+            com.zeno.classiclauncher.nlauncher.minimalmode.MinimalModeSettingsOverlay(
+                vm = vm,
+                onDismiss = { showModesFromQs = false; showSettings = true },
             )
         }
 
@@ -2355,16 +2475,16 @@ fun LauncherScreen(
                 containerColor = Color(0xFF111820),
                 titleContentColor = Color(0xFFEAF2F8),
                 textContentColor = Color(0xFFB7C2CF),
-                title = { Text("Remove widget?") },
-                text = { Text("It'll be removed from your home screen.") },
+                title = { Text(stringResource(R.string.dialog_remove_widget_title)) },
+                text = { Text(stringResource(R.string.dialog_remove_widget_body)) },
                 confirmButton = {
                     TextButton(onClick = { removeHomeWidget() }) {
-                        Text("Remove", color = Color(0xFFFF9EAA), fontWeight = FontWeight.SemiBold)
+                        Text(stringResource(R.string.action_remove), color = Color(0xFFFF9EAA), fontWeight = FontWeight.SemiBold)
                     }
                 },
                 dismissButton = {
                     TextButton(onClick = { showRemoveWidgetConfirm = false }) {
-                        Text("Cancel", color = Color(0xFF9AE2FF))
+                        Text(stringResource(R.string.action_cancel), color = Color(0xFF9AE2FF))
                     }
                 },
             )
@@ -2390,9 +2510,9 @@ fun LauncherScreen(
             val onCreateGroup = {
                 val name = newHomeGroupName
                 if (groupNameExists(name)) {
-                    Toast.makeText(context, "Groups already exist", Toast.LENGTH_SHORT).show()
+                    Toast.makeText(context, context.getString(R.string.home_groups_already_exist), Toast.LENGTH_SHORT).show()
                 } else if (!prefs.canAddHomeStripItem()) {
-                    Toast.makeText(context, "Home Strip is full (5 items)", Toast.LENGTH_SHORT).show()
+                    Toast.makeText(context, context.getString(R.string.home_strip_full), Toast.LENGTH_SHORT).show()
                     showNewHomeGroupDialog = false
                 } else {
                     vm.createHomeGroup(name)
@@ -2405,13 +2525,13 @@ fun LauncherScreen(
                 containerColor = themePalette.settingsBg,
                 titleContentColor = themePalette.settingsMenuTitle,
                 textContentColor = themePalette.settingsMenuBody,
-                title = { Text("New group", color = themePalette.settingsMenuTitle) },
+                title = { Text(stringResource(R.string.dialog_new_group_title), color = themePalette.settingsMenuTitle) },
                 text = {
                     OutlinedTextField(
                         value = newHomeGroupName,
                         onValueChange = { newHomeGroupName = capitalizeFirstLetterForGroupInput(it) },
                         singleLine = true,
-                        label = { Text("Group name", color = themePalette.settingsMenuBody) },
+                        label = { Text(stringResource(R.string.dialog_group_name_hint), color = themePalette.settingsMenuBody) },
                         keyboardOptions = KeyboardOptions(
                             capitalization = KeyboardCapitalization.Sentences,
                             imeAction = ImeAction.Done,
@@ -2435,11 +2555,11 @@ fun LauncherScreen(
                     )
                 },
                 confirmButton = {
-                    TextButton(onClick = onCreateGroup) { Text("Create", color = themePalette.settingsMenuBody) }
+                    TextButton(onClick = onCreateGroup) { Text(stringResource(R.string.action_create), color = themePalette.settingsMenuBody) }
                 },
                 dismissButton = {
                     TextButton(onClick = { showNewHomeGroupDialog = false }) {
-                        Text("Cancel", color = themePalette.settingsMenuBody)
+                        Text(stringResource(R.string.action_cancel), color = themePalette.settingsMenuBody)
                     }
                 },
             )
@@ -3296,7 +3416,7 @@ private fun HomePage(
                                 } else {
                                     android.widget.Toast.makeText(
                                         context,
-                                        "BlackBerry Hub not installed",
+                                        context.getString(R.string.blackberry_hub_not_installed),
                                         android.widget.Toast.LENGTH_SHORT,
                                     ).show()
                                     onOpenGestureSettings()
@@ -3316,14 +3436,16 @@ private fun HomePage(
                             waitForUpOrCancellation(pass = PointerEventPass.Final)
                             continue
                         }
+                        val startX = down.position.x
                         val startY = down.position.y
                         var triggered = false
                         while (!triggered) {
                             val event = awaitPointerEvent(PointerEventPass.Final)
                             val change = event.changes.firstOrNull() ?: break
                             if (!change.pressed) break
+                            val dx = change.position.x - startX
                             val dy = change.position.y - startY
-                            if (dy > threshold && searchQuery.isEmpty()) {
+                            if (dy > threshold && dy > kotlin.math.abs(dx) * 1.5f && searchQuery.isEmpty()) {
                                 triggered = true
                                 onOpenQuickSettings()
                             }
@@ -3580,7 +3702,7 @@ private fun HomePage(
                     ) {
                         Icon(
                             Icons.Outlined.Close,
-                            contentDescription = "Clear",
+                            contentDescription = stringResource(R.string.action_clear),
                             tint = Color.White,
                             modifier = Modifier.size(13.dp),
                         )
@@ -3666,7 +3788,7 @@ private fun HomePage(
                             modifier = Modifier.size(11.dp),
                         )
                         Spacer(Modifier.width(5.dp))
-                        Text("Settings", color = Color(0xFF8E95A3), fontSize = 11.sp, fontWeight = FontWeight.Medium)
+                        Text(stringResource(R.string.action_settings_label), color = Color(0xFF8E95A3), fontSize = 11.sp, fontWeight = FontWeight.Medium)
                     }
                     settingsResults.forEachIndexed { settingsIdx, entry ->
                         val absoluteIdx = searchResults.size + settingsIdx
@@ -3718,7 +3840,7 @@ private fun HomePage(
                 // No results text
                 if (searchResults.isEmpty() && settingsResults.isEmpty()) {
                     Text(
-                        text = "No apps found",
+                        text = stringResource(R.string.drawer_no_apps_found),
                         color = Color(0xFF8E95A3),
                         fontSize = 14.sp,
                         modifier = Modifier.padding(horizontal = 14.dp, vertical = 8.dp),
@@ -3801,7 +3923,7 @@ private fun SoundProfileHeaderIcon(
     ) {
         Icon(
             imageVector = icon,
-            contentDescription = "Sound profile",
+            contentDescription = stringResource(R.string.cd_sound_profile),
             tint = iconTint,
             modifier = Modifier.size(31.dp),
         )
@@ -3825,7 +3947,7 @@ private fun qsHorizontalEdgePadding(view: android.view.View, density: Density, e
 }
 
 @Composable
-private fun QuickSettingsOverlay(
+internal fun QuickSettingsOverlay(
     allApps: List<AppEntry>,
     hiddenPackages: Set<String>,
     qrScannerPackage: String,
@@ -3833,9 +3955,13 @@ private fun QuickSettingsOverlay(
     themePalette: LauncherThemePalette,
     hapticsEnabled: Boolean,
     hapticIntensity: Int,
+    greyscaleEnabled: Boolean,
+    rootedQsEnabled: Boolean,
+    onOpenModes: () -> Unit,
     onDismiss: () -> Unit,
     onSetQrScannerPackage: (String) -> Unit,
     onSetTileOrder: (List<String>) -> Unit,
+    onToggleGreyscale: () -> Unit,
 ) {
     val context = LocalContext.current
     val view = LocalView.current
@@ -3863,6 +3989,7 @@ private fun QuickSettingsOverlay(
     val quickSettingsAutoRotateTitle = stringResource(R.string.quick_settings_auto_rotate)
     val quickSettingsNfcTitle = stringResource(R.string.quick_settings_nfc)
     val quickSettingsExtraDimTitle = stringResource(R.string.quick_settings_extra_dim)
+    val quickSettingsLocationTitle = stringResource(R.string.quick_settings_location)
     val quickSettingsScreenRecordTitle = stringResource(R.string.quick_settings_screen_record)
     val quickSettingsScreenCastTitle = stringResource(R.string.quick_settings_screen_cast)
     val quickSettingsGreyscaleTitle = stringResource(R.string.quick_settings_greyscale)
@@ -3870,11 +3997,15 @@ private fun QuickSettingsOverlay(
     val quickSettingsStart = stringResource(R.string.quick_settings_start)
     val quickSettingsOn = stringResource(R.string.settings_on)
     val quickSettingsOff = stringResource(R.string.settings_off)
+    val soundProfileRingLabel = stringResource(R.string.sound_profile_ring)
+    val soundProfileVibrateLabel = stringResource(R.string.sound_profile_vibrate)
+    val soundProfileDndLabel = stringResource(R.string.quick_settings_dnd)
     val quickSettingsTapToAllowControl = stringResource(R.string.quick_settings_tap_to_allow_control)
     val quickSettingsBluetoothPermissionDenied = stringResource(R.string.quick_settings_bluetooth_permission_denied)
     val quickSettingsWifiNamePermissionDenied = stringResource(R.string.quick_settings_wifi_name_permission_denied)
     val quickSettingsTorchToggleFailed = stringResource(R.string.quick_settings_torch_toggle_failed)
     val quickSettingsCameraPermissionDenied = stringResource(R.string.quick_settings_camera_permission_denied)
+    val quickSettingsKeyboardMouse = stringResource(R.string.quick_settings_keyboard_mouse)
     val quickSettingsKeyboardModeFailed = stringResource(R.string.quick_settings_keyboard_mode_failed)
     val quickSettingsKeyboardModePermissionPrompt = stringResource(R.string.quick_settings_keyboard_mode_permission_prompt)
     val quickSettingsBluetoothBlocked = stringResource(R.string.quick_settings_bluetooth_blocked)
@@ -3919,6 +4050,8 @@ private fun QuickSettingsOverlay(
     var autoRotateOn by remember { mutableStateOf(actions.isAutoRotateEnabled()) }
     var nfcOn by remember { mutableStateOf(actions.isNfcEnabled()) }
     var extraDimOn by remember { mutableStateOf(actions.isExtraDimEnabled()) }
+    // greyscaleOn removed — now driven by prefs.minimalModeGreyscale via onToggleGreyscale
+    var locationOn by remember { mutableStateOf(actions.isLocationEnabled()) }
     var torchOn by remember { mutableStateOf(actions.isTorchEnabled()) }
     val cameraPermissionLauncher = rememberLauncherForActivityResult(
         contract = ActivityResultContracts.RequestPermission(),
@@ -3937,9 +4070,15 @@ private fun QuickSettingsOverlay(
     var showQrScannerPicker by remember { mutableStateOf(false) }
     var preciseWifiPromptAttempted by remember { mutableStateOf(false) }
     var batteryPct by remember { mutableStateOf(actions.batteryPercent()) }
+    var soundProfile by remember { mutableStateOf(actions.currentSoundProfile()) }
+    var soundProfileSetAt by remember { mutableLongStateOf(0L) }
     val hasBitwarden = remember(actions) { actions.isBitwardenInstalled() }
     val hasWellbeing = remember(actions) { actions.isDigitalWellbeingInstalled() }
     val hasScreenRecordSettings = remember(actions) { actions.canOpenScreenRecordSettings() }
+    val quickSettingsSystemSettingsTitle = stringResource(R.string.quick_settings_system_settings)
+    val quickSettingsWifiTitle = stringResource(R.string.quick_settings_wifi)
+    val quickSettingsNotificationsTileTitle = stringResource(R.string.quick_settings_notifications_tile)
+    val quickSettingsMobileDataTitle = stringResource(R.string.quick_settings_mobile_data)
     fun refreshQuickSettingsState(promptForPreciseWifi: Boolean) {
         dateText = dateFormatter.format(Date())
         wifiSubtitle = actions.currentWifiSsidLabel()
@@ -3966,8 +4105,12 @@ private fun QuickSettingsOverlay(
         autoRotateOn = actions.isAutoRotateEnabled()
         nfcOn = actions.isNfcEnabled()
         extraDimOn = actions.isExtraDimEnabled()
+        locationOn = actions.isLocationEnabled()
         torchOn = actions.isTorchEnabled()
         batteryPct = actions.batteryPercent()
+        if (android.os.SystemClock.elapsedRealtime() - soundProfileSetAt > 2_000L) {
+            soundProfile = actions.currentSoundProfile()
+        }
         actions.currentKeyboardMode()?.let {
             keyboardMode = it
             actions.persistKeyboardModeLabel(it)
@@ -3978,6 +4121,19 @@ private fun QuickSettingsOverlay(
             wifiPermissionLauncher.launch(Manifest.permission.ACCESS_COARSE_LOCATION)
         }
         refreshQuickSettingsState(promptForPreciseWifi = true)
+        // On rooted devices, read the true keyboard mode from the proc file once on startup
+        if (rootedQsEnabled) {
+            val raw = RootManager.readLine("cat /proc/q20_switch_key_mouse")
+            val mode = when (raw) {
+                "1" -> "keyboard"
+                "0" -> "mouse"
+                else -> null
+            }
+            if (mode != null) {
+                keyboardMode = mode
+                actions.persistKeyboardModeLabel(mode)
+            }
+        }
     }
     DisposableEffect(lifecycleOwner) {
         val observer = LifecycleEventObserver { _, event ->
@@ -4006,49 +4162,53 @@ private fun QuickSettingsOverlay(
             actions.launchApp(pkg) || actions.openQrScanner()
         }
     }
+    val soundIcon = when (soundProfile) {
+        SoundProfileMode.RING    -> Icons.Rounded.Notifications
+        SoundProfileMode.VIBRATE -> Icons.Rounded.Vibration
+        SoundProfileMode.DND     -> Icons.Rounded.NotificationsOff
+    }
+    val soundSubtitle = when (soundProfile) {
+        SoundProfileMode.RING    -> soundProfileRingLabel
+        SoundProfileMode.VIBRATE -> soundProfileVibrateLabel
+        SoundProfileMode.DND     -> soundProfileDndLabel
+    }
+    val qsScope = rememberCoroutineScope()
     val defaultQuickTiles = buildList {
+        // ── First 8: mirror Minimal Mode tiles ───────────────────────────────
         add(
             QuickTile(
-                id = "keyboard_mode",
-                icon = Icons.Rounded.Tune,
-                title = keyboardMode,
+                id = "system_settings",
+                icon = Icons.Rounded.Settings,
+                title = quickSettingsSystemSettingsTitle,
                 subtitle = "",
-                highlighted = true,
-                closeOnSuccess = false,
                 showChevron = true,
-                actionLabel = "Mode",
-                onLongPress = actions::openKeyboardSettings,
+                actionLabel = "Open",
+                onTap = { actions.openSystemSettings(); true },
+            ),
+        )
+        add(
+            QuickTile(
+                id = "mobile_data",
+                icon = Icons.Rounded.CellTower,
+                title = quickSettingsMobileDataTitle,
+                subtitle = carrierSubtitle,
+                highlighted = mobileDataEnabled != false,
+                closeOnSuccess = false,
+                actionLabel = "Toggle",
+                onLongPress = actions::openMobileNetworkSettings,
                 onTap = {
-                    val currentMode = actions.currentKeyboardMode() ?: keyboardMode
-                    val nextMode = if (currentMode == "keyboard") "mouse" else "keyboard"
-                    logQuickSettings { "keyboardTileTap current=$currentMode label=$keyboardMode next=$nextMode" }
-                    val ok = actions.setKeyboardMode(nextMode)
-                    if (ok) {
-                        keyboardMode = actions.currentKeyboardMode() ?: nextMode
-                        actions.persistKeyboardModeLabel(keyboardMode)
-                        logQuickSettings { "keyboardTileApplied mode=$keyboardMode" }
-                        Handler(Looper.getMainLooper()).postDelayed({
-                            actions.currentKeyboardMode()?.let {
-                                keyboardMode = it
-                                logQuickSettings { "keyboardTileRefreshed mode=$it" }
+                    if (rootedQsEnabled) {
+                        when (val r = actions.toggleMobileData()) {
+                            is ToggleResult.Changed -> {
+                                mobileDataEnabled = r.enabled
+                                Handler(Looper.getMainLooper()).postDelayed({
+                                    mobileDataEnabled = actions.isMobileDataEnabled()
+                                }, 1000L)
                             }
-                        }, 600L)
-                    } else {
-                        logQuickSettings { "keyboardTileFailed next=$nextMode canWrite=${actions.canWriteSystemSettings()}" }
-                        if (!actions.canWriteSystemSettings()) {
-                            actions.requestWriteSettingsPermission()
-                            Toast.makeText(
-                                context,
-                                quickSettingsKeyboardModePermissionPrompt,
-                                Toast.LENGTH_LONG,
-                            ).show()
-                        } else {
-                            Toast.makeText(
-                                context,
-                                quickSettingsKeyboardModeFailed,
-                                Toast.LENGTH_LONG,
-                            ).show()
+                            else -> actions.openMobileNetworkSettings()
                         }
+                    } else {
+                        actions.openMobileNetworkSettings()
                     }
                     true
                 },
@@ -4056,16 +4216,93 @@ private fun QuickSettingsOverlay(
         )
         add(
             QuickTile(
-                id = "internet",
+                id = "wifi",
                 icon = Icons.Rounded.Wifi,
-                title = quickSettingsInternetTitle,
-                subtitle = internetSubtitle,
-                highlighted = internetHighlighted,
+                title = quickSettingsWifiTitle,
+                subtitle = if (wifiEnabled != false) wifiSubtitle else quickSettingsOff,
+                highlighted = wifiEnabled != false && wifiSubtitle != "Disconnected",
                 closeOnSuccess = false,
-                showChevron = true,
-                actionLabel = "Panel",
-                onLongPress = actions::openInternetSettings,
-                onTap = actions::openInternetPanel,
+                actionLabel = "Toggle",
+                onLongPress = actions::openWifiSettings,
+                onTap = {
+                    if (rootedQsEnabled) {
+                        val next = wifiEnabled == false
+                        wifiEnabled = next
+                        if (next) wifiSubtitle = "Connecting…"
+                        qsScope.launch {
+                            val ok = RootManager.execute("svc wifi ${if (next) "enable" else "disable"}")
+                            if (!ok) { wifiEnabled = !next; wifiSubtitle = actions.currentWifiSsidLabel(); return@launch }
+                            delay(1500L)
+                            wifiEnabled = actions.isWifiEnabled()
+                            if (next) {
+                                // Keep "Connecting…" until SSID appears; only show "Disconnected" after all polls
+                                var connected = false
+                                repeat(4) {
+                                    val label = actions.currentWifiSsidLabel()
+                                    if (label != "Disconnected") {
+                                        wifiSubtitle = label
+                                        connected = true
+                                        return@repeat
+                                    }
+                                    delay(2000L)
+                                }
+                                if (!connected) wifiSubtitle = actions.currentWifiSsidLabel()
+                            } else {
+                                wifiSubtitle = actions.currentWifiSsidLabel()
+                            }
+                        }
+                    } else {
+                        actions.openInternetPanel()
+                    }
+                    true
+                },
+            ),
+        )
+        add(
+            QuickTile(
+                id = "torch",
+                icon = Icons.Rounded.Lightbulb,
+                title = quickSettingsTorchTitle,
+                subtitle = if (torchOn) quickSettingsOn else quickSettingsOff,
+                highlighted = torchOn,
+                closeOnSuccess = false,
+                actionLabel = "Toggle",
+                onLongPress = actions::openDisplaySettings,
+                onTap = {
+                    when (val r = actions.toggleTorch()) {
+                        is ToggleResult.Changed -> { torchOn = r.enabled; true }
+                        else -> {
+                            Toast.makeText(context, quickSettingsTorchToggleFailed, Toast.LENGTH_SHORT).show()
+                            true
+                        }
+                    }
+                },
+            ),
+        )
+        add(
+            QuickTile(
+                id = "notifications",
+                icon = soundIcon,
+                title = quickSettingsNotificationsTileTitle,
+                subtitle = soundSubtitle,
+                highlighted = soundProfile == SoundProfileMode.RING,
+                closeOnSuccess = false,
+                actionLabel = "Toggle",
+                onTap = {
+                    val next = when (soundProfile) {
+                        SoundProfileMode.RING    -> SoundProfileMode.VIBRATE
+                        SoundProfileMode.VIBRATE -> SoundProfileMode.DND
+                        SoundProfileMode.DND     -> SoundProfileMode.RING
+                    }
+                    val ok = actions.applySoundProfile(next)
+                    if (ok) {
+                        soundProfile = next
+                        soundProfileSetAt = android.os.SystemClock.elapsedRealtime()
+                    } else if (next == SoundProfileMode.DND && !actions.hasDoNotDisturbAccess()) {
+                        actions.openDoNotDisturbSettings()
+                    }
+                    true
+                },
             ),
         )
         add(
@@ -4077,31 +4314,35 @@ private fun QuickSettingsOverlay(
                 highlighted = bluetoothEnabled == true,
                 closeOnSuccess = false,
                 actionLabel = "Toggle",
-                onLongPress = actions::openBluetoothSettings,
+                onLongPress = if (rootedQsEnabled) ({
+                    qsScope.launch {
+                        RootManager.execute("am start -n 'com.android.settings/.Settings${'$'}ConnectedDeviceDashboardActivity'")
+                    }
+                    true
+                }) else null,
                 onTap = {
-                    when (val r = actions.toggleBluetooth()) {
-                        is ToggleResult.Changed -> {
-                            bluetoothEnabled = r.enabled
-                            Handler(Looper.getMainLooper()).postDelayed({
-                                bluetoothEnabled = actions.isBluetoothEnabled()
-                            }, 500L)
-                            true
+                    if (rootedQsEnabled) {
+                        val next = bluetoothEnabled != true
+                        bluetoothEnabled = next
+                        qsScope.launch {
+                            val ok = RootManager.execute("svc bluetooth ${if (next) "enable" else "disable"}")
+                            if (!ok) { bluetoothEnabled = !next; return@launch }
+                            delay(1500L)
+                            bluetoothEnabled = actions.isBluetoothEnabled()
                         }
-                        ToggleResult.PermissionRequired -> {
-                            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
-                                btPermissionLauncher.launch(Manifest.permission.BLUETOOTH_CONNECT)
+                    } else {
+                        when (val r = actions.toggleBluetooth()) {
+                            is ToggleResult.Changed -> {
+                                bluetoothEnabled = r.enabled
+                                Handler(Looper.getMainLooper()).postDelayed({ bluetoothEnabled = actions.isBluetoothEnabled() }, 500L)
                             }
-                            true
-                        }
-                        ToggleResult.Unsupported -> {
-                            Toast.makeText(
-                                context,
-                                quickSettingsBluetoothBlocked,
-                                Toast.LENGTH_LONG,
-                            ).show()
-                            true
+                            ToggleResult.PermissionRequired -> {
+                                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) btPermissionLauncher.launch(Manifest.permission.BLUETOOTH_CONNECT)
+                            }
+                            ToggleResult.Unsupported -> actions.openBluetoothSettings()
                         }
                     }
+                    true
                 },
             ),
         )
@@ -4113,12 +4354,125 @@ private fun QuickSettingsOverlay(
                 subtitle = "",
                 showChevron = true,
                 closeOnSuccess = false,
-                actionLabel = "App",
-                onLongPress = {
-                    showQrScannerPicker = true
+                actionLabel = "Scan",
+                onLongPress = { showQrScannerPicker = true; true },
+                onTap = {
+                    if (!launchConfiguredQrScanner()) showQrScannerPicker = true
                     true
                 },
-                onTap = { launchConfiguredQrScanner() },
+            ),
+        )
+        add(
+            QuickTile(
+                id = "hotspot",
+                icon = Icons.Rounded.WifiTethering,
+                title = quickSettingsHotspotTitle,
+                subtitle = if (hotspotOn) quickSettingsOn else quickSettingsOff,
+                highlighted = hotspotOn,
+                closeOnSuccess = false,
+                actionLabel = "Toggle",
+                onLongPress = actions::openHotspotSettings,
+                onTap = {
+                    if (rootedQsEnabled) {
+                        val next = !hotspotOn
+                        hotspotOn = next
+                        qsScope.launch {
+                            if (next) {
+                                val cfg = RootManager.readHotspotConfig()
+                                val startCmd = if (cfg != null) {
+                                    val (ssid, sec, pass) = cfg
+                                    if (sec == "open")
+                                        "cmd wifi start-softap \"$ssid\" open \"\""
+                                    else
+                                        "cmd wifi start-softap \"$ssid\" $sec \"$pass\""
+                                } else {
+                                    "cmd wifi start-softap Hotspot wpa2 hotspot123"
+                                }
+                                val ok = RootManager.execute(startCmd)
+                                if (!ok) { hotspotOn = false; return@launch }
+                                var enabled = false
+                                repeat(5) {
+                                    delay(2000L)
+                                    if (actions.isHotspotEnabled()) { enabled = true; return@repeat }
+                                    val link = RootManager.readLine("ip link show | grep -E 'ap[0-9]|softap' | grep 'state UP'")
+                                    if (!link.isNullOrBlank()) { enabled = true; return@repeat }
+                                }
+                                hotspotOn = enabled
+                                if (!enabled) actions.openHotspotSettings()
+                            } else {
+                                val ok = RootManager.execute("cmd wifi stop-softap")
+                                if (!ok) { hotspotOn = true; return@launch }
+                                delay(1500L)
+                                hotspotOn = actions.isHotspotEnabled()
+                            }
+                        }
+                    } else {
+                        actions.openHotspotSettings()
+                    }
+                    true
+                },
+            ),
+        )
+        // ── Remaining tiles ───────────────────────────────────────────────────
+        add(
+            QuickTile(
+                id = "keyboard_mode",
+                icon = Icons.Rounded.Tune,
+                title = keyboardMode.replaceFirstChar { it.uppercase() },
+                subtitle = "",
+                highlighted = true,
+                closeOnSuccess = false,
+                showChevron = true,
+                actionLabel = "Mode",
+                onLongPress = actions::openKeyboardSettings,
+                onTap = {
+                    val currentMode = actions.currentKeyboardMode() ?: keyboardMode
+                    val nextMode = if (currentMode == "keyboard") "mouse" else "keyboard"
+                    if (rootedQsEnabled) {
+                        keyboardMode = nextMode
+                        actions.persistKeyboardModeLabel(nextMode)
+                        qsScope.launch {
+                            // 1 = keyboard, 0 = mouse (confirmed from /proc/q20_switch_key_mouse)
+                            val value = if (nextMode == "keyboard") "1" else "0"
+                            val ok = RootManager.execute("echo $value > /proc/q20_switch_key_mouse")
+                            if (!ok) {
+                                keyboardMode = currentMode
+                                actions.persistKeyboardModeLabel(currentMode)
+                            }
+                        }
+                    } else {
+                        logQuickSettings { "keyboardTileTap current=$currentMode label=$keyboardMode next=$nextMode" }
+                        val ok = actions.setKeyboardMode(nextMode)
+                        if (ok) {
+                            keyboardMode = actions.currentKeyboardMode() ?: nextMode
+                            actions.persistKeyboardModeLabel(keyboardMode)
+                            logQuickSettings { "keyboardTileApplied mode=$keyboardMode" }
+                            Handler(Looper.getMainLooper()).postDelayed({
+                                actions.currentKeyboardMode()?.let {
+                                    keyboardMode = it
+                                    logQuickSettings { "keyboardTileRefreshed mode=$it" }
+                                }
+                            }, 600L)
+                        } else {
+                            logQuickSettings { "keyboardTileFailed next=$nextMode canWrite=${actions.canWriteSystemSettings()}" }
+                            if (!actions.canWriteSystemSettings()) {
+                                actions.requestWriteSettingsPermission()
+                                Toast.makeText(
+                                    context,
+                                    quickSettingsKeyboardModePermissionPrompt,
+                                    Toast.LENGTH_LONG,
+                                ).show()
+                            } else {
+                                Toast.makeText(
+                                    context,
+                                    quickSettingsKeyboardModeFailed,
+                                    Toast.LENGTH_LONG,
+                                ).show()
+                            }
+                        }
+                    }
+                    true
+                },
             ),
         )
         add(
@@ -4129,9 +4483,27 @@ private fun QuickSettingsOverlay(
                 subtitle = if (wirelessDebugOn) quickSettingsOn else quickSettingsOff,
                 highlighted = wirelessDebugOn,
                 closeOnSuccess = false,
-                actionLabel = "Settings",
+                actionLabel = "Toggle",
                 onLongPress = actions::openWirelessDebuggingSettings,
-                onTap = actions::openWirelessDebuggingSettings,
+                onTap = {
+                    if (rootedQsEnabled) {
+                        val next = !wirelessDebugOn
+                        wirelessDebugOn = next
+                        qsScope.launch {
+                            val ok = RootManager.execute("settings put global adb_wifi_enabled ${if (next) 1 else 0}")
+                            if (!ok) {
+                                wirelessDebugOn = !next
+                                actions.openWirelessDebuggingSettings()
+                            } else {
+                                delay(1000L)
+                                wirelessDebugOn = actions.isWirelessDebuggingEnabled()
+                            }
+                        }
+                    } else {
+                        actions.openWirelessDebuggingSettings()
+                    }
+                    true
+                },
             ),
         )
         add(
@@ -4148,10 +4520,27 @@ private fun QuickSettingsOverlay(
                 },
                 highlighted = batterySaverOn,
                 closeOnSuccess = false,
-                showChevron = true,
-                actionLabel = "Details",
+                actionLabel = "Toggle",
                 onLongPress = actions::openBatterySaverSettings,
-                onTap = actions::openBatteryUsageSummary,
+                onTap = {
+                    if (rootedQsEnabled) {
+                        val next = !batterySaverOn
+                        batterySaverOn = next
+                        qsScope.launch {
+                            val ok = RootManager.execute("cmd power set-mode ${if (next) 1 else 0}")
+                            if (!ok) {
+                                batterySaverOn = !next
+                                actions.openBatterySaverSettings()
+                            } else {
+                                delay(800L)
+                                batterySaverOn = actions.isBatterySaverEnabled()
+                            }
+                        }
+                    } else {
+                        actions.openBatteryUsageSummary()
+                    }
+                    true
+                },
             ),
         )
         if (hasBitwarden) {
@@ -4176,55 +4565,29 @@ private fun QuickSettingsOverlay(
                 title = quickSettingsAeroplaneModeTitle,
                 subtitle = if (airplaneOn) quickSettingsOn else quickSettingsOff,
                 highlighted = airplaneOn,
-                actionLabel = "Settings",
-                onLongPress = actions::openAirplaneModeSettings,
-                onTap = actions::openAirplaneModeSettings,
-            ),
-        )
-        add(
-            QuickTile(
-                id = "torch",
-                icon = Icons.Rounded.WbSunny,
-                title = quickSettingsTorchTitle,
-                subtitle = if (torchOn) quickSettingsOn else quickSettingsOff,
-                highlighted = torchOn,
                 closeOnSuccess = false,
                 actionLabel = "Toggle",
-                onLongPress = actions::openDisplaySettings,
+                onLongPress = actions::openAirplaneModeSettings,
                 onTap = {
-                    if (ContextCompat.checkSelfPermission(context, Manifest.permission.CAMERA) != PackageManager.PERMISSION_GRANTED) {
-                        cameraPermissionLauncher.launch(Manifest.permission.CAMERA)
-                        true
-                    } else {
-                        when (val r = actions.toggleTorch()) {
-                            is ToggleResult.Changed -> {
-                                torchOn = r.enabled
-                                true
+                    if (rootedQsEnabled) {
+                        val next = !airplaneOn
+                        airplaneOn = next
+                        qsScope.launch {
+                            val cmd = if (next) "cmd connectivity airplane-mode enable" else "cmd connectivity airplane-mode disable"
+                            val ok = RootManager.execute(cmd)
+                            if (!ok) {
+                                airplaneOn = !next
+                                actions.openAirplaneModeSettings()
+                            } else {
+                                kotlinx.coroutines.delay(1000L)
+                                airplaneOn = actions.isAirplaneModeEnabled()
                             }
-                            ToggleResult.Unsupported -> {
-                                if (actions.hasTorchHardware()) {
-                                    Toast.makeText(context, quickSettingsTorchToggleFailed, Toast.LENGTH_SHORT).show()
-                                } else {
-                                    actions.openDisplaySettings()
-                                }
-                                true
-                            }
-                            else -> true
                         }
+                    } else {
+                        actions.openAirplaneModeSettings()
                     }
+                    true
                 },
-            ),
-        )
-        add(
-            QuickTile(
-                id = "dnd",
-                icon = Icons.Rounded.VisibilityOff,
-                title = quickSettingsDndTitle,
-                subtitle = if (dndOn) quickSettingsOn else quickSettingsOff,
-                highlighted = dndOn,
-                actionLabel = "Settings",
-                onLongPress = actions::openDoNotDisturbSettings,
-                onTap = actions::openDoNotDisturbSettings,
             ),
         )
         add(
@@ -4241,26 +4604,33 @@ private fun QuickSettingsOverlay(
         )
         add(
             QuickTile(
-                id = "hotspot",
-                icon = Icons.Rounded.SwapVert,
-                title = quickSettingsHotspotTitle,
-                subtitle = if (hotspotOn) quickSettingsOn else quickSettingsOff,
-                highlighted = hotspotOn,
-                actionLabel = "Settings",
-                onLongPress = actions::openHotspotSettings,
-                onTap = actions::openHotspotSettings,
-            ),
-        )
-        add(
-            QuickTile(
                 id = "night_light",
                 icon = Icons.Rounded.WbSunny,
                 title = quickSettingsNightLightTitle,
                 subtitle = if (nightLightOn) quickSettingsOn else quickSettingsOff,
                 highlighted = nightLightOn,
-                actionLabel = "Settings",
+                closeOnSuccess = false,
+                actionLabel = "Toggle",
                 onLongPress = actions::openNightLightSettings,
-                onTap = actions::openNightLightSettings,
+                onTap = {
+                    if (rootedQsEnabled) {
+                        val next = !nightLightOn
+                        nightLightOn = next
+                        qsScope.launch {
+                            val ok = RootManager.execute("settings put secure night_display_activated ${if (next) 1 else 0}")
+                            if (!ok) {
+                                nightLightOn = !next
+                                actions.openNightLightSettings()
+                            } else {
+                                delay(800L)
+                                nightLightOn = actions.isNightLightEnabled()
+                            }
+                        }
+                    } else {
+                        actions.openNightLightSettings()
+                    }
+                    true
+                },
             ),
         )
         add(
@@ -4303,17 +4673,38 @@ private fun QuickSettingsOverlay(
                 actionLabel = "Toggle",
                 onLongPress = actions::openNfcSettings,
                 onTap = {
-                    when (val r = actions.toggleNfc()) {
-                        is ToggleResult.Changed -> {
-                            nfcOn = r.enabled
-                            Handler(Looper.getMainLooper()).postDelayed({
+                    if (rootedQsEnabled) {
+                        val next = !nfcOn
+                        nfcOn = next
+                        qsScope.launch {
+                            val cmd = if (next) "cmd nfc enable-nfc" else "cmd nfc disable-nfc"
+                            val ok = RootManager.execute(cmd)
+                            if (!ok) {
+                                nfcOn = !next
+                                actions.openNfcSettings()
+                            } else {
+                                delay(1500L)
                                 nfcOn = actions.isNfcEnabled()
-                            }, 500L)
-                            true
+                            }
                         }
-                        else -> actions.openNfcSettings()
+                    } else {
+                        actions.openNfcSettings()
                     }
+                    true
                 },
+            ),
+        )
+        add(
+            QuickTile(
+                id = "location",
+                icon = Icons.Rounded.LocationOn,
+                title = quickSettingsLocationTitle,
+                subtitle = if (locationOn) quickSettingsOn else quickSettingsOff,
+                highlighted = locationOn,
+                showChevron = true,
+                actionLabel = "Settings",
+                onLongPress = actions::openLocationSettings,
+                onTap = { actions.openLocationSettings(); locationOn = actions.isLocationEnabled(); true },
             ),
         )
         add(
@@ -4323,25 +4714,42 @@ private fun QuickSettingsOverlay(
                 title = quickSettingsExtraDimTitle,
                 subtitle = if (extraDimOn) quickSettingsOn else quickSettingsOff,
                 highlighted = extraDimOn,
-                actionLabel = "Settings",
+                closeOnSuccess = false,
+                actionLabel = "Toggle",
                 onLongPress = actions::openExtraDimSettings,
-                onTap = actions::openExtraDimSettings,
+                onTap = {
+                    if (rootedQsEnabled) {
+                        val next = !extraDimOn
+                        extraDimOn = next
+                        qsScope.launch {
+                            val ok = RootManager.execute("settings put secure reduce_bright_colors_activated ${if (next) 1 else 0}")
+                            if (!ok) {
+                                extraDimOn = !next
+                                actions.openExtraDimSettings()
+                            } else {
+                                delay(800L)
+                                extraDimOn = actions.isExtraDimEnabled()
+                            }
+                        }
+                    } else {
+                        actions.openExtraDimSettings()
+                    }
+                    true
+                },
             ),
         )
-        if (hasScreenRecordSettings) {
-            add(
-                QuickTile(
-                    id = "screen_record",
-                    icon = Icons.Rounded.TouchApp,
-                    title = quickSettingsScreenRecordTitle,
-                    subtitle = quickSettingsStart,
-                    showChevron = true,
-                    actionLabel = "Settings",
-                    onLongPress = actions::openScreenRecordSettings,
-                    onTap = actions::openScreenRecordSettings,
-                ),
-            )
-        }
+        add(
+            QuickTile(
+                id = "screen_record",
+                icon = Icons.Rounded.TouchApp,
+                title = quickSettingsScreenRecordTitle,
+                subtitle = quickSettingsStart,
+                showChevron = true,
+                actionLabel = "Start",
+                onLongPress = actions::openScreenRecordSettings,
+                onTap = actions::openScreenRecordSettings,
+            ),
+        )
         add(
             QuickTile(
                 id = "screen_cast",
@@ -4354,33 +4762,47 @@ private fun QuickSettingsOverlay(
                 onTap = actions::openCastSettings,
             ),
         )
-        if (hasWellbeing) {
-            add(
-                QuickTile(
-                    id = "grayscale",
-                    icon = Icons.Rounded.FilterBAndW,
-                    title = quickSettingsGreyscaleTitle,
-                    subtitle = "",
-                    showChevron = true,
-                    closeOnSuccess = false,
-                    actionLabel = "App",
-                    onLongPress = actions::openDigitalWellbeingHome,
-                    onTap = actions::openDigitalWellbeingHome,
-                ),
-            )
-        } else {
-            add(
-                QuickTile(
-                    id = "bedtime",
-                    icon = Icons.Rounded.AddAlarm,
-                    title = quickSettingsBedtimeTitle,
-                    subtitle = quickSettingsOff,
-                    actionLabel = "Settings",
-                    onLongPress = actions::openBedtimeSettings,
-                    onTap = actions::openBedtimeSettings,
-                ),
-            )
-        }
+        add(
+            QuickTile(
+                id = "grayscale",
+                icon = Icons.Rounded.FilterBAndW,
+                title = quickSettingsGreyscaleTitle,
+                subtitle = if (greyscaleEnabled) quickSettingsOn else quickSettingsOff,
+                highlighted = greyscaleEnabled,
+                closeOnSuccess = false,
+                actionLabel = "Toggle",
+                onLongPress = actions::openGreyscaleSettings,
+                onTap = {
+                    val next = !greyscaleEnabled
+                    onToggleGreyscale()
+                    if (rootedQsEnabled) {
+                        qsScope.launch {
+                            if (next) {
+                                RootManager.execute(
+                                    "settings put secure accessibility_display_daltonizer 0",
+                                    "settings put secure accessibility_display_daltonizer_enabled 1",
+                                )
+                            } else {
+                                RootManager.execute("settings put secure accessibility_display_daltonizer_enabled 0")
+                            }
+                        }
+                    }
+                    true
+                },
+            ),
+        )
+        add(
+            QuickTile(
+                id = "bedtime",
+                icon = Icons.Rounded.AddAlarm,
+                title = quickSettingsBedtimeTitle,
+                subtitle = quickSettingsOff,
+                showChevron = true,
+                actionLabel = "Settings",
+                onLongPress = actions::openBedtimeSettings,
+                onTap = actions::openBedtimeSettings,
+            ),
+        )
     }
     val orderedTileIds = remember { mutableStateListOf<String>() }
     val defaultTileIds = defaultQuickTiles.map { it.id }
@@ -4399,7 +4821,9 @@ private fun QuickSettingsOverlay(
             orderedTileIds.addAll(reconciledOrder)
         }
     }
-    val tileById = defaultQuickTiles.associateBy { it.id }
+    val tileById = defaultQuickTiles
+        .let { tiles -> if (rootedQsEnabled) tiles else tiles.map { it.copy(onLongPress = null) } }
+        .associateBy { it.id }
     val allQuickTiles = orderedTileIds.mapNotNull { tileById[it] }
     fun moveTile(from: Int, to: Int) {
         if (from == to) return
@@ -4464,13 +4888,13 @@ private fun QuickSettingsOverlay(
             Handler(Looper.getMainLooper()).postDelayed({
                 val ok = tile.onTap()
                 if (!ok) {
-                    Toast.makeText(context, "Could not open ${tile.title}", Toast.LENGTH_SHORT).show()
+                    Toast.makeText(context, context.getString(R.string.could_not_open_tile, tile.title), Toast.LENGTH_SHORT).show()
                 }
             }, 120L)
         } else {
             val ok = tile.onTap()
             if (!ok) {
-                Toast.makeText(context, "Could not open ${tile.title}", Toast.LENGTH_SHORT).show()
+                Toast.makeText(context, context.getString(R.string.could_not_open_tile, tile.title), Toast.LENGTH_SHORT).show()
             } else if (tile.closeOnSuccess) {
                 onDismiss()
             }
@@ -4491,39 +4915,12 @@ private fun QuickSettingsOverlay(
         ?.getInsets(WindowInsetsCompat.Type.statusBars())?.top ?: 0
     val qsTopDarkBand = with(density) { statusTopPx.toDp() } + qsTopDarkBelowStatusDp
     val qsTopDarkBandPx = with(density) { qsTopDarkBand.toPx() }
-    val dismissSwipeModifier =
-        if (showTileEditor) {
-            Modifier
-        } else {
-            Modifier.pointerInput(Unit) {
-                val threshold = 72.dp.toPx()
-                awaitPointerEventScope {
-                    while (true) {
-                        val down = awaitFirstDown(requireUnconsumed = true)
-                        val startY = down.position.y
-                        var triggered = false
-                        while (!triggered) {
-                            val event = awaitPointerEvent(PointerEventPass.Final)
-                            val change = event.changes.firstOrNull() ?: break
-                            if (!change.pressed) break
-                            val dy = change.position.y - startY
-                            if (dy < -threshold) {
-                                triggered = true
-                                logQuickSettings { "dismissSwipeTriggered dy=$dy showTileEditor=$showTileEditor" }
-                                onDismiss()
-                            }
-                        }
-                    }
-                }
-            }
-        }
     Box(
         modifier = Modifier
             .fillMaxSize()
-            .zIndex(520f)
-            .then(dismissSwipeModifier),
+            .zIndex(520f),
     ) {
-        Box(Modifier.fillMaxSize().background(Color(0xE6000000)))
+        Box(Modifier.fillMaxSize().background(Color(0xE6000000)).clickable(onClick = onDismiss))
         // Stronger dim from the top edge through the date row so wallpaper does not show through.
         Box(
             modifier = Modifier
@@ -4551,6 +4948,7 @@ private fun QuickSettingsOverlay(
                     .padding(start = qsPadStart, end = qsPadEnd, top = 4.dp, bottom = 4.dp)
                     .focusRequester(qsKeyFocusRequester)
                     .focusable()
+                    .clickable(interactionSource = remember { MutableInteractionSource() }, indication = null, onClick = onDismiss)
                     .onPreviewKeyEvent { ev ->
                     if (showTileEditor) return@onPreviewKeyEvent false
                     if (ev.type != KeyEventType.KeyDown) return@onPreviewKeyEvent false
@@ -4681,18 +5079,33 @@ private fun QuickSettingsOverlay(
                     }
                     },
             ) {
-                Text(
-                    dateText,
-                    style = MaterialTheme.typography.titleLarge.copy(
-                        color = Color(0xFFE6EBF2),
-                        fontWeight = FontWeight.Normal,
-                        fontSize = 18.sp,
-                        lineHeight = 18.sp,
-                    ),
+                Row(
                     modifier = Modifier
                         .fillMaxWidth()
                         .padding(top = 6.dp, bottom = 2.dp),
-                )
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    Text(
+                        dateText,
+                        style = MaterialTheme.typography.titleLarge.copy(
+                            color = Color(0xFFE6EBF2),
+                            fontWeight = FontWeight.Normal,
+                            fontSize = 18.sp,
+                            lineHeight = 18.sp,
+                        ),
+                        modifier = Modifier.weight(1f),
+                    )
+                    Icon(
+                        imageVector = Icons.Outlined.Settings,
+                        contentDescription = stringResource(R.string.cd_qs_open_settings),
+                        tint = Color(0x66FFFFFF),
+                        modifier = Modifier
+                            .size(22.dp)
+                            .pointerInput(Unit) {
+                                detectTapGestures(onTap = { onOpenModes() })
+                            },
+                    )
+                }
                 Box(
                     modifier = Modifier
                         .fillMaxWidth()
@@ -4721,7 +5134,7 @@ private fun QuickSettingsOverlay(
                     }
                 }
                 val maxPageRows = pages.maxOfOrNull { (it.size + 1) / 2 } ?: 0
-                val pagerHeight = (maxPageRows * 70 + (maxPageRows - 1).coerceAtLeast(0) * 8).dp
+                val pagerHeight = (maxPageRows * 72 + (maxPageRows - 1).coerceAtLeast(0) * 5).dp
                 HorizontalPager(
                     state = pagerState,
                     modifier = Modifier
@@ -4731,8 +5144,8 @@ private fun QuickSettingsOverlay(
                     LazyVerticalGrid(
                         columns = GridCells.Fixed(2),
                         modifier = Modifier.fillMaxSize(),
-                        horizontalArrangement = Arrangement.spacedBy(8.dp),
-                        verticalArrangement = Arrangement.spacedBy(8.dp),
+                        horizontalArrangement = Arrangement.spacedBy(5.dp),
+                        verticalArrangement = Arrangement.spacedBy(5.dp),
                     ) {
                         itemsIndexed(items = pages[page], key = { _, t -> t.id }) { _, tile ->
                             ClassicQuickTile(
@@ -4751,7 +5164,7 @@ private fun QuickSettingsOverlay(
                 ) {
                     Icon(
                         imageVector = Icons.Rounded.Tune,
-                        contentDescription = "Edit quick settings",
+                        contentDescription = stringResource(R.string.action_edit_quick_settings),
                         tint = Color(0x80E6EBF2),
                         modifier = Modifier
                             .size(28.dp)
@@ -4792,7 +5205,9 @@ private fun QuickSettingsOverlay(
             )
         }
     }
+
 }
+
 
 @Composable
 private fun QuickSettingsTileEditorOverlay(
@@ -4844,7 +5259,7 @@ private fun QuickSettingsTileEditorOverlay(
                 IconButton(onClick = onDismiss) {
                     Icon(
                         imageVector = Icons.AutoMirrored.Rounded.ArrowBack,
-                        contentDescription = "Back",
+                        contentDescription = stringResource(R.string.action_back),
                         tint = Color(0xFFEAF0F6),
                     )
                 }
@@ -5022,8 +5437,10 @@ private fun ClassicQuickTile(
     onLongPress: () -> Unit,
     enableGestures: Boolean = true,
 ) {
-    val darkCell = Color(0xFF191D22)
-    val iconBoxColor = if (tile.highlighted) Color(0xFF145A77) else darkCell
+    val darkCell  = Color(0xFF191D22)
+    val activeBg  = Color(0xFF145A77)
+    val tileBg    = if (tile.highlighted) activeBg else darkCell
+    val iconBoxBg = if (tile.highlighted) Color(0x33000000) else Color(0xFF1A2530)
     val tileModifier =
         if (enableGestures) {
             Modifier.pointerInput(tile.id) {
@@ -5044,23 +5461,25 @@ private fun ClassicQuickTile(
     Row(
         modifier = Modifier
             .fillMaxWidth()
-            .height(70.dp)
-            .clip(RoundedCornerShape(10.dp))
+            .height(72.dp)
+            .clip(RoundedCornerShape(3.dp))
+            .background(tileBg)
             .then(tileModifier),
         verticalAlignment = Alignment.CenterVertically,
     ) {
+        // Icon box — square left section
         Box(
             modifier = Modifier
-                .width(68.dp)
+                .width(72.dp)
                 .fillMaxHeight()
-                .background(iconBoxColor),
+                .background(iconBoxBg),
             contentAlignment = Alignment.Center,
         ) {
             Icon(
                 imageVector = tile.icon,
                 contentDescription = null,
                 tint = Color(0xFFEAF0F6),
-                modifier = Modifier.size(28.dp),
+                modifier = Modifier.size(32.dp),
             )
             if (tile.highlighted) {
                 Box(
@@ -5072,58 +5491,31 @@ private fun ClassicQuickTile(
                 )
             }
         }
-        Row(
+        // Text column — inherits tileBg from Row
+        Column(
             modifier = Modifier
                 .weight(1f)
                 .fillMaxHeight()
-                .background(darkCell)
-                .padding(horizontal = 10.dp, vertical = 8.dp),
-            verticalAlignment = Alignment.CenterVertically,
+                .padding(horizontal = 8.dp),
+            verticalArrangement = Arrangement.Center,
         ) {
-            Column(modifier = Modifier.weight(1f)) {
-                Row(verticalAlignment = Alignment.CenterVertically) {
-                    Text(
-                        tile.title,
-                        color = Color(0xFFEAF0F6),
-                        style = MaterialTheme.typography.titleMedium.copy(
-                            fontWeight = FontWeight.SemiBold,
-                            fontSize = 15.sp,
-                            lineHeight = 16.sp,
-                        ),
-                        maxLines = 1,
-                        overflow = TextOverflow.Ellipsis,
-                        modifier = Modifier.weight(1f, fill = false),
-                    )
-                    if (tile.actionLabel.isNotBlank()) {
-                        Spacer(Modifier.width(6.dp))
-                        Text(
-                            tile.actionLabel,
-                            color = if (tile.highlighted) Color(0xFFBDEFFF) else Color(0xFF8EA0AA),
-                            style = MaterialTheme.typography.labelSmall.copy(
-                                fontSize = 9.sp,
-                                lineHeight = 10.sp,
-                                fontWeight = FontWeight.SemiBold,
-                            ),
-                            maxLines = 1,
-                            modifier = Modifier
-                                .clip(RoundedCornerShape(7.dp))
-                                .background(if (tile.highlighted) Color(0x3327BDEB) else Color(0x33242C33))
-                                .padding(horizontal = 5.dp, vertical = 2.dp),
-                        )
-                    }
-                }
-                if (tile.subtitle.isNotBlank()) {
-                    Text(
-                        tile.subtitle,
-                        color = Color(0xFFAEB8C5),
-                        style = MaterialTheme.typography.bodyMedium.copy(
-                            fontSize = 11.sp,
-                            lineHeight = 12.sp,
-                        ),
-                        maxLines = 1,
-                        overflow = TextOverflow.Ellipsis,
-                    )
-                }
+            Text(
+                tile.title,
+                color = Color(0xFFEAF0F6),
+                fontSize = 13.sp,
+                fontWeight = FontWeight.SemiBold,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+            )
+            if (tile.subtitle.isNotBlank()) {
+                Text(
+                    tile.subtitle,
+                    color = Color(0xFFAEB8C5),
+                    fontSize = 12.sp,
+                    fontWeight = FontWeight.Normal,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                )
             }
         }
     }
@@ -5170,7 +5562,7 @@ private fun PinAppToHomeSheet(
                 .navigationBarsPadding(),
         ) {
             Text(
-                "Pin to Home Strip",
+                stringResource(R.string.action_pin_to_home_strip),
                 style = MaterialTheme.typography.titleLarge.copy(fontWeight = FontWeight.SemiBold),
                 color = themePalette.settingsMenuTitle,
             )
@@ -5841,7 +6233,7 @@ private fun HomeWidgetPickerSheet(
                     onValueChange = { query = it },
                     singleLine = true,
                     placeholder = {
-                        Text("Search widgets", color = Color(0xFFB7BCC3), fontSize = 20.sp)
+                        Text(stringResource(R.string.search_widgets_hint), color = Color(0xFFB7BCC3), fontSize = 20.sp)
                     },
                     colors = TextFieldDefaults.colors(
                         focusedTextColor = Color(0xFFEAF1FB),
@@ -6508,7 +6900,7 @@ private fun AppDrawer(
         if (searchQuery.isNotEmpty()) {
             val extras = remember(searchQuery) {
                 buildSearchExtras(drawerContext, searchQuery) {
-                    Toast.makeText(drawerContext, "Could not open that screen", Toast.LENGTH_SHORT).show()
+                    Toast.makeText(drawerContext, drawerContext.getString(R.string.could_not_open_screen), Toast.LENGTH_SHORT).show()
                 }
             }
             if (extras.isNotEmpty()) {
@@ -6550,7 +6942,7 @@ private fun AppDrawer(
             }
             if (gridCells.isEmpty()) {
                 Text(
-                    text = "No apps found",
+                    text = stringResource(R.string.drawer_no_apps_found),
                     color = themePalette.settingsMenuBody,
                     style = MaterialTheme.typography.bodyLarge,
                     modifier = Modifier
@@ -6614,7 +7006,7 @@ private fun AppDrawer(
                         }
                         Icon(
                             imageVector = sortIcon,
-                            contentDescription = "Sort: ${drawerSortModeLabel(drawerSortMode)}",
+                            contentDescription = stringResource(R.string.cd_drawer_sort, drawerSortModeLabel(drawerSortMode)),
                             tint = if (drawerSortMode == DrawerSortMode.MOST_USED) {
                                 themePalette.settingsMenuTitle
                             } else {
@@ -7169,7 +7561,7 @@ private fun openPlayStoreSearch(context: android.content.Context, query: String)
         .onFailure {
             runCatching { context.startActivity(webIntent) }
                 .onFailure {
-                    Toast.makeText(context, "Could not open Play Store", Toast.LENGTH_SHORT).show()
+                    Toast.makeText(context, context.getString(R.string.could_not_open_play_store), Toast.LENGTH_SHORT).show()
                 }
         }
 }
@@ -7943,7 +8335,7 @@ private fun HomeGroupFolderOverlay(
                         ) {
                             Icon(
                                 imageVector = Icons.Rounded.Add,
-                                contentDescription = "Add app",
+                                contentDescription = stringResource(R.string.action_add_app),
                                 tint = Color(0xFF91B3DA),
                                 modifier = Modifier.size(18.dp),
                             )
@@ -8104,7 +8496,7 @@ private fun HomeGroupFolderOverlay(
                                     ) {
                                         Icon(
                                             imageVector = Icons.Rounded.Add,
-                                            contentDescription = "Add app",
+                                            contentDescription = stringResource(R.string.action_add_app),
                                             tint = Color(0xFF91B3DA),
                                             modifier = Modifier.size(24.dp),
                                         )
@@ -8132,7 +8524,7 @@ private fun HomeGroupFolderOverlay(
                     value = renameText,
                     onValueChange = { renameText = capitalizeFirstLetterForGroupInput(it) },
                     singleLine = true,
-                    label = { Text("Name", color = themePalette.settingsMenuBody) },
+                    label = { Text(stringResource(R.string.dialog_name_hint), color = themePalette.settingsMenuBody) },
                     keyboardOptions = KeyboardOptions(
                         capitalization = KeyboardCapitalization.Sentences,
                         imeAction = ImeAction.Done,
@@ -8160,11 +8552,11 @@ private fun HomeGroupFolderOverlay(
                         onRenameGroup(renameText)
                         renameOpen = false
                     },
-                ) { Text("Save", color = themePalette.settingsMenuBody) }
+                ) { Text(stringResource(R.string.action_save), color = themePalette.settingsMenuBody) }
             },
             dismissButton = {
                 TextButton(onClick = { renameOpen = false }) {
-                    Text("Cancel", color = themePalette.settingsMenuBody)
+                    Text(stringResource(R.string.action_cancel), color = themePalette.settingsMenuBody)
                 }
             },
         )
@@ -8234,7 +8626,7 @@ private fun HomeGroupContextMenu(
                 MenuRow(Icons.Rounded.SwapVert, sideLabel, onClick = onMoveSide)
             }
             if (showPinToHomeStrip) {
-                MenuRow(Icons.Rounded.BookmarkAdd, "Pin to Home Strip", onClick = onPinToHomeStrip)
+                MenuRow(Icons.Rounded.BookmarkAdd, stringResource(R.string.action_pin_to_home_strip), onClick = onPinToHomeStrip)
             }
             MenuRow(Icons.Outlined.Delete, "Delete group", onClick = onDeleteGroup)
         }
@@ -8248,13 +8640,13 @@ private fun HomeGroupContextMenu(
             containerColor = themePalette.settingsBg,
             titleContentColor = themePalette.settingsMenuTitle,
             textContentColor = themePalette.settingsMenuBody,
-            title = { Text("Rename group", color = themePalette.settingsMenuTitle) },
+            title = { Text(stringResource(R.string.dialog_rename_group_title), color = themePalette.settingsMenuTitle) },
             text = {
                 OutlinedTextField(
                     value = renameText,
                     onValueChange = { renameText = capitalizeFirstLetterForGroupInput(it) },
                     singleLine = true,
-                    label = { Text("Name", color = themePalette.settingsMenuBody) },
+                    label = { Text(stringResource(R.string.dialog_name_hint), color = themePalette.settingsMenuBody) },
                     keyboardOptions = KeyboardOptions(
                         capitalization = KeyboardCapitalization.Sentences,
                         imeAction = ImeAction.Done,
@@ -8283,7 +8675,7 @@ private fun HomeGroupContextMenu(
             },
             dismissButton = {
                 TextButton(onClick = { renameOpen = false }) {
-                    Text("Cancel", color = themePalette.settingsMenuBody)
+                    Text(stringResource(R.string.action_cancel), color = themePalette.settingsMenuBody)
                 }
             },
         )
@@ -8362,9 +8754,9 @@ private fun FolderDrawerContextMenu(
                 "Rename folder",
                 onClick = { renameOpen = true },
             )
-            MenuRow(Icons.Rounded.SwapVert, "Arrange", onClick = onReorderApps)
+            MenuRow(Icons.Rounded.SwapVert, stringResource(R.string.action_arrange), onClick = onReorderApps)
             if (showPinToHomeStrip) {
-                MenuRow(Icons.Rounded.BookmarkAdd, "Pin to Home Strip", onClick = onPinToHomeStrip)
+                MenuRow(Icons.Rounded.BookmarkAdd, stringResource(R.string.action_pin_to_home_strip), onClick = onPinToHomeStrip)
             }
             MenuRow(Icons.Outlined.Delete, "Delete folder", onClick = onDeleteFolder)
         }
@@ -8378,13 +8770,13 @@ private fun FolderDrawerContextMenu(
             containerColor = themePalette.settingsBg,
             titleContentColor = themePalette.settingsMenuTitle,
             textContentColor = themePalette.settingsMenuBody,
-            title = { Text("Rename folder", color = themePalette.settingsMenuTitle) },
+            title = { Text(stringResource(R.string.dialog_rename_folder_title), color = themePalette.settingsMenuTitle) },
             text = {
                 OutlinedTextField(
                     value = renameText,
                     onValueChange = { renameText = capitalizeFirstLetterForGroupInput(it) },
                     singleLine = true,
-                    label = { Text("Name", color = themePalette.settingsMenuBody) },
+                    label = { Text(stringResource(R.string.dialog_name_hint), color = themePalette.settingsMenuBody) },
                     keyboardOptions = KeyboardOptions(
                         capitalization = KeyboardCapitalization.Sentences,
                         imeAction = ImeAction.Done,
@@ -8413,11 +8805,11 @@ private fun FolderDrawerContextMenu(
                         renameOpen = false
                         onDismiss()
                     },
-                ) { Text("Save", color = themePalette.settingsMenuBody) }
+                ) { Text(stringResource(R.string.action_save), color = themePalette.settingsMenuBody) }
             },
             dismissButton = {
                 TextButton(onClick = { renameOpen = false }) {
-                    Text("Cancel", color = themePalette.settingsMenuBody)
+                    Text(stringResource(R.string.action_cancel), color = themePalette.settingsMenuBody)
                 }
             },
         )
@@ -8509,24 +8901,24 @@ private fun AppContextMenu(
                     .heightIn(max = maxMenuBodyHeight)
                     .verticalScroll(menuScrollState),
             ) {
-                MenuRow(Icons.AutoMirrored.Rounded.OpenInNew, "Open", onLaunch)
-                MenuRow(Icons.Rounded.Info, "App info", onInfo)
+                MenuRow(Icons.AutoMirrored.Rounded.OpenInNew, stringResource(R.string.action_open), onLaunch)
+                MenuRow(Icons.Rounded.Info, stringResource(R.string.action_app_info), onInfo)
                 MenuRow(
                     if (isHidden) Icons.Rounded.Visibility else Icons.Rounded.VisibilityOff,
-                    if (isHidden) "Unhide" else "Hide",
+                    if (isHidden) stringResource(R.string.action_unhide) else stringResource(R.string.action_hide),
                     onHideToggle,
                 )
-                MenuRow(Icons.Rounded.SwapVert, "Arrange", onReorder)
+                MenuRow(Icons.Rounded.SwapVert, stringResource(R.string.action_arrange), onReorder)
                 if (!app.internal) {
-                    MenuRow(Icons.Rounded.Image, "Change icon", onChangeIcon)
+                    MenuRow(Icons.Rounded.Image, stringResource(R.string.action_change_icon), onChangeIcon)
                     if (hasCustomIcon) {
-                        MenuRow(Icons.Rounded.SettingsBackupRestore, "Reset icon", onResetIcon)
+                        MenuRow(Icons.Rounded.SettingsBackupRestore, stringResource(R.string.action_reset_icon), onResetIcon)
                     }
                 }
                 if (drawerFolderActionsEnabled) {
                     MenuRow(
                         Icons.Rounded.Folder,
-                        "New Group",
+                        stringResource(R.string.action_new_group),
                         onClick = {
                             newDrawerFolderName = ""
                             newDrawerFolderDialogOpen = true
@@ -8539,13 +8931,13 @@ private fun AppContextMenu(
                         if (inGroup) {
                             MenuRow(
                                 Icons.Outlined.BookmarkRemove,
-                                "Remove from ${g.title}",
+                                stringResource(R.string.action_remove_from, g.title),
                                 { onRemoveFromHomeGroup(g.id) },
                             )
                         } else {
                             MenuRow(
                                 Icons.Rounded.BookmarkAdd,
-                                "Add to ${g.title}",
+                                stringResource(R.string.action_add_to, g.title),
                                 { onAddToHomeGroup(g.id) },
                             )
                         }
@@ -8555,7 +8947,7 @@ private fun AppContextMenu(
                     for ((folderId, label) in drawerFolders) {
                         MenuRow(
                             Icons.Rounded.BookmarkAdd,
-                            "Add to $label",
+                            stringResource(R.string.action_add_to, label),
                             onClick = {
                                 onAddToDrawerFolder(folderId)
                                 onDismiss()
@@ -8564,10 +8956,10 @@ private fun AppContextMenu(
                     }
                 }
                 if (addHomeShortcutEnabled) {
-                    MenuRow(Icons.AutoMirrored.Rounded.PlaylistAdd, "Pin to Home Strip", onAddHomeShortcut)
+                    MenuRow(Icons.AutoMirrored.Rounded.PlaylistAdd, stringResource(R.string.action_pin_to_home_strip), onAddHomeShortcut)
                 }
                 if (removeHomeShortcutEnabled) {
-                    MenuRow(Icons.Outlined.Close, "Remove from Home Strip", onRemoveHomeShortcut)
+                    MenuRow(Icons.Outlined.Close, stringResource(R.string.action_remove_from_home_strip), onRemoveHomeShortcut)
                 }
                 Spacer(Modifier.height(12.dp))
             }
@@ -8581,13 +8973,13 @@ private fun AppContextMenu(
             containerColor = themePalette.settingsBg,
             titleContentColor = themePalette.settingsMenuTitle,
             textContentColor = themePalette.settingsMenuBody,
-            title = { Text("New Group", color = themePalette.settingsMenuTitle) },
+            title = { Text(stringResource(R.string.action_new_group), color = themePalette.settingsMenuTitle) },
             text = {
                 OutlinedTextField(
                     value = newDrawerFolderName,
                     onValueChange = { newDrawerFolderName = capitalizeFirstLetterForGroupInput(it) },
                     singleLine = true,
-                    label = { Text("Group name", color = themePalette.settingsMenuBody) },
+                    label = { Text(stringResource(R.string.dialog_group_name_hint), color = themePalette.settingsMenuBody) },
                     keyboardOptions = KeyboardOptions(
                         capitalization = KeyboardCapitalization.Sentences,
                         imeAction = ImeAction.Done,
@@ -8617,11 +9009,11 @@ private fun AppContextMenu(
                             onDismiss()
                         }
                     },
-                ) { Text("Create", color = themePalette.settingsMenuBody) }
+                ) { Text(stringResource(R.string.action_create), color = themePalette.settingsMenuBody) }
             },
             dismissButton = {
                 TextButton(onClick = { newDrawerFolderDialogOpen = false }) {
-                    Text("Cancel", color = themePalette.settingsMenuBody)
+                    Text(stringResource(R.string.action_cancel), color = themePalette.settingsMenuBody)
                 }
             },
         )
@@ -9640,7 +10032,7 @@ private fun DrawerSearchBar(
             ) {
                 Icon(
                     Icons.Outlined.Close,
-                    contentDescription = "Clear search",
+                    contentDescription = stringResource(R.string.action_clear_search),
                     tint = Color.White,
                     modifier = Modifier.size(14.dp),
                 )
@@ -10186,7 +10578,7 @@ private fun DockShortcutPickerOverlay(
                 IconButton(onClick = onDismiss) {
                     Icon(
                         Icons.AutoMirrored.Rounded.ArrowBack,
-                        contentDescription = "Back",
+                        contentDescription = stringResource(R.string.action_back),
                         tint = themePalette.settingsMenuTitle,
                         modifier = Modifier.size(26.dp),
                     )
@@ -10354,7 +10746,7 @@ private fun AppPickerOverlay(
                 IconButton(onClick = onDismiss) {
                     Icon(
                         Icons.AutoMirrored.Rounded.ArrowBack,
-                        contentDescription = "Back",
+                        contentDescription = stringResource(R.string.action_back),
                         tint = themePalette.settingsMenuTitle,
                         modifier = Modifier.size(26.dp),
                     )
@@ -10544,7 +10936,7 @@ private fun HomeGroupsSettingsOverlay(
                 IconButton(onClick = onDismiss) {
                     Icon(
                         Icons.AutoMirrored.Rounded.ArrowBack,
-                        contentDescription = "Back",
+                        contentDescription = stringResource(R.string.action_back),
                         tint = themePalette.settingsMenuTitle,
                         modifier = Modifier.size(26.dp),
                     )
@@ -10622,7 +11014,7 @@ private fun HomeGroupsSettingsOverlay(
                         value = newName,
                         onValueChange = { newName = capitalizeFirstLetterForGroupInput(it) },
                         singleLine = true,
-                        label = { Text("New group name", color = themePalette.settingsMenuBody) },
+                        label = { Text(stringResource(R.string.dialog_new_group_name_hint), color = themePalette.settingsMenuBody) },
                         modifier = Modifier.weight(1f),
                         keyboardOptions = KeyboardOptions(
                             capitalization = KeyboardCapitalization.Sentences,
@@ -10696,7 +11088,7 @@ private fun HomeGroupsSettingsOverlay(
                                 )
                             }
                             TextButton(onClick = { onDeleteGroup(g.id) }) {
-                                Text("Delete", color = Color(0xFFFF6B6B))
+                                Text(stringResource(R.string.action_delete), color = Color(0xFFFF6B6B))
                             }
                         }
                     }
@@ -10832,7 +11224,7 @@ private fun GlanceSettingsOverlay(
                 IconButton(onClick = onDismiss) {
                     Icon(
                         Icons.AutoMirrored.Rounded.ArrowBack,
-                        contentDescription = "Back",
+                        contentDescription = stringResource(R.string.action_back),
                         tint = themePalette.settingsMenuTitle,
                         modifier = Modifier.size(26.dp),
                     )
@@ -11022,7 +11414,7 @@ private fun IconAppearanceSettingsOverlay(
                 IconButton(onClick = onDismiss) {
                     Icon(
                         Icons.AutoMirrored.Rounded.ArrowBack,
-                        contentDescription = "Back",
+                        contentDescription = stringResource(R.string.action_back),
                         tint = themePalette.settingsMenuTitle,
                         modifier = Modifier.size(26.dp),
                     )
@@ -11092,6 +11484,9 @@ private fun IconAppearanceSettingsOverlay(
                             selectedIndex = 0
                             showIconLayoutSettings = true
                         },
+                        trailingContent = {
+                            Text("›", fontSize = 20.sp, color = if (selectedIndex == 0) Color(0xFF84D5F6) else Color(0xFF7A8290))
+                        },
                     )
                 }
                 SettingsCategoryCard(cardBg = cardBg, cardShape = cardShape, selected = selectedIndex == 1) {
@@ -11106,6 +11501,9 @@ private fun IconAppearanceSettingsOverlay(
                             selectedIndex = 1
                             showCardBackgroundSettings = true
                         },
+                        trailingContent = {
+                            Text("›", fontSize = 20.sp, color = if (selectedIndex == 1) Color(0xFF84D5F6) else Color(0xFF7A8290))
+                        },
                     )
                 }
                 SettingsCategoryCard(cardBg = cardBg, cardShape = cardShape, selected = selectedIndex == 2) {
@@ -11119,6 +11517,9 @@ private fun IconAppearanceSettingsOverlay(
                         onClick = {
                             selectedIndex = 2
                             showBadgeSettings = true
+                        },
+                        trailingContent = {
+                            Text("›", fontSize = 20.sp, color = if (selectedIndex == 2) Color(0xFF84D5F6) else Color(0xFF7A8290))
                         },
                     )
                 }
@@ -11251,7 +11652,7 @@ private fun IconPreviewToggleOverlay(
                 IconButton(onClick = onDismiss) {
                     Icon(
                         Icons.AutoMirrored.Rounded.ArrowBack,
-                        contentDescription = "Back",
+                        contentDescription = stringResource(R.string.action_back),
                         tint = Color.White,
                         modifier = Modifier.size(26.dp),
                     )
@@ -11653,7 +12054,7 @@ private fun IconLayoutSettingsOverlay(
                 IconButton(onClick = onDismiss) {
                     Icon(
                         Icons.AutoMirrored.Rounded.ArrowBack,
-                        contentDescription = "Back",
+                        contentDescription = stringResource(R.string.action_back),
                         tint = Color.White,
                         modifier = Modifier.size(26.dp),
                     )
@@ -12375,8 +12776,11 @@ private fun SettingsScreenOverlay(
     onOpenPermissionsSettings: () -> Unit,
     languageSubtitle: String,
     onOpenLanguageSettings: () -> Unit,
+    rootGranted: Boolean,
+    onOpenRootSettings: () -> Unit,
     onSetWallpaper: () -> Unit,
     onToggleHaptics: () -> Unit,
+    manualGpsCoords: Boolean,
     onExportBackup: () -> String,
     /** @return true if backup was accepted and will be applied. */
     onImportBackup: (String) -> Boolean,
@@ -12385,8 +12789,8 @@ private fun SettingsScreenOverlay(
     onOpenGestureSettings: () -> Unit,
     onOpenScreenSaverSettings: () -> Unit,
     drawerBadgesSubtitle: String,
-    classicMode: Boolean,
-    onToggleClassicMode: () -> Unit,
+    minimalModeEnabled: Boolean,
+    onOpenMinimalModeSettings: () -> Unit,
     homeStripEnabled: Boolean,
     onToggleHomeStrip: () -> Unit,
     dockSecondEnabled: Boolean,
@@ -12408,7 +12812,9 @@ private fun SettingsScreenOverlay(
     var selectedIndex by remember { mutableStateOf(0) }
     // 7-tap counter for developer diagnostics easter egg on the title.
     var diagTapCount by remember { mutableIntStateOf(0) }
-    val itemCount = 16
+    val itemCount = 17
+    var showGpsExportWarn by remember { mutableStateOf(false) }
+    var pendingExportFilename by remember { mutableStateOf("") }
 
     val createBackupDocument = rememberLauncherForActivityResult(
         ActivityResultContracts.CreateDocument("application/json")
@@ -12419,9 +12825,9 @@ private fun SettingsScreenOverlay(
             val out = context.contentResolver.openOutputStream(uri)
                 ?: error("Could not open file for writing")
             out.use { it.write(json.toByteArray(Charsets.UTF_8)) }
-            Toast.makeText(context, "Backup saved", Toast.LENGTH_SHORT).show()
+            Toast.makeText(context, context.getString(R.string.backup_saved), Toast.LENGTH_SHORT).show()
         }.onFailure {
-            Toast.makeText(context, "Backup failed: ${it.message ?: "unknown error"}", Toast.LENGTH_SHORT).show()
+            Toast.makeText(context, context.getString(R.string.backup_failed, it.message ?: "unknown error"), Toast.LENGTH_SHORT).show()
         }
     }
 
@@ -12435,9 +12841,9 @@ private fun SettingsScreenOverlay(
                 ins.readBytes().toString(Charsets.UTF_8)
             } ?: return@runCatching
             if (onImportBackup(text)) {
-                Toast.makeText(context, "Settings restored from backup", Toast.LENGTH_SHORT).show()
+                Toast.makeText(context, context.getString(R.string.settings_restored_from_backup), Toast.LENGTH_SHORT).show()
             } else {
-                Toast.makeText(context, "Invalid or unsupported backup file", Toast.LENGTH_SHORT).show()
+                Toast.makeText(context, context.getString(R.string.backup_invalid_file), Toast.LENGTH_SHORT).show()
             }
         }
     }
@@ -12447,11 +12853,11 @@ private fun SettingsScreenOverlay(
         // settings list — the sub-overlay's own LaunchedEffect will request focus.
         // Actions that stay on the settings list (toggles, resets, backups): reclaim
         // focus so trackpad DPAD navigation continues to work.
-        val opensSubOverlay = index in setOf(0, 3, 4, 8, 9, 10, 12, 13)
+        val opensSubOverlay = index in setOf(0, 1, 3, 4, 8, 9, 10, 12, 13, 14)
         when (index) {
             // HOME SCREEN
             0 -> onOpenAppearanceSettings()
-            1 -> onToggleClassicMode()
+            1 -> onOpenMinimalModeSettings()
             2 -> onToggleHomeStrip()
             3 -> onOpenGestureSettings()
             // DISPLAY
@@ -12467,12 +12873,18 @@ private fun SettingsScreenOverlay(
             11 -> onToggleHaptics()
             12 -> onOpenLanguageSettings()
             13 -> onOpenPermissionsSettings()
+            14 -> onOpenRootSettings()
             // BACKUP
-            14 -> {
+            15 -> {
                 val name = "classiclauncher_backup_" + SimpleDateFormat("yyyyMMdd_HHmmss", Locale.US).format(Date()) + ".json"
-                createBackupDocument.launch(name)
+                if (manualGpsCoords) {
+                    pendingExportFilename = name
+                    showGpsExportWarn = true
+                } else {
+                    createBackupDocument.launch(name)
+                }
             }
-            15 -> openBackupFromDownloads.launch(SettingsDownloads.openBackupJsonPickerIntent())
+            16 -> openBackupFromDownloads.launch(SettingsDownloads.openBackupJsonPickerIntent())
         }
         doNavFeedback(view, hapticsEnabled, hapticIntensity)
         if (!opensSubOverlay) {
@@ -12491,6 +12903,25 @@ private fun SettingsScreenOverlay(
     val cardShape = RoundedCornerShape(16.dp)
     val subtitleColor = Color(0xFF8E95A3)
 
+    if (showGpsExportWarn) {
+        androidx.compose.material3.AlertDialog(
+            onDismissRequest = { showGpsExportWarn = false },
+            title = { Text(stringResource(R.string.backup_gps_warning_title)) },
+            text = { Text(stringResource(R.string.backup_gps_warning_body)) },
+            confirmButton = {
+                androidx.compose.material3.TextButton(onClick = {
+                    showGpsExportWarn = false
+                    createBackupDocument.launch(pendingExportFilename)
+                }) { Text(stringResource(R.string.backup_gps_warning_export)) }
+            },
+            dismissButton = {
+                androidx.compose.material3.TextButton(onClick = { showGpsExportWarn = false }) {
+                    Text(stringResource(R.string.backup_gps_warning_cancel))
+                }
+            },
+        )
+    }
+
     Surface(
         modifier = Modifier
             .fillMaxSize()
@@ -12504,9 +12935,6 @@ private fun SettingsScreenOverlay(
         // Steal focus from drawer/pager (still composed under us) so trackpad/DPAD events hit settings.
         LaunchedEffect(Unit) {
             focusManager.clearFocus(force = true)
-            focusRequester.requestFocus()
-        }
-        LaunchedEffect(classicMode) {
             focusRequester.requestFocus()
         }
         // When a sub-overlay closes (stackedChildOverlayOpen transitions true→false),
@@ -12536,7 +12964,7 @@ private fun SettingsScreenOverlay(
                 IconButton(onClick = onDismiss) {
                     Icon(
                         Icons.AutoMirrored.Rounded.ArrowBack,
-                        contentDescription = "Back",
+                        contentDescription = stringResource(R.string.action_back),
                         tint = themePalette.settingsMenuTitle,
                         modifier = Modifier.size(26.dp),
                     )
@@ -12627,6 +13055,13 @@ private fun SettingsScreenOverlay(
                             themePalette = themePalette,
                             subtitleColor = subtitleColor,
                             onClick = { activate(0) },
+                            trailingContent = {
+                                Text(
+                                    text = "›",
+                                    fontSize = 20.sp,
+                                    color = if (selectedIndex == 0) Color(0xFF84D5F6) else Color(0xFF7A8290),
+                                )
+                            },
                         )
                     }
                 }
@@ -12634,27 +13069,22 @@ private fun SettingsScreenOverlay(
                 Column(Modifier.bringIntoViewRequester(rowBringers[1])) {
                     SettingsCategoryCard(cardBg = cardBg, cardShape = cardShape, selected = selectedIndex == 1) {
                         SettingsRow(
-                            icon = Icons.Outlined.Menu,
-                            title = stringResource(R.string.settings_classic_mode_title),
-                            subtitle = if (classicMode) {
+                            icon = Icons.Outlined.ViewList,
+                            title = stringResource(R.string.settings_minimal_mode_title),
+                            subtitle = if (minimalModeEnabled) {
                                 stringResource(R.string.settings_on)
                             } else {
-                                stringResource(R.string.settings_off)
+                                stringResource(R.string.settings_minimal_mode_subtitle)
                             },
                             selected = selectedIndex == 1,
                             themePalette = themePalette,
                             subtitleColor = subtitleColor,
                             onClick = { activate(1) },
                             trailingContent = {
-                                Switch(
-                                    checked = classicMode,
-                                    onCheckedChange = { onToggleClassicMode() },
-                                    colors = SwitchDefaults.colors(
-                                        checkedThumbColor = Color.White,
-                                        checkedTrackColor = Color(0xFF4A90D9),
-                                        uncheckedThumbColor = Color(0xFF9AA0A8),
-                                        uncheckedTrackColor = Color(0xFF3A3F4A),
-                                    ),
+                                Text(
+                                    text = "›",
+                                    fontSize = 20.sp,
+                                    color = if (selectedIndex == 1) Color(0xFF84D5F6) else Color(0xFF7A8290),
                                 )
                             },
                         )
@@ -12697,6 +13127,13 @@ private fun SettingsScreenOverlay(
                             themePalette = themePalette,
                             subtitleColor = subtitleColor,
                             onClick = { activate(3) },
+                            trailingContent = {
+                                Text(
+                                    text = "›",
+                                    fontSize = 20.sp,
+                                    color = if (selectedIndex == 3) Color(0xFF84D5F6) else Color(0xFF7A8290),
+                                )
+                            },
                         )
                     }
                 }
@@ -12722,6 +13159,13 @@ private fun SettingsScreenOverlay(
                             themePalette = themePalette,
                             subtitleColor = subtitleColor,
                             onClick = { activate(4) },
+                            trailingContent = {
+                                Text(
+                                    text = "›",
+                                    fontSize = 20.sp,
+                                    color = if (selectedIndex == 4) Color(0xFF84D5F6) else Color(0xFF7A8290),
+                                )
+                            },
                         )
                     }
                 }
@@ -12796,6 +13240,13 @@ private fun SettingsScreenOverlay(
                             themePalette = themePalette,
                             subtitleColor = subtitleColor,
                             onClick = { activate(8) },
+                            trailingContent = {
+                                Text(
+                                    text = "›",
+                                    fontSize = 20.sp,
+                                    color = if (selectedIndex == 8) Color(0xFF84D5F6) else Color(0xFF7A8290),
+                                )
+                            },
                         )
                     }
                 }
@@ -12808,12 +13259,19 @@ private fun SettingsScreenOverlay(
                             subtitle = if (!dockSecondEnabled) {
                                 stringResource(R.string.settings_hidden)
                             } else {
-                                dockSecondBody + if (classicMode) " · " + stringResource(R.string.settings_hidden_classic) else ""
+                                dockSecondBody
                             },
                             selected = selectedIndex == 9,
                             themePalette = themePalette,
                             subtitleColor = subtitleColor,
                             onClick = { selectedIndex = 9; activate(9) },
+                            trailingContent = {
+                                Text(
+                                    text = "›",
+                                    fontSize = 20.sp,
+                                    color = if (selectedIndex == 9) Color(0xFF84D5F6) else Color(0xFF7A8290),
+                                )
+                            },
                         )
                     }
                 }
@@ -12828,6 +13286,13 @@ private fun SettingsScreenOverlay(
                             themePalette = themePalette,
                             subtitleColor = subtitleColor,
                             onClick = { activate(10) },
+                            trailingContent = {
+                                Text(
+                                    text = "›",
+                                    fontSize = 20.sp,
+                                    color = if (selectedIndex == 10) Color(0xFF84D5F6) else Color(0xFF7A8290),
+                                )
+                            },
                         )
                     }
                 }
@@ -12864,13 +13329,13 @@ private fun SettingsScreenOverlay(
                                     modifier = Modifier.fillMaxWidth(),
                                     horizontalArrangement = Arrangement.SpaceBetween,
                                 ) {
-                                    Text("Light", style = MaterialTheme.typography.labelSmall, color = subtitleColor)
+                                    Text(stringResource(R.string.haptic_light), style = MaterialTheme.typography.labelSmall, color = subtitleColor)
                                     Text(
                                         "Intensity: $hapticIntensity",
                                         style = MaterialTheme.typography.labelSmall,
                                         color = themePalette.settingsMenuTitle,
                                     )
-                                    Text("Strong", style = MaterialTheme.typography.labelSmall, color = subtitleColor)
+                                    Text(stringResource(R.string.haptic_strong), style = MaterialTheme.typography.labelSmall, color = subtitleColor)
                                 }
                                 Slider(
                                     value = hapticIntensity.toFloat(),
@@ -12894,6 +13359,13 @@ private fun SettingsScreenOverlay(
                             themePalette = themePalette,
                             subtitleColor = subtitleColor,
                             onClick = { activate(12) },
+                            trailingContent = {
+                                Text(
+                                    text = "›",
+                                    fontSize = 20.sp,
+                                    color = if (selectedIndex == 12) Color(0xFF84D5F6) else Color(0xFF7A8290),
+                                )
+                            },
                         )
                     }
                 }
@@ -12908,6 +13380,35 @@ private fun SettingsScreenOverlay(
                             themePalette = themePalette,
                             subtitleColor = subtitleColor,
                             onClick = { activate(13) },
+                            trailingContent = {
+                                Text(
+                                    text = "›",
+                                    fontSize = 20.sp,
+                                    color = if (selectedIndex == 13) Color(0xFF84D5F6) else Color(0xFF7A8290),
+                                )
+                            },
+                        )
+                    }
+                }
+
+                Spacer(Modifier.height(8.dp))
+                Column(Modifier.bringIntoViewRequester(rowBringers[14])) {
+                    SettingsCategoryCard(cardBg = cardBg, cardShape = cardShape, selected = selectedIndex == 14) {
+                        SettingsRow(
+                            icon = Icons.Rounded.Security,
+                            title = stringResource(R.string.settings_root_access_title),
+                            subtitle = if (rootGranted) stringResource(R.string.settings_root_access_granted) else stringResource(R.string.settings_root_access_subtitle),
+                            selected = selectedIndex == 14,
+                            themePalette = themePalette,
+                            subtitleColor = if (rootGranted) Color(0xFF34C759) else subtitleColor,
+                            onClick = { activate(14) },
+                            trailingContent = {
+                                Text(
+                                    text = "›",
+                                    fontSize = 20.sp,
+                                    color = if (selectedIndex == 14) Color(0xFF84D5F6) else Color(0xFF7A8290),
+                                )
+                            },
                         )
                     }
                 }
@@ -12923,30 +13424,30 @@ private fun SettingsScreenOverlay(
                     color = subtitleColor,
                     modifier = Modifier.padding(start = 4.dp, bottom = 6.dp),
                 )
-                Column(Modifier.bringIntoViewRequester(rowBringers[14])) {
-                    SettingsCategoryCard(cardBg = cardBg, cardShape = cardShape, selected = selectedIndex == 14) {
-                        SettingsRow(
-                            icon = Icons.Rounded.SettingsBackupRestore,
-                            title = stringResource(R.string.settings_export_title),
-                            subtitle = stringResource(R.string.settings_export_subtitle),
-                            selected = selectedIndex == 14,
-                            themePalette = themePalette,
-                            subtitleColor = subtitleColor,
-                            onClick = { activate(14) },
-                        )
-                    }
-                }
-                Spacer(Modifier.height(8.dp))
                 Column(Modifier.bringIntoViewRequester(rowBringers[15])) {
                     SettingsCategoryCard(cardBg = cardBg, cardShape = cardShape, selected = selectedIndex == 15) {
                         SettingsRow(
                             icon = Icons.Rounded.SettingsBackupRestore,
-                            title = stringResource(R.string.settings_import_title),
-                            subtitle = stringResource(R.string.settings_import_subtitle),
+                            title = stringResource(R.string.settings_export_title),
+                            subtitle = stringResource(R.string.settings_export_subtitle),
                             selected = selectedIndex == 15,
                             themePalette = themePalette,
                             subtitleColor = subtitleColor,
                             onClick = { activate(15) },
+                        )
+                    }
+                }
+                Spacer(Modifier.height(8.dp))
+                Column(Modifier.bringIntoViewRequester(rowBringers[16])) {
+                    SettingsCategoryCard(cardBg = cardBg, cardShape = cardShape, selected = selectedIndex == 16) {
+                        SettingsRow(
+                            icon = Icons.Rounded.SettingsBackupRestore,
+                            title = stringResource(R.string.settings_import_title),
+                            subtitle = stringResource(R.string.settings_import_subtitle),
+                            selected = selectedIndex == 16,
+                            themePalette = themePalette,
+                            subtitleColor = subtitleColor,
+                            onClick = { activate(16) },
                         )
                     }
                 }
@@ -13404,7 +13905,7 @@ private fun AppSpotlightOverlay(
                         Spacer(Modifier.width(8.dp))
                         Icon(
                             Icons.Outlined.Close,
-                            contentDescription = "Clear",
+                            contentDescription = stringResource(R.string.action_clear),
                             tint = Color(0xAAFFFFFF),
                             modifier = Modifier
                                 .size(16.dp)

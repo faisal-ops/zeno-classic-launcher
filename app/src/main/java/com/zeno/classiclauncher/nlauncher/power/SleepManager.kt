@@ -116,7 +116,7 @@ object SleepManager {
         if (!dpm.isAdminActive(comp)) {
             showToast(
                 context,
-                "If lock does not work on this device, enable “Zeno Classic lock helper” in Accessibility.",
+                context.getString(R.string.lock_not_configured_toast),
             )
             return false
         }
@@ -141,7 +141,7 @@ object SleepManager {
                     } else {
                         showToast(
                             appCtx,
-                            "Lock helper didn’t lock the screen—open Zeno Classic once or toggle “Zeno Classic lock helper” off and on.",
+                            appCtx.getString(R.string.lock_helper_retry_failed_toast),
                             Toast.LENGTH_LONG,
                         )
                     }

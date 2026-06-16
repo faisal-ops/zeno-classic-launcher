@@ -63,8 +63,9 @@ class IconPackRepository(private val context: Context) {
         val mappings = loadMappings(pack)
         if (mappings.isEmpty()) return@withContext apps
         apps.map { app ->
-            if (app.internal || app.packageName in customIconPackages) {
-                // Skip: internal app or user has set a custom icon — preserve it
+            if (app.internal || app.packageName in customIconPackages || app.hasDynamicIcon) {
+                // Skip: internal app, user custom icon, or dynamic date alias (e.g. calendar) —
+                // the live PackageManager icon must not be replaced by a static icon pack icon.
                 app
             } else {
                 val drawableName = app.componentName?.let { mappings[it] }

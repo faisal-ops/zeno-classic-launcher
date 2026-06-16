@@ -9,4 +9,7 @@ data class AppEntry(
     val icon: Drawable?,
     val componentName: ComponentName? = null,
     val internal: Boolean = false,
+    /** True when the icon comes from a dynamic activity alias (e.g. Google Calendar day icons).
+     *  Icon packs must not override these — the live date icon should always win. */
+    val hasDynamicIcon: Boolean = false,
 )

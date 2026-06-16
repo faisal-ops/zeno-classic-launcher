@@ -1,7 +1,10 @@
 package com.zeno.classiclauncher.nlauncher.prefs
 
+import com.zeno.classiclauncher.nlauncher.apps.homeShortcutStorageToken
+import com.zeno.classiclauncher.nlauncher.apps.parseHomeShortcutToken
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
+import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
 
@@ -62,5 +65,78 @@ class LauncherPrefsTest {
             )
 
         assertTrue(LauncherBackup.fromJson(json).isFailure)
+    }
+
+    @Test
+    fun launcherBackup_roundTripsMinimalModePrefs() {
+        val prefs = LauncherPrefs(
+            minimalModeEnabled = true,
+            minimalModeShowWeather = false,
+            minimalModeGreyscale = true,
+            minimalModeApps = listOf("com.android.dialer", "com.android.mms"),
+        )
+
+        val restored = LauncherBackup.fromJson(LauncherBackup.toJson(prefs)).getOrThrow()
+
+        assertTrue(restored.minimalModeEnabled)
+        assertFalse(restored.minimalModeShowWeather)
+        assertTrue(restored.minimalModeGreyscale)
+        assertEquals(listOf("com.android.dialer", "com.android.mms"), restored.minimalModeApps)
+    }
+
+    @Test
+    fun launcherBackup_roundTripsGpsCoordinates() {
+        val prefs = LauncherPrefs(
+            glanceWeatherManualLatitude = "51.5074",
+            glanceWeatherManualLongitude = "-0.1278",
+        )
+
+        val restored = LauncherBackup.fromJson(LauncherBackup.toJson(prefs)).getOrThrow()
+
+        assertEquals("51.5074", restored.glanceWeatherManualLatitude)
+        assertEquals("-0.1278", restored.glanceWeatherManualLongitude)
+    }
+
+    @Test
+    fun parseHomeShortcutToken_plainPackage() {
+        val (pkg, sid) = parseHomeShortcutToken("com.example.app")
+
+        assertEquals("com.example.app", pkg)
+        assertNull(sid)
+    }
+
+    @Test
+    fun parseHomeShortcutToken_withShortcutId() {
+        val (pkg, sid) = parseHomeShortcutToken("com.example.app#shortcut_42")
+
+        assertEquals("com.example.app", pkg)
+        assertEquals("shortcut_42", sid)
+    }
+
+    @Test
+    fun parseHomeShortcutToken_trimsWhitespace() {
+        val (pkg, sid) = parseHomeShortcutToken("  com.example.app  #  my_shortcut  ")
+
+        assertEquals("com.example.app", pkg)
+        assertEquals("my_shortcut", sid)
+    }
+
+    @Test
+    fun homeShortcutStorageToken_plain() {
+        assertEquals("com.example.app", homeShortcutStorageToken("com.example.app", null))
+    }
+
+    @Test
+    fun homeShortcutStorageToken_withShortcutId() {
+        assertEquals("com.example.app#sid123", homeShortcutStorageToken("com.example.app", "sid123"))
+    }
+
+    @Test
+    fun parseHomeShortcutToken_roundTrip() {
+        val token = homeShortcutStorageToken("com.example.app", "my_sid")
+        val (pkg, sid) = parseHomeShortcutToken(token)
+
+        assertEquals("com.example.app", pkg)
+        assertEquals("my_sid", sid)
     }
 }

@@ -63,6 +63,8 @@ class LauncherActions(private val context: Context) {
     private val launcherPrefs by lazy { context.getSharedPreferences("launcher_actions", Context.MODE_PRIVATE) }
     private val keyboardModeUiKey = "keyboard_mode_ui"
     private val soundProfileKey = "sound_profile_mode"
+    private val mainHandler = android.os.Handler(android.os.Looper.getMainLooper())
+    private var pendingSoundReapply: Runnable? = null
 
     fun launchApp(packageName: String): Boolean {
         // Some dialer apps expose a launcher activity that only shows "set default phone app".
@@ -197,8 +199,17 @@ class LauncherActions(private val context: Context) {
         startActivityNewTask(Intent(Settings.ACTION_WIFI_SETTINGS)) ||
             openSystemSettings()
 
-    fun openBluetoothSettings(): Boolean =
-        startActivityNewTask(Intent(Settings.ACTION_BLUETOOTH_SETTINGS)) ||
+    fun openBluetoothSettings(): Boolean {
+        // "android.settings.panel.action.BLUETOOTH" shows the overlay panel (Use Bluetooth + Pair
+        // new device). Constant removed from compile SDK 35+ but intent still works at runtime.
+        if (startActivityNewTask(Intent("android.settings.panel.action.BLUETOOTH"))) return true
+        return startActivityNewTask(Intent(Settings.ACTION_BLUETOOTH_SETTINGS)) ||
+            openSystemSettings()
+    }
+
+    fun openBluetoothPairing(): Boolean =
+        startActivityNewTask(Intent("android.settings.BLUETOOTH_PAIRING_SETTINGS")) ||
+            startActivityNewTask(Intent(Settings.ACTION_BLUETOOTH_SETTINGS)) ||
             openSystemSettings()
 
     fun openMobileNetworkSettings(): Boolean =
@@ -426,7 +437,8 @@ class LauncherActions(private val context: Context) {
             openSystemSettings()
 
     fun openHotspotSettings(): Boolean =
-        startActivityNewTask(Intent("android.settings.TETHER_SETTINGS")) ||
+        startActivityNewTask(Intent("com.android.settings.WIFI_TETHER_SETTINGS")) ||
+            startActivityNewTask(Intent("android.settings.TETHER_SETTINGS")) ||
             startActivityNewTask(Intent(Settings.ACTION_WIRELESS_SETTINGS)) ||
             openSystemSettings()
 
@@ -446,7 +458,9 @@ class LauncherActions(private val context: Context) {
             startActivityNewTask(Intent(Settings.ACTION_DISPLAY_SETTINGS))
 
     fun openScreenRecordSettings(): Boolean =
-        startActivityNewTask(Intent("android.settings.SYSTEMUI_QS_TILES_SETTINGS"))
+        startActivityNewTask(Intent("android.settings.SYSTEMUI_QS_TILES_SETTINGS")) ||
+            startActivityNewTask(Intent("com.android.systemui.action.START_SCREEN_RECORDER").setPackage("com.android.systemui")) ||
+            startActivityNewTask(Intent(Settings.ACTION_DISPLAY_SETTINGS))
 
     fun canOpenScreenRecordSettings(): Boolean =
         canResolveActivity(Intent("android.settings.SYSTEMUI_QS_TILES_SETTINGS"))
@@ -521,14 +535,27 @@ class LauncherActions(private val context: Context) {
             SoundProfileMode.RING -> {
                 if (nm?.isNotificationPolicyAccessGranted == true)
                     runCatching { nm.setInterruptionFilter(NotificationManager.INTERRUPTION_FILTER_ALL) }
-                runCatching { am.ringerMode = AudioManager.RINGER_MODE_NORMAL }.isSuccess &&
-                    am.ringerMode == AudioManager.RINGER_MODE_NORMAL
+                runCatching { am.ringerMode = AudioManager.RINGER_MODE_NORMAL }
+                // Android's ZenModeHelper asynchronously restores the pre-DND ringer mode
+                // (usually VIBRATE) when the filter is cleared. Re-apply NORMAL after 400 ms
+                // to override that restoration before any ON_RESUME refresh can read stale state.
+                pendingSoundReapply?.let { mainHandler.removeCallbacks(it) }
+                Runnable { runCatching { am.ringerMode = AudioManager.RINGER_MODE_NORMAL } }.also {
+                    pendingSoundReapply = it
+                    mainHandler.postDelayed(it, 400)
+                }
+                true
             }
             SoundProfileMode.VIBRATE -> {
                 if (nm?.isNotificationPolicyAccessGranted == true)
                     runCatching { nm.setInterruptionFilter(NotificationManager.INTERRUPTION_FILTER_ALL) }
-                runCatching { am.ringerMode = AudioManager.RINGER_MODE_VIBRATE }.isSuccess &&
-                    am.ringerMode == AudioManager.RINGER_MODE_VIBRATE
+                runCatching { am.ringerMode = AudioManager.RINGER_MODE_VIBRATE }
+                pendingSoundReapply?.let { mainHandler.removeCallbacks(it) }
+                Runnable { runCatching { am.ringerMode = AudioManager.RINGER_MODE_VIBRATE } }.also {
+                    pendingSoundReapply = it
+                    mainHandler.postDelayed(it, 400)
+                }
+                true
             }
             // DND = INTERRUPTION_FILTER_NONE — full Do Not Disturb.
             SoundProfileMode.DND -> {
@@ -635,13 +662,42 @@ class LauncherActions(private val context: Context) {
             val m = NfcAdapter::class.java.getMethod(methodName)
             m.invoke(adapter)
         }
-        if (invoked.isFailure) return ToggleResult.Unsupported
-        return if (adapter.isEnabled != wasEnabled) {
-            ToggleResult.Changed(adapter.isEnabled)
-        } else {
-            ToggleResult.Unsupported
-        }
+        // NFC toggle is async; return optimistically if invocation succeeded
+        return if (invoked.isSuccess) ToggleResult.Changed(targetEnabled) else ToggleResult.Unsupported
     }
+
+    fun toggleExtraDim(): ToggleResult {
+        val next = !isExtraDimEnabled()
+        return runCatching {
+            Settings.Secure.putInt(context.contentResolver, "reduce_bright_colors_activated", if (next) 1 else 0)
+            ToggleResult.Changed(next)
+        }.getOrDefault(ToggleResult.Unsupported)
+    }
+
+    fun isGreyscaleEnabled(): Boolean =
+        readSecureInt("accessibility_display_daltonizer_enabled") > 0
+
+    fun toggleGreyscale(): ToggleResult {
+        val next = !isGreyscaleEnabled()
+        return runCatching {
+            val cr = context.contentResolver
+            if (next) Settings.Secure.putInt(cr, "accessibility_display_daltonizer", 0) // 0 = greyscale
+            Settings.Secure.putInt(cr, "accessibility_display_daltonizer_enabled", if (next) 1 else 0)
+            ToggleResult.Changed(next)
+        }.getOrDefault(ToggleResult.Unsupported)
+    }
+
+    fun openGreyscaleSettings(): Boolean =
+        startActivityNewTask(Intent(Settings.ACTION_ACCESSIBILITY_SETTINGS))
+
+    fun isLocationEnabled(): Boolean {
+        val lm = context.getSystemService(android.location.LocationManager::class.java) ?: return false
+        return if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) lm.isLocationEnabled
+        else lm.isProviderEnabled(android.location.LocationManager.GPS_PROVIDER)
+    }
+
+    fun openLocationSettings(): Boolean =
+        startActivityNewTask(Intent(Settings.ACTION_LOCATION_SOURCE_SETTINGS))
 
     fun currentCarrierName(): String {
         val tm = context.getSystemService(TelephonyManager::class.java)
@@ -766,8 +822,21 @@ class LauncherActions(private val context: Context) {
         }
     }
 
-    fun isHotspotEnabled(): Boolean =
-        readGlobalInt("tethering_on") > 0 || readGlobalInt("hotspot_on") > 0
+    fun isHotspotEnabled(): Boolean {
+        // Primary: NetworkInterface — pure Java, no permissions, no API-level restrictions.
+        // Dedicated AP interfaces (ap0, softap0, etc.) are only UP when hotspot is active.
+        // wlan* interfaces are skipped here — they are also UP in STA (client) mode.
+        val ifaces = runCatching { java.net.NetworkInterface.getNetworkInterfaces()?.toList() }.getOrNull()
+        if (ifaces?.any { iface ->
+            val name = iface.name ?: ""
+            iface.isUp && (name.startsWith("ap") || name.startsWith("softap"))
+        } == true) return true
+        // Fallback: Settings.Global wifi_ap_state (12 = ENABLING, 13 = ENABLED)
+        val apState = readGlobalInt("wifi_ap_state")
+        if (apState == 12 || apState == 13) return true
+        // Legacy keys used by some older ROMs
+        return readGlobalInt("tethering_on") > 0 || readGlobalInt("hotspot_on") > 0
+    }
 
     fun isNfcEnabled(): Boolean {
         val adapter = context.getSystemService<android.nfc.NfcManager>()?.defaultAdapter

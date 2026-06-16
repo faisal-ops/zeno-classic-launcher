@@ -97,6 +97,7 @@ fun PermissionsSettingsOverlay(
     onNotificationBadgesEnabled: (Boolean) -> Unit,
     onDoubleTapSleepEnabled: (Boolean) -> Unit,
     onAutoUnlockEnabled: (Boolean) -> Unit,
+    onAutoUnlockPinDigits: (Int) -> Unit,
     onGlanceEnabled: (Boolean) -> Unit,
     onGlanceShowCalendar: (Boolean) -> Unit,
 ) {
@@ -281,16 +282,18 @@ fun PermissionsSettingsOverlay(
                 PermissionSwitchCard(
                     title = "Auto Unlock",
                     subtitleOff = "Off — tap overlay + Enter required",
-                    subtitleOnOk = "On — skips overlay, auto-submits PIN after 4 digits",
-                    subtitleOnMissing = "On — skips overlay, auto-submits PIN after 4 digits",
+                    subtitleOnOk = "On — skips overlay, auto-submits ${prefs.autoUnlockPinDigits}-digit PIN",
+                    subtitleOnMissing = "On — skips overlay, auto-submits ${prefs.autoUnlockPinDigits}-digit PIN",
                     featureOn = prefs.autoUnlockEnabled,
                     permissionOk = true,
                     focused = focusedItem == 2,
                     themePalette = themePalette,
                     onFeatureChange = { on -> onAutoUnlockEnabled(on) },
-                    showGrant = false,
-                    onGrant = {},
-                    grantLabel = "",
+                    showGrant = prefs.autoUnlockEnabled,
+                    onGrant = {
+                        onAutoUnlockPinDigits(if (prefs.autoUnlockPinDigits == 4) 6 else 4)
+                    },
+                    grantLabel = if (prefs.autoUnlockPinDigits == 4) "Switch to 6-digit PIN" else "Switch to 4-digit PIN",
                 )
 
                 PermissionSwitchCard(
