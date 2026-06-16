@@ -106,6 +106,9 @@ object LauncherBackup {
         p.put("minimalModeShowNotifSummary", prefs.minimalModeShowNotifSummary)
         p.put("minimalModeApps", JSONArray(prefs.minimalModeApps))
         p.put("minimalModeGreyscale", prefs.minimalModeGreyscale)
+        p.put("minimalModeChallengeApps", JSONArray(prefs.minimalModeChallengeApps.toList()))
+        p.put("minimalModeAppLimits", prefs.minimalModeAppLimits)
+        p.put("minimalModeSwipeRightApp", prefs.minimalModeSwipeRightApp)
         p.put("autoUnlockEnabled", prefs.autoUnlockEnabled)
         p.put("autoUnlockPinDigits", prefs.autoUnlockPinDigits)
         p.put("drawerSortMode", prefs.drawerSortMode)
@@ -246,6 +249,12 @@ object LauncherBackup {
                 .filter { it.isNotEmpty() }
         } ?: emptyList()
         val minimalModeGreyscale = p.optBoolean("minimalModeGreyscale", true)
+        val minimalModeChallengeApps = p.optJSONArray("minimalModeChallengeApps")?.let { arr ->
+            buildList { for (i in 0 until arr.length()) add(arr.optString(i, "").trim()) }
+                .filter { it.isNotEmpty() }.toSet()
+        } ?: emptySet()
+        val minimalModeAppLimits = p.optString("minimalModeAppLimits", "").trim()
+        val minimalModeSwipeRightApp = p.optString("minimalModeSwipeRightApp", "").trim()
         val autoUnlockEnabled = p.optBoolean("autoUnlockEnabled", true)
         val autoUnlockPinDigits = p.optInt("autoUnlockPinDigits", 4).coerceIn(4, 8)
         val drawerSortMode = p.optString("drawerSortMode", "ALPHABETICAL").trim()
@@ -366,6 +375,9 @@ object LauncherBackup {
             minimalModeShowNotifSummary = minimalModeShowNotifSummary,
             minimalModeApps = minimalModeApps,
             minimalModeGreyscale = minimalModeGreyscale,
+            minimalModeChallengeApps = minimalModeChallengeApps,
+            minimalModeAppLimits = minimalModeAppLimits,
+            minimalModeSwipeRightApp = minimalModeSwipeRightApp,
             autoUnlockEnabled = autoUnlockEnabled,
             autoUnlockPinDigits = autoUnlockPinDigits,
             drawerSortMode = drawerSortMode,

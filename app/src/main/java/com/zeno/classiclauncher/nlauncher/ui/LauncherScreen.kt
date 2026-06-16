@@ -1101,7 +1101,39 @@ fun LauncherScreen(
             false // never consume — just observe
         }
     ) {
-        Column(modifier = Modifier.fillMaxSize()) {
+        Column(modifier = Modifier
+            .fillMaxSize()
+            .pointerInput(Unit) {
+                // Intercept downward-dominant swipes in the Initial pass (runs before the
+                // HorizontalPager's Main-pass drag detection) so the pager never interprets
+                // the incidental horizontal component of a QS-open swipe as a page scroll
+                // to the app drawer.
+                awaitPointerEventScope {
+                    while (true) {
+                        val down = awaitFirstDown(requireUnconsumed = false, pass = PointerEventPass.Initial)
+                        val startX = down.position.x
+                        val startY = down.position.y
+                        var verticalLocked = false
+                        var decidedHorizontal = false
+                        while (true) {
+                            val ev = awaitPointerEvent(PointerEventPass.Initial)
+                            val ch = ev.changes.firstOrNull() ?: break
+                            if (!ch.pressed) break
+                            val dx = ch.position.x - startX
+                            val dy = ch.position.y - startY
+                            val slop = 40.dp.toPx()
+                            if (!verticalLocked && !decidedHorizontal) {
+                                when {
+                                    dy > slop && dy > kotlin.math.abs(dx) * 1.5f -> verticalLocked = true
+                                    kotlin.math.abs(dx) > slop -> decidedHorizontal = true
+                                }
+                            }
+                            if (verticalLocked) ev.changes.forEach { it.consume() }
+                        }
+                    }
+                }
+            }
+        ) {
             HorizontalPager(
                 state = pagerState,
                 modifier = Modifier.weight(1f),
@@ -3404,14 +3436,16 @@ private fun HomePage(
                             waitForUpOrCancellation(pass = PointerEventPass.Final)
                             continue
                         }
+                        val startX = down.position.x
                         val startY = down.position.y
                         var triggered = false
                         while (!triggered) {
                             val event = awaitPointerEvent(PointerEventPass.Final)
                             val change = event.changes.firstOrNull() ?: break
                             if (!change.pressed) break
+                            val dx = change.position.x - startX
                             val dy = change.position.y - startY
-                            if (dy > threshold && searchQuery.isEmpty()) {
+                            if (dy > threshold && dy > kotlin.math.abs(dx) * 1.5f && searchQuery.isEmpty()) {
                                 triggered = true
                                 onOpenQuickSettings()
                             }
@@ -4881,37 +4915,10 @@ internal fun QuickSettingsOverlay(
         ?.getInsets(WindowInsetsCompat.Type.statusBars())?.top ?: 0
     val qsTopDarkBand = with(density) { statusTopPx.toDp() } + qsTopDarkBelowStatusDp
     val qsTopDarkBandPx = with(density) { qsTopDarkBand.toPx() }
-    val dismissSwipeModifier =
-        if (showTileEditor) {
-            Modifier
-        } else {
-            Modifier.pointerInput(Unit) {
-                val threshold = 72.dp.toPx()
-                awaitPointerEventScope {
-                    while (true) {
-                        val down = awaitFirstDown(requireUnconsumed = true)
-                        val startY = down.position.y
-                        var triggered = false
-                        while (!triggered) {
-                            val event = awaitPointerEvent(PointerEventPass.Final)
-                            val change = event.changes.firstOrNull() ?: break
-                            if (!change.pressed) break
-                            val dy = change.position.y - startY
-                            if (dy < -threshold) {
-                                triggered = true
-                                logQuickSettings { "dismissSwipeTriggered dy=$dy showTileEditor=$showTileEditor" }
-                                onDismiss()
-                            }
-                        }
-                    }
-                }
-            }
-        }
     Box(
         modifier = Modifier
             .fillMaxSize()
-            .zIndex(520f)
-            .then(dismissSwipeModifier),
+            .zIndex(520f),
     ) {
         Box(Modifier.fillMaxSize().background(Color(0xE6000000)).clickable(onClick = onDismiss))
         // Stronger dim from the top edge through the date row so wallpaper does not show through.

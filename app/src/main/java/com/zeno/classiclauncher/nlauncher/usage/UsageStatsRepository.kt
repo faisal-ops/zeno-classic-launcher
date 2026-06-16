@@ -42,25 +42,14 @@ object UsageStatsRepository {
         val events = usm.queryEvents(startOfDay, now) ?: return 0L
         val launcherPkg = context.packageName
         val event = UsageEvents.Event()
-        val resumedAt = mutableMapOf<String, Long>()
-        val midnightCreditUsed = mutableSetOf<String>()
-        var total = 0L
+        val eventList = mutableListOf<RawUsageEvent>()
         while (events.hasNextEvent()) {
             events.getNextEvent(event)
-            val pkg = event.packageName
-            if (pkg == launcherPkg) continue
-            when (event.eventType) {
-                UsageEvents.Event.ACTIVITY_RESUMED -> resumedAt[pkg] = event.timeStamp
-                UsageEvents.Event.ACTIVITY_PAUSED -> {
-                    val start = if (pkg in resumedAt) resumedAt.remove(pkg)!!
-                    else if (midnightCreditUsed.add(pkg)) startOfDay
-                    else null
-                    if (start != null) total += event.timeStamp - start
-                }
+            if (event.packageName != launcherPkg) {
+                eventList.add(RawUsageEvent(event.eventType, event.packageName, event.timeStamp))
             }
         }
-        resumedAt.values.forEach { start -> total += now - start }
-        return total
+        return accumulateUsageEvents(eventList, startOfDay, now).values.sum()
     }
 
     /**
@@ -84,8 +73,7 @@ object UsageStatsRepository {
         if (!hasPermission(context)) return emptyMap()
         val daily = dailyBucketUsage(context)
         val eventBased = eventBasedUsage(context)
-        val allPkgs = daily.keys + eventBased.keys
-        return allPkgs.associateWith { pkg -> maxOf(daily[pkg] ?: 0L, eventBased[pkg] ?: 0L) }
+        return mergeUsageMaps(daily, eventBased)
     }
 
     /**
@@ -122,28 +110,15 @@ object UsageStatsRepository {
         val startOfDay = midnightToday()
         val launcherPkg = context.packageName
         val event = UsageEvents.Event()
-        val resumedAt = mutableMapOf<String, Long>()
-        val totals = mutableMapOf<String, Long>()
-        val midnightCreditUsed = mutableSetOf<String>()
+        val eventList = mutableListOf<RawUsageEvent>()
         val events = usm.queryEvents(startOfDay, now) ?: return emptyMap()
         while (events.hasNextEvent()) {
             events.getNextEvent(event)
-            val pkg = event.packageName
-            if (pkg == launcherPkg) continue
-            when (event.eventType) {
-                UsageEvents.Event.ACTIVITY_RESUMED -> resumedAt[pkg] = event.timeStamp
-                UsageEvents.Event.ACTIVITY_PAUSED -> {
-                    val start = if (pkg in resumedAt) resumedAt.remove(pkg)!!
-                    else if (midnightCreditUsed.add(pkg)) startOfDay
-                    else null
-                    if (start != null) totals[pkg] = (totals[pkg] ?: 0L) + event.timeStamp - start
-                }
+            if (event.packageName != launcherPkg) {
+                eventList.add(RawUsageEvent(event.eventType, event.packageName, event.timeStamp))
             }
         }
-        resumedAt.forEach { (pkg, start) ->
-            totals[pkg] = (totals[pkg] ?: 0L) + now - start
-        }
-        return totals
+        return accumulateUsageEvents(eventList, startOfDay, now)
     }
 
     /** Formats milliseconds as a compact human string: "2h 15m", "45m", etc. */
@@ -165,4 +140,52 @@ object UsageStatsRepository {
             set(java.util.Calendar.SECOND, 0)
             set(java.util.Calendar.MILLISECOND, 0)
         }.timeInMillis
+}
+
+/** Minimal event record extracted from [UsageEvents.Event] for pure accumulation logic. */
+internal data class RawUsageEvent(val eventType: Int, val packageName: String, val timeStamp: Long)
+
+/**
+ * Pure accumulation of RESUMED/PAUSED events into per-package foreground milliseconds.
+ *
+ * Rules enforced here (tested independently of Android framework):
+ * - ACTIVITY_STOPPED is ignored — it fires after every PAUSED and would double-count.
+ * - A PAUSED with no prior RESUMED gets a one-time midnight carry-over credit (the app was
+ *   already in the foreground when the query window started).
+ * - [midnightCreditUsed] ensures that credit is applied at most once per package.
+ * - Open sessions at [now] are closed and counted.
+ */
+internal fun accumulateUsageEvents(
+    events: List<RawUsageEvent>,
+    startOfDay: Long,
+    now: Long,
+): Map<String, Long> {
+    val resumedAt = mutableMapOf<String, Long>()
+    val totals = mutableMapOf<String, Long>()
+    val midnightCreditUsed = mutableSetOf<String>()
+    for (e in events) {
+        val pkg = e.packageName
+        when (e.eventType) {
+            UsageEvents.Event.ACTIVITY_RESUMED -> resumedAt[pkg] = e.timeStamp
+            UsageEvents.Event.ACTIVITY_PAUSED -> {
+                val start = if (pkg in resumedAt) resumedAt.remove(pkg)!!
+                else if (midnightCreditUsed.add(pkg)) startOfDay
+                else null
+                if (start != null) totals[pkg] = (totals[pkg] ?: 0L) + e.timeStamp - start
+            }
+        }
+    }
+    resumedAt.forEach { (pkg, start) ->
+        totals[pkg] = (totals[pkg] ?: 0L) + now - start
+    }
+    return totals
+}
+
+/**
+ * Merges two per-package usage maps by taking the max value per package.
+ * Packages present in only one map are included at their full value.
+ */
+internal fun mergeUsageMaps(a: Map<String, Long>, b: Map<String, Long>): Map<String, Long> {
+    val allPkgs = a.keys + b.keys
+    return allPkgs.associateWith { pkg -> maxOf(a[pkg] ?: 0L, b[pkg] ?: 0L) }
 }

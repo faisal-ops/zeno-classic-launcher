@@ -1275,8 +1275,12 @@ class LauncherViewModel(app: Application) : AndroidViewModel(app) {
         if (request.requestType != LauncherApps.PinItemRequest.REQUEST_TYPE_SHORTCUT) return false
         val info = request.shortcutInfo ?: return false
         val token = homeShortcutStorageToken(info.`package`, info.id)
-        val cur = prefs.value.homeShortcutPackages
-        if (!prefs.value.canAddHomeStripItem()) return false
+        // Read directly from DataStore (not cached StateFlow) — on cold-start the StateFlow
+        // still holds DEFAULT_PREFS (empty shortcuts) while DataStore is loading, so prefs.value
+        // here would wipe all existing shortcuts and store only the new token.
+        val snap = prefsRepo.prefsFlow.first()
+        val cur = snap.homeShortcutPackages
+        if (!snap.canAddHomeStripItem()) return false
         if (token in cur) return true
         prefsRepo.setHomeShortcutPackages(cur + token)
         return true

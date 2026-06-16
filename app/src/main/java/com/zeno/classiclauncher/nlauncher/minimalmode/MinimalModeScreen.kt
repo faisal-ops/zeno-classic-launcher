@@ -276,6 +276,43 @@ internal fun MinimalModeScreen(vm: LauncherViewModel) {
         onDispose { audioManager.unregisterAudioDeviceCallback(callback) }
     }
 
+    // System-wide greyscale via root (daltonizer monochromacy mode).
+    // Only used when rootGranted — non-rooted devices fall back to Compose saturation filter below.
+    // LaunchedEffect handles reactive toggle; DisposableEffect(Unit) ensures cleanup on exit.
+    var systemGreyscaleActive by remember { mutableStateOf(false) }
+    LaunchedEffect(prefs.minimalModeGreyscale, prefs.rootGranted) {
+        if (prefs.minimalModeGreyscale && prefs.rootGranted) {
+            kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) {
+                runCatching {
+                    ProcessBuilder("su", "-c",
+                        "settings put secure accessibility_display_daltonizer_enabled 1 && " +
+                        "settings put secure accessibility_display_daltonizer 0")
+                        .start().waitFor()
+                }
+            }
+            systemGreyscaleActive = true
+        } else if (systemGreyscaleActive) {
+            kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) {
+                runCatching {
+                    ProcessBuilder("su", "-c",
+                        "settings put secure accessibility_display_daltonizer_enabled 0")
+                        .start().waitFor()
+                }
+            }
+            systemGreyscaleActive = false
+        }
+    }
+    androidx.compose.runtime.DisposableEffect(Unit) {
+        onDispose {
+            if (systemGreyscaleActive) {
+                runCatching {
+                    ProcessBuilder("su", "-c",
+                        "settings put secure accessibility_display_daltonizer_enabled 0").start()
+                }
+            }
+        }
+    }
+
     // Clock: tick every second, synced to the wall-clock second boundary to avoid drift.
     LaunchedEffect(Unit) {
         while (true) {
@@ -384,7 +421,7 @@ internal fun MinimalModeScreen(vm: LauncherViewModel) {
             .fillMaxSize()
             .background(SCREEN_BG)
             .then(
-                if (prefs.minimalModeGreyscale)
+                if (prefs.minimalModeGreyscale && !prefs.rootGranted)
                     Modifier.drawWithContent {
                         drawContent()
                         drawRect(color = Color.Black, blendMode = androidx.compose.ui.graphics.BlendMode.Saturation)
