@@ -204,6 +204,10 @@ data class LauncherPrefs(
     val minimalModeApps: List<String> = emptyList(),
     /** When true, Minimal Mode forces all app icons to greyscale to reduce dopamine triggers. */
     val minimalModeGreyscale: Boolean = true,
+    /** Package names that trigger the 5-second friction countdown before launching. */
+    val minimalModeChallengeApps: Set<String> = emptySet(),
+    /** Per-app daily soft limits stored as "pkg:limitMs" joined by comma. */
+    val minimalModeAppLimits: String = "",
     // ── Root ──────────────────────────────────────────────────────────────────────
     /** True once the user has granted su access to the launcher. */
     val rootGranted: Boolean = false,
@@ -297,6 +301,8 @@ class LauncherPrefsRepository(private val context: Context) {
         val MINIMAL_MODE_SHOW_NOTIF_SUMMARY = booleanPreferencesKey("minimalModeShowNotifSummary")
         val MINIMAL_MODE_APPS = stringPreferencesKey("minimalModeApps")
         val MINIMAL_MODE_GREYSCALE = booleanPreferencesKey("minimalModeGreyscale")
+        val MINIMAL_MODE_CHALLENGE_APPS = stringPreferencesKey("minimalModeChallengeApps")
+        val MINIMAL_MODE_APP_LIMITS = stringPreferencesKey("minimalModeAppLimits")
         val ROOT_GRANTED = booleanPreferencesKey("rootGranted")
         val CUSTOM_STATUS_BAR_ENABLED = booleanPreferencesKey("customStatusBarEnabled")
         val ROOTED_QS_ENABLED = booleanPreferencesKey("rootedQsEnabled")
@@ -394,6 +400,9 @@ class LauncherPrefsRepository(private val context: Context) {
         val minimalModeShowNotifSummary = p[Keys.MINIMAL_MODE_SHOW_NOTIF_SUMMARY] ?: DEFAULT_PREFS.minimalModeShowNotifSummary
         val minimalModeApps = parseCsvList(p[Keys.MINIMAL_MODE_APPS])
         val minimalModeGreyscale = p[Keys.MINIMAL_MODE_GREYSCALE] ?: DEFAULT_PREFS.minimalModeGreyscale
+        val minimalModeChallengeApps = p[Keys.MINIMAL_MODE_CHALLENGE_APPS]
+            ?.split(",")?.filter { it.isNotBlank() }?.toSet() ?: DEFAULT_PREFS.minimalModeChallengeApps
+        val minimalModeAppLimits = p[Keys.MINIMAL_MODE_APP_LIMITS] ?: DEFAULT_PREFS.minimalModeAppLimits
         val rootGranted = p[Keys.ROOT_GRANTED] ?: DEFAULT_PREFS.rootGranted
         val customStatusBarEnabled = p[Keys.CUSTOM_STATUS_BAR_ENABLED] ?: DEFAULT_PREFS.customStatusBarEnabled
         val rootedQsEnabled = p[Keys.ROOTED_QS_ENABLED] ?: DEFAULT_PREFS.rootedQsEnabled
@@ -465,6 +474,8 @@ class LauncherPrefsRepository(private val context: Context) {
             minimalModeShowNotifSummary = minimalModeShowNotifSummary,
             minimalModeApps = minimalModeApps,
             minimalModeGreyscale = minimalModeGreyscale,
+            minimalModeChallengeApps = minimalModeChallengeApps,
+            minimalModeAppLimits = minimalModeAppLimits,
             rootGranted = rootGranted,
             customStatusBarEnabled = customStatusBarEnabled,
             rootedQsEnabled = rootedQsEnabled,
@@ -799,6 +810,16 @@ class LauncherPrefsRepository(private val context: Context) {
 
     suspend fun setMinimalModeGreyscale(enabled: Boolean) {
         context.dataStore.edit { it[Keys.MINIMAL_MODE_GREYSCALE] = enabled }
+    }
+
+    suspend fun setMinimalModeChallengeApps(packages: Set<String>) {
+        context.dataStore.edit { it[Keys.MINIMAL_MODE_CHALLENGE_APPS] = packages.joinToString(",") }
+    }
+
+    suspend fun setMinimalModeAppLimits(limits: Map<String, Long>) {
+        context.dataStore.edit {
+            it[Keys.MINIMAL_MODE_APP_LIMITS] = limits.entries.joinToString(",") { (k, v) -> "$k:$v" }
+        }
     }
 
     suspend fun setRootGranted(granted: Boolean) {

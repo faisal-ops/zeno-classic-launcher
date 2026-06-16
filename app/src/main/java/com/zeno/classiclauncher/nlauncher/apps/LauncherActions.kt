@@ -437,7 +437,8 @@ class LauncherActions(private val context: Context) {
             openSystemSettings()
 
     fun openHotspotSettings(): Boolean =
-        startActivityNewTask(Intent("android.settings.TETHER_SETTINGS")) ||
+        startActivityNewTask(Intent("com.android.settings.WIFI_TETHER_SETTINGS")) ||
+            startActivityNewTask(Intent("android.settings.TETHER_SETTINGS")) ||
             startActivityNewTask(Intent(Settings.ACTION_WIRELESS_SETTINGS)) ||
             openSystemSettings()
 

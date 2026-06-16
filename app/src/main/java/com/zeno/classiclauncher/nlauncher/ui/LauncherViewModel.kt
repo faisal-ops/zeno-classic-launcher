@@ -1488,6 +1488,41 @@ class LauncherViewModel(app: Application) : AndroidViewModel(app) {
         viewModelScope.launch { prefsRepo.setMinimalModeGreyscale(enabled) }
     }
 
+    // In-memory limit extensions: pkg → expiry timestamp. Cleared on process restart.
+    private val _limitExtensions = MutableStateFlow<Map<String, Long>>(emptyMap())
+    val limitExtensions: StateFlow<Map<String, Long>> = _limitExtensions.asStateFlow()
+
+    fun extendAppLimit(pkg: String) {
+        _limitExtensions.value = _limitExtensions.value + (pkg to (System.currentTimeMillis() + 30 * 60_000L))
+    }
+
+    fun isLimitExtended(pkg: String): Boolean {
+        val expiry = _limitExtensions.value[pkg] ?: return false
+        return System.currentTimeMillis() < expiry
+    }
+
+    fun toggleMinimalModeChallengeApp(pkg: String, add: Boolean) {
+        viewModelScope.launch {
+            val current = prefsRepo.prefsFlow.first().minimalModeChallengeApps.toMutableSet()
+            if (add) current.add(pkg) else current.remove(pkg)
+            prefsRepo.setMinimalModeChallengeApps(current)
+        }
+    }
+
+    fun setMinimalModeAppLimit(pkg: String, limitMs: Long?) {
+        viewModelScope.launch {
+            val raw = prefsRepo.prefsFlow.first().minimalModeAppLimits
+            val current = raw.split(",").filter { it.contains(":") }
+                .mapNotNull { entry ->
+                    val k = entry.substringBefore(":")
+                    val v = entry.substringAfter(":").toLongOrNull()
+                    if (v != null) k to v else null
+                }.toMap().toMutableMap()
+            if (limitMs == null) current.remove(pkg) else current[pkg] = limitMs
+            prefsRepo.setMinimalModeAppLimits(current)
+        }
+    }
+
     fun setRootGranted(granted: Boolean) {
         viewModelScope.launch { prefsRepo.setRootGranted(granted) }
     }

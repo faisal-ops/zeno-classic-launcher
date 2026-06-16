@@ -2,6 +2,8 @@ package com.zeno.classiclauncher.nlauncher.minimalmode
 
 import android.content.Intent
 import android.content.IntentFilter
+import android.net.ConnectivityManager
+import android.net.NetworkCapabilities
 import android.net.wifi.WifiManager
 import android.app.Notification
 import android.app.RemoteInput
@@ -58,6 +60,7 @@ import androidx.compose.material.icons.rounded.Vibration
 import androidx.compose.material.icons.rounded.Wifi
 import androidx.compose.material.icons.rounded.WifiOff
 import androidx.compose.material.icons.rounded.Headset
+import androidx.compose.material.icons.rounded.SignalCellularAlt
 import android.media.AudioDeviceCallback
 import android.media.AudioDeviceInfo
 import android.media.AudioManager
@@ -85,6 +88,7 @@ import androidx.compose.ui.geometry.CornerRadius
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.drawscope.Stroke
+import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.foundation.focusable
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
@@ -186,6 +190,13 @@ internal fun MinimalModeScreen(vm: LauncherViewModel) {
     var soundProfile by remember { mutableStateOf(actions.currentSoundProfile()) }
     var topBarBottomPx by remember { mutableIntStateOf(0) }
 
+    val connectivityManager = remember { context.getSystemService(ConnectivityManager::class.java) }
+    fun hasCellular(): Boolean = connectivityManager.allNetworks.any {
+        connectivityManager.getNetworkCapabilities(it)
+            ?.hasTransport(NetworkCapabilities.TRANSPORT_CELLULAR) == true
+    }
+    var mobileConnected by remember { mutableStateOf(hasCellular()) }
+
     fun isHeadsetConnected(audioManager: AudioManager): Boolean {
         val wiredTypes = intArrayOf(
             AudioDeviceInfo.TYPE_WIRED_HEADSET,
@@ -242,6 +253,14 @@ internal fun MinimalModeScreen(vm: LauncherViewModel) {
         onDispose { runCatching { context.unregisterReceiver(receiver) } }
     }
 
+    // Mobile signal: poll every 30s (fast enough for airplane-mode or SIM changes).
+    LaunchedEffect(Unit) {
+        while (true) {
+            mobileConnected = hasCellular()
+            delay(30_000L)
+        }
+    }
+
     // Headset: react to wired headset/headphone plug and unplug events.
     androidx.compose.runtime.DisposableEffect(Unit) {
         val callback = object : AudioDeviceCallback() {
@@ -278,6 +297,30 @@ internal fun MinimalModeScreen(vm: LauncherViewModel) {
         }
     }
 
+    // Per-app usage today: refresh every 60s alongside total screen time
+    var appUsageMap by remember { mutableStateOf<Map<String, Long>>(emptyMap()) }
+    LaunchedEffect(Unit) {
+        while (true) {
+            kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) {
+                appUsageMap = UsageStatsRepository.getLast24hUsage(context)
+            }
+            delay(60_000L)
+        }
+    }
+
+    // Parse per-app limits from prefs: "pkg:ms,pkg:ms" → Map
+    val appLimitsMap = remember(prefs.minimalModeAppLimits) {
+        prefs.minimalModeAppLimits.split(",").filter { it.contains(":") }
+            .mapNotNull { entry ->
+                val k = entry.substringBefore(":")
+                val v = entry.substringAfter(":").toLongOrNull()
+                if (v != null) k to v else null
+            }.toMap()
+    }
+
+    // App challenge countdown state: non-null pkg = countdown in progress
+    var challengeTargetPkg by remember { mutableStateOf<String?>(null) }
+
     val notifCount = packagesWithUnread.size +
         (if (hasUnreadMail) 1 else 0) +
         (if (hasUnreadSms) 1 else 0) +
@@ -297,6 +340,11 @@ internal fun MinimalModeScreen(vm: LauncherViewModel) {
     var replacingIndex by rememberSaveable { mutableIntStateOf(-1) }
     var showQuickSettings by rememberSaveable { mutableStateOf(false) }
     var quickReplyPackage by rememberSaveable { mutableStateOf<String?>(null) }
+    // (index, app) of the app row that was long-pressed — drives context menu
+    var contextMenuEntry by remember { mutableStateOf<Pair<Int, AppEntry>?>(null) }
+    // Package blocked by a daily limit — shows the limit-reached overlay
+    var limitBlockedPkg by remember { mutableStateOf<String?>(null) }
+    val limitExtensions by vm.limitExtensions.collectAsStateWithLifecycle()
 
     // Consume back press silently — minimal mode is a home screen, back should do nothing
     BackHandler {}
@@ -310,7 +358,21 @@ internal fun MinimalModeScreen(vm: LauncherViewModel) {
 
     val screenFocus = remember { FocusRequester() }
     LaunchedEffect(Unit) { runCatching { screenFocus.requestFocus() } }
-    val anyOverlayOpen = showAppsEditor || showMinimalModeSettings || replacingIndex >= 0 || showSearchOverlay || showQuickSettings || quickReplyPackage != null
+    // Central launch helper — enforces daily limit, then challenge, then direct launch
+    fun launchOrChallenge(pkg: String) {
+        val limitMs = appLimitsMap[pkg]
+        if (limitMs != null && (appUsageMap[pkg] ?: 0L) >= limitMs && !vm.isLimitExtended(pkg)) {
+            limitBlockedPkg = pkg
+            return
+        }
+        if (pkg in prefs.minimalModeChallengeApps) {
+            challengeTargetPkg = pkg
+        } else {
+            vm.launchApp(pkg)
+        }
+    }
+
+    val anyOverlayOpen = showAppsEditor || showMinimalModeSettings || replacingIndex >= 0 || showSearchOverlay || showQuickSettings || quickReplyPackage != null || challengeTargetPkg != null || contextMenuEntry != null || limitBlockedPkg != null
     LaunchedEffect(anyOverlayOpen) {
         if (!anyOverlayOpen) runCatching { screenFocus.requestFocus() }
     }
@@ -353,6 +415,7 @@ internal fun MinimalModeScreen(vm: LauncherViewModel) {
                 )
             }
             .onPreviewKeyEvent { event ->
+                if (anyOverlayOpen) return@onPreviewKeyEvent false
                 val appCount = visibleApps.size
                 when {
                     event.type == KeyEventType.KeyDown && event.key == Key.DirectionDown -> {
@@ -364,17 +427,19 @@ internal fun MinimalModeScreen(vm: LauncherViewModel) {
                         true
                     }
                     event.type == KeyEventType.KeyDown && event.key == Key.Enter -> {
-                        enterPressedAt = System.currentTimeMillis()
+                        if (enterPressedAt == 0L) enterPressedAt = System.currentTimeMillis()
                         true
                     }
                     event.type == KeyEventType.KeyUp && event.key == Key.Enter -> {
                         val held = System.currentTimeMillis() - enterPressedAt
                         enterPressedAt = 0L
                         if (held >= LONG_PRESS_MS) {
-                            showAppsEditor = true
+                            visibleApps.getOrNull(focusedIndex)?.let { app ->
+                                contextMenuEntry = Pair(focusedIndex, app)
+                            }
                         } else {
                             visibleApps.getOrNull(focusedIndex)?.let { app ->
-                                vm.launchApp(app.packageName)
+                                launchOrChallenge(app.packageName)
                             }
                         }
                         true
@@ -388,7 +453,7 @@ internal fun MinimalModeScreen(vm: LauncherViewModel) {
                 .fillMaxSize()
                 .statusBarsPadding()
                 .padding(horizontal = 14.dp)
-                .padding(top = 4.dp, bottom = 10.dp),
+                .padding(bottom = 10.dp),
         ) {
             // ── Header ────────────────────────────────────────────────────────
             MinimalModeHeader(
@@ -408,6 +473,7 @@ internal fun MinimalModeScreen(vm: LauncherViewModel) {
                 wifiEnabled = wifiOn,
                 soundProfile = soundProfile,
                 headsetConnected = headsetConnected,
+                mobileConnected = mobileConnected,
                 onClockTap = {
                     resolveClockPackage(context)?.let { vm.launchApp(it) }
                 },
@@ -434,11 +500,15 @@ internal fun MinimalModeScreen(vm: LauncherViewModel) {
                 modifier = Modifier.weight(1f),
                 apps = visibleApps,
                 focusedIndex = if (showQuickSettings) -1 else focusedIndex,
+                appUsageMap = appUsageMap,
+                appLimitsMap = appLimitsMap,
                 onTap = { idx ->
                     focusedIndex = idx
-                    visibleApps.getOrNull(idx)?.let { vm.launchApp(it.packageName) }
+                    visibleApps.getOrNull(idx)?.let { launchOrChallenge(it.packageName) }
                 },
-                onLongPress = { idx -> replacingIndex = idx },
+                onLongPress = { idx ->
+                    visibleApps.getOrNull(idx)?.let { app -> contextMenuEntry = Pair(idx, app) }
+                },
             )
 
             // ── Footer: swipeable weather ↔ player ───────────────────────────
@@ -525,6 +595,18 @@ internal fun MinimalModeScreen(vm: LauncherViewModel) {
             )
         }
 
+        contextMenuEntry?.let { (idx, app) ->
+            AppRowContextMenu(
+                app = app,
+                isChallengeApp = app.packageName in prefs.minimalModeChallengeApps,
+                limitMs = appLimitsMap[app.packageName],
+                onReplace = { contextMenuEntry = null; replacingIndex = idx },
+                onToggleChallenge = { add -> vm.toggleMinimalModeChallengeApp(app.packageName, add) },
+                onSetLimit = { ms -> vm.setMinimalModeAppLimit(app.packageName, ms) },
+                onDismiss = { contextMenuEntry = null },
+            )
+        }
+
         // Search overlay — type any letter or tap the search icon to open
         if (showSearchOverlay) {
             MinimalModeSearchOverlay(
@@ -557,6 +639,31 @@ internal fun MinimalModeScreen(vm: LauncherViewModel) {
                 )
             }
         }
+        limitBlockedPkg?.let { pkg ->
+            val app = allApps.find { it.packageName == pkg }
+            if (app != null) {
+                AppLimitReachedOverlay(
+                    app = app,
+                    usageMs = appUsageMap[pkg] ?: 0L,
+                    limitMs = appLimitsMap[pkg] ?: 0L,
+                    onExtend = {
+                        vm.extendAppLimit(pkg)
+                        limitBlockedPkg = null
+                        launchOrChallenge(pkg)
+                    },
+                    onDismiss = { limitBlockedPkg = null },
+                )
+            }
+        }
+
+        challengeTargetPkg?.let { pkg ->
+            val appLabel = allApps.find { it.packageName == pkg }?.label ?: pkg
+            AppChallengeOverlay(
+                appLabel = appLabel,
+                onLaunch = { vm.launchApp(pkg); challengeTargetPkg = null },
+                onCancel = { challengeTargetPkg = null },
+            )
+        }
     }
 }
 
@@ -573,6 +680,7 @@ internal fun MinimalModeTopBar(
     wifiEnabled: Boolean,
     soundProfile: SoundProfileMode,
     headsetConnected: Boolean,
+    mobileConnected: Boolean,
     onClockTap: () -> Unit,
     onWifiTap: () -> Unit,
 ) {
@@ -613,7 +721,7 @@ internal fun MinimalModeTopBar(
             Text(
                 text = time,
                 fontSize = 24.sp,
-                fontWeight = FontWeight.W300,
+                fontWeight = FontWeight.W400,
                 color = NORMAL_TEXT,
                 letterSpacing = (-0.5).sp,
             )
@@ -638,7 +746,7 @@ internal fun MinimalModeTopBar(
                     imageVector = Icons.Rounded.DoNotDisturb,
                     contentDescription = stringResource(R.string.quick_settings_dnd),
                     tint = Color(0xFFEAF0F6),
-                    modifier = Modifier.size(16.dp),
+                    modifier = Modifier.size(20.dp),
                 )
                 Spacer(Modifier.width(6.dp))
             } else if (soundProfile == SoundProfileMode.VIBRATE) {
@@ -646,7 +754,7 @@ internal fun MinimalModeTopBar(
                     imageVector = Icons.Rounded.Vibration,
                     contentDescription = stringResource(R.string.sound_profile_vibrate),
                     tint = Color(0xFFEAF0F6),
-                    modifier = Modifier.size(16.dp),
+                    modifier = Modifier.size(22.dp),
                 )
                 Spacer(Modifier.width(6.dp))
             }
@@ -655,16 +763,25 @@ internal fun MinimalModeTopBar(
                     imageVector = Icons.Rounded.Headset,
                     contentDescription = "Headset connected",
                     tint = Color(0xFFEAF0F6),
-                    modifier = Modifier.size(18.dp),
+                    modifier = Modifier.size(20.dp),
+                )
+                Spacer(Modifier.width(6.dp))
+            }
+            if (mobileConnected) {
+                Icon(
+                    imageVector = Icons.Rounded.SignalCellularAlt,
+                    contentDescription = "Mobile network",
+                    tint = Color(0xFFEAF0F6),
+                    modifier = Modifier.size(20.dp),
                 )
                 Spacer(Modifier.width(6.dp))
             }
             Icon(
                 imageVector = if (wifiEnabled) Icons.Rounded.Wifi else Icons.Rounded.WifiOff,
-                contentDescription = stringResource(R.string.quick_settings_wifi),
-                tint = if (wifiEnabled) Color(0xFFEAF0F6) else Color(0x73FFFFFF),
+                contentDescription = if (wifiEnabled) "WiFi on" else "WiFi off",
+                tint = Color(0xFFEAF0F6),
                 modifier = Modifier
-                    .size(22.dp)
+                    .size(24.dp)
                     .pointerInput(Unit) { detectTapGestures(onTap = { onWifiTap() }) },
             )
         }
@@ -688,6 +805,7 @@ private fun MinimalModeHeader(
     wifiEnabled: Boolean,
     soundProfile: SoundProfileMode,
     headsetConnected: Boolean,
+    mobileConnected: Boolean,
     onClockTap: () -> Unit,
     onWeatherTap: () -> Unit,
     onWifiTap: () -> Unit,
@@ -708,6 +826,7 @@ private fun MinimalModeHeader(
             wifiEnabled = wifiEnabled,
             soundProfile = soundProfile,
             headsetConnected = headsetConnected,
+            mobileConnected = mobileConnected,
             onClockTap = onClockTap,
             onWifiTap = onWifiTap,
         )
@@ -773,6 +892,8 @@ private fun MinimalModeListView(
     modifier: Modifier,
     apps: List<AppEntry>,
     focusedIndex: Int,
+    appUsageMap: Map<String, Long>,
+    appLimitsMap: Map<String, Long>,
     onTap: (Int) -> Unit,
     onLongPress: (Int) -> Unit,
 ) {
@@ -783,10 +904,14 @@ private fun MinimalModeListView(
         repeat(7) { index ->
             val app = apps.getOrNull(index)
             if (app != null) {
+                val usageMs = appUsageMap[app.packageName] ?: 0L
+                val limitMs = appLimitsMap[app.packageName]
                 MinimalModeListRow(
                     app = app,
                     selected = index == focusedIndex,
                     distanceFromFocus = kotlin.math.abs(index - focusedIndex),
+                    usageMs = usageMs,
+                    limitMs = limitMs,
                     onClick = { onTap(index) },
                     onLongPress = { onLongPress(index) },
                 )
@@ -823,9 +948,12 @@ private fun MinimalModeListRow(
     app: AppEntry,
     selected: Boolean,
     distanceFromFocus: Int,
+    usageMs: Long,
+    limitMs: Long?,
     onClick: () -> Unit,
     onLongPress: () -> Unit,
 ) {
+    val overLimit = limitMs != null && usageMs >= limitMs
     val density = LocalDensity.current
     val tx = remember { Animatable(with(density) { if (selected) 16.dp.toPx() else 8.dp.toPx() }) }
     LaunchedEffect(selected) {
@@ -880,14 +1008,28 @@ private fun MinimalModeListRow(
                 .padding(start = 8.dp, top = 6.dp, bottom = 6.dp, end = 12.dp),
             verticalAlignment = Alignment.CenterVertically,
         ) {
+            val nameColor = when {
+                selected -> FOCUS_TEXT
+                overLimit -> Color(0xFFFFB340)
+                else -> NORMAL_TEXT
+            }
             Text(
                 text = app.label,
                 fontSize = 22.sp,
                 fontWeight = FontWeight.Medium,
-                color = if (selected) FOCUS_TEXT else NORMAL_TEXT,
+                color = nameColor,
                 maxLines = 1,
                 overflow = TextOverflow.Ellipsis,
+                modifier = Modifier.weight(1f),
             )
+            if (usageMs >= 60_000L) {
+                Text(
+                    text = UsageStatsRepository.formatUsageShort(usageMs),
+                    fontSize = 11.sp,
+                    color = if (overLimit) Color(0xFFFFB340) else Color(0xFF555555),
+                    modifier = Modifier.padding(start = 6.dp),
+                )
+            }
         }
     }
 }
@@ -1023,6 +1165,182 @@ private fun readBatteryCharging(context: android.content.Context): Boolean {
         status == BatteryManager.BATTERY_STATUS_FULL
 }
 
+// ─── App row context menu (long-press) ───────────────────────────────────────
+
+@Composable
+private fun AppRowContextMenu(
+    app: AppEntry,
+    isChallengeApp: Boolean,
+    limitMs: Long?,
+    onReplace: () -> Unit,
+    onToggleChallenge: (Boolean) -> Unit,
+    onSetLimit: (Long?) -> Unit,
+    onDismiss: () -> Unit,
+) {
+    val limitOptions = listOf<Long?>(null, 30 * 60_000L, 60 * 60_000L, 2 * 60 * 60_000L)
+    val limitLabels = listOf("Off", "30m", "1h", "2h")
+    // 0 = Replace, 1 = Challenge, 2 = Limit row
+    var menuFocusIdx by remember { mutableIntStateOf(0) }
+    var limitFocusIdx by remember { mutableIntStateOf(limitOptions.indexOf(limitMs).coerceAtLeast(0)) }
+
+    val menuFocusRequester = remember { FocusRequester() }
+    LaunchedEffect(Unit) { runCatching { menuFocusRequester.requestFocus() } }
+
+    BackHandler(onBack = onDismiss)
+    Box(
+        modifier = Modifier
+            .fillMaxSize()
+            .background(Color(0xCC000000))
+            .focusRequester(menuFocusRequester)
+            .focusable()
+            .onPreviewKeyEvent { event ->
+                when {
+                    event.type == KeyEventType.KeyDown && event.key == Key.DirectionDown -> {
+                        if (menuFocusIdx < 2) menuFocusIdx++
+                        true
+                    }
+                    event.type == KeyEventType.KeyDown && event.key == Key.DirectionUp -> {
+                        if (menuFocusIdx > 0) menuFocusIdx--
+                        true
+                    }
+                    event.type == KeyEventType.KeyDown && event.key == Key.DirectionLeft -> {
+                        if (menuFocusIdx == 2 && limitFocusIdx > 0) limitFocusIdx--
+                        true
+                    }
+                    event.type == KeyEventType.KeyDown && event.key == Key.DirectionRight -> {
+                        if (menuFocusIdx == 2 && limitFocusIdx < limitOptions.lastIndex) limitFocusIdx++
+                        true
+                    }
+                    event.type == KeyEventType.KeyUp && event.key == Key.Enter -> {
+                        when (menuFocusIdx) {
+                            0 -> onReplace()
+                            1 -> onToggleChallenge(!isChallengeApp)
+                            2 -> onSetLimit(limitOptions[limitFocusIdx])
+                        }
+                        true
+                    }
+                    else -> false
+                }
+            }
+            .pointerInput(Unit) { detectTapGestures(onTap = { onDismiss() }) },
+        contentAlignment = Alignment.BottomCenter,
+    ) {
+        Column(
+            modifier = Modifier
+                .fillMaxWidth()
+                .clip(RoundedCornerShape(topStart = 20.dp, topEnd = 20.dp))
+                .background(Color(0xFF111111))
+                .navigationBarsPadding()
+                .pointerInput(Unit) { detectTapGestures { /* consume */ } },
+        ) {
+            // App name header
+            Text(
+                text = app.label,
+                fontSize = 16.sp,
+                fontWeight = FontWeight.SemiBold,
+                color = Color(0xFF9AA0A8),
+                modifier = Modifier.padding(horizontal = 20.dp, vertical = 16.dp),
+            )
+            Box(modifier = Modifier.fillMaxWidth().height(1.dp).background(Color(0xFF1A1A1A)))
+
+            // Replace slot
+            ContextMenuRow(
+                label = "Replace app",
+                value = null,
+                keyboardFocused = menuFocusIdx == 0,
+                onClick = { onReplace() },
+            )
+            Box(modifier = Modifier.fillMaxWidth().height(1.dp).background(Color(0xFF1A1A1A)))
+
+            // Challenge toggle
+            ContextMenuRow(
+                label = "5s challenge",
+                value = if (isChallengeApp) "On" else "Off",
+                valueColor = if (isChallengeApp) Color(0xFF4DA3FF) else Color(0xFF555555),
+                keyboardFocused = menuFocusIdx == 1,
+                onClick = { onToggleChallenge(!isChallengeApp) },
+            )
+            Box(modifier = Modifier.fillMaxWidth().height(1.dp).background(Color(0xFF1A1A1A)))
+
+            // Daily limit picker
+            val limitHeaderColor = if (menuFocusIdx == 2) NORMAL_TEXT else Color(0xFF9AA0A8)
+            Text(
+                text = "Daily limit",
+                fontSize = 15.sp,
+                color = limitHeaderColor,
+                modifier = Modifier.padding(horizontal = 20.dp, vertical = 14.dp),
+            )
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(horizontal = 20.dp)
+                    .padding(bottom = 20.dp),
+                horizontalArrangement = Arrangement.spacedBy(8.dp),
+            ) {
+                limitOptions.forEachIndexed { i, ms ->
+                    val active = limitMs == ms
+                    val kbFocused = menuFocusIdx == 2 && limitFocusIdx == i
+                    Box(
+                        modifier = Modifier
+                            .weight(1f)
+                            .clip(RoundedCornerShape(8.dp))
+                            .background(if (active) Color(0xFF4DA3FF) else Color(0xFF1C1C1E))
+                            .then(
+                                if (kbFocused && !active)
+                                    Modifier.drawBehind {
+                                        drawRoundRect(
+                                            color = Color(0xFF4DA3FF),
+                                            cornerRadius = CornerRadius(8.dp.toPx()),
+                                            style = Stroke(width = 1.5.dp.toPx()),
+                                        )
+                                    }
+                                else Modifier
+                            )
+                            .pointerInput(ms) { detectTapGestures(onTap = { onSetLimit(ms) }) }
+                            .padding(vertical = 10.dp),
+                        contentAlignment = Alignment.Center,
+                    ) {
+                        Text(
+                            text = limitLabels[i],
+                            fontSize = 13.sp,
+                            fontWeight = FontWeight.Medium,
+                            color = if (active) Color.White else if (kbFocused) Color(0xFF4DA3FF) else Color(0xFF9AA0A8),
+                        )
+                    }
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun ContextMenuRow(
+    label: String,
+    value: String?,
+    valueColor: Color = MUTED_TEXT,
+    keyboardFocused: Boolean = false,
+    onClick: () -> Unit,
+) {
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .background(if (keyboardFocused) Color(0xFF1A2030) else Color.Transparent)
+            .pointerInput(Unit) { detectTapGestures(onTap = { onClick() }) }
+            .padding(horizontal = 20.dp, vertical = 16.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Text(
+            text = label,
+            fontSize = 15.sp,
+            color = if (keyboardFocused) Color(0xFF4DA3FF) else NORMAL_TEXT,
+            modifier = Modifier.weight(1f),
+        )
+        if (value != null) {
+            Text(text = value, fontSize = 14.sp, color = valueColor)
+        }
+    }
+}
+
 @Composable
 private fun BatteryPill(pct: Int, charging: Boolean, greyscale: Boolean = false) {
     val fillColor   = if (greyscale) Color(0xFF888888) else Color(0xFFE8EDF2)
@@ -1036,7 +1354,7 @@ private fun BatteryPill(pct: Int, charging: Boolean, greyscale: Boolean = false)
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.spacedBy(4.dp),
     ) {
-        Canvas(modifier = Modifier.width(32.dp).height(18.dp)) {
+        Canvas(modifier = Modifier.width(38.dp).height(17.dp)) {
             val nubW  = 4.dp.toPx()
             val nubH  = size.height * 0.45f
             val bodyW = size.width - nubW
@@ -1238,7 +1556,181 @@ private fun MinimalModeSearchOverlay(
     }
 }
 
+// ─── Limit reached overlay ────────────────────────────────────────────────────
+
+@Composable
+private fun AppLimitReachedOverlay(
+    app: AppEntry,
+    usageMs: Long,
+    limitMs: Long,
+    onExtend: () -> Unit,
+    onDismiss: () -> Unit,
+) {
+    val context = LocalContext.current
+    var authError by remember { mutableStateOf<String?>(null) }
+    var authenticating by remember { mutableStateOf(false) }
+
+    fun requestAuth() {
+        val activity = context as? androidx.fragment.app.FragmentActivity ?: return
+        authError = null
+        authenticating = true
+        val executor = androidx.core.content.ContextCompat.getMainExecutor(context)
+        val prompt = androidx.biometric.BiometricPrompt(
+            activity, executor,
+            object : androidx.biometric.BiometricPrompt.AuthenticationCallback() {
+                override fun onAuthenticationSucceeded(result: androidx.biometric.BiometricPrompt.AuthenticationResult) {
+                    authenticating = false
+                    onExtend()
+                }
+                override fun onAuthenticationError(errorCode: Int, errString: CharSequence) {
+                    authenticating = false
+                    if (errorCode != androidx.biometric.BiometricPrompt.ERROR_USER_CANCELED &&
+                        errorCode != androidx.biometric.BiometricPrompt.ERROR_NEGATIVE_BUTTON
+                    ) authError = errString.toString()
+                }
+                override fun onAuthenticationFailed() {
+                    authenticating = false
+                    authError = "Authentication failed"
+                }
+            },
+        )
+        val info = androidx.biometric.BiometricPrompt.PromptInfo.Builder()
+            .setTitle("Extend limit for ${app.label}")
+            .setSubtitle("Authenticate to open for 30 more minutes")
+            .setAllowedAuthenticators(
+                androidx.biometric.BiometricManager.Authenticators.BIOMETRIC_STRONG or
+                    androidx.biometric.BiometricManager.Authenticators.BIOMETRIC_WEAK or
+                    androidx.biometric.BiometricManager.Authenticators.DEVICE_CREDENTIAL,
+            )
+            .build()
+        prompt.authenticate(info)
+    }
+
+    BackHandler(onBack = onDismiss)
+    Box(
+        modifier = Modifier
+            .fillMaxSize()
+            .background(Color(0xF0000000))
+            .pointerInput(Unit) { detectTapGestures { /* consume */ } },
+        contentAlignment = Alignment.Center,
+    ) {
+        Column(
+            horizontalAlignment = Alignment.CenterHorizontally,
+            verticalArrangement = Arrangement.spacedBy(12.dp),
+            modifier = Modifier.padding(horizontal = 32.dp),
+        ) {
+            Text(
+                text = app.label,
+                fontSize = 18.sp,
+                fontWeight = FontWeight.SemiBold,
+                color = Color.White,
+            )
+            Text(
+                text = "Daily limit reached",
+                fontSize = 14.sp,
+                color = Color(0xFFFFB340),
+                fontWeight = FontWeight.Medium,
+            )
+            Text(
+                text = "${UsageStatsRepository.formatUsage(usageMs)} used · limit ${UsageStatsRepository.formatUsage(limitMs)}",
+                fontSize = 12.sp,
+                color = Color(0xFF8B8B8B),
+            )
+            Spacer(Modifier.height(8.dp))
+            // Extend button
+            Box(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .clip(RoundedCornerShape(12.dp))
+                    .background(if (authenticating) Color(0xFF1C1C1E) else Color(0xFF4DA3FF))
+                    .pointerInput(authenticating) {
+                        detectTapGestures(onTap = { if (!authenticating) requestAuth() })
+                    }
+                    .padding(vertical = 14.dp),
+                contentAlignment = Alignment.Center,
+            ) {
+                Text(
+                    text = if (authenticating) "Authenticating…" else "Open for 30 more minutes",
+                    fontSize = 15.sp,
+                    fontWeight = FontWeight.Medium,
+                    color = Color.White,
+                )
+            }
+            if (authError != null) {
+                Text(
+                    text = authError!!,
+                    fontSize = 12.sp,
+                    color = Color(0xFFFF453A),
+                )
+            }
+            // Cancel
+            Text(
+                text = "Cancel",
+                fontSize = 14.sp,
+                color = Color(0xFF8B8B8B),
+                modifier = Modifier
+                    .clip(RoundedCornerShape(8.dp))
+                    .pointerInput(Unit) { detectTapGestures(onTap = { onDismiss() }) }
+                    .padding(horizontal = 24.dp, vertical = 10.dp),
+            )
+        }
+    }
+}
+
 // ─── Quick Reply overlay ──────────────────────────────────────────────────────
+
+@Composable
+private fun AppChallengeOverlay(
+    appLabel: String,
+    onLaunch: () -> Unit,
+    onCancel: () -> Unit,
+) {
+    var secondsLeft by remember { mutableIntStateOf(5) }
+    LaunchedEffect(Unit) {
+        while (secondsLeft > 0) {
+            delay(1_000L)
+            secondsLeft--
+        }
+        onLaunch()
+    }
+    BackHandler(onBack = onCancel)
+    Box(
+        modifier = Modifier
+            .fillMaxSize()
+            .background(Color(0xF0000000))
+            .pointerInput(Unit) { detectTapGestures { /* consume */ } },
+        contentAlignment = Alignment.Center,
+    ) {
+        Column(
+            horizontalAlignment = Alignment.CenterHorizontally,
+            verticalArrangement = Arrangement.spacedBy(16.dp),
+        ) {
+            Text(
+                text = "Opening $appLabel",
+                fontSize = 16.sp,
+                color = Color(0xFF8B8B8B),
+                fontWeight = FontWeight.Normal,
+            )
+            Text(
+                text = "$secondsLeft",
+                fontSize = 72.sp,
+                fontWeight = FontWeight.W300,
+                color = Color.White,
+                letterSpacing = (-2).sp,
+            )
+            Text(
+                text = "Cancel",
+                fontSize = 14.sp,
+                color = Color(0xFF4DA3FF),
+                fontWeight = FontWeight.Medium,
+                modifier = Modifier
+                    .clip(RoundedCornerShape(8.dp))
+                    .pointerInput(Unit) { detectTapGestures(onTap = { onCancel() }) }
+                    .padding(horizontal = 24.dp, vertical = 10.dp),
+            )
+        }
+    }
+}
 
 private data class QuickReplyItem(
     val notifKey: String,

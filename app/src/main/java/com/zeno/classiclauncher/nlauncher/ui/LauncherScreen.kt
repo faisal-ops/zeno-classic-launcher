@@ -4335,6 +4335,7 @@ internal fun QuickSettingsOverlay(
                 title = quickSettingsHotspotTitle,
                 subtitle = if (hotspotOn) quickSettingsOn else quickSettingsOff,
                 highlighted = hotspotOn,
+                closeOnSuccess = false,
                 actionLabel = "Toggle",
                 onLongPress = actions::openHotspotSettings,
                 onTap = {
@@ -4347,11 +4348,11 @@ internal fun QuickSettingsOverlay(
                                 val startCmd = if (cfg != null) {
                                     val (ssid, sec, pass) = cfg
                                     if (sec == "open")
-                                        "cmd wifi start-softap \"$ssid\" open \"\" -b any"
+                                        "cmd wifi start-softap \"$ssid\" open \"\""
                                     else
-                                        "cmd wifi start-softap \"$ssid\" $sec \"$pass\" -b any"
+                                        "cmd wifi start-softap \"$ssid\" $sec \"$pass\""
                                 } else {
-                                    "cmd wifi start-softap Hotspot wpa2 hotspot123 -b any"
+                                    "cmd wifi start-softap Hotspot wpa2 hotspot123"
                                 }
                                 val ok = RootManager.execute(startCmd)
                                 if (!ok) { hotspotOn = false; return@launch }
@@ -4452,18 +4453,17 @@ internal fun QuickSettingsOverlay(
                 onLongPress = actions::openWirelessDebuggingSettings,
                 onTap = {
                     if (rootedQsEnabled) {
-                        val next = !actions.isWirelessDebuggingEnabled()
-                        val ok = runCatching {
-                            Settings.Global.putInt(context.contentResolver, "adb_wifi_enabled", if (next) 1 else 0)
-                            true
-                        }.getOrDefault(false)
-                        if (ok) {
-                            wirelessDebugOn = next
-                            Handler(Looper.getMainLooper()).postDelayed({
+                        val next = !wirelessDebugOn
+                        wirelessDebugOn = next
+                        qsScope.launch {
+                            val ok = RootManager.execute("settings put global adb_wifi_enabled ${if (next) 1 else 0}")
+                            if (!ok) {
+                                wirelessDebugOn = !next
+                                actions.openWirelessDebuggingSettings()
+                            } else {
+                                delay(1000L)
                                 wirelessDebugOn = actions.isWirelessDebuggingEnabled()
-                            }, 1000L)
-                        } else {
-                            actions.openWirelessDebuggingSettings()
+                            }
                         }
                     } else {
                         actions.openWirelessDebuggingSettings()
@@ -4490,18 +4490,17 @@ internal fun QuickSettingsOverlay(
                 onLongPress = actions::openBatterySaverSettings,
                 onTap = {
                     if (rootedQsEnabled) {
-                        val next = !actions.isBatterySaverEnabled()
-                        val ok = runCatching {
-                            Settings.Global.putInt(context.contentResolver, "low_power", if (next) 1 else 0)
-                            true
-                        }.getOrDefault(false)
-                        if (ok) {
-                            batterySaverOn = next
-                            Handler(Looper.getMainLooper()).postDelayed({
+                        val next = !batterySaverOn
+                        batterySaverOn = next
+                        qsScope.launch {
+                            val ok = RootManager.execute("cmd power set-mode ${if (next) 1 else 0}")
+                            if (!ok) {
+                                batterySaverOn = !next
+                                actions.openBatterySaverSettings()
+                            } else {
+                                delay(800L)
                                 batterySaverOn = actions.isBatterySaverEnabled()
-                            }, 1000L)
-                        } else {
-                            actions.openBatterySaverSettings()
+                            }
                         }
                     } else {
                         actions.openBatteryUsageSummary()
@@ -4537,21 +4536,18 @@ internal fun QuickSettingsOverlay(
                 onLongPress = actions::openAirplaneModeSettings,
                 onTap = {
                     if (rootedQsEnabled) {
-                        val next = !actions.isAirplaneModeEnabled()
-                        val ok = runCatching {
-                            Settings.Global.putInt(context.contentResolver, Settings.Global.AIRPLANE_MODE_ON, if (next) 1 else 0)
-                            true
-                        }.getOrDefault(false)
-                        if (ok) {
-                            context.sendBroadcast(
-                                Intent(Intent.ACTION_AIRPLANE_MODE_CHANGED).putExtra("state", next)
-                            )
-                            airplaneOn = next
-                            Handler(Looper.getMainLooper()).postDelayed({
+                        val next = !airplaneOn
+                        airplaneOn = next
+                        qsScope.launch {
+                            val cmd = if (next) "cmd connectivity airplane-mode enable" else "cmd connectivity airplane-mode disable"
+                            val ok = RootManager.execute(cmd)
+                            if (!ok) {
+                                airplaneOn = !next
+                                actions.openAirplaneModeSettings()
+                            } else {
+                                kotlinx.coroutines.delay(1000L)
                                 airplaneOn = actions.isAirplaneModeEnabled()
-                            }, 1000L)
-                        } else {
-                            actions.openAirplaneModeSettings()
+                            }
                         }
                     } else {
                         actions.openAirplaneModeSettings()
@@ -4584,18 +4580,17 @@ internal fun QuickSettingsOverlay(
                 onLongPress = actions::openNightLightSettings,
                 onTap = {
                     if (rootedQsEnabled) {
-                        val next = !actions.isNightLightEnabled()
-                        val ok = runCatching {
-                            Settings.Secure.putInt(context.contentResolver, "night_display_activated", if (next) 1 else 0)
-                            true
-                        }.getOrDefault(false)
-                        if (ok) {
-                            nightLightOn = next
-                            Handler(Looper.getMainLooper()).postDelayed({
+                        val next = !nightLightOn
+                        nightLightOn = next
+                        qsScope.launch {
+                            val ok = RootManager.execute("settings put secure night_display_activated ${if (next) 1 else 0}")
+                            if (!ok) {
+                                nightLightOn = !next
+                                actions.openNightLightSettings()
+                            } else {
+                                delay(800L)
                                 nightLightOn = actions.isNightLightEnabled()
-                            }, 1000L)
-                        } else {
-                            actions.openNightLightSettings()
+                            }
                         }
                     } else {
                         actions.openNightLightSettings()
@@ -4644,16 +4639,24 @@ internal fun QuickSettingsOverlay(
                 actionLabel = "Toggle",
                 onLongPress = actions::openNfcSettings,
                 onTap = {
-                    when (val r = actions.toggleNfc()) {
-                        is ToggleResult.Changed -> {
-                            nfcOn = r.enabled
-                            Handler(Looper.getMainLooper()).postDelayed({
+                    if (rootedQsEnabled) {
+                        val next = !nfcOn
+                        nfcOn = next
+                        qsScope.launch {
+                            val cmd = if (next) "cmd nfc enable-nfc" else "cmd nfc disable-nfc"
+                            val ok = RootManager.execute(cmd)
+                            if (!ok) {
+                                nfcOn = !next
+                                actions.openNfcSettings()
+                            } else {
+                                delay(1500L)
                                 nfcOn = actions.isNfcEnabled()
-                            }, 1000L)
-                            true
+                            }
                         }
-                        else -> { actions.openNfcSettings(); true }
+                    } else {
+                        actions.openNfcSettings()
                     }
+                    true
                 },
             ),
         )
@@ -4681,10 +4684,23 @@ internal fun QuickSettingsOverlay(
                 actionLabel = "Toggle",
                 onLongPress = actions::openExtraDimSettings,
                 onTap = {
-                    when (val r = actions.toggleExtraDim()) {
-                        is ToggleResult.Changed -> { extraDimOn = r.enabled; true }
-                        else -> { actions.openExtraDimSettings(); true }
+                    if (rootedQsEnabled) {
+                        val next = !extraDimOn
+                        extraDimOn = next
+                        qsScope.launch {
+                            val ok = RootManager.execute("settings put secure reduce_bright_colors_activated ${if (next) 1 else 0}")
+                            if (!ok) {
+                                extraDimOn = !next
+                                actions.openExtraDimSettings()
+                            } else {
+                                delay(800L)
+                                extraDimOn = actions.isExtraDimEnabled()
+                            }
+                        }
+                    } else {
+                        actions.openExtraDimSettings()
                     }
+                    true
                 },
             ),
         )
@@ -4723,10 +4739,20 @@ internal fun QuickSettingsOverlay(
                 actionLabel = "Toggle",
                 onLongPress = actions::openGreyscaleSettings,
                 onTap = {
-                    // rootedQsEnabled: also writes accessibility_display_daltonizer_enabled to
-                    // Settings.Secure for system-wide effect; pref always toggled regardless.
-                    if (rootedQsEnabled) actions.toggleGreyscale()
+                    val next = !greyscaleEnabled
                     onToggleGreyscale()
+                    if (rootedQsEnabled) {
+                        qsScope.launch {
+                            if (next) {
+                                RootManager.execute(
+                                    "settings put secure accessibility_display_daltonizer 0",
+                                    "settings put secure accessibility_display_daltonizer_enabled 1",
+                                )
+                            } else {
+                                RootManager.execute("settings put secure accessibility_display_daltonizer_enabled 0")
+                            }
+                        }
+                    }
                     true
                 },
             ),

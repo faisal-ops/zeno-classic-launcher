@@ -239,15 +239,7 @@ internal fun MinimalModeQsOverlay(
             .clickable(onClick = onDismiss),
         contentAlignment = Alignment.TopCenter,
     ) {
-        // Solid black from top bar bottom to screen bottom — covers app list completely
-        Box(
-            modifier = Modifier
-                .fillMaxSize()
-                .padding(top = with(density) { topBarBottomPx.toDp() })
-                .background(Color(0xFF000000)),
-        )
-
-        // Content column — sits on top of the black background
+        // Content column — transparent spacer on top, dark only over tiles area
         Column(
             modifier = Modifier
                 .fillMaxWidth()
@@ -259,6 +251,13 @@ internal fun MinimalModeQsOverlay(
         ) {
             // Transparent spacer — real top bar from main screen shows through unobstructed
             Spacer(modifier = Modifier.height(with(density) { topBarBottomPx.toDp() }))
+
+            // Dark background wraps only the QS content (date row + tiles)
+            Column(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .background(Color(0xFF000000)),
+            ) {
 
             // Date row + gear icon + divider
             Column(
@@ -314,6 +313,7 @@ internal fun MinimalModeQsOverlay(
                     SmQsTileCard(tile = tile)
                 }
             }
+            } // end dark background Column
         }
     }
 }

@@ -32,89 +32,118 @@ object UsageStatsRepository {
 
     /**
      * Returns total time spent in user-facing apps since midnight today.
-     *
-     * Uses ACTIVITY_RESUMED / ACTIVITY_PAUSED events — precise per-app intervals from exact
-     * timestamps. Excludes system packages (no launch intent) and the launcher itself.
-     * This matches how Digital Wellbeing calculates its "Today" figure.
-     *
-     * Why not queryUsageStats / queryAndAggregateUsageStats: those APIs aggregate over calendar
-     * interval buckets that may span yesterday, inflating the total.
-     * Why not SCREEN_INTERACTIVE events: those count lock-screen viewing time.
-     * Why not KEYGUARD_HIDDEN events: unreliable across ROMs; misses sessions that started before
-     * midnight when the device was already unlocked.
+     * Event-based: precise, launcher-excluded, no interval-bucket rounding.
      */
     fun getTodayScreenOnTime(context: Context): Long {
         if (!hasPermission(context)) return 0L
         val usm = context.getSystemService<UsageStatsManager>() ?: return 0L
-        val pm = context.packageManager
         val now = System.currentTimeMillis()
         val startOfDay = midnightToday()
-
         val events = usm.queryEvents(startOfDay, now) ?: return 0L
-
-        // Build the user-facing package set once before iterating — getLaunchIntentForPackage
-        // is an IPC call and must not be called inside the event loop (hundreds of calls).
         val launcherPkg = context.packageName
-        val userFacingPkgs = mutableSetOf<String>()
         val event = UsageEvents.Event()
         val resumedAt = mutableMapOf<String, Long>()
+        val midnightCreditUsed = mutableSetOf<String>()
         var total = 0L
-
-        // First pass: collect all unique packages from events that are not the launcher itself.
-        val allEventPkgs = mutableSetOf<String>()
-        val eventsCopy = usm.queryEvents(startOfDay, now) ?: return 0L
-        while (eventsCopy.hasNextEvent()) {
-            eventsCopy.getNextEvent(event)
-            if (event.packageName != launcherPkg) allEventPkgs.add(event.packageName)
-        }
-        for (pkg in allEventPkgs) {
-            if (pm.getLaunchIntentForPackage(pkg) != null) userFacingPkgs.add(pkg)
-        }
-
         while (events.hasNextEvent()) {
             events.getNextEvent(event)
             val pkg = event.packageName
+            if (pkg == launcherPkg) continue
             when (event.eventType) {
-                UsageEvents.Event.ACTIVITY_RESUMED -> {
-                    if (pkg in userFacingPkgs) {
-                        resumedAt[pkg] = event.timeStamp
-                    }
-                }
-                UsageEvents.Event.ACTIVITY_PAUSED,
-                UsageEvents.Event.ACTIVITY_STOPPED,
-                -> {
-                    val start = resumedAt.remove(pkg)
+                UsageEvents.Event.ACTIVITY_RESUMED -> resumedAt[pkg] = event.timeStamp
+                UsageEvents.Event.ACTIVITY_PAUSED -> {
+                    val start = if (pkg in resumedAt) resumedAt.remove(pkg)!!
+                    else if (midnightCreditUsed.add(pkg)) startOfDay
+                    else null
                     if (start != null) total += event.timeStamp - start
                 }
             }
         }
-        // Apps still in foreground right now
         resumedAt.values.forEach { start -> total += now - start }
         return total
     }
 
     /**
-     * Returns foreground usage time in milliseconds per package since midnight today.
-     * Uses queryAndAggregateUsageStats (API 28+) for correct per-package aggregation.
+     * Returns foreground usage per package since midnight today.
+     *
+     * Hybrid of two independent sources — takes max(daily, event) per package:
+     *
+     * SOURCE 1 — INTERVAL_DAILY queryUsageStats (midnight-bounded bucket):
+     *   On API 29+, totalTimeInForeground includes foreground-service time, so music apps
+     *   (YouTube Music), video apps (YouTube PiP), and on some OEMs notification interaction
+     *   time (WhatsApp) are captured even when the activity itself isn't visible.
+     *   Guard: filter firstTimeStamp >= startOfDay to prevent yesterday's bucket bleeding in.
+     *
+     * SOURCE 2 — ACTIVITY_RESUMED/PAUSED events (event log):
+     *   Exact per-session timing. Correct midnight carry-over via one-time startOfDay credit.
+     *   Zero risk of bucket rounding or yesterday contamination.
+     *
+     * Taking max() ensures no app is ever worse than either source alone.
      */
     fun getLast24hUsage(context: Context): Map<String, Long> {
         if (!hasPermission(context)) return emptyMap()
+        val daily = dailyBucketUsage(context)
+        val eventBased = eventBasedUsage(context)
+        val allPkgs = daily.keys + eventBased.keys
+        return allPkgs.associateWith { pkg -> maxOf(daily[pkg] ?: 0L, eventBased[pkg] ?: 0L) }
+    }
+
+    /**
+     * SOURCE 1: INTERVAL_DAILY queryUsageStats.
+     * Bucket starts at midnight — totalTimeInForeground represents usage since midnight.
+     * Includes foreground-service time on API 29+ (audio, PiP, etc.).
+     */
+    private fun dailyBucketUsage(context: Context): Map<String, Long> {
+        val usm = context.getSystemService<UsageStatsManager>() ?: return emptyMap()
+        val startOfDay = midnightToday()
+        val now = System.currentTimeMillis()
+        val launcherPkg = context.packageName
+        return usm.queryUsageStats(UsageStatsManager.INTERVAL_DAILY, startOfDay, now)
+            ?.filter { stats ->
+                stats.packageName != launcherPkg &&
+                    stats.totalTimeInForeground > 0 &&
+                    // Require bucket to start within 60s of midnight to exclude yesterday's bucket
+                    stats.firstTimeStamp >= startOfDay - 60_000L
+            }
+            ?.groupBy { it.packageName }
+            ?.mapValues { (_, list) -> list.sumOf { it.totalTimeInForeground } }
+            ?: emptyMap()
+    }
+
+    /**
+     * SOURCE 2: ACTIVITY_RESUMED / ACTIVITY_PAUSED event log.
+     * Precise session boundaries. One-time midnight carry-over credit per package.
+     * ACTIVITY_STOPPED excluded — PAUSED already marks end of foreground; STOPPED fires
+     * after every PAUSED and would multiply-count each screen transition as hours of fake time.
+     */
+    private fun eventBasedUsage(context: Context): Map<String, Long> {
         val usm = context.getSystemService<UsageStatsManager>() ?: return emptyMap()
         val now = System.currentTimeMillis()
         val startOfDay = midnightToday()
-
-        return if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) {
-            usm.queryAndAggregateUsageStats(startOfDay, now)
-                .filterValues { it.totalTimeInForeground > 0 }
-                .mapValues { (_, stats) -> stats.totalTimeInForeground }
-        } else {
-            val stats = usm.queryUsageStats(UsageStatsManager.INTERVAL_BEST, startOfDay, now)
-                ?: return emptyMap()
-            stats
-                .filter { it.totalTimeInForeground > 0 }
-                .groupBy { it.packageName }
-                .mapValues { (_, list) -> list.sumOf { it.totalTimeInForeground } }
+        val launcherPkg = context.packageName
+        val event = UsageEvents.Event()
+        val resumedAt = mutableMapOf<String, Long>()
+        val totals = mutableMapOf<String, Long>()
+        val midnightCreditUsed = mutableSetOf<String>()
+        val events = usm.queryEvents(startOfDay, now) ?: return emptyMap()
+        while (events.hasNextEvent()) {
+            events.getNextEvent(event)
+            val pkg = event.packageName
+            if (pkg == launcherPkg) continue
+            when (event.eventType) {
+                UsageEvents.Event.ACTIVITY_RESUMED -> resumedAt[pkg] = event.timeStamp
+                UsageEvents.Event.ACTIVITY_PAUSED -> {
+                    val start = if (pkg in resumedAt) resumedAt.remove(pkg)!!
+                    else if (midnightCreditUsed.add(pkg)) startOfDay
+                    else null
+                    if (start != null) totals[pkg] = (totals[pkg] ?: 0L) + event.timeStamp - start
+                }
+            }
         }
+        resumedAt.forEach { (pkg, start) ->
+            totals[pkg] = (totals[pkg] ?: 0L) + now - start
+        }
+        return totals
     }
 
     /** Formats milliseconds as a compact human string: "2h 15m", "45m", etc. */
