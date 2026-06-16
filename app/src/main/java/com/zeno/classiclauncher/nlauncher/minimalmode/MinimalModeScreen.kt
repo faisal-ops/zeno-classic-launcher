@@ -13,6 +13,7 @@ import com.zeno.classiclauncher.nlauncher.badges.BadgeNotificationListener
 import com.zeno.classiclauncher.nlauncher.badges.NotificationRepository
 import android.text.format.DateFormat
 import androidx.activity.compose.BackHandler
+import androidx.compose.foundation.gestures.detectDragGestures
 import androidx.compose.foundation.gestures.detectVerticalDragGestures
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
@@ -334,6 +335,7 @@ internal fun MinimalModeScreen(vm: LauncherViewModel) {
     }
 
     var showSearchOverlay by rememberSaveable { mutableStateOf(false) }
+    var showSwipeRightSelector by rememberSaveable { mutableStateOf(false) }
     var enterPressedAt by remember { mutableLongStateOf(0L) }
     var showAppsEditor by rememberSaveable { mutableStateOf(false) }
     var showMinimalModeSettings by rememberSaveable { mutableStateOf(false) }
@@ -372,7 +374,7 @@ internal fun MinimalModeScreen(vm: LauncherViewModel) {
         }
     }
 
-    val anyOverlayOpen = showAppsEditor || showMinimalModeSettings || replacingIndex >= 0 || showSearchOverlay || showQuickSettings || quickReplyPackage != null || challengeTargetPkg != null || contextMenuEntry != null || limitBlockedPkg != null
+    val anyOverlayOpen = showAppsEditor || showMinimalModeSettings || replacingIndex >= 0 || showSearchOverlay || showQuickSettings || quickReplyPackage != null || challengeTargetPkg != null || contextMenuEntry != null || limitBlockedPkg != null || showSwipeRightSelector
     LaunchedEffect(anyOverlayOpen) {
         if (!anyOverlayOpen) runCatching { screenFocus.requestFocus() }
     }
@@ -401,15 +403,25 @@ internal fun MinimalModeScreen(vm: LauncherViewModel) {
                 )
             }
             .pointerInput(Unit) {
-                var swipeAccum = 0f
-                detectVerticalDragGestures(
-                    onDragEnd = { swipeAccum = 0f },
-                    onDragCancel = { swipeAccum = 0f },
-                    onVerticalDrag = { _, delta ->
-                        swipeAccum += delta
-                        if (swipeAccum > 60f) {
+                var dx = 0f; var dy = 0f
+                detectDragGestures(
+                    onDragEnd = { dx = 0f; dy = 0f },
+                    onDragCancel = { dx = 0f; dy = 0f },
+                    onDrag = { _, dragAmount ->
+                        dx += dragAmount.x
+                        dy += dragAmount.y
+                        // Swipe down → QS (only when vertical dominates)
+                        if (dy > 60f && dy > kotlin.math.abs(dx) * 1.5f) {
                             showQuickSettings = true
-                            swipeAccum = 0f
+                            dx = 0f; dy = 0f
+                        }
+                        // Swipe right → BB Hub / configured app (only when horizontal dominates)
+                        if (dx > 80f && dx > kotlin.math.abs(dy) * 1.5f) {
+                            val savedPkg = prefs.minimalModeSwipeRightApp
+                            val target = resolveSwipeRightApp(context, savedPkg)
+                            if (target != null) vm.launchApp(target)
+                            else showSwipeRightSelector = true
+                            dx = 0f; dy = 0f
                         }
                     },
                 )
@@ -592,6 +604,18 @@ internal fun MinimalModeScreen(vm: LauncherViewModel) {
                     replacingIndex = -1
                 },
                 onDismiss = { replacingIndex = -1 },
+            )
+        }
+
+        if (showSwipeRightSelector) {
+            MinimalModeAppSelector(
+                allApps = allApps,
+                onSelect = { selectedPkg ->
+                    vm.setMinimalModeSwipeRightApp(selectedPkg)
+                    showSwipeRightSelector = false
+                    vm.launchApp(selectedPkg)
+                },
+                onDismiss = { showSwipeRightSelector = false },
             )
         }
 
@@ -1936,6 +1960,17 @@ private fun QuickReplyOverlay(
 }
 
 // ─── Clock / weather app resolvers ───────────────────────────────────────────
+
+private val BB_HUB_PACKAGES = listOf(
+    "com.blackberry.hub",
+    "com.blackberry.bb.bbhub",
+)
+
+private fun resolveSwipeRightApp(context: android.content.Context, savedPkg: String): String? {
+    val pm = context.packageManager
+    if (savedPkg.isNotBlank() && runCatching { pm.getPackageInfo(savedPkg, 0) }.isSuccess) return savedPkg
+    return BB_HUB_PACKAGES.firstOrNull { runCatching { pm.getPackageInfo(it, 0) }.isSuccess }
+}
 
 private fun resolveClockPackage(context: android.content.Context): String? {
     val pm = context.packageManager

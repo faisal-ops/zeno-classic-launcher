@@ -208,6 +208,8 @@ data class LauncherPrefs(
     val minimalModeChallengeApps: Set<String> = emptySet(),
     /** Per-app daily soft limits stored as "pkg:limitMs" joined by comma. */
     val minimalModeAppLimits: String = "",
+    /** Package opened on swipe-right; empty = auto-detect BB Hub. */
+    val minimalModeSwipeRightApp: String = "",
     // ── Root ──────────────────────────────────────────────────────────────────────
     /** True once the user has granted su access to the launcher. */
     val rootGranted: Boolean = false,
@@ -303,6 +305,7 @@ class LauncherPrefsRepository(private val context: Context) {
         val MINIMAL_MODE_GREYSCALE = booleanPreferencesKey("minimalModeGreyscale")
         val MINIMAL_MODE_CHALLENGE_APPS = stringPreferencesKey("minimalModeChallengeApps")
         val MINIMAL_MODE_APP_LIMITS = stringPreferencesKey("minimalModeAppLimits")
+        val MINIMAL_MODE_SWIPE_RIGHT_APP = stringPreferencesKey("minimalModeSwipeRightApp")
         val ROOT_GRANTED = booleanPreferencesKey("rootGranted")
         val CUSTOM_STATUS_BAR_ENABLED = booleanPreferencesKey("customStatusBarEnabled")
         val ROOTED_QS_ENABLED = booleanPreferencesKey("rootedQsEnabled")
@@ -403,6 +406,7 @@ class LauncherPrefsRepository(private val context: Context) {
         val minimalModeChallengeApps = p[Keys.MINIMAL_MODE_CHALLENGE_APPS]
             ?.split(",")?.filter { it.isNotBlank() }?.toSet() ?: DEFAULT_PREFS.minimalModeChallengeApps
         val minimalModeAppLimits = p[Keys.MINIMAL_MODE_APP_LIMITS] ?: DEFAULT_PREFS.minimalModeAppLimits
+        val minimalModeSwipeRightApp = p[Keys.MINIMAL_MODE_SWIPE_RIGHT_APP] ?: DEFAULT_PREFS.minimalModeSwipeRightApp
         val rootGranted = p[Keys.ROOT_GRANTED] ?: DEFAULT_PREFS.rootGranted
         val customStatusBarEnabled = p[Keys.CUSTOM_STATUS_BAR_ENABLED] ?: DEFAULT_PREFS.customStatusBarEnabled
         val rootedQsEnabled = p[Keys.ROOTED_QS_ENABLED] ?: DEFAULT_PREFS.rootedQsEnabled
@@ -476,6 +480,7 @@ class LauncherPrefsRepository(private val context: Context) {
             minimalModeGreyscale = minimalModeGreyscale,
             minimalModeChallengeApps = minimalModeChallengeApps,
             minimalModeAppLimits = minimalModeAppLimits,
+            minimalModeSwipeRightApp = minimalModeSwipeRightApp,
             rootGranted = rootGranted,
             customStatusBarEnabled = customStatusBarEnabled,
             rootedQsEnabled = rootedQsEnabled,
@@ -814,6 +819,10 @@ class LauncherPrefsRepository(private val context: Context) {
 
     suspend fun setMinimalModeChallengeApps(packages: Set<String>) {
         context.dataStore.edit { it[Keys.MINIMAL_MODE_CHALLENGE_APPS] = packages.joinToString(",") }
+    }
+
+    suspend fun setMinimalModeSwipeRightApp(pkg: String) {
+        context.dataStore.edit { it[Keys.MINIMAL_MODE_SWIPE_RIGHT_APP] = pkg }
     }
 
     suspend fun setMinimalModeAppLimits(limits: Map<String, Long>) {

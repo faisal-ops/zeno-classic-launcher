@@ -1501,6 +1501,10 @@ class LauncherViewModel(app: Application) : AndroidViewModel(app) {
         return System.currentTimeMillis() < expiry
     }
 
+    fun setMinimalModeSwipeRightApp(pkg: String) {
+        viewModelScope.launch { prefsRepo.setMinimalModeSwipeRightApp(pkg) }
+    }
+
     fun toggleMinimalModeChallengeApp(pkg: String, add: Boolean) {
         viewModelScope.launch {
             val current = prefsRepo.prefsFlow.first().minimalModeChallengeApps.toMutableSet()
