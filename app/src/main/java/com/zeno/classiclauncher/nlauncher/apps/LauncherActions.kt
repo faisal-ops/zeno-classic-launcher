@@ -319,10 +319,23 @@ class LauncherActions(private val context: Context) {
         return false
     }
 
-    fun openWirelessDebuggingSettings(): Boolean =
-        startActivityNewTask(Intent("android.settings.WIRELESS_DEBUGGING_SETTINGS")) ||
-            startActivityNewTask(Intent(Settings.ACTION_APPLICATION_DEVELOPMENT_SETTINGS)) ||
+    fun openWirelessDebuggingSettings(): Boolean {
+        // `android.settings.WIRELESS_DEBUGGING_SETTINGS` exists on AOSP 11+ but some ROMs
+        // register it pointing at Developer Options root instead of the sub-screen, causing
+        // startActivity to silently succeed while landing on the wrong page.
+        // Use canResolveActivity first: if it resolves, trust it; otherwise try the known
+        // AOSP component directly, then fall back to Developer Options.
+        val standardIntent = Intent("android.settings.WIRELESS_DEBUGGING_SETTINGS")
+        if (canResolveActivity(standardIntent) && startActivityNewTask(standardIntent)) return true
+        // Explicit AOSP/LineageOS component fallback (avoids the wrong-screen silent success)
+        val componentIntent = Intent().setClassName(
+            "com.android.settings",
+            "com.android.settings.Settings\$WirelessDebuggingActivity",
+        )
+        if (startActivityNewTask(componentIntent)) return true
+        return startActivityNewTask(Intent(Settings.ACTION_APPLICATION_DEVELOPMENT_SETTINGS)) ||
             openSystemSettings()
+    }
 
     fun openKeyboardSettings(): Boolean =
         startActivityNewTask(

@@ -1115,10 +1115,19 @@ fun LauncherScreen(
                         val startY = down.position.y
                         var verticalLocked = false
                         var decidedHorizontal = false
+                        // Track the specific pointer that started the gesture.
+                        // On BB Classic the trackpad can emit hover/scroll events with different
+                        // pointer IDs; using firstOrNull() could pick up one of those with
+                        // pressed=false and either break too early or leave the loop stuck.
+                        val pointerId = down.id
                         while (true) {
                             val ev = awaitPointerEvent(PointerEventPass.Initial)
-                            val ch = ev.changes.firstOrNull() ?: break
-                            if (!ch.pressed) break
+                            val ch = ev.changes.find { it.id == pointerId }
+                                ?: ev.changes.firstOrNull()
+                                ?: break
+                            // changedToUp() catches the UP transition explicitly; !ch.pressed
+                            // is the fallback for hover events where pressed was never set.
+                            if (ch.changedToUp() || !ch.pressed) break
                             val dx = ch.position.x - startX
                             val dy = ch.position.y - startY
                             val slop = 40.dp.toPx()
