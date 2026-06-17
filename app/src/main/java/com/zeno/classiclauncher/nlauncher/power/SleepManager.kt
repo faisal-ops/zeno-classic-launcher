@@ -128,8 +128,8 @@ object SleepManager {
         val appCtx = context.applicationContext
         val main = Handler(Looper.getMainLooper())
         var attempt = 0
-        val maxAttempts = 16
-        val delayMs = 50L
+        val maxAttempts = 4
+        val delayMs = 250L
         val run =
             object : Runnable {
                 override fun run() {

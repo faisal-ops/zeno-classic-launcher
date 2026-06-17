@@ -3,6 +3,8 @@ package com.zeno.classiclauncher.nlauncher.minimalmode
 import android.content.Intent
 import android.content.IntentFilter
 import android.net.ConnectivityManager
+import android.net.Network
+import android.net.NetworkRequest
 import android.net.NetworkCapabilities
 import android.net.wifi.WifiManager
 import android.app.Notification
@@ -116,7 +118,10 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.core.graphics.drawable.toBitmap
+import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.compose.LocalLifecycleOwner
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import androidx.lifecycle.repeatOnLifecycle
 import com.zeno.classiclauncher.nlauncher.apps.AppEntry
 import com.zeno.classiclauncher.nlauncher.apps.LauncherActions
 import com.zeno.classiclauncher.nlauncher.prefs.GlanceWeatherUnit
@@ -254,12 +259,19 @@ internal fun MinimalModeScreen(vm: LauncherViewModel) {
         onDispose { runCatching { context.unregisterReceiver(receiver) } }
     }
 
-    // Mobile signal: poll every 30s (fast enough for airplane-mode or SIM changes).
-    LaunchedEffect(Unit) {
-        while (true) {
-            mobileConnected = hasCellular()
-            delay(30_000L)
+    // Mobile signal: react to network availability changes via NetworkCallback — zero polling cost.
+    // The callback fires immediately on registration with the current state, so mobileConnected
+    // is seeded correctly on first composition without an extra hasCellular() call.
+    androidx.compose.runtime.DisposableEffect(Unit) {
+        val request = NetworkRequest.Builder()
+            .addTransportType(NetworkCapabilities.TRANSPORT_CELLULAR)
+            .build()
+        val callback = object : ConnectivityManager.NetworkCallback() {
+            override fun onAvailable(network: Network) { mobileConnected = true }
+            override fun onLost(network: Network) { mobileConnected = hasCellular() }
         }
+        runCatching { connectivityManager.registerNetworkCallback(request, callback) }
+        onDispose { runCatching { connectivityManager.unregisterNetworkCallback(callback) } }
     }
 
     // Headset: react to wired headset/headphone plug and unplug events.
@@ -282,22 +294,19 @@ internal fun MinimalModeScreen(vm: LauncherViewModel) {
     var systemGreyscaleActive by remember { mutableStateOf(false) }
     LaunchedEffect(prefs.minimalModeGreyscale, prefs.rootGranted) {
         if (prefs.minimalModeGreyscale && prefs.rootGranted) {
-            kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) {
-                runCatching {
-                    ProcessBuilder("su", "-c",
-                        "settings put secure accessibility_display_daltonizer_enabled 1 && " +
-                        "settings put secure accessibility_display_daltonizer 0")
-                        .start().waitFor()
-                }
+            // Fire-and-forget: .start() without .waitFor() so the IO thread is not blocked.
+            runCatching {
+                ProcessBuilder("su", "-c",
+                    "settings put secure accessibility_display_daltonizer_enabled 1 && " +
+                    "settings put secure accessibility_display_daltonizer 0")
+                    .start()
             }
             systemGreyscaleActive = true
         } else if (systemGreyscaleActive) {
-            kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) {
-                runCatching {
-                    ProcessBuilder("su", "-c",
-                        "settings put secure accessibility_display_daltonizer_enabled 0")
-                        .start().waitFor()
-                }
+            runCatching {
+                ProcessBuilder("su", "-c",
+                    "settings put secure accessibility_display_daltonizer_enabled 0")
+                    .start()
             }
             systemGreyscaleActive = false
         }
@@ -313,36 +322,36 @@ internal fun MinimalModeScreen(vm: LauncherViewModel) {
         }
     }
 
-    // Clock: tick every second, synced to the wall-clock second boundary to avoid drift.
-    LaunchedEffect(Unit) {
-        while (true) {
-            clockTime = currentTimeString(is24h)
-            clockAmPm = if (is24h) "" else currentAmPmString()
-            clockDate = currentDateString()
-            val now = System.currentTimeMillis()
-            delay(1_000L - (now % 1_000L))
+    // Clock: tick every second while the screen is on. repeatOnLifecycle(RESUMED) automatically
+    // suspends the loop when the Activity moves to background or the screen turns off, preventing
+    // ~28 800 unnecessary wakeups per screen-off hour.
+    val lifecycleOwner = LocalLifecycleOwner.current
+    LaunchedEffect(lifecycleOwner) {
+        lifecycleOwner.repeatOnLifecycle(Lifecycle.State.RESUMED) {
+            while (true) {
+                clockTime = currentTimeString(is24h)
+                clockAmPm = if (is24h) "" else currentAmPmString()
+                clockDate = currentDateString()
+                val now = System.currentTimeMillis()
+                delay(1_000L - (now % 1_000L))
+            }
         }
     }
 
-    // Screen time: fetch once on entry, then refresh every 60 seconds.
+    // Screen time + per-app usage: fetched together in one IO call every 5 minutes while
+    // the screen is on. Merging the two 60s loops into one 5-min loop reduces UsageStats
+    // ContentProvider queries from 120/hr to 12/hr and stops all queries while screen is off.
     var totalScreenTimeMs by remember { mutableLongStateOf(0L) }
-    LaunchedEffect(Unit) {
-        while (true) {
-            kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) {
-                totalScreenTimeMs = UsageStatsRepository.getTodayScreenOnTime(context)
-            }
-            delay(60_000L)
-        }
-    }
-
-    // Per-app usage today: refresh every 60s alongside total screen time
     var appUsageMap by remember { mutableStateOf<Map<String, Long>>(emptyMap()) }
-    LaunchedEffect(Unit) {
-        while (true) {
-            kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) {
-                appUsageMap = UsageStatsRepository.getLast24hUsage(context)
+    LaunchedEffect(lifecycleOwner) {
+        lifecycleOwner.repeatOnLifecycle(Lifecycle.State.RESUMED) {
+            while (true) {
+                kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) {
+                    totalScreenTimeMs = UsageStatsRepository.getTodayScreenOnTime(context)
+                    appUsageMap = UsageStatsRepository.getLast24hUsage(context)
+                }
+                delay(5 * 60_000L)
             }
-            delay(60_000L)
         }
     }
 

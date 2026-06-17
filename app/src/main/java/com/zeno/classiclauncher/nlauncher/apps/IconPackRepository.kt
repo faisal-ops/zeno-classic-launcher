@@ -23,7 +23,16 @@ class IconPackRepository(private val context: Context) {
     private val parsedPacks = ConcurrentHashMap<String, Map<ComponentName, String>>()
     private val drawableCache = ConcurrentHashMap<String, Drawable>()
 
-    suspend fun installedIconPacks(): List<IconPackEntry> = withContext(Dispatchers.IO) {
+    @Volatile private var cachedIconPacks: List<IconPackEntry>? = null
+
+    fun invalidateIconPackListCache() { cachedIconPacks = null }
+
+    suspend fun installedIconPacks(): List<IconPackEntry> {
+        cachedIconPacks?.let { return it }
+        return withContext(Dispatchers.IO) { queryInstalledIconPacks().also { cachedIconPacks = it } }
+    }
+
+    private fun queryInstalledIconPacks(): List<IconPackEntry> {
         // Collect ApplicationInfo from every known icon-pack discovery intent.
         // Many icon packs don't register a CATEGORY_LAUNCHER activity, so querying
         // only that intent misses them. We also query the standard icon pack action
@@ -37,7 +46,7 @@ class IconPackRepository(private val context: Context) {
             Intent("org.adw.launcher.icons.ACTION_PICK_ICON"),
         )
 
-        discoveryIntents
+        return discoveryIntents
             .flatMap { pm.queryIntentActivities(it, 0) }
             .mapNotNull { it.activityInfo?.applicationInfo }
             .distinctBy { it.packageName }

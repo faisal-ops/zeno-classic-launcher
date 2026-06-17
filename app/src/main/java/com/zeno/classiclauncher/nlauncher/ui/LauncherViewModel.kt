@@ -71,6 +71,8 @@ import kotlinx.coroutines.withContext
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
+import android.os.Handler
+import android.os.Looper
 import org.json.JSONObject
 import java.text.Collator
 import java.util.Locale
@@ -163,6 +165,16 @@ class LauncherViewModel(app: Application) : AndroidViewModel(app) {
     private var lastTrackKey: String? = null
     private var cachedAlbumArt: android.graphics.Bitmap? = null
 
+    private val msm: MediaSessionManager? = runCatching {
+        getApplication<Application>().getSystemService(MediaSessionManager::class.java)
+    }.getOrNull()
+    private val mediaSessionCn = ComponentName(
+        getApplication<Application>(), BadgeNotificationListener::class.java
+    )
+    private val mediaSessionListener = MediaSessionManager.OnActiveSessionsChangedListener { _ ->
+        _nowPlaying.value = buildNowPlayingState()
+    }
+
     init {
         // Custom status bar was removed. Reset wm overscan once if the pref is still set from a
         // previous install, so the system status bar is fully restored.
@@ -202,9 +214,16 @@ class LauncherViewModel(app: Application) : AndroidViewModel(app) {
                                 delay(30 * 60_000L)
                             } else {
                                 failCount++
-                                // Double the wait each failure, cap at 15 minutes.
-                                val backoffMs = minOf(30_000L shl (failCount - 1).coerceAtMost(8), 15 * 60_000L)
-                                delay(backoffMs)
+                                if (failCount >= 8) {
+                                    // After 8 consecutive failures (e.g. airplane mode) back off to 1hr
+                                    // to avoid waking the radio every 15 min indefinitely.
+                                    failCount = 0
+                                    delay(60 * 60_000L)
+                                } else {
+                                    // Double the wait each failure, cap at 15 minutes.
+                                    val backoffMs = minOf(30_000L shl (failCount - 1).coerceAtMost(8), 15 * 60_000L)
+                                    delay(backoffMs)
+                                }
                             }
                         }
                     }
@@ -212,13 +231,19 @@ class LauncherViewModel(app: Application) : AndroidViewModel(app) {
                 .collect { _minimalModeForecast.value = it }
         }
 
-        // Now-playing: poll media sessions every 2 seconds
-        viewModelScope.launch {
-            while (true) {
-                _nowPlaying.value = buildNowPlayingState()
-                delay(2_000L)
-            }
+        // Now-playing: fire on session changes instead of polling every 10 s.
+        // Eliminates ~6 IPC calls/minute; listener callback runs on the main looper.
+        _nowPlaying.value = buildNowPlayingState()
+        runCatching {
+            msm?.addOnActiveSessionsChangedListener(
+                mediaSessionListener, mediaSessionCn, Handler(Looper.getMainLooper())
+            )
         }
+    }
+
+    override fun onCleared() {
+        super.onCleared()
+        runCatching { msm?.removeOnActiveSessionsChangedListener(mediaSessionListener) }
     }
 
     private fun buildNowPlayingState(): NowPlayingState? = runCatching {

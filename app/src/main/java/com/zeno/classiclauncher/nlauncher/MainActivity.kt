@@ -54,11 +54,15 @@ class MainActivity : AppCompatActivity() {
                 }
             }
         }
-        // React to Minimal Mode toggle at runtime (e.g. user switches in settings overlay)
+        // React to Minimal Mode toggle at runtime (e.g. user switches in settings overlay).
+        // Also gates NotificationRepository so badge classification is skipped while the
+        // Normal Mode dock is not composed (its StateFlow consumers don't exist in Minimal Mode).
         lifecycleScope.launch {
             repeatOnLifecycle(Lifecycle.State.STARTED) {
                 viewModel.prefs.collect { prefs ->
                     applyStatusBarVisibility(prefs.minimalModeEnabled)
+                    com.zeno.classiclauncher.nlauncher.badges.NotificationRepository
+                        .minimalModeActive = prefs.minimalModeEnabled
                 }
             }
         }
@@ -66,7 +70,10 @@ class MainActivity : AppCompatActivity() {
 
     override fun onResume() {
         super.onResume()
-        applyStatusBarVisibility(viewModel.prefs.value.minimalModeEnabled)
+        val currentPrefs = viewModel.prefs.value
+        applyStatusBarVisibility(currentPrefs.minimalModeEnabled)
+        com.zeno.classiclauncher.nlauncher.badges.NotificationRepository
+            .minimalModeActive = currentPrefs.minimalModeEnabled
     }
 
     override fun onWindowFocusChanged(hasFocus: Boolean) {
