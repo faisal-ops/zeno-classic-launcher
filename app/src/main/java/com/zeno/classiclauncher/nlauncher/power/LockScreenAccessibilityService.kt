@@ -434,7 +434,7 @@ class LockScreenAccessibilityService : AccessibilityService() {
         private const val PIN_LENGTH = 4
         private const val DISMISS_DELAY_MS = 400L        // wait for screen to fully render
         private const val POLLING_START_DELAY_MS = 800L  // wait for PIN bouncer to appear after swipe
-        private const val POLL_INTERVAL_MS = 150L
+        private const val POLL_INTERVAL_MS = 500L
 
         const val ACTION_REQUEST_LOCK = "com.zeno.classiclauncher.nlauncher.action.REQUEST_LOCK"
         const val ACTION_REQUEST_NOTIFICATIONS = "com.zeno.classiclauncher.nlauncher.action.REQUEST_NOTIFICATIONS"

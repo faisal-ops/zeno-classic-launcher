@@ -166,7 +166,7 @@ internal fun MinimalModeAppsEditor(
             Spacer(Modifier.height(12.dp))
 
             LazyColumn(state = listState, modifier = Modifier.weight(1f)) {
-                itemsIndexed(sortedApps) { index, app ->
+                itemsIndexed(sortedApps, key = { _, app -> app.packageName }) { index, app ->
                     val isSelected = app.packageName in currentSelected
                     val isFocused = index == focusedIndex
                     EditorRow(

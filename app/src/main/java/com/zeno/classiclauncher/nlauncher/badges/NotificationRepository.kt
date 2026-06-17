@@ -44,6 +44,14 @@ object NotificationRepository {
 
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
 
+    /**
+     * Set to true while Minimal Mode is active. Skips all badge classification work because
+     * the Normal Mode dock (the only consumer of these StateFlows) is not composed in that state.
+     * Wired from MainActivity immediately after the mode StateFlow emits.
+     */
+    @Volatile
+    var minimalModeActive: Boolean = false
+
     private val lock = Any()
 
     /** Spec: map of active, filtered notifications by system key. */
@@ -72,6 +80,7 @@ object NotificationRepository {
         synchronized(lock) { HashMap(activeByKey) }
 
     fun replaceAllActive(active: Array<StatusBarNotification>?) {
+        if (minimalModeActive) return
         scope.launch {
             synchronized(lock) {
                 activeByKey.clear()
@@ -95,7 +104,7 @@ object NotificationRepository {
     }
 
     fun onPosted(sbn: StatusBarNotification?) {
-        if (sbn == null) return
+        if (sbn == null || minimalModeActive) return
         scope.launch {
             synchronized(lock) {
                 if (!shouldTrack(sbn)) {
@@ -148,7 +157,7 @@ object NotificationRepository {
     }
 
     fun onRemoved(sbn: StatusBarNotification?) {
-        if (sbn == null) return
+        if (sbn == null || minimalModeActive) return
         scope.launch {
             synchronized(lock) {
                 val key = sbn.key

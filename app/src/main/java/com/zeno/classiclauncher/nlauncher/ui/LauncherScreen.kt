@@ -207,6 +207,10 @@ import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.setValue
 import androidx.compose.runtime.mutableStateMapOf
+import android.app.NotificationManager
+import android.content.BroadcastReceiver
+import android.content.IntentFilter
+import android.media.AudioManager
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.SideEffect
@@ -3047,19 +3051,21 @@ private fun HomePage(
             glanceRef.value = null
         }
     }
-    LaunchedEffect(homeActive) {
-        if (homeActive) {
-            var lastLoggedProfile: SoundProfileMode? = null
-            while (true) {
-                val resolved = actions.currentSoundProfile()
-                if (resolved != lastLoggedProfile) {
-                    Log.d("SoundProfile", "UI sync profile=${resolved.name}")
-                    lastLoggedProfile = resolved
-                }
-                soundProfile = resolved
-                delay(1500L)
+    // Sound profile: react to ringer/DND changes via broadcast instead of polling every 1.5 s.
+    // Eliminates 40 wakeups/min at idle; receiver fires only on actual mode changes.
+    DisposableEffect(context) {
+        soundProfile = actions.currentSoundProfile()
+        val receiver = object : BroadcastReceiver() {
+            override fun onReceive(ctx: android.content.Context, intent: Intent) {
+                soundProfile = actions.currentSoundProfile()
             }
         }
+        val filter = IntentFilter().apply {
+            addAction(AudioManager.RINGER_MODE_CHANGED_ACTION)
+            addAction(NotificationManager.ACTION_INTERRUPTION_FILTER_CHANGED)
+        }
+        context.registerReceiver(receiver, filter)
+        onDispose { runCatching { context.unregisterReceiver(receiver) } }
     }
     val currentOnLongPress = rememberUpdatedState(onLongPress)
     fun isInsideHomeWidget(localPosition: Offset): Boolean {
@@ -9355,13 +9361,18 @@ private fun HomeShortcutStrip(
     }
     SideEffect { stripHoverKeysRef[0] = stripHoverKeys }
 
+    val wiggleActive = reorderMode || ghostVisible
     val wiggle = rememberInfiniteTransition(label = "homeStripWiggle")
-    val wiggleRot by wiggle.animateFloat(
+    // animateFloat always needs InfiniteRepeatableSpec, so the transition keeps its Choreographer
+    // slot. The optimization is: when wiggleActive is false we return 0f directly without reading
+    // the animated state — Compose never sees the animation value change, so no recomposition fires.
+    val wiggleRotRaw by wiggle.animateFloat(
         initialValue = -3.5f,
         targetValue = 3.5f,
         animationSpec = infiniteRepeatable(tween(200, easing = LinearEasing), RepeatMode.Reverse),
         label = "homeStripWiggleRot",
     )
+    val wiggleRot = if (wiggleActive) wiggleRotRaw else 0f
     val wiggleStr by animateFloatAsState(
         targetValue = if (ghostVisible) 1f else if (reorderMode) 0.7f else 0f,
         animationSpec = tween(180),

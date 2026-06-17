@@ -2,7 +2,9 @@ package com.zeno.classiclauncher.nlauncher.apps
 
 import android.content.ComponentName
 import android.graphics.drawable.Drawable
+import androidx.compose.runtime.Immutable
 
+@Immutable
 data class AppEntry(
     val packageName: String,
     val label: String,
