@@ -26,6 +26,8 @@ import com.zeno.classiclauncher.nlauncher.minimalmode.MinimalModeScreen
 import com.zeno.classiclauncher.nlauncher.ui.BbTheme
 import com.zeno.classiclauncher.nlauncher.ui.LauncherScreen
 import com.zeno.classiclauncher.nlauncher.ui.LauncherViewModel
+import kotlinx.coroutines.flow.distinctUntilChanged
+import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.launch
 
 class MainActivity : AppCompatActivity() {
@@ -54,16 +56,30 @@ class MainActivity : AppCompatActivity() {
                 }
             }
         }
-        // React to Minimal Mode toggle at runtime (e.g. user switches in settings overlay).
-        // Also gates NotificationRepository so badge classification is skipped while the
-        // Normal Mode dock is not composed (its StateFlow consumers don't exist in Minimal Mode).
+        // Sync NotificationRepository flags and status-bar visibility with prefs at runtime.
         lifecycleScope.launch {
             repeatOnLifecycle(Lifecycle.State.STARTED) {
                 viewModel.prefs.collect { prefs ->
                     applyStatusBarVisibility(prefs.minimalModeEnabled)
                     com.zeno.classiclauncher.nlauncher.badges.NotificationRepository
                         .minimalModeActive = prefs.minimalModeEnabled
+                    com.zeno.classiclauncher.nlauncher.badges.NotificationRepository
+                        .badgesEnabled = prefs.notificationBadgesEnabled
                 }
+            }
+        }
+        // setComponentEnabled is a PackageManager write — only call it when the pref
+        // actually flips. Calling it redundantly risks a spurious service rebind that
+        // clears the notification cache via onListenerConnected.
+        lifecycleScope.launch {
+            repeatOnLifecycle(Lifecycle.State.STARTED) {
+                viewModel.prefs
+                    .map { it.notificationBadgesEnabled }
+                    .distinctUntilChanged()
+                    .collect { enabled ->
+                        com.zeno.classiclauncher.nlauncher.badges.BadgeNotificationListener
+                            .setComponentEnabled(this@MainActivity, enabled)
+                    }
             }
         }
     }
@@ -74,6 +90,8 @@ class MainActivity : AppCompatActivity() {
         applyStatusBarVisibility(currentPrefs.minimalModeEnabled)
         com.zeno.classiclauncher.nlauncher.badges.NotificationRepository
             .minimalModeActive = currentPrefs.minimalModeEnabled
+        com.zeno.classiclauncher.nlauncher.badges.NotificationRepository
+            .badgesEnabled = currentPrefs.notificationBadgesEnabled
     }
 
     override fun onWindowFocusChanged(hasFocus: Boolean) {

@@ -52,6 +52,15 @@ object NotificationRepository {
     @Volatile
     var minimalModeActive: Boolean = false
 
+    /**
+     * Mirrors the notificationBadgesEnabled pref. When false, skips all classification work —
+     * BadgeNotificationListener still receives events (it's a system service), but they are
+     * discarded here rather than burning CPU on shouldTrack / addKeyToBucket / publishAll.
+     * Wired from MainActivity immediately after the prefs StateFlow emits.
+     */
+    @Volatile
+    var badgesEnabled: Boolean = true
+
     private val lock = Any()
 
     /** Spec: map of active, filtered notifications by system key. */
@@ -80,7 +89,7 @@ object NotificationRepository {
         synchronized(lock) { HashMap(activeByKey) }
 
     fun replaceAllActive(active: Array<StatusBarNotification>?) {
-        if (minimalModeActive) return
+        if (!badgesEnabled) return
         scope.launch {
             synchronized(lock) {
                 activeByKey.clear()
@@ -104,7 +113,7 @@ object NotificationRepository {
     }
 
     fun onPosted(sbn: StatusBarNotification?) {
-        if (sbn == null || minimalModeActive) return
+        if (sbn == null || !badgesEnabled) return
         scope.launch {
             synchronized(lock) {
                 if (!shouldTrack(sbn)) {
@@ -157,7 +166,7 @@ object NotificationRepository {
     }
 
     fun onRemoved(sbn: StatusBarNotification?) {
-        if (sbn == null || minimalModeActive) return
+        if (sbn == null || !badgesEnabled) return
         scope.launch {
             synchronized(lock) {
                 val key = sbn.key

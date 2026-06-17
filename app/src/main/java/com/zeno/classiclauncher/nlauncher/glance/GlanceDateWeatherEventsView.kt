@@ -80,6 +80,16 @@ class GlanceDateWeatherEventsView @JvmOverloads constructor(
     private var scope = CoroutineScope(SupervisorJob() + Dispatchers.Main)
     private var attachedJob: Job? = null
 
+    // True while the launcher window has input focus. When false (launcher backgrounded or
+    // notification shade open) the weather loop skips HTTP calls and re-checks every minute
+    // so it fetches promptly once the user returns to the launcher.
+    @Volatile private var hasWindowFocus = true
+
+    override fun onWindowFocusChanged(hasWindowFocus: Boolean) {
+        super.onWindowFocusChanged(hasWindowFocus)
+        this.hasWindowFocus = hasWindowFocus
+    }
+
     private lateinit var carouselText: TextView
     private lateinit var dotsText: TextView
     private lateinit var dateView: TextView
@@ -467,6 +477,12 @@ class GlanceDateWeatherEventsView @JvmOverloads constructor(
 
     private suspend fun runWeatherLoop() {
         while (coroutineContext.isActive) {
+            if (!hasWindowFocus) {
+                // Launcher is backgrounded — skip the fetch and re-check in 60 s so we
+                // catch the moment the user returns without letting the interval drift far.
+                delay(60_000L)
+                continue
+            }
             val prefs = stripPrefs
             val usingDeviceLocation = prefs.weatherUseDeviceLocation
             val granted = !usingDeviceLocation || ContextCompat.checkSelfPermission(

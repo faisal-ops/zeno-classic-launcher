@@ -187,7 +187,7 @@ class LockScreenAccessibilityService : AccessibilityService() {
             return
         }
         pollingActive = true
-        Log.d(TAG, "PIN polling started — interval=${POLL_INTERVAL_MS}ms")
+        Log.d(TAG, "PIN polling started — searching=${POLL_INTERVAL_SEARCHING_MS}ms typing=${POLL_INTERVAL_TYPING_MS}ms")
         handler.post(pinPollRunnable)
     }
 
@@ -203,15 +203,18 @@ class LockScreenAccessibilityService : AccessibilityService() {
             Log.d(TAG, "PIN poll — length=$len")
             when {
                 len < 0 -> {
-                    // PIN field not found yet — keep polling
-                    handler.postDelayed(this, POLL_INTERVAL_MS)
+                    // Bouncer not visible yet — slow poll to reduce tree walks
+                    handler.postDelayed(this, POLL_INTERVAL_SEARCHING_MS)
                 }
                 len >= pinLength -> {
                     pollingActive = false
                     Log.d(TAG, "PIN complete ($len chars, expected $pinLength) — confirming")
                     triggerPinConfirm()
                 }
-                else -> handler.postDelayed(this, POLL_INTERVAL_MS)
+                else -> {
+                    // Field found, user is typing — fast poll for quick completion detection
+                    handler.postDelayed(this, POLL_INTERVAL_TYPING_MS)
+                }
             }
         }
     }
@@ -434,7 +437,10 @@ class LockScreenAccessibilityService : AccessibilityService() {
         private const val PIN_LENGTH = 4
         private const val DISMISS_DELAY_MS = 400L        // wait for screen to fully render
         private const val POLLING_START_DELAY_MS = 800L  // wait for PIN bouncer to appear after swipe
-        private const val POLL_INTERVAL_MS = 500L
+        // Two-speed poll: slow while waiting for the bouncer to appear, fast once the PIN
+        // field is visible so we catch completion quickly without burning extra tree walks.
+        private const val POLL_INTERVAL_SEARCHING_MS = 1_000L
+        private const val POLL_INTERVAL_TYPING_MS = 200L
 
         const val ACTION_REQUEST_LOCK = "com.zeno.classiclauncher.nlauncher.action.REQUEST_LOCK"
         const val ACTION_REQUEST_NOTIFICATIONS = "com.zeno.classiclauncher.nlauncher.action.REQUEST_NOTIFICATIONS"
