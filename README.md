@@ -21,7 +21,7 @@ Native **Android home app** (launcher) built with **Jetpack Compose**, tuned for
 [![Downloads](https://img.shields.io/github/downloads/faisal-ops/zeno-classic-launcher/total?style=flat-square&label=downloads)](https://github.com/faisal-ops/zeno-classic-launcher/releases)
 [![Latest release](https://img.shields.io/github/v/release/faisal-ops/zeno-classic-launcher?sort=semver&style=flat-square&label=release)](https://github.com/faisal-ops/zeno-classic-launcher/releases/latest)
 
-**Install:** open **[Latest release](https://github.com/faisal-ops/zeno-classic-launcher/releases/latest)** and download the attached APK (currently **`zeno-classic-launcher-v1.3.0.apk`**).  
+**Install:** open **[Latest release](https://github.com/faisal-ops/zeno-classic-launcher/releases/latest)** and download the attached APK.  
 All releases: [github.com/faisal-ops/zeno-classic-launcher/releases](https://github.com/faisal-ops/zeno-classic-launcher/releases).
 
 ---
@@ -33,7 +33,10 @@ All releases: [github.com/faisal-ops/zeno-classic-launcher/releases](https://git
 - **QS customization** — Pick the QR scanner app, long-press tiles for settings/actions, drag to rearrange tiles, reset tile order, and persist changes automatically
 - **Dock** — Mail badge (notification listener or auto/user mail app), home/page dots with scrub, optional second shortcut, configurable mail/messages/camera-style dock targets, and **custom icon override per dock slot**
 - **Glance strip** — Date, Open-Meteo **weather** (coarse location), **calendar** instances, optional battery / alarm hints, and localized glance text
-- **Settings** — Grid size, gestures, home strip, icon layout, theme JSON, app icon shape, dock shortcuts, permissions, haptics, language, and **JSON backup / restore**
+- **Minimal Mode** — Distraction-free home screen with clock, weather, now-playing bar, app list, greyscale, per-app daily limits with biometric auth, and BB10-style quick settings via swipe-down
+- **Modes sub-menu** — Switch between Zeno, Classic, and Minimal from Settings; BiometricPrompt auth gate to exit Minimal Mode
+- **Root features & BB10 QS** — Root detection, updated BB10-like quick settings for rooted and non-rooted devices, and full root grant/revoke flow
+- **Settings** — Grid size, gestures, home strip, icon layout, theme JSON, app icon shape, dock shortcuts, permissions, haptics sub-menu (toggle + intensity slider), language, and **JSON backup / restore**
 - **Hardware & keyboard** — D-pad / trackpad navigation with **smart focus visibility** (highlight appears only while trackpad is in use, auto-hides after 2 s), search key handling, haptic navigation, and keyboard-first edit flows
 - **Auto Unlock** — On screen-on, skips the "tap to unlock" overlay and auto-submits PIN after 4 digits (physical keyboard; toggle in Settings → Permissions)
 - **Sound profiles** — Ring, Vibrate, and DND selector with system-aware fallbacks
@@ -51,9 +54,9 @@ All releases: [github.com/faisal-ops/zeno-classic-launcher/releases](https://git
 | **Language** | Kotlin |
 | **UI** | Jetpack Compose |
 | **`applicationId`** | `com.zeno.classiclauncher.nlauncher` |
-| **Version** | **1.3.0** (`versionCode` **14**) |
+| **Version** | **1.4.0** (`versionCode` **15**) |
 | **Min SDK** | **26** (Android 8.0) |
-| **Target SDK** | 34 |
+| **Target SDK** | 35 |
 | **Release APK filename** | `zeno-classic-launcher-vX.Y.Z.apk` (see `app/build.gradle.kts` `outputFileName`) |
 | **Theme** | JSON-driven palette (`LauncherThemePalette`); import/export in settings |
 
@@ -103,10 +106,10 @@ APK: `app/build/outputs/apk/debug/Zeno Classic-debug.apk`
 ./gradlew :app:assembleRelease
 ```
 
-APK: `app/build/outputs/apk/release/zeno-classic-launcher-v1.3.0.apk`
+APK: `app/build/outputs/apk/release/zeno-classic-launcher-vX.Y.Z.apk`
 
 ```bash
-adb install -r app/build/outputs/apk/release/zeno-classic-launcher-v1.3.0.apk
+adb install -r app/build/outputs/apk/release/zeno-classic-launcher-vX.Y.Z.apk
 ```
 
 Or install via Gradle (uses `adb` under the hood):
@@ -123,4 +126,4 @@ Or install via Gradle (uses `adb` under the hood):
 
 ## Contributing
 
-Issues and pull requests are welcome. Follow AGENTS.md for JDK, release builds, and device install expectations when changing code.
+Issues and pull requests are welcome. Follow CLAUDE.md for JDK, release builds, and device install expectations when changing code.
