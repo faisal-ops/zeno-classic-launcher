@@ -35,9 +35,13 @@ data class RootSignal(
 data class RootDetectionResult(
     val signals: List<RootSignal>,
 ) {
-    val isRooted: Boolean get() = signals.any { it.detected }
+    // DEBUGGABLE_BUILD is a ROM property (always true on LineageOS userdebug), not a root signal.
+    // Exclude it from isRooted so a freshly unrooted LineageOS device doesn't report rooted.
+    val isRooted: Boolean get() = signals
+        .filter { it.id != RootSignalId.DEBUGGABLE_BUILD }
+        .any { it.detected }
 
-    // High-confidence = anything that isn't just a filesystem binary find
+    // High-confidence = process/socket/mount-level evidence that can't come from ROM alone.
     val highConfidence: Boolean get() = signals.filter {
         it.id !in setOf(RootSignalId.SU_BINARY_ON_PATH, RootSignalId.BUSYBOX_FOUND, RootSignalId.DEBUGGABLE_BUILD)
     }.any { it.detected }
@@ -205,8 +209,9 @@ object RootManager {
             File("/proc/net/unix").readLines().drop(1).any { line ->
                 val cols = line.trim().split("\\s+".toRegex())
                 val path = cols.getOrNull(7) ?: ""
-                path.contains("magisk", ignoreCase = true) ||
-                    (path.isEmpty() && cols.getOrNull(4) == "0001")
+                // Only match sockets with an explicit magisk path — the empty-path fallback
+                // (path.isEmpty && state==0001) fires on ANY abstract socket on any Android device.
+                path.contains("magisk", ignoreCase = true)
             }
         }.getOrDefault(false)
         RootSignal(
@@ -261,8 +266,26 @@ object RootManager {
     // Comprehensive list from FOSS-Root-Checker.
     // Will always fail on Magisk DenyList (mount namespace hides su paths).
     // Uses both File.exists() and ls exec fallback for maximum coverage.
+    //
+    // NOTE: /system/bin/su and /system/xbin/su are ROM-shipped on LineageOS userdebug builds.
+    // On userdebug ROMs we skip those system paths to avoid a permanent false positive — only
+    // non-system paths (data, sbin, dev) indicate a third-party su install.
 
     private suspend fun probeSuBinary(): RootSignal = withContext(Dispatchers.IO) {
+        val isUserdebug = runCatching {
+            val cls = Class.forName("android.os.SystemProperties")
+            val get = cls.getMethod("get", String::class.java, String::class.java)
+            val buildType = get.invoke(null, "ro.build.type", "user") as String
+            buildType == "userdebug" || buildType == "eng"
+        }.getOrDefault(false)
+
+        // Paths that LineageOS / AOSP userdebug ships as stock ROM files — not root artifacts.
+        val romSuPaths = setOf(
+            "/system/bin/su",
+            "/system/xbin/su",
+            "/system/sbin/su",
+        )
+
         val suPaths = listOf(
             "/system/bin/su", "/system/xbin/su", "/sbin/su",
             "/system/sd/xbin/su", "/system/bin/failsafe/su",
@@ -277,7 +300,9 @@ object RootManager {
             "/dev/com.koushikdutta.superuser.daemon",
             "/data/data/com.noshufou.android.su",
         )
-        val found = suPaths.any { pathExists(it) }
+
+        val pathsToCheck = if (isUserdebug) suPaths.filter { it !in romSuPaths } else suPaths
+        val found = pathsToCheck.any { pathExists(it) }
         RootSignal(
             id = RootSignalId.SU_BINARY_ON_PATH,
             detected = found,
@@ -336,8 +361,8 @@ object RootManager {
         RootSignal(
             id = RootSignalId.DEBUGGABLE_BUILD,
             detected = detected,
-            label = "Debuggable/userdebug build",
-            detail = "ro.debuggable=1 or ro.build.type=userdebug — normal on LineageOS userdebug",
+            label = "Debuggable/userdebug build (ROM info only)",
+            detail = "ro.debuggable=1 or ro.build.type=userdebug — permanent on LineageOS; does not indicate root is installed",
         )
     }
 

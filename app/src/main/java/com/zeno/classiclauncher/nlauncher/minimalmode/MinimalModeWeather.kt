@@ -71,16 +71,18 @@ internal suspend fun fetchMinimalModeWeather(
         val maxTemps = daily.getJSONArray("temperature_2m_max")
         val minTemps = daily.getJSONArray("temperature_2m_min")
 
-        val today = LocalDate.now()
-        (0 until times.length()).map { i ->
+        (0 until times.length()).mapNotNull { i ->
+            val maxTemp = if (maxTemps.isNull(i)) null else maxTemps.getDouble(i).toFloat()
+            val minTemp = if (minTemps.isNull(i)) null else minTemps.getDouble(i).toFloat()
+            if (maxTemp == null || minTemp == null) return@mapNotNull null
             val date = LocalDate.parse(times.getString(i))
             val label = if (i == 0) "Today" else date.dayOfWeek.getDisplayName(TextStyle.SHORT, Locale.getDefault())
             MinimalModeWeatherDay(
                 label = label,
                 conditionEmoji = wmoCodeToEmoji(codes.getInt(i)),
                 conditionCode = codes.getInt(i),
-                tempMaxC = maxTemps.getDouble(i).toFloat(),
-                tempMinC = minTemps.getDouble(i).toFloat(),
+                tempMaxC = maxTemp,
+                tempMinC = minTemp,
             )
         }
     } catch (_: Exception) {

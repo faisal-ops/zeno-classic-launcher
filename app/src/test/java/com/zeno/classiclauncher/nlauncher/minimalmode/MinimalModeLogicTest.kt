@@ -68,83 +68,34 @@ class MinimalModeLogicTest {
         assertTrue(result.isEmpty())
     }
 
-    // ─── buildNotifSummary ───────────────────────────────────────────────────
+    // ─── parseAppLimits ──────────────────────────────────────────────────────
 
     @Test
-    fun buildNotifSummary_noNotifications_returnsNoNewNotifications() {
-        val result = buildNotifSummary(
-            packagesWithUnread = emptySet(),
-            hasUnreadMail = false,
-            hasUnreadSms = false,
-            hasUnreadWhatsApp = false,
-        )
-        assertEquals("No New Notifications", result)
+    fun parseAppLimits_validEntries_parsed() {
+        val result = parseAppLimits("com.android.dialer:3600000,com.whatsapp:1800000")
+        assertEquals(2, result.size)
+        assertEquals(3_600_000L, result["com.android.dialer"])
+        assertEquals(1_800_000L, result["com.whatsapp"])
     }
 
     @Test
-    fun buildNotifSummary_missedCall_returnsMissedCalls() {
-        val result = buildNotifSummary(
-            packagesWithUnread = setOf("com.android.dialer"),
-            hasUnreadMail = true,
-            hasUnreadSms = true,
-            hasUnreadWhatsApp = true,
-        )
-        // Phone takes priority over everything else
-        assertEquals("Missed Calls", result)
+    fun parseAppLimits_emptyString_returnsEmpty() {
+        assertTrue(parseAppLimits("").isEmpty())
     }
 
     @Test
-    fun buildNotifSummary_unreadSmsNoCalls_returnsNewMessages() {
-        val result = buildNotifSummary(
-            packagesWithUnread = setOf("com.android.messaging"),
-            hasUnreadMail = false,
-            hasUnreadSms = true,
-            hasUnreadWhatsApp = false,
-        )
-        assertEquals("New Messages", result)
+    fun parseAppLimits_malformedEntry_skipped() {
+        val result = parseAppLimits("com.android.dialer:3600000,badentry,com.whatsapp:1800000")
+        assertEquals(2, result.size)
+        assertTrue("com.android.dialer" in result)
+        assertTrue("com.whatsapp" in result)
     }
 
     @Test
-    fun buildNotifSummary_whatsappOnly_returnsWhatsappMessages() {
-        val result = buildNotifSummary(
-            packagesWithUnread = setOf("com.whatsapp"),
-            hasUnreadMail = false,
-            hasUnreadSms = false,
-            hasUnreadWhatsApp = true,
-        )
-        assertEquals("WhatsApp Messages", result)
+    fun parseAppLimits_nonNumericValue_skipped() {
+        val result = parseAppLimits("com.android.dialer:notanumber,com.whatsapp:1800000")
+        assertEquals(1, result.size)
+        assertEquals(1_800_000L, result["com.whatsapp"])
     }
 
-    @Test
-    fun buildNotifSummary_mailOnly_returnsNewEmails() {
-        val result = buildNotifSummary(
-            packagesWithUnread = setOf("com.google.android.gm"),
-            hasUnreadMail = true,
-            hasUnreadSms = false,
-            hasUnreadWhatsApp = false,
-        )
-        assertEquals("New Emails", result)
-    }
-
-    @Test
-    fun buildNotifSummary_genericAppNotification_returnsNewNotifications() {
-        val result = buildNotifSummary(
-            packagesWithUnread = setOf("com.example.someapp"),
-            hasUnreadMail = false,
-            hasUnreadSms = false,
-            hasUnreadWhatsApp = false,
-        )
-        assertEquals("New Notifications", result)
-    }
-
-    @Test
-    fun buildNotifSummary_googleDialerCountsAsPhone() {
-        val result = buildNotifSummary(
-            packagesWithUnread = setOf("com.google.android.dialer"),
-            hasUnreadMail = false,
-            hasUnreadSms = false,
-            hasUnreadWhatsApp = false,
-        )
-        assertEquals("Missed Calls", result)
-    }
 }

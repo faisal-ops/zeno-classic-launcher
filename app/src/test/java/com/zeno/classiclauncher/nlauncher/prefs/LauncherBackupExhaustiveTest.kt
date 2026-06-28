@@ -123,6 +123,45 @@ class LauncherBackupExhaustiveTest {
         assertEquals(apps, roundTrip(prefs).minimalModeApps)
     }
 
+    @Test
+    fun roundTrip_minimalModeMaxApps_preserved() {
+        MinimalModeMaxApps.entries.forEach { value ->
+            val prefs = LauncherPrefs(minimalModeMaxApps = value)
+            assertEquals("MinimalModeMaxApps $value failed to round-trip", value, roundTrip(prefs).minimalModeMaxApps)
+        }
+    }
+
+    @Test
+    fun roundTrip_minimalModeShowIcons_preserved() {
+        assertTrue(roundTrip(LauncherPrefs(minimalModeShowIcons = true)).minimalModeShowIcons)
+        assertFalse(roundTrip(LauncherPrefs(minimalModeShowIcons = false)).minimalModeShowIcons)
+    }
+
+    @Test
+    fun roundTrip_minimalModeShowWeather_preserved() {
+        assertTrue(roundTrip(LauncherPrefs(minimalModeShowWeather = true)).minimalModeShowWeather)
+        assertFalse(roundTrip(LauncherPrefs(minimalModeShowWeather = false)).minimalModeShowWeather)
+    }
+
+    @Test
+    fun roundTrip_minimalModeShowNotifSummary_preserved() {
+        assertTrue(roundTrip(LauncherPrefs(minimalModeShowNotifSummary = true)).minimalModeShowNotifSummary)
+        assertFalse(roundTrip(LauncherPrefs(minimalModeShowNotifSummary = false)).minimalModeShowNotifSummary)
+    }
+
+    @Test
+    fun roundTrip_minimalModeGreyscale_preserved() {
+        assertTrue(roundTrip(LauncherPrefs(minimalModeGreyscale = true)).minimalModeGreyscale)
+        assertFalse(roundTrip(LauncherPrefs(minimalModeGreyscale = false)).minimalModeGreyscale)
+    }
+
+    @Test
+    fun roundTrip_minimalModeAppLimits_preserved() {
+        val limits = "com.android.dialer:3600000,com.whatsapp:1800000"
+        val prefs = LauncherPrefs(minimalModeAppLimits = limits)
+        assertEquals(limits, roundTrip(prefs).minimalModeAppLimits)
+    }
+
     // ─── Auto-unlock fields ───────────────────────────────────────────────────
 
     @Test

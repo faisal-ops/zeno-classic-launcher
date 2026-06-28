@@ -49,6 +49,7 @@ class BadgeNotificationListener : NotificationListenerService() {
     override fun onListenerDisconnected() {
         super.onListenerDisconnected()
         instance = null
+        NotificationRepository.replaceAllActive(null)
     }
 
     override fun onNotificationPosted(sbn: StatusBarNotification?) {

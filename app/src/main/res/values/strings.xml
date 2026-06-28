@@ -293,4 +293,13 @@
     <string name="backup_gps_warning_body">Your manual weather location (GPS coordinates) will be included in the exported file. Share this file only with trusted recipients.</string>
     <string name="backup_gps_warning_export">Export anyway</string>
     <string name="backup_gps_warning_cancel">Cancel</string>
+    <!-- Minimal Mode — challenge / limit UI -->
+    <string name="minimal_mode_daily_limit">Daily limit</string>
+    <string name="minimal_mode_daily_limit_reached">Daily limit reached</string>
+    <string name="minimal_mode_usage_summary">%1$s used · limit %2$s</string>
+    <string name="minimal_mode_opening_app">Opening %s</string>
+    <string name="minimal_mode_challenge_cancel">Cancel</string>
+    <string name="minimal_mode_quick_reply_send">Send</string>
+    <string name="minimal_mode_quick_reply_sent">Sent ✓</string>
+
 </resources>

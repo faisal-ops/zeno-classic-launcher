@@ -6,10 +6,6 @@ import android.graphics.Canvas
 import android.graphics.ColorMatrix
 import android.graphics.ColorMatrixColorFilter
 import android.graphics.Paint as AndroidPaint
-import android.net.ConnectivityManager
-import android.net.Network
-import android.net.NetworkRequest
-import android.net.NetworkCapabilities
 import android.net.wifi.WifiManager
 import android.app.Notification
 import android.app.RemoteInput
@@ -23,6 +19,10 @@ import androidx.compose.foundation.gestures.detectDragGestures
 import androidx.compose.foundation.gestures.detectVerticalDragGestures
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
+import androidx.compose.foundation.lazy.grid.GridCells
+import androidx.compose.foundation.lazy.grid.items as gridItems
+import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.material.icons.rounded.Search
 import androidx.compose.ui.draw.drawWithContent
@@ -39,7 +39,6 @@ import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.foundation.gestures.detectHorizontalDragGestures
 import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.layout.Arrangement
-import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -160,6 +159,14 @@ private fun wmoCodeToIcon(code: Int): ImageVector = when (code) {
 private val LONG_PRESS_MS = 700L
 private val FOOTER_CONTENT_HEIGHT = 80.dp
 
+internal fun parseAppLimits(raw: String): Map<String, Long> =
+    raw.split(",").filter { it.contains(":") }
+        .mapNotNull { entry ->
+            val k = entry.substringBefore(":").trim()
+            val v = entry.substringAfter(":").toLongOrNull()
+            if (k.isNotEmpty() && v != null) k to v else null
+        }.toMap()
+
 // Default apps shown when user hasn't configured Minimal Mode list yet.
 // Ordered by typical BB-style priority. We'll match against installed apps.
 private val DEFAULT_PACKAGES = listOf(
@@ -193,8 +200,14 @@ internal fun MinimalModeScreen(vm: LauncherViewModel) {
     val context = LocalContext.current
     val actions = remember(context) { LauncherActions(context) }
     val is24h = remember { DateFormat.is24HourFormat(context) }
-    val visibleApps = remember(prefs.minimalModeApps, allApps) {
-        resolveMinimalModeApps(prefs.minimalModeApps, allApps).take(7)
+    val maxApps = when (prefs.minimalModeMaxApps) {
+        com.zeno.classiclauncher.nlauncher.prefs.MinimalModeMaxApps.SIX -> 6
+        com.zeno.classiclauncher.nlauncher.prefs.MinimalModeMaxApps.NINE -> 9
+        com.zeno.classiclauncher.nlauncher.prefs.MinimalModeMaxApps.TWELVE -> 12
+        com.zeno.classiclauncher.nlauncher.prefs.MinimalModeMaxApps.AUTO -> 7
+    }
+    val visibleApps = remember(prefs.minimalModeApps, allApps, prefs.minimalModeMaxApps) {
+        resolveMinimalModeApps(prefs.minimalModeApps, allApps).take(maxApps)
     }
 
     var focusedIndex by rememberSaveable(visibleApps.joinToString(",") { it.packageName }) {
@@ -210,12 +223,6 @@ internal fun MinimalModeScreen(vm: LauncherViewModel) {
     var soundProfile by remember { mutableStateOf(actions.currentSoundProfile()) }
     var topBarBottomPx by remember { mutableIntStateOf(0) }
 
-    val connectivityManager = remember { context.getSystemService(ConnectivityManager::class.java) }
-    fun hasCellular(): Boolean = connectivityManager.allNetworks.any {
-        connectivityManager.getNetworkCapabilities(it)
-            ?.hasTransport(NetworkCapabilities.TRANSPORT_CELLULAR) == true
-    }
-    var mobileConnected by remember { mutableStateOf(hasCellular()) }
 
     fun isHeadsetConnected(audioManager: AudioManager): Boolean {
         val wiredTypes = intArrayOf(
@@ -254,7 +261,7 @@ internal fun MinimalModeScreen(vm: LauncherViewModel) {
             addAction(android.media.AudioManager.RINGER_MODE_CHANGED_ACTION)
             addAction(android.app.NotificationManager.ACTION_INTERRUPTION_FILTER_CHANGED)
         }
-        context.registerReceiver(receiver, filter)
+        androidx.core.content.ContextCompat.registerReceiver(context, receiver, filter, androidx.core.content.ContextCompat.RECEIVER_NOT_EXPORTED)
         onDispose { runCatching { context.unregisterReceiver(receiver) } }
     }
 
@@ -265,27 +272,13 @@ internal fun MinimalModeScreen(vm: LauncherViewModel) {
                 wifiOn = actions.isWifiEnabled() == true
             }
         }
+        @Suppress("DEPRECATION")
         val filter = IntentFilter().apply {
             addAction(WifiManager.WIFI_STATE_CHANGED_ACTION)
             addAction(WifiManager.NETWORK_STATE_CHANGED_ACTION)
         }
-        context.registerReceiver(receiver, filter)
+        androidx.core.content.ContextCompat.registerReceiver(context, receiver, filter, androidx.core.content.ContextCompat.RECEIVER_NOT_EXPORTED)
         onDispose { runCatching { context.unregisterReceiver(receiver) } }
-    }
-
-    // Mobile signal: react to network availability changes via NetworkCallback — zero polling cost.
-    // The callback fires immediately on registration with the current state, so mobileConnected
-    // is seeded correctly on first composition without an extra hasCellular() call.
-    androidx.compose.runtime.DisposableEffect(Unit) {
-        val request = NetworkRequest.Builder()
-            .addTransportType(NetworkCapabilities.TRANSPORT_CELLULAR)
-            .build()
-        val callback = object : ConnectivityManager.NetworkCallback() {
-            override fun onAvailable(network: Network) { mobileConnected = true }
-            override fun onLost(network: Network) { mobileConnected = hasCellular() }
-        }
-        runCatching { connectivityManager.registerNetworkCallback(request, callback) }
-        onDispose { runCatching { connectivityManager.unregisterNetworkCallback(callback) } }
     }
 
     // Headset: react to wired headset/headphone plug and unplug events.
@@ -371,25 +364,12 @@ internal fun MinimalModeScreen(vm: LauncherViewModel) {
 
     // Parse per-app limits from prefs: "pkg:ms,pkg:ms" → Map
     val appLimitsMap = remember(prefs.minimalModeAppLimits) {
-        prefs.minimalModeAppLimits.split(",").filter { it.contains(":") }
-            .mapNotNull { entry ->
-                val k = entry.substringBefore(":")
-                val v = entry.substringAfter(":").toLongOrNull()
-                if (v != null) k to v else null
-            }.toMap()
+        parseAppLimits(prefs.minimalModeAppLimits)
     }
 
     // App challenge countdown state: non-null pkg = countdown in progress
     var challengeTargetPkg by remember { mutableStateOf<String?>(null) }
 
-    val notifCount = packagesWithUnread.size +
-        (if (hasUnreadMail) 1 else 0) +
-        (if (hasUnreadSms) 1 else 0) +
-        (if (hasUnreadWhatsApp) 1 else 0)
-    val notifSummary = remember(packagesWithUnread, hasUnreadMail, hasUnreadSms, hasUnreadWhatsApp) {
-        buildNotifSummary(packagesWithUnread, hasUnreadMail, hasUnreadSms, hasUnreadWhatsApp)
-    }
-    val hasAnyNotif = packagesWithUnread.isNotEmpty() || hasUnreadMail || hasUnreadSms || hasUnreadWhatsApp
     val unreadApps = remember(packagesWithUnread, allApps) {
         packagesWithUnread.mapNotNull { pkg -> allApps.find { it.packageName == pkg } }.take(7)
     }
@@ -445,10 +425,12 @@ internal fun MinimalModeScreen(vm: LauncherViewModel) {
             .background(SCREEN_BG)
             .then(
                 if (prefs.minimalModeGreyscale && !prefs.rootGranted)
-                    Modifier.drawWithContent {
-                        drawContent()
-                        drawRect(color = Color.Black, blendMode = androidx.compose.ui.graphics.BlendMode.Saturation)
-                    }
+                    Modifier
+                        .graphicsLayer {}
+                        .drawWithContent {
+                            drawContent()
+                            drawRect(color = Color.Black, blendMode = androidx.compose.ui.graphics.BlendMode.Saturation)
+                        }
                 else Modifier
             )
             .focusRequester(screenFocus)
@@ -556,21 +538,35 @@ internal fun MinimalModeScreen(vm: LauncherViewModel) {
             Spacer(Modifier.height(8.dp))
 
             // ── App list ──────────────────────────────────────────────────────
-            MinimalModeListView(
-                modifier = Modifier.weight(1f),
-                apps = visibleApps,
-                focusedIndex = if (showQuickSettings) -1 else focusedIndex,
-                appUsageMap = appUsageMap,
-                appLimitsMap = appLimitsMap,
-                packagesWithUnread = packagesWithUnread,
-                onTap = { idx ->
-                    focusedIndex = idx
-                    visibleApps.getOrNull(idx)?.let { launchOrChallenge(it.packageName) }
-                },
-                onLongPress = { idx ->
-                    visibleApps.getOrNull(idx)?.let { app -> contextMenuEntry = Pair(idx, app) }
-                },
-            )
+            if (prefs.minimalModeLayout == com.zeno.classiclauncher.nlauncher.prefs.MinimalModeLayout.GRID) {
+                MinimalModeGridView(
+                    modifier = Modifier.weight(1f),
+                    apps = visibleApps,
+                    showIcons = prefs.minimalModeShowIcons,
+                    packagesWithUnread = packagesWithUnread,
+                    appLimitsMap = appLimitsMap,
+                    appUsageMap = appUsageMap,
+                    onTap = { idx -> visibleApps.getOrNull(idx)?.let { launchOrChallenge(it.packageName) } },
+                    onLongPress = { idx -> visibleApps.getOrNull(idx)?.let { app -> contextMenuEntry = Pair(idx, app) } },
+                )
+            } else {
+                MinimalModeListView(
+                    modifier = Modifier.weight(1f),
+                    apps = visibleApps,
+                    maxApps = maxApps,
+                    focusedIndex = if (showQuickSettings) -1 else focusedIndex,
+                    appUsageMap = appUsageMap,
+                    appLimitsMap = appLimitsMap,
+                    packagesWithUnread = packagesWithUnread,
+                    onTap = { idx ->
+                        focusedIndex = idx
+                        visibleApps.getOrNull(idx)?.let { launchOrChallenge(it.packageName) }
+                    },
+                    onLongPress = { idx ->
+                        visibleApps.getOrNull(idx)?.let { app -> contextMenuEntry = Pair(idx, app) }
+                    },
+                )
+            }
 
             // ── Footer: swipeable weather ↔ player ───────────────────────────
             // hasWeatherPref = weather pref is on (footer space always reserved to avoid layout shift)
@@ -936,12 +932,89 @@ private fun MinimalModeHeader(
     }
 }
 
+// ─── Grid view ────────────────────────────────────────────────────────────────
+
+@Composable
+private fun MinimalModeGridView(
+    modifier: Modifier,
+    apps: List<AppEntry>,
+    showIcons: Boolean,
+    packagesWithUnread: Set<String>,
+    appLimitsMap: Map<String, Long>,
+    appUsageMap: Map<String, Long>,
+    onTap: (Int) -> Unit,
+    onLongPress: (Int) -> Unit,
+) {
+    LazyVerticalGrid(
+        columns = GridCells.Fixed(3),
+        modifier = modifier.fillMaxWidth(),
+        horizontalArrangement = Arrangement.spacedBy(4.dp),
+        verticalArrangement = Arrangement.spacedBy(4.dp),
+        contentPadding = PaddingValues(horizontal = 8.dp),
+    ) {
+        gridItems(apps, key = { it.packageName }) { app ->
+            val index = apps.indexOf(app)
+            val usageMs = appUsageMap[app.packageName] ?: 0L
+            val limitMs = appLimitsMap[app.packageName]
+            val overLimit = limitMs != null && usageMs >= limitMs
+            val hasNotif = app.packageName in packagesWithUnread
+            Box(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .aspectRatio(1f)
+                    .background(Color(0xFF0D0D0D), RoundedCornerShape(8.dp))
+                    .pointerInput(app.packageName) {
+                        detectTapGestures(onTap = { onTap(index) }, onLongPress = { onLongPress(index) })
+                    },
+                contentAlignment = Alignment.Center,
+            ) {
+                Column(
+                    horizontalAlignment = Alignment.CenterHorizontally,
+                    verticalArrangement = Arrangement.spacedBy(4.dp),
+                ) {
+                    if (showIcons) {
+                        val bmp = remember(app.packageName) { app.icon?.toBitmap(48, 48) }
+                        if (bmp != null) {
+                            androidx.compose.foundation.Image(
+                                painter = BitmapPainter(bmp.asImageBitmap()),
+                                contentDescription = null,
+                                modifier = Modifier.size(36.dp).clip(RoundedCornerShape(8.dp)),
+                            )
+                        }
+                    }
+                    Text(
+                        text = app.label,
+                        fontSize = 11.sp,
+                        fontWeight = FontWeight.W400,
+                        color = if (overLimit) Color(0xFFFFB340) else NORMAL_TEXT,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis,
+                    )
+                }
+                if (hasNotif || overLimit) {
+                    Box(
+                        modifier = Modifier
+                            .align(Alignment.TopEnd)
+                            .padding(4.dp)
+                            .size(6.dp)
+                            .background(
+                                if (overLimit) Color(0xFFFFB340) else FOCUS_ACCENT,
+                                CircleShape,
+                            ),
+                    )
+                }
+            }
+        }
+    }
+}
+
 // ─── List view ────────────────────────────────────────────────────────────────
 
 @Composable
 private fun MinimalModeListView(
     modifier: Modifier,
     apps: List<AppEntry>,
+    maxApps: Int,
     focusedIndex: Int,
     appUsageMap: Map<String, Long>,
     appLimitsMap: Map<String, Long>,
@@ -953,7 +1026,7 @@ private fun MinimalModeListView(
         modifier = modifier.fillMaxWidth(),
         verticalArrangement = Arrangement.SpaceBetween,
     ) {
-        repeat(7) { index ->
+        repeat(maxApps) { index ->
             val app = apps.getOrNull(index)
             if (app != null) {
                 val usageMs = appUsageMap[app.packageName] ?: 0L
@@ -970,6 +1043,7 @@ private fun MinimalModeListView(
                 )
             } else {
                 val emptySlotCd = stringResource(R.string.cd_simple_empty_slot)
+                val addAppLabel = stringResource(R.string.action_add_app)
                 Box(
                     modifier = Modifier
                         .fillMaxWidth()
@@ -977,7 +1051,7 @@ private fun MinimalModeListView(
                         .semantics {
                             role = Role.Button
                             contentDescription = emptySlotCd
-                            onClick(label = "Add app") { onLongPress(index); true }
+                            onClick(label = addAppLabel) { onLongPress(index); true }
                         }
                         .pointerInput(Unit) {
                             detectTapGestures(onTap = { onLongPress(index) })
@@ -1326,7 +1400,7 @@ private fun AppRowContextMenu(
             // Daily limit picker
             val limitHeaderColor = if (menuFocusIdx == 2) NORMAL_TEXT else Color(0xFF9AA0A8)
             Text(
-                text = "Daily limit",
+                text = stringResource(R.string.minimal_mode_daily_limit),
                 fontSize = 15.sp,
                 color = limitHeaderColor,
                 modifier = Modifier.padding(horizontal = 20.dp, vertical = 14.dp),
@@ -1430,23 +1504,6 @@ private val PHONE_PACKAGES = setOf(
     "com.samsung.android.dialer", "com.blackberry.phone",
     "com.motorola.incallui",
 )
-
-internal fun buildNotifSummary(
-    packagesWithUnread: Set<String>,
-    hasUnreadMail: Boolean,
-    hasUnreadSms: Boolean,
-    hasUnreadWhatsApp: Boolean,
-): String {
-    val hasPhone = packagesWithUnread.any { it in PHONE_PACKAGES }
-    return when {
-        hasPhone -> "Missed Calls"
-        hasUnreadSms -> "New Messages"
-        hasUnreadWhatsApp -> "WhatsApp Messages"
-        hasUnreadMail -> "New Emails"
-        packagesWithUnread.isNotEmpty() -> "New Notifications"
-        else -> "No New Notifications"
-    }
-}
 
 // ─── Search overlay ───────────────────────────────────────────────────────────
 
@@ -1623,13 +1680,13 @@ private fun AppLimitReachedOverlay(
                 color = Color.White,
             )
             Text(
-                text = "Daily limit reached",
+                text = stringResource(R.string.minimal_mode_daily_limit_reached),
                 fontSize = 14.sp,
                 color = Color(0xFFFFB340),
                 fontWeight = FontWeight.Medium,
             )
             Text(
-                text = "${UsageStatsRepository.formatUsage(usageMs)} used · limit ${UsageStatsRepository.formatUsage(limitMs)}",
+                text = stringResource(R.string.minimal_mode_usage_summary, UsageStatsRepository.formatUsage(usageMs), UsageStatsRepository.formatUsage(limitMs)),
                 fontSize = 12.sp,
                 color = Color(0xFF8B8B8B),
             )
@@ -1662,7 +1719,7 @@ private fun AppLimitReachedOverlay(
             }
             // Cancel
             Text(
-                text = "Cancel",
+                text = stringResource(R.string.minimal_mode_challenge_cancel),
                 fontSize = 14.sp,
                 color = Color(0xFF8B8B8B),
                 modifier = Modifier
@@ -1703,7 +1760,7 @@ private fun AppChallengeOverlay(
             verticalArrangement = Arrangement.spacedBy(16.dp),
         ) {
             Text(
-                text = "Opening $appLabel",
+                text = stringResource(R.string.minimal_mode_opening_app, appLabel),
                 fontSize = 16.sp,
                 color = Color(0xFF8B8B8B),
                 fontWeight = FontWeight.Normal,
@@ -1716,7 +1773,7 @@ private fun AppChallengeOverlay(
                 letterSpacing = (-2).sp,
             )
             Text(
-                text = "Cancel",
+                text = stringResource(R.string.minimal_mode_challenge_cancel),
                 fontSize = 14.sp,
                 color = Color(0xFF4DA3FF),
                 fontWeight = FontWeight.Medium,
@@ -1734,7 +1791,7 @@ private data class QuickReplyItem(
     val title: String,
     val text: String,
     val action: Notification.Action?,
-    val remoteInputs: Array<RemoteInput>?,
+    val remoteInputs: List<RemoteInput>?,
     val remoteInputResultKey: String?,
 )
 
@@ -1754,7 +1811,7 @@ private fun buildQuickReplyItems(pkg: String): List<QuickReplyItem> =
                 title = title,
                 text = text,
                 action = replyAction,
-                remoteInputs = replyAction?.remoteInputs,
+                remoteInputs = replyAction?.remoteInputs?.toList(),
                 remoteInputResultKey = replyAction?.remoteInputs?.firstOrNull()?.resultKey,
             )
         }
@@ -1783,7 +1840,7 @@ private fun QuickReplyOverlay(
         val bundle = Bundle()
         bundle.putCharSequence(ri.resultKey, replyText)
         val fillIntent = Intent()
-        RemoteInput.addResultsToIntent(inputs, fillIntent, bundle)
+        RemoteInput.addResultsToIntent(inputs.toTypedArray(), fillIntent, bundle)
         val ok = runCatching { action.actionIntent.send(context, 0, fillIntent); true }.getOrDefault(false)
         if (ok) { sent = true; replyText = "" }
     }
@@ -1865,7 +1922,7 @@ private fun QuickReplyOverlay(
             if (replyItem != null) {
                 if (sent) {
                     Text(
-                        text = "Sent ✓",
+                        text = stringResource(R.string.minimal_mode_quick_reply_sent),
                         fontSize = 13.sp,
                         color = Color(0xFF34C759),
                         modifier = Modifier.padding(horizontal = 16.dp, vertical = 10.dp),
@@ -1913,7 +1970,7 @@ private fun QuickReplyOverlay(
                             contentAlignment = Alignment.Center,
                         ) {
                             Text(
-                                text = "Send",
+                                text = stringResource(R.string.minimal_mode_quick_reply_send),
                                 fontSize = 13.sp,
                                 fontWeight = FontWeight.SemiBold,
                                 color = if (replyText.isNotBlank()) Color.White else MUTED_TEXT,

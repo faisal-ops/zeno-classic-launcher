@@ -203,7 +203,7 @@ data class LauncherPrefs(
     /** Ordered package names pinned in Minimal Mode. Empty = use built-in defaults. */
     val minimalModeApps: List<String> = emptyList(),
     /** When true, Minimal Mode forces all app icons to greyscale to reduce dopamine triggers. */
-    val minimalModeGreyscale: Boolean = true,
+    val minimalModeGreyscale: Boolean = false,
     /** Package names that trigger the 5-second friction countdown before launching. */
     val minimalModeChallengeApps: Set<String> = emptySet(),
     /** Per-app daily soft limits stored as "pkg:limitMs" joined by comma. */
