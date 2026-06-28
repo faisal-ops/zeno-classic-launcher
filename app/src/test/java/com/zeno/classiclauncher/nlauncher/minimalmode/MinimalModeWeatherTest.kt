@@ -7,34 +7,34 @@ class MinimalModeWeatherTest {
 
     @Test
     fun formatTemp_celsius_roundsDown() {
-        assertEquals("22°", formatTemp(22.7f, useCelsius = true))
+        assertEquals("22°C", formatTemp(22.7f, useCelsius = true))
     }
 
     @Test
     fun formatTemp_celsius_zero() {
-        assertEquals("0°", formatTemp(0f, useCelsius = true))
+        assertEquals("0°C", formatTemp(0f, useCelsius = true))
     }
 
     @Test
     fun formatTemp_celsius_negative() {
-        assertEquals("-5°", formatTemp(-5.9f, useCelsius = true))
+        assertEquals("-5°C", formatTemp(-5.9f, useCelsius = true))
     }
 
     @Test
     fun formatTemp_fahrenheit_boilingPoint() {
         // 100°C → 212°F
-        assertEquals("212°", formatTemp(100f, useCelsius = false))
+        assertEquals("212°F", formatTemp(100f, useCelsius = false))
     }
 
     @Test
     fun formatTemp_fahrenheit_freezingPoint() {
         // 0°C → 32°F
-        assertEquals("32°", formatTemp(0f, useCelsius = false))
+        assertEquals("32°F", formatTemp(0f, useCelsius = false))
     }
 
     @Test
     fun formatTemp_fahrenheit_bodyTemp() {
         // 37°C → 98.6°F → truncated to 98°
-        assertEquals("98°", formatTemp(37f, useCelsius = false))
+        assertEquals("98°F", formatTemp(37f, useCelsius = false))
     }
 }

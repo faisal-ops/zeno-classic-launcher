@@ -2,6 +2,10 @@ package com.zeno.classiclauncher.nlauncher.minimalmode
 
 import android.content.Intent
 import android.content.IntentFilter
+import android.graphics.Canvas
+import android.graphics.ColorMatrix
+import android.graphics.ColorMatrixColorFilter
+import android.graphics.Paint as AndroidPaint
 import android.net.ConnectivityManager
 import android.net.Network
 import android.net.NetworkRequest
@@ -35,6 +39,7 @@ import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.foundation.gestures.detectHorizontalDragGestures
 import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -52,18 +57,19 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.outlined.Battery0Bar
-import androidx.compose.material.icons.outlined.Battery2Bar
-import androidx.compose.material.icons.outlined.Battery4Bar
-import androidx.compose.material.icons.outlined.Battery6Bar
-import androidx.compose.material.icons.outlined.BatteryFull
-import androidx.compose.material.icons.rounded.Pause
+import androidx.compose.material.icons.rounded.AcUnit
+import androidx.compose.material.icons.rounded.Bolt
+import androidx.compose.material.icons.rounded.Cloud
 import androidx.compose.material.icons.rounded.DoNotDisturb
+import androidx.compose.material.icons.rounded.Headset
+import androidx.compose.material.icons.rounded.Pause
 import androidx.compose.material.icons.rounded.Vibration
+import androidx.compose.material.icons.rounded.WaterDrop
+import androidx.compose.material.icons.rounded.WbSunny
 import androidx.compose.material.icons.rounded.Wifi
 import androidx.compose.material.icons.rounded.WifiOff
-import androidx.compose.material.icons.rounded.Headset
-import androidx.compose.material.icons.rounded.SignalCellularAlt
+import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.text.font.FontFamily
 import android.media.AudioDeviceCallback
 import android.media.AudioDeviceInfo
 import android.media.AudioManager
@@ -135,13 +141,21 @@ import com.zeno.classiclauncher.nlauncher.R
 import java.util.Locale
 
 // ─── Focus bar colors (matching prototype) ───────────────────────────────────
-private val FOCUS_BG = Color.White
-private val FOCUS_TEXT = Color.Black
+private val FOCUS_BG = Color(0xFF0F0F0F)
+private val FOCUS_TEXT = Color.White
 private val FOCUS_ACCENT = Color(0xFF4DA3FF)
 private val NORMAL_TEXT = Color.White
 private val MUTED_TEXT = Color(0xFF8B8B8B)
 private val DIVIDER_COLOR = Color(0xFF1A1A1A)
 private val SCREEN_BG = Color.Black
+
+private fun wmoCodeToIcon(code: Int): ImageVector = when (code) {
+    0, 1 -> Icons.Rounded.WbSunny
+    in 51..55, in 61..65, in 80..82 -> Icons.Rounded.WaterDrop
+    in 71..75 -> Icons.Rounded.AcUnit
+    in 95..99 -> Icons.Rounded.Bolt
+    else -> Icons.Rounded.Cloud
+}
 
 private val LONG_PRESS_MS = 700L
 private val FOOTER_CONTENT_HEIGHT = 80.dp
@@ -519,19 +533,15 @@ internal fun MinimalModeScreen(vm: LauncherViewModel) {
                 amPm = clockAmPm,
                 date = clockDate,
                 unreadApps = if (prefs.minimalModeShowNotifSummary) unreadApps else emptyList(),
-                hasAnyNotif = hasAnyNotif,
-                conditionEmoji = forecast.firstOrNull()?.conditionEmoji,
+                conditionCode = forecast.firstOrNull()?.conditionCode,
                 currentTemp = forecast.firstOrNull()?.let {
                     formatTemp(it.tempMaxC, prefs.glanceWeatherUnit == GlanceWeatherUnit.CELSIUS)
                 },
                 batteryPct = if (batteryPct >= 0) batteryPct else null,
                 batteryCharging = batteryCharging,
-                greyscale = prefs.minimalModeGreyscale,
-                screenTimeMs = if (totalScreenTimeMs > 0L) totalScreenTimeMs else null,
                 wifiEnabled = wifiOn,
                 soundProfile = soundProfile,
                 headsetConnected = headsetConnected,
-                mobileConnected = mobileConnected,
                 onClockTap = {
                     resolveClockPackage(context)?.let { vm.launchApp(it) }
                 },
@@ -539,15 +549,7 @@ internal fun MinimalModeScreen(vm: LauncherViewModel) {
                     resolveWeatherPackage(context)?.let { vm.launchApp(it) }
                 },
                 onWifiTap = { actions.openInternetPanel(); wifiOn = actions.isWifiEnabled() == true },
-                onUnreadAppTap = { pkg ->
-                    val hasReply = buildQuickReplyItems(pkg).any { it.action != null }
-                    if (hasReply) {
-                        quickReplyPackage = pkg
-                    } else {
-                        BadgeNotificationListener.cancelForPackage(pkg)
-                        vm.launchApp(pkg)
-                    }
-                },
+                onAppIconTap = { pkg -> vm.launchApp(pkg) },
                 onTopBarPositioned = { topBarBottomPx = it },
             )
 
@@ -560,6 +562,7 @@ internal fun MinimalModeScreen(vm: LauncherViewModel) {
                 focusedIndex = if (showQuickSettings) -1 else focusedIndex,
                 appUsageMap = appUsageMap,
                 appLimitsMap = appLimitsMap,
+                packagesWithUnread = packagesWithUnread,
                 onTap = { idx ->
                     focusedIndex = idx
                     visibleApps.getOrNull(idx)?.let { launchOrChallenge(it.packageName) }
@@ -745,12 +748,9 @@ internal fun MinimalModeTopBar(
     amPm: String,
     batteryPct: Int?,
     batteryCharging: Boolean,
-    greyscale: Boolean,
-    screenTimeMs: Long?,
     wifiEnabled: Boolean,
     soundProfile: SoundProfileMode,
     headsetConnected: Boolean,
-    mobileConnected: Boolean,
     onClockTap: () -> Unit,
     onWifiTap: () -> Unit,
 ) {
@@ -759,20 +759,18 @@ internal fun MinimalModeTopBar(
         modifier = Modifier.fillMaxWidth(),
         verticalAlignment = Alignment.CenterVertically,
     ) {
-        // Left side — battery + screen time
+        // Left side — battery % text only
         Row(
             modifier = Modifier.weight(1f),
             verticalAlignment = Alignment.CenterVertically,
         ) {
             if (batteryPct != null) {
-                BatteryPill(pct = batteryPct, charging = batteryCharging, greyscale = greyscale)
-            }
-            if (screenTimeMs != null) {
+                val batteryLabel = if (batteryCharging) "$batteryPct⚡" else "$batteryPct%"
                 Text(
-                    text = "  ·  ${UsageStatsRepository.formatUsageShort(screenTimeMs)}",
+                    text = batteryLabel,
                     fontSize = 13.sp,
-                    fontWeight = FontWeight.Medium,
-                    color = Color(0xFF9AA0A8),
+                    fontWeight = FontWeight.W600,
+                    color = Color(0xFFD0D8E0),
                 )
             }
         }
@@ -837,21 +835,12 @@ internal fun MinimalModeTopBar(
                 )
                 Spacer(Modifier.width(6.dp))
             }
-            if (mobileConnected) {
-                Icon(
-                    imageVector = Icons.Rounded.SignalCellularAlt,
-                    contentDescription = "Mobile network",
-                    tint = Color(0xFFEAF0F6),
-                    modifier = Modifier.size(20.dp),
-                )
-                Spacer(Modifier.width(6.dp))
-            }
             Icon(
                 imageVector = if (wifiEnabled) Icons.Rounded.Wifi else Icons.Rounded.WifiOff,
                 contentDescription = if (wifiEnabled) "WiFi on" else "WiFi off",
                 tint = Color(0xFFEAF0F6),
                 modifier = Modifier
-                    .size(24.dp)
+                    .size(22.dp)
                     .pointerInput(Unit) { detectTapGestures(onTap = { onWifiTap() }) },
             )
         }
@@ -864,21 +853,17 @@ private fun MinimalModeHeader(
     amPm: String,
     date: String,
     unreadApps: List<AppEntry>,
-    hasAnyNotif: Boolean,
-    onUnreadAppTap: (String) -> Unit,
-    conditionEmoji: String?,
+    conditionCode: Int?,
     currentTemp: String?,
     batteryPct: Int?,
     batteryCharging: Boolean,
-    greyscale: Boolean,
-    screenTimeMs: Long?,
     wifiEnabled: Boolean,
     soundProfile: SoundProfileMode,
     headsetConnected: Boolean,
-    mobileConnected: Boolean,
     onClockTap: () -> Unit,
     onWeatherTap: () -> Unit,
     onWifiTap: () -> Unit,
+    onAppIconTap: (String) -> Unit,
     onTopBarPositioned: (Int) -> Unit = {},
 ) {
     Column(modifier = Modifier.fillMaxWidth()) {
@@ -891,12 +876,9 @@ private fun MinimalModeHeader(
             amPm = amPm,
             batteryPct = batteryPct,
             batteryCharging = batteryCharging,
-            greyscale = greyscale,
-            screenTimeMs = screenTimeMs,
             wifiEnabled = wifiEnabled,
             soundProfile = soundProfile,
             headsetConnected = headsetConnected,
-            mobileConnected = mobileConnected,
             onClockTap = onClockTap,
             onWifiTap = onWifiTap,
         )
@@ -907,50 +889,49 @@ private fun MinimalModeHeader(
             modifier = Modifier.fillMaxWidth(),
             horizontalAlignment = Alignment.CenterHorizontally,
         ) {
-            Row(verticalAlignment = Alignment.CenterVertically) {
+            Row(
+                verticalAlignment = Alignment.CenterVertically,
+                modifier = Modifier.pointerInput(Unit) {
+                    detectTapGestures(onTap = { onWeatherTap() }, onDoubleTap = {})
+                },
+            ) {
                 Text(text = date, fontSize = 13.sp, color = MUTED_TEXT)
                 if (currentTemp != null) {
-                    val tempLabel = if (conditionEmoji != null) "$conditionEmoji $currentTemp" else currentTemp
-                    Text(
-                        text = "  ·  $tempLabel",
-                        fontSize = 13.sp,
-                        color = MUTED_TEXT,
-                        modifier = Modifier.pointerInput(Unit) { detectTapGestures(onTap = { onWeatherTap() }) },
-                    )
+                    Text(text = "  ·  ", fontSize = 13.sp, color = MUTED_TEXT)
+                    Text(text = currentTemp, fontSize = 13.sp, color = MUTED_TEXT)
                 }
             }
 
             Spacer(Modifier.height(6.dp))
+            Box(modifier = Modifier.height(30.dp), contentAlignment = Alignment.Center) {
             if (unreadApps.isNotEmpty()) {
-                Row(
-                    horizontalArrangement = Arrangement.Center,
-                    verticalAlignment = Alignment.CenterVertically,
-                    modifier = Modifier.fillMaxWidth(),
-                ) {
+                Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
                     unreadApps.forEach { app ->
-                        val bmp = remember(app.packageName) { app.icon?.toBitmap(64, 64) }
+                        val bmp = remember(app.packageName) {
+                            val src = app.icon?.toBitmap(48, 48) ?: return@remember null
+                            val grey = android.graphics.Bitmap.createBitmap(src.width, src.height, src.config ?: android.graphics.Bitmap.Config.ARGB_8888)
+                            val paint = AndroidPaint().apply {
+                                colorFilter = ColorMatrixColorFilter(ColorMatrix().also { it.setSaturation(0f) })
+                            }
+                            Canvas(grey).drawBitmap(src, 0f, 0f, paint)
+                            grey
+                        }
                         if (bmp != null) {
                             androidx.compose.foundation.Image(
                                 painter = BitmapPainter(bmp.asImageBitmap()),
                                 contentDescription = app.label,
                                 modifier = Modifier
-                                    .size(22.dp)
-                                    .clip(RoundedCornerShape(5.dp))
+                                    .size(18.dp)
+                                    .clip(RoundedCornerShape(4.dp))
                                     .pointerInput(app.packageName) {
-                                        detectTapGestures(onTap = { onUnreadAppTap(app.packageName) })
+                                        detectTapGestures(onTap = { onAppIconTap(app.packageName) })
                                     },
                             )
-                            Spacer(Modifier.width(8.dp))
                         }
                     }
                 }
-            } else {
-                Text(
-                    text = stringResource(R.string.minimal_mode_no_notifications),
-                    fontSize = 12.sp,
-                    color = MUTED_TEXT,
-                )
             }
+            } // end fixed-height Box
         }
     }
 }
@@ -964,12 +945,13 @@ private fun MinimalModeListView(
     focusedIndex: Int,
     appUsageMap: Map<String, Long>,
     appLimitsMap: Map<String, Long>,
+    packagesWithUnread: Set<String>,
     onTap: (Int) -> Unit,
     onLongPress: (Int) -> Unit,
 ) {
     Column(
         modifier = modifier.fillMaxWidth(),
-        verticalArrangement = Arrangement.spacedBy(4.dp),
+        verticalArrangement = Arrangement.SpaceBetween,
     ) {
         repeat(7) { index ->
             val app = apps.getOrNull(index)
@@ -982,6 +964,7 @@ private fun MinimalModeListView(
                     distanceFromFocus = kotlin.math.abs(index - focusedIndex),
                     usageMs = usageMs,
                     limitMs = limitMs,
+                    hasNotification = app.packageName in packagesWithUnread,
                     onClick = { onTap(index) },
                     onLongPress = { onLongPress(index) },
                 )
@@ -1020,6 +1003,7 @@ private fun MinimalModeListRow(
     distanceFromFocus: Int,
     usageMs: Long,
     limitMs: Long?,
+    hasNotification: Boolean,
     onClick: () -> Unit,
     onLongPress: () -> Unit,
 ) {
@@ -1035,23 +1019,28 @@ private fun MinimalModeListRow(
     val targetAlpha = when (distanceFromFocus) {
         0 -> 1f
         1 -> 0.55f
-        2 -> 0.30f
-        else -> 0.18f
+        2 -> 0.28f
+        else -> 0.14f
     }
     val rowAlpha by animateFloatAsState(
         targetValue = targetAlpha,
         animationSpec = tween(durationMillis = 180),
         label = "rowAlpha",
     )
+    val appNameWeight = when (distanceFromFocus) {
+        0 -> FontWeight.W500
+        1 -> FontWeight.W400
+        2 -> FontWeight.W300
+        else -> FontWeight.W200
+    }
 
     Box(
         modifier = Modifier
             .fillMaxWidth()
             .height(50.dp)
             .graphicsLayer { alpha = rowAlpha }
-            .background(if (selected) FOCUS_BG else Color.Transparent)
             .drawBehind {
-                if (selected) drawRect(color = FOCUS_ACCENT, size = Size(4.dp.toPx(), size.height))
+                if (selected) drawRect(color = FOCUS_ACCENT, size = Size(3.dp.toPx(), size.height))
             }
             .semantics {
                 role = Role.Button
@@ -1063,42 +1052,38 @@ private fun MinimalModeListRow(
             },
         contentAlignment = Alignment.CenterStart,
     ) {
-        if (selected) {
-            Text(
-                text = "▌",
-                fontSize = 16.sp,
-                color = Color.Black,
-                modifier = Modifier.padding(start = 7.dp),
-            )
-        }
         Row(
             modifier = Modifier
                 .fillMaxWidth()
                 .graphicsLayer { translationX = tx.value }
+                .drawBehind { if (selected) drawRect(color = FOCUS_BG) }
                 .padding(start = 8.dp, top = 6.dp, bottom = 6.dp, end = 12.dp),
             verticalAlignment = Alignment.CenterVertically,
         ) {
             val nameColor = when {
-                selected -> FOCUS_TEXT
                 overLimit -> Color(0xFFFFB340)
                 else -> NORMAL_TEXT
             }
             Text(
                 text = app.label,
                 fontSize = 22.sp,
-                fontWeight = FontWeight.Medium,
+                fontWeight = appNameWeight,
                 color = nameColor,
                 maxLines = 1,
                 overflow = TextOverflow.Ellipsis,
                 modifier = Modifier.weight(1f),
             )
-            if (usageMs >= 60_000L) {
-                Text(
-                    text = UsageStatsRepository.formatUsageShort(usageMs),
-                    fontSize = 11.sp,
-                    color = if (overLimit) Color(0xFFFFB340) else Color(0xFF555555),
-                    modifier = Modifier.padding(start = 6.dp),
-                )
+            // Right side: notification dot, or over-limit warning
+            Box(
+                modifier = Modifier.size(width = 14.dp, height = 14.dp).padding(start = 6.dp),
+                contentAlignment = Alignment.Center,
+            ) {
+                if (overLimit) {
+                    Box(modifier = Modifier.size(5.dp).background(Color(0xFFFFB340), CircleShape))
+                } else if (hasNotification) {
+                    val dotColor = if (selected) FOCUS_ACCENT else Color(0xFF606060)
+                    Box(modifier = Modifier.size(5.dp).background(dotColor, CircleShape))
+                }
             }
         }
     }
@@ -1134,12 +1119,18 @@ internal fun MinimalModeWeatherRow(
                     modifier = Modifier.weight(1f),
                     horizontalAlignment = Alignment.CenterHorizontally,
                 ) {
-                    Text(text = day.label, fontSize = 11.sp, color = MUTED_TEXT, lineHeight = 13.sp)
-                    Text(text = day.conditionEmoji, fontSize = 20.sp, lineHeight = 24.sp)
+                    Text(text = day.label, fontSize = 11.sp, color = Color(0xFF343434), lineHeight = 13.sp)
+                    Icon(
+                        imageVector = wmoCodeToIcon(day.conditionCode),
+                        contentDescription = null,
+                        tint = Color(0xFF505050),
+                        modifier = Modifier.size(20.dp),
+                    )
                     Text(
                         text = "${formatTemp(day.tempMaxC, useCelsius)}/${formatTemp(day.tempMinC, useCelsius)}",
                         fontSize = 11.sp,
-                        color = NORMAL_TEXT,
+                        fontFamily = FontFamily.Monospace,
+                        color = Color(0xFF505050),
                         lineHeight = 13.sp,
                     )
                 }
@@ -1411,63 +1402,6 @@ private fun ContextMenuRow(
     }
 }
 
-@Composable
-private fun BatteryPill(pct: Int, charging: Boolean, greyscale: Boolean = false) {
-    val fillColor   = if (greyscale) Color(0xFF888888) else Color(0xFFE8EDF2)
-    val outlineColor = if (greyscale) Color(0xFF888888) else Color(0xFF9EA8B3)
-    val textColor   = if (greyscale) Color(0xFF888888) else Color(0xFFE8EDF2)
-
-    Row(
-        modifier = Modifier.semantics(mergeDescendants = true) {
-            contentDescription = "Battery $pct percent${if (charging) ", charging" else ""}"
-        },
-        verticalAlignment = Alignment.CenterVertically,
-        horizontalArrangement = Arrangement.spacedBy(4.dp),
-    ) {
-        Canvas(modifier = Modifier.width(38.dp).height(17.dp)) {
-            val nubW  = 4.dp.toPx()
-            val nubH  = size.height * 0.45f
-            val bodyW = size.width - nubW
-            val bodyH = size.height
-            val sw    = 2.dp.toPx()
-            val r     = CornerRadius(3.dp.toPx())
-
-            drawRoundRect(
-                color = outlineColor,
-                size = Size(bodyW, bodyH),
-                cornerRadius = r,
-                style = Stroke(width = sw),
-            )
-
-            val maxFillW = bodyW - sw * 2
-            val fillW = (maxFillW * (pct / 100f)).coerceAtLeast(0f)
-            if (fillW > 0f) {
-                drawRoundRect(
-                    color = fillColor,
-                    topLeft = Offset(sw, sw),
-                    size = Size(fillW, bodyH - sw * 2),
-                    cornerRadius = CornerRadius(2.dp.toPx()),
-                )
-            }
-
-            drawRoundRect(
-                color = outlineColor,
-                topLeft = Offset(bodyW, (bodyH - nubH) / 2f),
-                size = Size(nubW, nubH),
-                cornerRadius = CornerRadius(1.5.dp.toPx()),
-            )
-        }
-
-        Text(
-            text = if (charging) "$pct⚡" else "$pct%",
-            fontSize = 12.sp,
-            fontWeight = FontWeight.SemiBold,
-            color = textColor,
-            lineHeight = 14.sp,
-        )
-    }
-}
-
 private val timeFormatter12 = DateTimeFormatter.ofPattern("h:mm", Locale.getDefault())
 private val timeFormatter24 = DateTimeFormatter.ofPattern("HH:mm", Locale.getDefault())
 private val dateFormatter = DateTimeFormatter.ofPattern("EEE, d MMM", Locale.getDefault())
@@ -1478,13 +1412,6 @@ private fun currentTimeString(is24h: Boolean = false): String =
 private fun currentDateString(): String = LocalDateTime.now().format(dateFormatter)
 private fun currentAmPmString(): String = LocalDateTime.now().format(amPmFormatter)
 
-private fun batteryIconVector(pct: Int) = when {
-    pct >= 90 -> Icons.Outlined.BatteryFull
-    pct >= 65 -> Icons.Outlined.Battery6Bar
-    pct >= 45 -> Icons.Outlined.Battery4Bar
-    pct >= 20 -> Icons.Outlined.Battery2Bar
-    else      -> Icons.Outlined.Battery0Bar
-}
 
 internal fun resolveMinimalModeApps(
     pinned: List<String>,

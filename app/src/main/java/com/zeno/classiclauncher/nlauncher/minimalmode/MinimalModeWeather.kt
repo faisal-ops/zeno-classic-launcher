@@ -25,6 +25,7 @@ data class NowPlayingState(
 data class MinimalModeWeatherDay(
     val label: String,
     val conditionEmoji: String,
+    val conditionCode: Int,
     val tempMaxC: Float,
     val tempMinC: Float,
 )
@@ -77,6 +78,7 @@ internal suspend fun fetchMinimalModeWeather(
             MinimalModeWeatherDay(
                 label = label,
                 conditionEmoji = wmoCodeToEmoji(codes.getInt(i)),
+                conditionCode = codes.getInt(i),
                 tempMaxC = maxTemps.getDouble(i).toFloat(),
                 tempMinC = minTemps.getDouble(i).toFloat(),
             )
@@ -103,4 +105,4 @@ private fun wmoCodeToEmoji(code: Int): String = when (code) {
 }
 
 internal fun formatTemp(tempC: Float, useCelsius: Boolean): String =
-    if (useCelsius) "${tempC.toInt()}°" else "${(tempC * 9f / 5f + 32f).toInt()}°"
+    if (useCelsius) "${tempC.toInt()}°C" else "${(tempC * 9f / 5f + 32f).toInt()}°F"
