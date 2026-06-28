@@ -152,7 +152,7 @@
     <string name="settings_wallpaper_title">Wallpaper</string>
     <string name="settings_wallpaper_subtitle">System wallpaper settings</string>
     <string name="settings_flip_clock_title">Zeno Flip Clock</string>
-    <string name="settings_flip_clock_subtitle">Preview and enable the minute-based screen saver</string>
+    <string name="settings_flip_clock_subtitle">Minute-based flip clock screen saver</string>
     <string name="settings_reset_theme_title">Reset Theme</string>
     <string name="settings_reset_theme_subtitle">Restore default launcher colours</string>
     <string name="settings_haptics_title">Haptic Feedback</string>
@@ -255,6 +255,8 @@
     <!-- Haptic slider labels -->
     <string name="haptic_light">Light</string>
     <string name="haptic_strong">Strong</string>
+    <string name="haptic_toggle_subtitle">Vibration on taps, gestures and interactions</string>
+    <string name="haptic_intensity_title">Intensity</string>
     <!-- Badge overlay -->
     <string name="badge_overlay_description">Choose what small badges appear on app icons in the drawer.</string>
     <string name="badge_usage_stats_title">Usage stats badge</string>

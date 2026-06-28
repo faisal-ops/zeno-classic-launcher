@@ -713,6 +713,7 @@ fun LauncherScreen(
     var showDockSlotPicker by remember { mutableStateOf<DockSlot?>(null) }
     var dockQuickActionSlot by remember { mutableStateOf<DockSlot?>(null) }
     var showGlanceSettings by remember { mutableStateOf(false) }
+    var showHapticSettings by remember { mutableStateOf(false) }
     var showHomeGroupsSettings by remember { mutableStateOf(false) }
     var showGestureSettings by remember { mutableStateOf(false) }
     var showLanguageSettings by remember { mutableStateOf(false) }
@@ -1850,7 +1851,7 @@ fun LauncherScreen(
         // Settings keeps keyboard/trackpad focus; Key.Back on that node dismisses settings. When a sub-screen
         // is composed on top (permissions, glance, etc.), do not consume Back there — let BackHandler close the top overlay.
         val settingsStackedOverlayOpen =
-            showPermissionsSettings || showGlanceSettings ||
+            showPermissionsSettings || showGlanceSettings || showHapticSettings ||
                 showHomeGroupsSettings || showDockSlotPicker != null ||
                 showGestureSettings || showLanguageSettings || showAppDrawerBadges || showIconAppearanceSettings || showMinimalModeSettings || showRootSettings
         val settingsOn = stringResource(R.string.settings_on)
@@ -1946,6 +1947,7 @@ fun LauncherScreen(
                 onToggleHaptics = { vm.setHapticsEnabled(!prefs.hapticsEnabled) },
                 hapticIntensity = prefs.hapticIntensity,
                 onSetHapticIntensity = vm::setHapticIntensity,
+                onOpenHapticSettings = { showHapticSettings = true },
                 manualGpsCoords = prefs.glanceWeatherManualLatitude.isNotEmpty(),
                 onExportBackup = vm::exportBackupJson,
                 onImportBackup = vm::importBackupJson,
@@ -2085,6 +2087,16 @@ fun LauncherScreen(
                                 context.restartHostActivityForLocaleChange()
                             },
                             onDismiss = { showLanguageSettings = false },
+                        )
+                    }
+                    if (showHapticSettings) {
+                        HapticSettingsOverlay(
+                            hapticsEnabled = prefs.hapticsEnabled,
+                            hapticIntensity = prefs.hapticIntensity,
+                            themePalette = themePalette,
+                            onToggleHaptics = { vm.setHapticsEnabled(!prefs.hapticsEnabled) },
+                            onSetHapticIntensity = vm::setHapticIntensity,
+                            onDismiss = { showHapticSettings = false },
                         )
                     }
                     if (showGlanceSettings) {
@@ -11119,6 +11131,141 @@ private fun HomeGroupsSettingsOverlay(
 }
 
 @Composable
+private fun HapticSettingsOverlay(
+    hapticsEnabled: Boolean,
+    hapticIntensity: Int,
+    themePalette: LauncherThemePalette,
+    onToggleHaptics: () -> Unit,
+    onSetHapticIntensity: (Int) -> Unit,
+    onDismiss: () -> Unit,
+) {
+    val subtitleColor = Color(0xFF8E95A3)
+    val cardBg = Color(0xFF1E2430)
+    val cardShape = RoundedCornerShape(12.dp)
+    val fr = remember { FocusRequester() }
+    BackHandler(enabled = true, onBack = onDismiss)
+
+    Surface(
+        modifier = Modifier
+            .fillMaxSize()
+            .zIndex(403f)
+            .focusRequester(fr)
+            .focusable(),
+        color = themePalette.settingsBg,
+    ) {
+        LaunchedEffect(Unit) { fr.requestFocus() }
+        Column(
+            modifier = Modifier
+                .fillMaxSize()
+                .statusBarsPadding()
+                .navigationBarsPadding(),
+        ) {
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(start = 4.dp, end = 16.dp, top = 8.dp, bottom = 4.dp),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                IconButton(onClick = onDismiss) {
+                    Icon(
+                        Icons.AutoMirrored.Rounded.ArrowBack,
+                        contentDescription = stringResource(R.string.action_back),
+                        tint = themePalette.settingsMenuTitle,
+                        modifier = Modifier.size(26.dp),
+                    )
+                }
+                Text(
+                    stringResource(R.string.settings_haptics_title),
+                    style = MaterialTheme.typography.headlineMedium.copy(
+                        color = themePalette.settingsMenuTitle,
+                        fontWeight = FontWeight.Normal,
+                    ),
+                )
+            }
+            Column(
+                modifier = Modifier
+                    .weight(1f)
+                    .fillMaxWidth()
+                    .verticalScroll(rememberScrollState())
+                    .padding(horizontal = 16.dp)
+                    .padding(bottom = 24.dp),
+                verticalArrangement = androidx.compose.foundation.layout.Arrangement.spacedBy(12.dp),
+            ) {
+                Surface(shape = cardShape, color = cardBg, modifier = Modifier.fillMaxWidth()) {
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(horizontal = 16.dp, vertical = 12.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                    ) {
+                        Column(modifier = Modifier.weight(1f)) {
+                            Text(
+                                stringResource(R.string.settings_haptics_title),
+                                style = MaterialTheme.typography.bodyLarge.copy(
+                                    color = themePalette.settingsMenuTitle,
+                                    fontWeight = FontWeight.Medium,
+                                ),
+                            )
+                            Text(
+                                stringResource(R.string.haptic_toggle_subtitle),
+                                style = MaterialTheme.typography.bodySmall.copy(color = subtitleColor),
+                            )
+                        }
+                        Switch(
+                            checked = hapticsEnabled,
+                            onCheckedChange = { onToggleHaptics() },
+                            colors = SwitchDefaults.colors(
+                                checkedThumbColor = Color.White,
+                                checkedTrackColor = Color(0xFF4A90D9),
+                                uncheckedThumbColor = Color(0xFF9AA0A8),
+                                uncheckedTrackColor = Color(0xFF3A3F4A),
+                            ),
+                        )
+                    }
+                }
+                AnimatedVisibility(
+                    visible = hapticsEnabled,
+                    enter = expandVertically() + fadeIn(),
+                    exit = shrinkVertically() + fadeOut(),
+                ) {
+                    Surface(shape = cardShape, color = cardBg, modifier = Modifier.fillMaxWidth()) {
+                        Column(modifier = Modifier.padding(horizontal = 16.dp, vertical = 12.dp)) {
+                            Text(
+                                stringResource(R.string.haptic_intensity_title),
+                                style = MaterialTheme.typography.bodyLarge.copy(
+                                    color = themePalette.settingsMenuTitle,
+                                    fontWeight = FontWeight.Medium,
+                                ),
+                            )
+                            Spacer(Modifier.height(4.dp))
+                            Row(
+                                modifier = Modifier.fillMaxWidth(),
+                                horizontalArrangement = Arrangement.SpaceBetween,
+                            ) {
+                                Text(stringResource(R.string.haptic_light), style = MaterialTheme.typography.labelSmall, color = subtitleColor)
+                                Text(
+                                    "$hapticIntensity / 5",
+                                    style = MaterialTheme.typography.labelSmall,
+                                    color = themePalette.settingsMenuTitle,
+                                )
+                                Text(stringResource(R.string.haptic_strong), style = MaterialTheme.typography.labelSmall, color = subtitleColor)
+                            }
+                            Slider(
+                                value = hapticIntensity.toFloat(),
+                                onValueChange = { onSetHapticIntensity(it.toInt()) },
+                                valueRange = 1f..5f,
+                                steps = 3,
+                                modifier = Modifier.fillMaxWidth(),
+                            )
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
+
+@Composable
 private fun GlanceSettingsOverlay(
     glanceEnabled: Boolean,
     glanceShowFlashlight: Boolean,
@@ -12800,6 +12947,7 @@ private fun SettingsScreenOverlay(
     onOpenRootSettings: () -> Unit,
     onSetWallpaper: () -> Unit,
     onToggleHaptics: () -> Unit,
+    onOpenHapticSettings: () -> Unit,
     manualGpsCoords: Boolean,
     onExportBackup: () -> String,
     /** @return true if backup was accepted and will be applied. */
@@ -12873,7 +13021,7 @@ private fun SettingsScreenOverlay(
         // settings list — the sub-overlay's own LaunchedEffect will request focus.
         // Actions that stay on the settings list (toggles, resets, backups): reclaim
         // focus so trackpad DPAD navigation continues to work.
-        val opensSubOverlay = index in setOf(0, 1, 3, 4, 8, 9, 10, 12, 13, 14)
+        val opensSubOverlay = index in setOf(0, 1, 3, 4, 8, 9, 10, 11, 12, 13, 14)
         when (index) {
             // HOME SCREEN
             0 -> onOpenAppearanceSettings()
@@ -12890,7 +13038,7 @@ private fun SettingsScreenOverlay(
             9 -> onOpenDockSlotPicker(DockSlot.Shortcut)
             10 -> onOpenDockSlotPicker(DockSlot.Camera)
             // SYSTEM
-            11 -> onToggleHaptics()
+            11 -> onOpenHapticSettings()
             12 -> onOpenLanguageSettings()
             13 -> onOpenPermissionsSettings()
             14 -> onOpenRootSettings()
@@ -13215,13 +13363,6 @@ private fun SettingsScreenOverlay(
                             subtitleColor = subtitleColor,
                             onClick = { activate(6) },
                         )
-                        AnimatedVisibility(visible = selectedIndex == 6) {
-                            ZenoFlipClockSettingsPreview(
-                                modifier = Modifier
-                                    .fillMaxWidth()
-                                    .padding(start = 16.dp, end = 16.dp, bottom = 12.dp),
-                            )
-                        }
                     }
                 }
                 Spacer(Modifier.height(8.dp))
@@ -13338,34 +13479,14 @@ private fun SettingsScreenOverlay(
                             themePalette = themePalette,
                             subtitleColor = subtitleColor,
                             onClick = { activate(11) },
-                        )
-                        AnimatedVisibility(
-                            visible = hapticsEnabled,
-                            enter = expandVertically() + fadeIn(),
-                            exit = shrinkVertically() + fadeOut(),
-                        ) {
-                            Column(modifier = Modifier.padding(start = 52.dp, end = 16.dp, bottom = 12.dp)) {
-                                Row(
-                                    modifier = Modifier.fillMaxWidth(),
-                                    horizontalArrangement = Arrangement.SpaceBetween,
-                                ) {
-                                    Text(stringResource(R.string.haptic_light), style = MaterialTheme.typography.labelSmall, color = subtitleColor)
-                                    Text(
-                                        "Intensity: $hapticIntensity",
-                                        style = MaterialTheme.typography.labelSmall,
-                                        color = themePalette.settingsMenuTitle,
-                                    )
-                                    Text(stringResource(R.string.haptic_strong), style = MaterialTheme.typography.labelSmall, color = subtitleColor)
-                                }
-                                Slider(
-                                    value = hapticIntensity.toFloat(),
-                                    onValueChange = { onSetHapticIntensity(it.toInt()) },
-                                    valueRange = 1f..5f,
-                                    steps = 3,
-                                    modifier = Modifier.fillMaxWidth(),
+                            trailingContent = {
+                                Text(
+                                    text = "›",
+                                    fontSize = 20.sp,
+                                    color = if (selectedIndex == 11) Color(0xFF84D5F6) else Color(0xFF7A8290),
                                 )
-                            }
-                        }
+                            },
+                        )
                     }
                 }
                 Spacer(Modifier.height(8.dp))
@@ -13701,81 +13822,6 @@ private fun SettingsRow(
             Spacer(Modifier.width(8.dp))
             trailingContent()
         }
-    }
-}
-
-@Composable
-private fun ZenoFlipClockSettingsPreview(modifier: Modifier = Modifier) {
-    Surface(
-        modifier = modifier,
-        shape = RoundedCornerShape(18.dp),
-        color = Color.Black,
-        border = BorderStroke(0.7.dp, Color.White.copy(alpha = 0.10f)),
-    ) {
-        Column(
-            modifier = Modifier.padding(horizontal = 14.dp, vertical = 12.dp),
-            horizontalAlignment = Alignment.CenterHorizontally,
-        ) {
-            Row(
-                horizontalArrangement = Arrangement.spacedBy(7.dp),
-                verticalAlignment = Alignment.CenterVertically,
-            ) {
-                listOf("09", "58").forEachIndexed { index, value ->
-                    FlipPreviewTile(value, showPeriod = index == 0)
-                }
-            }
-            Spacer(Modifier.height(9.dp))
-            Text(
-                "Minute-based screen saver · no seconds",
-                color = Color(0xFF8E95A3),
-                style = MaterialTheme.typography.labelSmall.copy(
-                    fontWeight = FontWeight.Medium,
-                    letterSpacing = 1.1.sp,
-                ),
-                maxLines = 1,
-                overflow = TextOverflow.Ellipsis,
-            )
-        }
-    }
-}
-
-@Composable
-private fun FlipPreviewTile(value: String, showPeriod: Boolean) {
-    Box(
-        modifier = Modifier
-            .width(82.dp)
-            .height(74.dp)
-            .clip(RoundedCornerShape(13.dp))
-            .background(
-                Brush.verticalGradient(
-                    listOf(Color(0xFF222222), Color(0xFF111111)),
-                ),
-            )
-            .border(0.6.dp, Color.White.copy(alpha = 0.08f), RoundedCornerShape(13.dp)),
-        contentAlignment = Alignment.Center,
-    ) {
-        Box(
-            modifier = Modifier
-                .align(Alignment.Center)
-                .fillMaxWidth()
-                .height(1.dp)
-                .background(Color.Black.copy(alpha = 0.72f)),
-        )
-        if (showPeriod) {
-            Text(
-                "PM",
-                color = Color(0xFF8E8E8E),
-                style = MaterialTheme.typography.labelSmall.copy(letterSpacing = 1.sp),
-                modifier = Modifier
-                    .align(Alignment.TopStart)
-                    .padding(start = 8.dp, top = 7.dp),
-            )
-        }
-        Text(
-            value,
-            color = Color(0xFFE6E6E6),
-            style = MaterialTheme.typography.displayMedium.copy(fontWeight = FontWeight.Bold),
-        )
     }
 }
 
