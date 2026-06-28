@@ -1,3 +1,5 @@
+@file:OptIn(androidx.compose.foundation.ExperimentalFoundationApi::class)
+
 package com.zeno.classiclauncher.nlauncher.minimalmode
 
 import androidx.activity.compose.BackHandler
@@ -6,7 +8,10 @@ import androidx.biometric.BiometricManager.Authenticators.BIOMETRIC_WEAK
 import androidx.biometric.BiometricManager.Authenticators.DEVICE_CREDENTIAL
 import androidx.biometric.BiometricPrompt
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.focusable
+import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
@@ -18,22 +23,34 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.relocation.BringIntoViewRequester
+import androidx.compose.foundation.relocation.bringIntoViewRequester
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.rounded.ArrowBack
 import androidx.compose.material3.Icon
+import androidx.compose.material3.Surface
 import androidx.compose.material3.Switch
 import androidx.compose.material3.SwitchDefaults
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.focus.FocusRequester
+import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.input.key.onPreviewKeyEvent
+import com.zeno.classiclauncher.nlauncher.ui.isDpadDown
+import com.zeno.classiclauncher.nlauncher.ui.isDpadEnter
+import com.zeno.classiclauncher.nlauncher.ui.isDpadUp
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
@@ -47,8 +64,11 @@ import com.zeno.classiclauncher.nlauncher.ui.LauncherViewModel
 
 private val SETTINGS_BG = Color(0xFF0E131B)
 private val CARD_BG = Color(0xFF161D2A)
+private val CARD_FOCUSED_BG = Color(0xFF1E2A3E)
+private val CARD_FOCUSED_BORDER = Color(0x6684D5F6)
 private val TITLE_COLOR = Color(0xFFE8EEF7)
 private val ACCENT_COLOR = Color(0xFF4A90D9)
+private val CARD_SHAPE = RoundedCornerShape(12.dp)
 
 @Composable
 internal fun MinimalModeSettingsOverlay(
@@ -57,6 +77,12 @@ internal fun MinimalModeSettingsOverlay(
 ) {
     val prefs by vm.prefs.collectAsStateWithLifecycle()
     val context = LocalContext.current
+    val fr = remember { FocusRequester() }
+    var focusedIndex by remember { mutableIntStateOf(0) }
+
+    val itemCount = if (prefs.minimalModeEnabled) 6 else 3
+    val bringers = remember { List(6) { BringIntoViewRequester() } }
+    LaunchedEffect(focusedIndex) { bringers[focusedIndex].bringIntoView() }
 
     val authAndSwitch = remember(context) { { onAuthenticated: () -> Unit ->
         val activity = context as? FragmentActivity
@@ -67,7 +93,6 @@ internal fun MinimalModeSettingsOverlay(
         val canAuth = BiometricManager.from(context)
             .canAuthenticate(BIOMETRIC_WEAK or DEVICE_CREDENTIAL)
         if (canAuth != BiometricManager.BIOMETRIC_SUCCESS) {
-            // No lock screen set up — switch without auth
             onAuthenticated()
             return@remember
         }
@@ -88,155 +113,224 @@ internal fun MinimalModeSettingsOverlay(
         prompt.authenticate(info)
     }}
 
-    BackHandler(onBack = onDismiss)
-
-    Column(
-        modifier = Modifier
-            .fillMaxSize()
-            .background(SETTINGS_BG)
-            .statusBarsPadding()
-            .navigationBarsPadding()
-            .padding(horizontal = 16.dp)
-            .verticalScroll(rememberScrollState()),
-    ) {
-        Spacer(Modifier.height(16.dp))
-        Row(
-            verticalAlignment = Alignment.CenterVertically,
-        ) {
-            Icon(
-                Icons.AutoMirrored.Rounded.ArrowBack,
-                contentDescription = "Back",
-                tint = TITLE_COLOR,
-                modifier = Modifier
-                    .size(22.dp)
-                    .clickable { onDismiss() },
-            )
-            Spacer(Modifier.width(12.dp))
-            Text(
-                text = stringResource(R.string.minimal_mode_settings_title),
-                fontSize = 22.sp,
-                fontWeight = FontWeight.SemiBold,
-                color = TITLE_COLOR,
-            )
-        }
-        Spacer(Modifier.height(20.dp))
-
-        // Zeno Mode — default mode; on when neither Classic nor Minimal is active
-        val zenoModeOn = !prefs.classicMode && !prefs.minimalModeEnabled
-        SettingsCard {
-            SettingsToggleRow(
-                title = stringResource(R.string.settings_zeno_mode_title),
-                checked = zenoModeOn,
-                onCheckedChange = { on ->
-                    if (on) {
-                        if (prefs.minimalModeEnabled) {
-                            authAndSwitch {
-                                vm.setClassicMode(false)
-                                vm.setMinimalModeEnabled(false)
-                            }
-                        } else {
+    fun activate(index: Int) {
+        when (index) {
+            0 -> {
+                val zenoModeOn = !prefs.classicMode && !prefs.minimalModeEnabled
+                if (!zenoModeOn) {
+                    if (prefs.minimalModeEnabled) {
+                        authAndSwitch {
                             vm.setClassicMode(false)
                             vm.setMinimalModeEnabled(false)
                         }
-                    }
-                },
-            )
-        }
-
-        Spacer(Modifier.height(12.dp))
-
-        // Classic Mode — mutually exclusive with Zeno and Minimal
-        SettingsCard {
-            SettingsToggleRow(
-                title = stringResource(R.string.settings_classic_mode_title),
-                checked = prefs.classicMode,
-                onCheckedChange = { on ->
-                    if (on && prefs.minimalModeEnabled) {
-                        authAndSwitch {
-                            vm.setClassicMode(true)
-                            vm.setMinimalModeEnabled(false)
-                        }
                     } else {
-                        vm.setClassicMode(on)
-                        if (on) vm.setMinimalModeEnabled(false)
+                        vm.setClassicMode(false)
+                        vm.setMinimalModeEnabled(false)
                     }
-                },
-            )
+                }
+            }
+            1 -> {
+                val on = !prefs.classicMode
+                if (on && prefs.minimalModeEnabled) {
+                    authAndSwitch {
+                        vm.setClassicMode(true)
+                        vm.setMinimalModeEnabled(false)
+                    }
+                } else {
+                    vm.setClassicMode(on)
+                    if (on) vm.setMinimalModeEnabled(false)
+                }
+            }
+            2 -> {
+                val on = !prefs.minimalModeEnabled
+                vm.setMinimalModeEnabled(on)
+                if (on) vm.setClassicMode(false)
+            }
+            3 -> vm.setMinimalModeShowWeather(!prefs.minimalModeShowWeather)
+            4 -> vm.setMinimalModeShowNotifSummary(!prefs.minimalModeShowNotifSummary)
+            5 -> vm.setMinimalModeGreyscale(!prefs.minimalModeGreyscale)
         }
+    }
 
-        Spacer(Modifier.height(12.dp))
+    BackHandler(onBack = onDismiss)
 
-        // Minimal Mode toggle — mutually exclusive with Classic and Zeno
-        SettingsCard {
-            SettingsToggleRow(
-                title = stringResource(R.string.minimal_mode_enable),
-                checked = prefs.minimalModeEnabled,
-                onCheckedChange = { on ->
-                    vm.setMinimalModeEnabled(on)
-                    if (on) vm.setClassicMode(false)
-                },
-            )
-        }
-
-        // Sub-options: only shown when Minimal Mode is on
-        if (prefs.minimalModeEnabled) {
-            Spacer(Modifier.height(12.dp))
-
-            SettingsCard {
-                SettingsToggleRow(
-                    title = stringResource(R.string.minimal_mode_show_weather_title),
-                    checked = prefs.minimalModeShowWeather,
-                    onCheckedChange = { vm.setMinimalModeShowWeather(it) },
+    Surface(
+        modifier = Modifier
+            .fillMaxSize()
+            .focusRequester(fr)
+            .focusable()
+            .onPreviewKeyEvent { ev ->
+                when {
+                    ev.isDpadUp    -> { focusedIndex = (focusedIndex - 1).coerceAtLeast(0); true }
+                    ev.isDpadDown  -> { focusedIndex = (focusedIndex + 1).coerceAtMost(itemCount - 1); true }
+                    ev.isDpadEnter -> { activate(focusedIndex); true }
+                    else           -> false
+                }
+            },
+        color = SETTINGS_BG,
+    ) {
+        LaunchedEffect(Unit) { fr.requestFocus() }
+        Column(
+            modifier = Modifier
+                .fillMaxSize()
+                .statusBarsPadding()
+                .navigationBarsPadding()
+                .padding(horizontal = 16.dp)
+                .verticalScroll(rememberScrollState()),
+        ) {
+            Spacer(Modifier.height(16.dp))
+            Row(
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                Icon(
+                    Icons.AutoMirrored.Rounded.ArrowBack,
+                    contentDescription = "Back",
+                    tint = TITLE_COLOR,
+                    modifier = Modifier
+                        .size(22.dp)
+                        .clickable { onDismiss() },
                 )
-                SettingsDivider()
-                SettingsToggleRow(
-                    title = stringResource(R.string.minimal_mode_show_summary_title),
-                    checked = prefs.minimalModeShowNotifSummary,
-                    onCheckedChange = { vm.setMinimalModeShowNotifSummary(it) },
-                )
-                SettingsDivider()
-                SettingsToggleRow(
-                    title = stringResource(R.string.minimal_mode_greyscale_title),
-                    checked = prefs.minimalModeGreyscale,
-                    onCheckedChange = { vm.setMinimalModeGreyscale(it) },
+                Spacer(Modifier.width(12.dp))
+                Text(
+                    text = stringResource(R.string.minimal_mode_settings_title),
+                    fontSize = 22.sp,
+                    fontWeight = FontWeight.SemiBold,
+                    color = TITLE_COLOR,
                 )
             }
-        }
+            Spacer(Modifier.height(20.dp))
 
-        Spacer(Modifier.height(24.dp))
+            val zenoModeOn = !prefs.classicMode && !prefs.minimalModeEnabled
+            SettingsCard(focused = focusedIndex == 0, bringer = bringers[0]) {
+                SettingsToggleRow(
+                    title = stringResource(R.string.settings_zeno_mode_title),
+                    checked = zenoModeOn,
+                    onCheckedChange = { on ->
+                        if (on) {
+                            if (prefs.minimalModeEnabled) {
+                                authAndSwitch {
+                                    vm.setClassicMode(false)
+                                    vm.setMinimalModeEnabled(false)
+                                }
+                            } else {
+                                vm.setClassicMode(false)
+                                vm.setMinimalModeEnabled(false)
+                            }
+                        }
+                    },
+                )
+            }
+
+            Spacer(Modifier.height(12.dp))
+
+            SettingsCard(focused = focusedIndex == 1, bringer = bringers[1]) {
+                SettingsToggleRow(
+                    title = stringResource(R.string.settings_classic_mode_title),
+                    checked = prefs.classicMode,
+                    onCheckedChange = { on ->
+                        if (on && prefs.minimalModeEnabled) {
+                            authAndSwitch {
+                                vm.setClassicMode(true)
+                                vm.setMinimalModeEnabled(false)
+                            }
+                        } else {
+                            vm.setClassicMode(on)
+                            if (on) vm.setMinimalModeEnabled(false)
+                        }
+                    },
+                )
+            }
+
+            Spacer(Modifier.height(12.dp))
+
+            SettingsCard(focused = focusedIndex == 2, bringer = bringers[2]) {
+                SettingsToggleRow(
+                    title = stringResource(R.string.minimal_mode_enable),
+                    checked = prefs.minimalModeEnabled,
+                    onCheckedChange = { on ->
+                        vm.setMinimalModeEnabled(on)
+                        if (on) vm.setClassicMode(false)
+                    },
+                )
+            }
+
+            if (prefs.minimalModeEnabled) {
+                Spacer(Modifier.height(12.dp))
+
+                SettingsCard(
+                    focused = focusedIndex in 3..5,
+                    bringer = bringers[3],
+                ) {
+                    SettingsToggleRow(
+                        title = stringResource(R.string.minimal_mode_show_weather_title),
+                        checked = prefs.minimalModeShowWeather,
+                        focused = focusedIndex == 3,
+                        onCheckedChange = { vm.setMinimalModeShowWeather(it) },
+                    )
+                    SettingsDivider()
+                    SettingsToggleRow(
+                        title = stringResource(R.string.minimal_mode_show_summary_title),
+                        checked = prefs.minimalModeShowNotifSummary,
+                        focused = focusedIndex == 4,
+                        onCheckedChange = { vm.setMinimalModeShowNotifSummary(it) },
+                    )
+                    SettingsDivider()
+                    SettingsToggleRow(
+                        title = stringResource(R.string.minimal_mode_greyscale_title),
+                        checked = prefs.minimalModeGreyscale,
+                        focused = focusedIndex == 5,
+                        onCheckedChange = { vm.setMinimalModeGreyscale(it) },
+                    )
+                }
+            }
+
+            Spacer(Modifier.height(24.dp))
+        }
     }
 }
 
 // ─── Reusable settings widgets ────────────────────────────────────────────────
 
 @Composable
-private fun SettingsCard(content: @Composable () -> Unit) {
-    Column(
-        modifier = Modifier
-            .fillMaxWidth()
-            .clip(RoundedCornerShape(12.dp))
-            .background(CARD_BG),
-    ) { content() }
+private fun SettingsCard(
+    focused: Boolean = false,
+    bringer: BringIntoViewRequester? = null,
+    content: @Composable () -> Unit,
+) {
+    val modifier = Modifier
+        .fillMaxWidth()
+        .clip(CARD_SHAPE)
+        .then(if (bringer != null) Modifier.bringIntoViewRequester(bringer) else Modifier)
+        .background(if (focused) CARD_FOCUSED_BG else CARD_BG)
+        .then(
+            if (focused) Modifier.border(1.dp, CARD_FOCUSED_BORDER, CARD_SHAPE) else Modifier,
+        )
+    Column(modifier = modifier) { content() }
 }
 
 @Composable
 private fun SettingsToggleRow(
     title: String,
     checked: Boolean,
+    focused: Boolean = false,
     onCheckedChange: (Boolean) -> Unit,
 ) {
     Row(
         modifier = Modifier
             .fillMaxWidth()
+            .then(
+                if (focused) Modifier.background(CARD_FOCUSED_BG) else Modifier,
+            )
             .clickable { onCheckedChange(!checked) }
             .padding(horizontal = 16.dp, vertical = 14.dp),
         verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.SpaceBetween,
     ) {
         Text(
             text = title,
             fontSize = 16.sp,
             fontWeight = FontWeight.Medium,
-            color = TITLE_COLOR,
+            color = if (focused) Color(0xFF84D5F6) else TITLE_COLOR,
             modifier = Modifier.weight(1f),
         )
         Switch(
