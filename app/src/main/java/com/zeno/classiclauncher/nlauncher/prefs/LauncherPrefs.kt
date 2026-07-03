@@ -994,7 +994,10 @@ fun LauncherPrefs.effectiveHomeStripSlotOrder(): List<String?> {
         val result = MutableList<String?>(STRIP_TOTAL_SLOTS) { i -> filtered.getOrNull(i) }
         for (i in result.indices) {
             if (result[i] == null && unassigned.isNotEmpty()) {
-                result[i] = unassigned.removeFirst()
+                // removeAt(0), not removeFirst(): Kotlin resolves MutableList.removeFirst() to the
+                // JDK 21 SequencedCollection member (Android Studio's JBR toolchain), which only
+                // exists on ArrayList starting at API 35 — NoSuchMethodError on API 34 and below.
+                result[i] = unassigned.removeAt(0)
             }
         }
         return result

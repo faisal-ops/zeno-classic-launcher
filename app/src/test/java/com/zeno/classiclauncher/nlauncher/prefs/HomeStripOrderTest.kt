@@ -123,6 +123,22 @@ class HomeStripOrderTest {
         assertTrue(slots.filterNotNull().containsAll(listOf("com.a", "com.b")))
     }
 
+    @Test
+    fun effectiveHomeStripSlotOrder_multipleUnassigned_fillEmptySlotsInOrder() {
+        // Regression guard: the fill loop must consume unassigned items FIFO (index 0 first),
+        // matching removeFirst() semantics — see the removeAt(0) comment in LauncherPrefs.kt.
+        val prefs = LauncherPrefs(
+            homeShortcutPackages = listOf("com.a", "com.b", "com.c"),
+            homeStripSlots = listOf(null, "com.a", null, null, null),
+        )
+        val slots = prefs.effectiveHomeStripSlotOrder()
+        assertEquals("com.b", slots[0])
+        assertEquals("com.a", slots[1])
+        assertEquals("com.c", slots[2])
+        assertNull(slots[3])
+        assertNull(slots[4])
+    }
+
     // ─── homeStripItemCount ──────────────────────────────────────────────────
 
     @Test
