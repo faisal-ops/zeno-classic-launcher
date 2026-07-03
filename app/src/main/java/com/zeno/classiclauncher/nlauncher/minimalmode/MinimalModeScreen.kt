@@ -563,7 +563,11 @@ internal fun MinimalModeScreen(vm: LauncherViewModel) {
                         visibleApps.getOrNull(idx)?.let { launchOrChallenge(it.packageName) }
                     },
                     onLongPress = { idx ->
-                        visibleApps.getOrNull(idx)?.let { app -> contextMenuEntry = Pair(idx, app) }
+                        // Empty "+ Add app" slots route their tap through this same callback (see
+                        // MinimalModeListView's null-app branch) but have no AppEntry to build a
+                        // context menu around — go straight to the app picker instead of no-op'ing.
+                        val app = visibleApps.getOrNull(idx)
+                        if (app != null) contextMenuEntry = Pair(idx, app) else replacingIndex = idx
                     },
                 )
             }
