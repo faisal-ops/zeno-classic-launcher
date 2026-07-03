@@ -8,9 +8,11 @@ import android.content.Intent
 import android.content.pm.PackageManager
 import android.hardware.camera2.CameraManager
 import android.location.Location
+import android.location.LocationListener
 import android.location.LocationManager
 import android.os.BatteryManager
 import android.os.Build
+import android.os.Looper
 import android.provider.AlarmClock
 import android.provider.CalendarContract
 import androidx.core.content.ContextCompat
@@ -23,6 +25,9 @@ import java.text.SimpleDateFormat
 import java.util.Calendar
 import java.util.Date
 import java.util.Locale
+import kotlin.coroutines.resume
+import kotlinx.coroutines.suspendCancellableCoroutine
+import kotlinx.coroutines.withTimeoutOrNull
 import org.json.JSONObject
 
 internal data class GlanceWeatherData(
@@ -71,8 +76,15 @@ internal class GlanceDataSources(private val context: Context) {
         weatherFetchedAt = System.currentTimeMillis()
     }
 
+    /**
+     * Passive [LocationManager.getLastKnownLocation] only reflects a fix some other app
+     * already requested — on ROMs without a network location backend (e.g. degoogled
+     * LineageOS with no microG), that can mean it never updates after first boot. If the
+     * passive read is missing or stale, actively request one fresh fix (with a timeout)
+     * so weather doesn't silently stop working forever.
+     */
     @Suppress("DEPRECATION")
-    fun getLastLocation(): Location? {
+    suspend fun getLastLocation(): Location? {
         val now = System.currentTimeMillis()
         cachedLocation?.let { if (now - locationFetchedAt < locationCacheMs) return it }
         if (
@@ -84,17 +96,50 @@ internal class GlanceDataSources(private val context: Context) {
             return null
         }
         val lm = context.getSystemService<LocationManager>() ?: return null
-        return try {
+        val passive = try {
             listOf(LocationManager.GPS_PROVIDER, LocationManager.NETWORK_PROVIDER)
                 .mapNotNull { runCatching { lm.getLastKnownLocation(it) }.getOrNull() }
                 .maxByOrNull { it.time }
-                ?.also { cachedLocation = it; locationFetchedAt = now }
         } catch (_: Exception) {
             null
         }
+        if (passive != null && now - passive.time < locationCacheMs) {
+            cachedLocation = passive
+            locationFetchedAt = now
+            return passive
+        }
+        val fresh = requestFreshLocation(lm) ?: passive
+        if (fresh != null) {
+            cachedLocation = fresh
+            locationFetchedAt = now
+        }
+        return fresh
     }
 
-    fun fetchWeather(useDeviceLocation: Boolean, latitude: Float?, longitude: Float?): GlanceWeatherData? {
+    @Suppress("DEPRECATION", "MissingPermission")
+    private suspend fun requestFreshLocation(lm: LocationManager): Location? {
+        val providers = listOf(LocationManager.NETWORK_PROVIDER, LocationManager.GPS_PROVIDER)
+            .filter { runCatching { lm.isProviderEnabled(it) }.getOrDefault(false) }
+        if (providers.isEmpty()) return null
+        return withTimeoutOrNull(15_000L) {
+            suspendCancellableCoroutine { cont ->
+                val listener = object : LocationListener {
+                    override fun onLocationChanged(location: Location) {
+                        runCatching { lm.removeUpdates(this) }
+                        if (cont.isActive) cont.resume(location)
+                    }
+                }
+                cont.invokeOnCancellation { runCatching { lm.removeUpdates(listener) } }
+                try {
+                    providers.forEach { lm.requestSingleUpdate(it, listener, Looper.getMainLooper()) }
+                } catch (_: Exception) {
+                    if (cont.isActive) cont.resume(null)
+                }
+            }
+        }
+    }
+
+    suspend fun fetchWeather(useDeviceLocation: Boolean, latitude: Float?, longitude: Float?): GlanceWeatherData? {
         if (useDeviceLocation &&
             ContextCompat.checkSelfPermission(
                 context,
