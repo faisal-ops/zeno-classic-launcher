@@ -19,6 +19,11 @@
     <uses-permission
         android:name="android.permission.BLUETOOTH_ADMIN"
         android:maxSdkVersion="30" />
+    <!-- Declared here; granted via root at runtime with: pm grant <pkg> android.permission.BLUETOOTH_PRIVILEGED
+         Lets BluetoothAdapter.enable()/disable() succeed as our own attributed app UID instead of
+         going through an anonymous root-shell `svc bluetooth` call, which Android flags as an
+         untrusted toggle and reverts with a "tap to allow control" notification. -->
+    <uses-permission android:name="android.permission.BLUETOOTH_PRIVILEGED" tools:ignore="ProtectedPermissions" />
     <uses-permission android:name="android.permission.VIBRATE" />
     <uses-permission android:name="android.permission.SET_WALLPAPER" />
     <!-- Declared here; granted via root at runtime with: pm grant <pkg> android.permission.STATUS_BAR -->

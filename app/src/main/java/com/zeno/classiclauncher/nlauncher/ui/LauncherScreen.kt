@@ -4352,8 +4352,26 @@ internal fun QuickSettingsOverlay(
                         val next = bluetoothEnabled != true
                         bluetoothEnabled = next
                         qsScope.launch {
-                            val ok = RootManager.execute("svc bluetooth ${if (next) "enable" else "disable"}")
-                            if (!ok) { bluetoothEnabled = !next; return@launch }
+                            // BluetoothManagerService.enable()/disable() reject any caller that isn't
+                            // privileged|system|deviceOwner|profileOwner, so try the in-process API first —
+                            // it only succeeds if BLUETOOTH_PRIVILEGED is actually held. `pm grant` for that
+                            // permission works on some ROMs but silently no-ops on others (observed on a
+                            // stock Android 14 device), so fall back to a root shell call, which bypasses
+                            // the privileged-caller check entirely because uid=0 short-circuits Android's
+                            // permission checks.
+                            val connectGranted = ContextCompat.checkSelfPermission(context, Manifest.permission.BLUETOOTH_CONNECT) == PackageManager.PERMISSION_GRANTED
+                            val privilegedGranted = ContextCompat.checkSelfPermission(context, "android.permission.BLUETOOTH_PRIVILEGED") == PackageManager.PERMISSION_GRANTED
+                            if (!connectGranted || !privilegedGranted) {
+                                RootManager.execute(
+                                    "pm grant ${context.packageName} android.permission.BLUETOOTH_CONNECT",
+                                    "pm grant ${context.packageName} android.permission.BLUETOOTH_PRIVILEGED",
+                                )
+                            }
+                            val result = actions.toggleBluetooth()
+                            if (result !is ToggleResult.Changed) {
+                                val ok = RootManager.execute("svc bluetooth ${if (next) "enable" else "disable"}")
+                                if (!ok) { bluetoothEnabled = !next; return@launch }
+                            }
                             delay(1500L)
                             bluetoothEnabled = actions.isBluetoothEnabled()
                         }

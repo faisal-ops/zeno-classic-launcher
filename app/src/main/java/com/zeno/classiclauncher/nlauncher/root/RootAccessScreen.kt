@@ -226,6 +226,8 @@ internal fun RootAccessScreen(
                             val ok = RootManager.execute(
                                 "pm grant $PKG android.permission.STATUS_BAR",
                                 "appops set $PKG SYSTEM_ALERT_WINDOW allow",
+                                "pm grant $PKG android.permission.BLUETOOTH_PRIVILEGED",
+                                "pm grant $PKG android.permission.BLUETOOTH_CONNECT",
                             )
                             if (ok) {
                                 onRootGranted()
@@ -258,6 +260,8 @@ internal fun RootAccessScreen(
                         RootManager.execute(
                             "pm revoke $PKG android.permission.STATUS_BAR",
                             "appops set $PKG SYSTEM_ALERT_WINDOW default",
+                            "pm revoke $PKG android.permission.BLUETOOTH_PRIVILEGED",
+                            "pm revoke $PKG android.permission.BLUETOOTH_CONNECT",
                             "wm overscan reset",
                         )
                         // Step 2: clear the root manager's SuperUser entry (Magisk / KSU / APatch)
