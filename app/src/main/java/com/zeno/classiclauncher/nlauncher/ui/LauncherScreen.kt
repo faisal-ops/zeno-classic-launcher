@@ -245,6 +245,7 @@ import androidx.compose.foundation.shape.CutCornerShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.focus.FocusRequester
+import androidx.compose.ui.focus.focusProperties
 import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.input.key.Key
 import androidx.compose.ui.input.key.KeyEvent
@@ -937,6 +938,7 @@ fun LauncherScreen(
     }
 
     val scope = rememberCoroutineScope()
+    val focusManager = LocalFocusManager.current
     val homeStripSnackbarHostState = remember { SnackbarHostState() }
     val homeFocusRequester = remember { FocusRequester() }
     var drawerPageIndex by remember { mutableStateOf(0) }
@@ -1086,7 +1088,6 @@ fun LauncherScreen(
             else Modifier
         )
         .onPreviewKeyEvent { ev ->
-            if (ev.type != KeyEventType.KeyDown) return@onPreviewKeyEvent false
             val nk = ev.nativeKeyEvent
             val isDpad = ev.key == Key.DirectionUp || ev.key == Key.DirectionDown ||
                 ev.key == Key.DirectionLeft || ev.key == Key.DirectionRight ||
@@ -1096,6 +1097,13 @@ fun LauncherScreen(
                 nk?.keyCode == android.view.KeyEvent.KEYCODE_DPAD_DOWN ||
                 nk?.keyCode == android.view.KeyEvent.KEYCODE_DPAD_LEFT ||
                 nk?.keyCode == android.view.KeyEvent.KEYCODE_DPAD_RIGHT
+            // While the QS overlay is open, swallow D-pad/trackpad keys here — as the outermost
+            // ancestor this preview pass sees them first regardless of which node currently holds
+            // focus, which is what actually stops the pager underneath from paging to the drawer
+            // (clearing/blocking focus alone did not: something below still reacted to the raw
+            // key independent of Compose's own focus-ownership state).
+            if (isDpad && showQuickSettingsOverlay) return@onPreviewKeyEvent true
+            if (ev.type != KeyEventType.KeyDown) return@onPreviewKeyEvent false
             if (isDpad) {
                 // Set trackpadActive synchronously so the focus highlight appears on the SAME frame
                 // as the first D-pad keypress (LaunchedEffect fires asynchronously, so first-press
@@ -1108,6 +1116,12 @@ fun LauncherScreen(
     ) {
         Column(modifier = Modifier
             .fillMaxSize()
+            // While the QS overlay (rooted or unrooted — same overlay, same flag) is open, the
+            // home/drawer pager must not be a valid focus target: it briefly still held D-pad/
+            // trackpad focus after the overlay's own requestFocus() (fired from LaunchedEffect,
+            // so it lands a frame late), letting the first key event leak through and open the
+            // app drawer underneath. Compose propagates canFocus=false to the whole subtree.
+            .then(if (showQuickSettingsOverlay) Modifier.focusProperties { canFocus = false } else Modifier)
             .pointerInput(Unit) {
                 // Intercept downward-dominant swipes in the Initial pass (runs before the
                 // HorizontalPager's Main-pass drag detection) so the pager never interprets
@@ -1160,7 +1174,15 @@ fun LauncherScreen(
                         focusRequester = homeFocusRequester,
                         homeActive = pagerState.currentPage == 0,
                         onOpenQuickSettings = {
-                            if (prefs.customQuickSettingsEnabled) showQuickSettingsOverlay = true
+                            if (prefs.customQuickSettingsEnabled) {
+                                // The overlay's own requestFocus() fires from a LaunchedEffect, a frame
+                                // after this composes — until then home still holds Compose focus, so a
+                                // trackpad key pressed right as QS opens routes to home/drawer instead
+                                // (confirmed via raw kernel event capture: genuine KEYCODE_DPAD_* events,
+                                // not pointer motion). Evict focus synchronously so there's no gap.
+                                focusManager.clearFocus(force = true)
+                                showQuickSettingsOverlay = true
+                            }
                         },
                         onOpenAppDrawer = {
                             if (searchQuery.isNotEmpty()) vm.setSearchQuery("")
