@@ -54,7 +54,7 @@ All releases: [github.com/faisal-ops/zeno-classic-launcher/releases](https://git
 | **Language** | Kotlin |
 | **UI** | Jetpack Compose |
 | **`applicationId`** | `com.zeno.classiclauncher.nlauncher` |
-| **Version** | **1.4.0** (`versionCode` **15**) |
+| **Version** | **1.4.1** (`versionCode` **16**) |
 | **Min SDK** | **26** (Android 8.0) |
 | **Target SDK** | 35 |
 | **Release APK filename** | `zeno-classic-launcher-vX.Y.Z.apk` (see `app/build.gradle.kts` `outputFileName`) |
