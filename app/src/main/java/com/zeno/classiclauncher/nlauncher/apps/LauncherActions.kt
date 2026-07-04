@@ -466,10 +466,6 @@ class LauncherActions(private val context: Context) {
         startActivityNewTask(Intent(Settings.ACTION_NFC_SETTINGS)) ||
             openSystemSettings()
 
-    fun openExtraDimSettings(): Boolean =
-        startActivityNewTask(Intent("android.settings.REDUCE_BRIGHT_COLORS_SETTINGS")) ||
-            startActivityNewTask(Intent(Settings.ACTION_DISPLAY_SETTINGS))
-
     fun openScreenRecordSettings(): Boolean =
         startActivityNewTask(Intent("android.settings.SYSTEMUI_QS_TILES_SETTINGS")) ||
             startActivityNewTask(Intent("com.android.systemui.action.START_SCREEN_RECORDER").setPackage("com.android.systemui")) ||
@@ -679,14 +675,6 @@ class LauncherActions(private val context: Context) {
         return if (invoked.isSuccess) ToggleResult.Changed(targetEnabled) else ToggleResult.Unsupported
     }
 
-    fun toggleExtraDim(): ToggleResult {
-        val next = !isExtraDimEnabled()
-        return runCatching {
-            Settings.Secure.putInt(context.contentResolver, "reduce_bright_colors_activated", if (next) 1 else 0)
-            ToggleResult.Changed(next)
-        }.getOrDefault(ToggleResult.Unsupported)
-    }
-
     fun isGreyscaleEnabled(): Boolean =
         readSecureInt("accessibility_display_daltonizer_enabled") > 0
 
@@ -787,9 +775,6 @@ class LauncherActions(private val context: Context) {
 
     fun isAutoRotateEnabled(): Boolean =
         readSystemInt("accelerometer_rotation") > 0
-
-    fun isExtraDimEnabled(): Boolean =
-        readSecureInt("reduce_bright_colors_activated") > 0
 
     fun isTorchEnabled(): Boolean =
         readSecureInt("flashlight_enabled") > 0

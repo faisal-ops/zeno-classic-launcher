@@ -4037,7 +4037,6 @@ internal fun QuickSettingsOverlay(
     val quickSettingsNightLightTitle = stringResource(R.string.quick_settings_night_light)
     val quickSettingsAutoRotateTitle = stringResource(R.string.quick_settings_auto_rotate)
     val quickSettingsNfcTitle = stringResource(R.string.quick_settings_nfc)
-    val quickSettingsExtraDimTitle = stringResource(R.string.quick_settings_extra_dim)
     val quickSettingsLocationTitle = stringResource(R.string.quick_settings_location)
     val quickSettingsScreenRecordTitle = stringResource(R.string.quick_settings_screen_record)
     val quickSettingsScreenCastTitle = stringResource(R.string.quick_settings_screen_cast)
@@ -4098,7 +4097,6 @@ internal fun QuickSettingsOverlay(
     var nightLightOn by remember { mutableStateOf(actions.isNightLightEnabled()) }
     var autoRotateOn by remember { mutableStateOf(actions.isAutoRotateEnabled()) }
     var nfcOn by remember { mutableStateOf(actions.isNfcEnabled()) }
-    var extraDimOn by remember { mutableStateOf(actions.isExtraDimEnabled()) }
     // greyscaleOn removed — now driven by prefs.minimalModeGreyscale via onToggleGreyscale
     var locationOn by remember { mutableStateOf(actions.isLocationEnabled()) }
     var torchOn by remember { mutableStateOf(actions.isTorchEnabled()) }
@@ -4153,7 +4151,6 @@ internal fun QuickSettingsOverlay(
         nightLightOn = actions.isNightLightEnabled()
         autoRotateOn = actions.isAutoRotateEnabled()
         nfcOn = actions.isNfcEnabled()
-        extraDimOn = actions.isExtraDimEnabled()
         locationOn = actions.isLocationEnabled()
         torchOn = actions.isTorchEnabled()
         batteryPct = actions.batteryPercent()
@@ -4772,37 +4769,6 @@ internal fun QuickSettingsOverlay(
                 actionLabel = "Settings",
                 onLongPress = actions::openLocationSettings,
                 onTap = { actions.openLocationSettings(); locationOn = actions.isLocationEnabled(); true },
-            ),
-        )
-        add(
-            QuickTile(
-                id = "extra_dim",
-                icon = Icons.Rounded.VisibilityOff,
-                title = quickSettingsExtraDimTitle,
-                subtitle = if (extraDimOn) quickSettingsOn else quickSettingsOff,
-                highlighted = extraDimOn,
-                closeOnSuccess = false,
-                actionLabel = "Toggle",
-                onLongPress = actions::openExtraDimSettings,
-                onTap = {
-                    if (rootedQsEnabled) {
-                        val next = !extraDimOn
-                        extraDimOn = next
-                        qsScope.launch {
-                            val ok = RootManager.execute("settings put secure reduce_bright_colors_activated ${if (next) 1 else 0}")
-                            if (!ok) {
-                                extraDimOn = !next
-                                actions.openExtraDimSettings()
-                            } else {
-                                delay(800L)
-                                extraDimOn = actions.isExtraDimEnabled()
-                            }
-                        }
-                    } else {
-                        actions.openExtraDimSettings()
-                    }
-                    true
-                },
             ),
         )
         add(
