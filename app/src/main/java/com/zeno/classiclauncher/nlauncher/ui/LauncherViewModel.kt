@@ -390,6 +390,15 @@ class LauncherViewModel(app: Application) : AndroidViewModel(app) {
     private var lastPrunePackageSnapshot: Set<String>? = null
     private var lastObservedInstalledPackages: Set<String>? = null
 
+    /**
+     * Re-triggers the prune collector after a package-snapshot change is first observed.
+     * The prune requires the same snapshot twice (churn guard), but an uninstall is not
+     * guaranteed to produce a second apps/prefs emission on its own — without this tick the
+     * prune can sit deferred indefinitely, leaving a ghost strip slot that counts as occupied
+     * until some unrelated prefs write (e.g. entering reorder mode) happens to re-fire the flow.
+     */
+    private val pruneConfirmTick = MutableStateFlow(0)
+
     /** Serializes read–modify–write on drawer grid + home groups so rapid folder edits and prune cannot clobber each other. */
     private val gridHomeMutex = Mutex()
 
@@ -404,7 +413,7 @@ class LauncherViewModel(app: Application) : AndroidViewModel(app) {
             if (mode == DrawerSortMode.MOST_USED) refreshUsageStats()
         }
         viewModelScope.launch {
-            combine(apps, prefsRepo.prefsFlow) { list, p -> list to p }
+            combine(apps, prefsRepo.prefsFlow, pruneConfirmTick) { list, p, _ -> list to p }
                 .debounce(150)
                 .collect { (list, p) ->
                     // [apps] starts as emptyList() until AppsRepository emits; pruning with an empty set
@@ -415,9 +424,15 @@ class LauncherViewModel(app: Application) : AndroidViewModel(app) {
                     }
                     val pkgs = list.mapTo(HashSet(list.size)) { it.packageName }
                     // Guard against transient package snapshots (PackageManager churn) that can otherwise wipe
-                    // whole folders/groups. Only prune after the same non-empty snapshot repeats.
+                    // whole folders/groups. Only prune after the same non-empty snapshot repeats — and
+                    // schedule that second pass ourselves, since nothing else is guaranteed to re-fire
+                    // this flow after an uninstall.
                     if (lastPrunePackageSnapshot != pkgs) {
                         lastPrunePackageSnapshot = pkgs
+                        viewModelScope.launch {
+                            delay(500)
+                            pruneConfirmTick.value++
+                        }
                         return@collect
                     }
                     val newFolders = HashMap<String, List<String>>(p.folderContents.size)
@@ -446,6 +461,17 @@ class LauncherViewModel(app: Application) : AndroidViewModel(app) {
                     if (gridChanged || groupsChanged) {
                         gridHomeMutex.withLock {
                             prefsRepo.writeGridAndHomeGroupsState(newOrder, newFolders, newNames, pruned)
+                        }
+                    }
+                    // Uninstalling an app never fires any home-strip-specific cleanup on its own —
+                    // without this, its package lingers in homeShortcutPackages forever, rendering
+                    // as a blank strip slot that still counts as "occupied" and blocks adding a
+                    // replacement app. Tokens can be `package#shortcutId`, so match on the parsed
+                    // package, not the raw token.
+                    val newShortcuts = p.homeShortcutPackages.filter { parseHomeShortcutToken(it).first in pkgs }
+                    if (newShortcuts != p.homeShortcutPackages) {
+                        gridHomeMutex.withLock {
+                            prefsRepo.setHomeShortcutPackages(newShortcuts)
                         }
                     }
                 }

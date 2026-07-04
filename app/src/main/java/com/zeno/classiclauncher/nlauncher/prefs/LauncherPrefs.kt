@@ -983,24 +983,16 @@ fun LauncherPrefs.effectiveHomeStripSlotOrder(): List<String?> {
     val allValid = (allShortcuts + allGroupIds + allFolderIds).toSet()
 
     if (homeStripSlots.isNotEmpty()) {
-        // Map stored slots: keep valid tokens, turn invalid/orphan into null
-        val filtered = homeStripSlots.map { t -> if (t != null && t in allValid) t else null }
+        // Keep valid tokens in their existing relative order, dropping nulls and orphaned/invalid
+        // ones — a removed shortcut compacts the strip left instead of leaving a permanent gap.
         // With saved slots, treat the strip layout as the source of truth for home groups.
         // Shortcuts and pinned folders can still flow into open slots automatically, but
         // groups should only appear when explicitly placed/pinned there.
-        val assigned = filtered.filterNotNull().toSet()
-        val unassigned = (allShortcuts + allFolderIds).filter { it !in assigned }.toMutableList()
-        // Build result of exactly STRIP_TOTAL_SLOTS, filling empty slots with unassigned items
-        val result = MutableList<String?>(STRIP_TOTAL_SLOTS) { i -> filtered.getOrNull(i) }
-        for (i in result.indices) {
-            if (result[i] == null && unassigned.isNotEmpty()) {
-                // removeAt(0), not removeFirst(): Kotlin resolves MutableList.removeFirst() to the
-                // JDK 21 SequencedCollection member (Android Studio's JBR toolchain), which only
-                // exists on ArrayList starting at API 35 — NoSuchMethodError on API 34 and below.
-                result[i] = unassigned.removeAt(0)
-            }
-        }
-        return result
+        val placed = homeStripSlots.mapNotNull { t -> t?.takeIf { it in allValid } }
+        val placedSet = placed.toSet()
+        val unassigned = (allShortcuts + allFolderIds).filter { it !in placedSet }
+        val ordered = (placed + unassigned).take(STRIP_TOTAL_SLOTS)
+        return List(STRIP_TOTAL_SLOTS) { i -> ordered.getOrNull(i) }
     }
     // First launch / no slots saved — place items in order, rest null
     val items = (allGroupIds + allShortcuts + allFolderIds).take(STRIP_TOTAL_SLOTS)

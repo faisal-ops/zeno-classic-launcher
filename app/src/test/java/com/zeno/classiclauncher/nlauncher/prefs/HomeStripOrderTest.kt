@@ -90,51 +90,57 @@ class HomeStripOrderTest {
     }
 
     @Test
-    fun effectiveHomeStripSlotOrder_savedSlots_positionsRespected() {
-        // Place "com.a" in slot 2 (index 2), leave others null
+    fun effectiveHomeStripSlotOrder_savedSlots_compactsToFront() {
+        // "com.a" is saved at index 2, but with no other items it should compact to slot 0
+        // rather than leaving slots 0-1 empty — a deleted neighbor must not leave a gap.
         val prefs = LauncherPrefs(
             homeShortcutPackages = listOf("com.a"),
             homeStripSlots = listOf(null, null, "com.a", null, null),
         )
         val slots = prefs.effectiveHomeStripSlotOrder()
         assertEquals(STRIP_TOTAL_SLOTS, slots.size)
-        assertEquals("com.a", slots[2])
+        assertEquals("com.a", slots[0])
+        assertNull(slots[1])
     }
 
     @Test
-    fun effectiveHomeStripSlotOrder_savedSlotsContainOrphan_replacedWithNull() {
+    fun effectiveHomeStripSlotOrder_savedSlotsContainOrphan_droppedAndCompacted() {
         val prefs = LauncherPrefs(
             homeShortcutPackages = listOf("com.a"),
             homeStripSlots = listOf("com.orphan", "com.a", null, null, null),
         )
         val slots = prefs.effectiveHomeStripSlotOrder()
-        // com.orphan is not a valid shortcut — its slot becomes null or filled with unassigned item
-        assertTrue(slots[1] == "com.a") // com.a should stay in its position
+        // com.orphan is not a valid shortcut — dropped entirely, com.a compacts to slot 0
+        assertEquals("com.a", slots[0])
+        assertNull(slots[1])
     }
 
     @Test
-    fun effectiveHomeStripSlotOrder_unassignedShortcutsAutoFillEmptySlots() {
-        // Saved slots have one slot occupied; "com.b" is not assigned so fills an empty slot
+    fun effectiveHomeStripSlotOrder_unassignedShortcutsAppendAfterPlaced() {
+        // Saved slots have one slot occupied; "com.b" is not assigned so it flows in after
         val prefs = LauncherPrefs(
             homeShortcutPackages = listOf("com.a", "com.b"),
             homeStripSlots = listOf("com.a", null, null, null, null),
         )
         val slots = prefs.effectiveHomeStripSlotOrder()
-        assertTrue(slots.filterNotNull().containsAll(listOf("com.a", "com.b")))
+        assertEquals("com.a", slots[0])
+        assertEquals("com.b", slots[1])
     }
 
     @Test
-    fun effectiveHomeStripSlotOrder_multipleUnassigned_fillEmptySlotsInOrder() {
-        // Regression guard: the fill loop must consume unassigned items FIFO (index 0 first),
-        // matching removeFirst() semantics — see the removeAt(0) comment in LauncherPrefs.kt.
+    fun effectiveHomeStripSlotOrder_removedItemFromMiddle_compactsGap() {
+        // Regression guard for the reported bug: deleting the app at a middle slot left a
+        // permanent visible gap instead of the following items shifting back to fill it.
+        // "com.b" was removed from homeShortcutPackages (e.g. app uninstalled) but its stale
+        // token still lingers at index 1 in the raw saved slots.
         val prefs = LauncherPrefs(
-            homeShortcutPackages = listOf("com.a", "com.b", "com.c"),
-            homeStripSlots = listOf(null, "com.a", null, null, null),
+            homeShortcutPackages = listOf("com.a", "com.c"),
+            homeStripSlots = listOf("com.a", "com.b", "com.c", null, null),
         )
         val slots = prefs.effectiveHomeStripSlotOrder()
-        assertEquals("com.b", slots[0])
-        assertEquals("com.a", slots[1])
-        assertEquals("com.c", slots[2])
+        assertEquals("com.a", slots[0])
+        assertEquals("com.c", slots[1])
+        assertNull(slots[2])
         assertNull(slots[3])
         assertNull(slots[4])
     }

@@ -6566,6 +6566,14 @@ private fun HomeActionsSheet(
             if (newHomeGroupEnabled) {
                 MenuRow(Icons.Rounded.Folder, "New group", "Create a compact home folder", onClick = onNewHomeGroup)
             }
+            if (pinToHomepageEnabled) {
+                MenuRow(
+                    Icons.AutoMirrored.Rounded.PlaylistAdd,
+                    stringResource(R.string.action_pin_to_home_strip),
+                    "Add an app to the home strip",
+                    onClick = onPinToHomeStrip,
+                )
+            }
             MenuRow(
                 Icons.Rounded.Settings,
                 LocalContext.current.getString(R.string.home_menu_settings_title),
