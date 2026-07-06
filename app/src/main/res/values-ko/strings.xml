@@ -372,4 +372,10 @@
     <string name="glance_sound_profile_title">소리 프로필</string>
     <string name="glance_sound_profile_subtitle">아이콘을 탭하여 벨소리, 진동, 방해 금지 전환</string>
     <string name="glance_nothing_to_show">표시할 내용 없음</string>
+    <string name="weather_tap_set_location">탭하여 위치 설정</string>
+    <string name="weather_location_dialog_title">날씨 위치</string>
+    <string name="weather_location_search_hint">도시 검색…</string>
+    <string name="weather_location_no_results">일치하는 결과 없음</string>
+    <string name="weather_location_use_device">기기 위치 사용</string>
+    <string name="weather_location_device">기기 위치</string>
 </resources>

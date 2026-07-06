@@ -372,4 +372,10 @@
     <string name="glance_sound_profile_title">Profilo audio</string>
     <string name="glance_sound_profile_subtitle">Tocca l\'icona per passare tra suoneria, vibrazione o Non disturbare</string>
     <string name="glance_nothing_to_show">Niente da mostrare</string>
+    <string name="weather_tap_set_location">Tocca per impostare la posizione</string>
+    <string name="weather_location_dialog_title">Posizione meteo</string>
+    <string name="weather_location_search_hint">Cerca città…</string>
+    <string name="weather_location_no_results">Nessuna corrispondenza trovata</string>
+    <string name="weather_location_use_device">Usa posizione del dispositivo</string>
+    <string name="weather_location_device">Posizione del dispositivo</string>
 </resources>

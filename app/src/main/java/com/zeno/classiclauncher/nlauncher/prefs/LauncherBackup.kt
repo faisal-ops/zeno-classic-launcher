@@ -66,6 +66,7 @@ object LauncherBackup {
         p.put("glanceWeatherLocationMode", prefs.glanceWeatherLocationMode.name)
         p.put("glanceWeatherManualLatitude", prefs.glanceWeatherManualLatitude)
         p.put("glanceWeatherManualLongitude", prefs.glanceWeatherManualLongitude)
+        p.put("glanceWeatherManualCityName", prefs.glanceWeatherManualCityName)
         val homeGroupsArr = JSONArray()
         prefs.homeGroups.forEach { g ->
             val o = JSONObject()
@@ -215,6 +216,7 @@ object LauncherBackup {
         }
         val glanceWeatherManualLatitude = p.optString("glanceWeatherManualLatitude", "").trim()
         val glanceWeatherManualLongitude = p.optString("glanceWeatherManualLongitude", "").trim()
+        val glanceWeatherManualCityName = p.optString("glanceWeatherManualCityName", "").trim()
         val doubleTapSleep = p.optBoolean("doubleTapToSleepEnabled", true)
         val swipeUpPackage = p.optString("swipeUpPackage", "").trim()
         val swipeRightPackage = p.optString("swipeRightPackage", "").trim()
@@ -354,6 +356,7 @@ object LauncherBackup {
             glanceWeatherLocationMode = glanceWeatherLocationMode,
             glanceWeatherManualLatitude = glanceWeatherManualLatitude,
             glanceWeatherManualLongitude = glanceWeatherManualLongitude,
+            glanceWeatherManualCityName = glanceWeatherManualCityName,
             homeGroups = homeGroups,
             homeStripOrder = homeStripOrder,
             homeStripSlots = homeStripSlots,

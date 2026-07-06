@@ -372,4 +372,10 @@
     <string name="glance_sound_profile_title">声音模式</string>
     <string name="glance_sound_profile_subtitle">点按图标切换响铃、振动或勿扰模式</string>
     <string name="glance_nothing_to_show">暂无内容</string>
+    <string name="weather_tap_set_location">点按以设置位置</string>
+    <string name="weather_location_dialog_title">天气位置</string>
+    <string name="weather_location_search_hint">搜索城市…</string>
+    <string name="weather_location_no_results">未找到匹配结果</string>
+    <string name="weather_location_use_device">使用设备位置</string>
+    <string name="weather_location_device">设备位置</string>
 </resources>

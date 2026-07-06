@@ -372,4 +372,10 @@
     <string name="glance_sound_profile_title">Perfil de sonido</string>
     <string name="glance_sound_profile_subtitle">Toca el icono para cambiar entre sonido, vibración o No molestar</string>
     <string name="glance_nothing_to_show">Nada que mostrar</string>
+    <string name="weather_tap_set_location">Toca para establecer la ubicación</string>
+    <string name="weather_location_dialog_title">Ubicación del clima</string>
+    <string name="weather_location_search_hint">Buscar ciudad…</string>
+    <string name="weather_location_no_results">No se encontraron coincidencias</string>
+    <string name="weather_location_use_device">Usar ubicación del dispositivo</string>
+    <string name="weather_location_device">Ubicación del dispositivo</string>
 </resources>

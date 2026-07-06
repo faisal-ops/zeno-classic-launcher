@@ -70,6 +70,13 @@ class LauncherBackupExhaustiveTest {
         assertFalse(roundTrip(LauncherPrefs(glanceShowSoundProfile = false)).glanceShowSoundProfile)
     }
 
+    @Test
+    fun roundTrip_glanceWeatherManualCityName_preserved() {
+        val prefs = LauncherPrefs(glanceWeatherManualCityName = "Faridabad, Haryana, India")
+        assertEquals("Faridabad, Haryana, India", roundTrip(prefs).glanceWeatherManualCityName)
+        assertEquals("", roundTrip(LauncherPrefs(glanceWeatherManualCityName = "")).glanceWeatherManualCityName)
+    }
+
     // ─── Enum fields ─────────────────────────────────────────────────────────
 
     @Test

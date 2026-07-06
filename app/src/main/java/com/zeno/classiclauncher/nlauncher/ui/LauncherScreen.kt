@@ -138,6 +138,8 @@ import androidx.compose.material.icons.rounded.WbSunny
 import androidx.compose.material.icons.rounded.SettingsBackupRestore
 import androidx.compose.material.icons.rounded.Palette
 import androidx.compose.material.icons.rounded.MailOutline
+import androidx.compose.material.icons.rounded.MyLocation
+import androidx.compose.material.icons.rounded.Place
 import androidx.compose.material.icons.rounded.TouchApp
 import androidx.compose.material.icons.rounded.Info
 import androidx.compose.material.icons.rounded.SwapVert
@@ -311,6 +313,9 @@ import com.zeno.classiclauncher.nlauncher.locale.LauncherLocale
 import com.zeno.classiclauncher.nlauncher.search.HangulSearch
 import com.zeno.classiclauncher.nlauncher.theme.LauncherThemePalette
 import com.zeno.classiclauncher.nlauncher.prefs.GridPreset
+import com.zeno.classiclauncher.nlauncher.glance.GeoCity
+import com.zeno.classiclauncher.nlauncher.glance.WeatherGeocoder
+import com.zeno.classiclauncher.nlauncher.prefs.GlanceWeatherLocationMode
 import com.zeno.classiclauncher.nlauncher.prefs.GlanceWeatherUnit
 import com.zeno.classiclauncher.nlauncher.prefs.HomeGroup
 import com.zeno.classiclauncher.nlauncher.prefs.HomeGroupIds
@@ -715,6 +720,7 @@ fun LauncherScreen(
     var showDockSlotPicker by remember { mutableStateOf<DockSlot?>(null) }
     var dockQuickActionSlot by remember { mutableStateOf<DockSlot?>(null) }
     var showGlanceSettings by remember { mutableStateOf(false) }
+    var showWeatherLocationDialog by remember { mutableStateOf(false) }
     var showHapticSettings by remember { mutableStateOf(false) }
     var showHomeGroupsSettings by remember { mutableStateOf(false) }
     var showGestureSettings by remember { mutableStateOf(false) }
@@ -1299,6 +1305,9 @@ fun LauncherScreen(
                             prefs.glanceShowAlarm,
                             prefs.glanceShowSoundProfile,
                             prefs.glanceWeatherUnit,
+                            prefs.glanceWeatherLocationMode,
+                            prefs.glanceWeatherManualLatitude,
+                            prefs.glanceWeatherManualLongitude,
                         ) {
                             GlanceStripPreferences(
                                 showFlashlight = prefs.glanceShowFlashlight,
@@ -1307,9 +1316,12 @@ fun LauncherScreen(
                                 showAlarm = prefs.glanceShowAlarm,
                                 showSoundProfile = prefs.glanceShowSoundProfile,
                                 calendarLookAheadDays = 1,
-                                weatherUseDeviceLocation = true,
-                                weatherLatitude = null,
-                                weatherLongitude = null,
+                                weatherUseDeviceLocation =
+                                    prefs.glanceWeatherLocationMode == GlanceWeatherLocationMode.DEVICE ||
+                                        prefs.glanceWeatherManualLatitude.toDoubleOrNull() == null ||
+                                        prefs.glanceWeatherManualLongitude.toDoubleOrNull() == null,
+                                weatherLatitude = prefs.glanceWeatherManualLatitude.toDoubleOrNull(),
+                                weatherLongitude = prefs.glanceWeatherManualLongitude.toDoubleOrNull(),
                                 weatherUseFahrenheit = prefs.glanceWeatherUnit == GlanceWeatherUnit.FAHRENHEIT,
                             )
                         },
@@ -1320,6 +1332,7 @@ fun LauncherScreen(
                         removeDropActive = homeStripRemoveActive,
                         onRemoveDropBoundsChanged = { homeStripRemoveBounds = it },
                         removeDropBounds = homeStripRemoveBounds,
+                        onRequestWeatherLocationDialog = { showWeatherLocationDialog = true },
                     )
                     (classicMode && page == 0) || page == 1 -> AppDrawer(
                         isActive = if (classicMode) pagerState.currentPage == 0 else pagerState.currentPage == 1,
@@ -2133,6 +2146,14 @@ fun LauncherScreen(
                             glanceShowAlarm = prefs.glanceShowAlarm,
                             glanceShowSoundProfile = prefs.glanceShowSoundProfile,
                             glanceWeatherUnit = prefs.glanceWeatherUnit,
+                            weatherLocationSubtitle =
+                                if (prefs.glanceWeatherLocationMode == GlanceWeatherLocationMode.MANUAL &&
+                                    prefs.glanceWeatherManualCityName.isNotBlank()
+                                ) {
+                                    prefs.glanceWeatherManualCityName
+                                } else {
+                                    stringResource(R.string.weather_location_device)
+                                },
                             themePalette = themePalette,
                             onGlanceEnabled = vm::setGlanceEnabled,
                             onGlanceShowFlashlight = vm::setGlanceShowFlashlight,
@@ -2141,6 +2162,7 @@ fun LauncherScreen(
                             onGlanceShowAlarm = vm::setGlanceShowAlarm,
                             onGlanceShowSoundProfile = vm::setGlanceShowSoundProfile,
                             onGlanceWeatherUnit = vm::setGlanceWeatherUnit,
+                            onWeatherLocation = { showWeatherLocationDialog = true },
                             onDismiss = { showGlanceSettings = false },
                         )
                     }
@@ -2209,6 +2231,28 @@ fun LauncherScreen(
                 } else {
                     null
                 },
+            )
+        }
+
+        // Weather city picker at parent level: reachable from the glance strip's
+        // "tap to set location" fallback AND the Glance Strip settings row.
+        if (showWeatherLocationDialog) {
+            WeatherLocationDialog(
+                themePalette = themePalette,
+                isManualMode = prefs.glanceWeatherLocationMode == GlanceWeatherLocationMode.MANUAL,
+                currentCityName = prefs.glanceWeatherManualCityName,
+                onPickCity = { city ->
+                    vm.setGlanceWeatherManualLatitude(city.latitude.toString())
+                    vm.setGlanceWeatherManualLongitude(city.longitude.toString())
+                    vm.setGlanceWeatherManualCityName(city.label)
+                    vm.setGlanceWeatherLocationMode(GlanceWeatherLocationMode.MANUAL)
+                    showWeatherLocationDialog = false
+                },
+                onUseDeviceLocation = {
+                    vm.setGlanceWeatherLocationMode(GlanceWeatherLocationMode.DEVICE)
+                    showWeatherLocationDialog = false
+                },
+                onDismiss = { showWeatherLocationDialog = false },
             )
         }
 
@@ -3053,6 +3097,7 @@ private fun HomePage(
     removeDropBounds: Rect? = null,
     onRemoveDropBoundsChanged: (Rect?) -> Unit = {},
     onOpenGestureSettings: () -> Unit = {},
+    onRequestWeatherLocationDialog: () -> Unit = {},
 ) {
     val view = LocalView.current
     var navArea by remember { mutableStateOf(HomeNavArea.Strip) }
@@ -3609,6 +3654,7 @@ private fun HomePage(
                         modifier = Modifier.fillMaxWidth().wrapContentHeight(align = Alignment.Top),
                         update = { v ->
                             glanceRef.value = v
+                            v.onRequestManualLocation = onRequestWeatherLocationDialog
                             v.applyStripPreferences(glanceStripPreferences)
                         },
                     )
@@ -10973,6 +11019,167 @@ private fun HapticSettingsOverlay(
 }
 
 @Composable
+private fun WeatherLocationDialog(
+    themePalette: LauncherThemePalette,
+    isManualMode: Boolean,
+    currentCityName: String,
+    onPickCity: (GeoCity) -> Unit,
+    onUseDeviceLocation: () -> Unit,
+    onDismiss: () -> Unit,
+) {
+    var query by remember { mutableStateOf("") }
+    var results by remember { mutableStateOf<List<GeoCity>>(emptyList()) }
+    var searching by remember { mutableStateOf(false) }
+    var searched by remember { mutableStateOf(false) }
+    val dialogConfig = LocalConfiguration.current
+    val language = remember(dialogConfig) {
+        runCatching { dialogConfig.locales[0].language }.getOrDefault("en").ifBlank { "en" }
+    }
+    val subtitleColor = Color(0xFF8E95A3)
+
+    // Debounced search-as-you-type: recomposition of `query` cancels the previous effect,
+    // so only a 400 ms pause in typing reaches the geocoding API.
+    LaunchedEffect(query) {
+        val q = query.trim()
+        if (q.length < 2) {
+            results = emptyList()
+            searching = false
+            searched = false
+            return@LaunchedEffect
+        }
+        searching = true
+        delay(400)
+        results = WeatherGeocoder.search(q, language)
+        searching = false
+        searched = true
+    }
+
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        containerColor = Color(0xFF1A2035),
+        title = {
+            Text(
+                stringResource(R.string.weather_location_dialog_title),
+                color = themePalette.settingsMenuTitle,
+            )
+        },
+        text = {
+            Column {
+                OutlinedTextField(
+                    value = query,
+                    onValueChange = { query = it },
+                    modifier = Modifier.fillMaxWidth(),
+                    placeholder = { Text(stringResource(R.string.weather_location_search_hint), color = themePalette.settingsMenuBody) },
+                    singleLine = true,
+                    colors = TextFieldDefaults.colors(
+                        focusedTextColor = themePalette.settingsMenuTitle,
+                        unfocusedTextColor = themePalette.settingsMenuTitle,
+                        focusedContainerColor = Color(0xFF1E2430),
+                        unfocusedContainerColor = Color(0xFF1E2430),
+                    ),
+                    keyboardOptions = KeyboardOptions(
+                        capitalization = KeyboardCapitalization.Words,
+                        imeAction = ImeAction.Search,
+                    ),
+                )
+                Spacer(Modifier.height(8.dp))
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .clickable { onUseDeviceLocation() }
+                        .padding(vertical = 10.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    Icon(
+                        Icons.Rounded.MyLocation,
+                        contentDescription = null,
+                        tint = Color(0xFF84D5F6),
+                        modifier = Modifier.size(18.dp),
+                    )
+                    Spacer(Modifier.width(10.dp))
+                    Text(
+                        stringResource(R.string.weather_location_use_device),
+                        color = themePalette.settingsMenuTitle,
+                        fontSize = 14.sp,
+                        modifier = Modifier.weight(1f),
+                    )
+                    if (!isManualMode) {
+                        Text("✓", color = themePalette.settingsMenuBody, fontSize = 14.sp)
+                    }
+                }
+                if (isManualMode && currentCityName.isNotBlank()) {
+                    Row(
+                        modifier = Modifier.fillMaxWidth().padding(vertical = 10.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                    ) {
+                        Icon(
+                            Icons.Rounded.Place,
+                            contentDescription = null,
+                            tint = subtitleColor,
+                            modifier = Modifier.size(18.dp),
+                        )
+                        Spacer(Modifier.width(10.dp))
+                        Text(
+                            currentCityName,
+                            color = themePalette.settingsMenuTitle,
+                            fontSize = 14.sp,
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis,
+                            modifier = Modifier.weight(1f),
+                        )
+                        Text("✓", color = themePalette.settingsMenuBody, fontSize = 14.sp)
+                    }
+                }
+                HorizontalDivider(color = Color(0x22FFFFFF), thickness = 0.5.dp)
+                when {
+                    searching -> Text(
+                        stringResource(R.string.icon_pack_loading),
+                        color = subtitleColor,
+                        fontSize = 13.sp,
+                        modifier = Modifier.padding(vertical = 12.dp),
+                    )
+                    searched && results.isEmpty() -> Text(
+                        stringResource(R.string.weather_location_no_results),
+                        color = subtitleColor,
+                        fontSize = 13.sp,
+                        modifier = Modifier.padding(vertical = 12.dp),
+                    )
+                    else -> LazyColumn(modifier = Modifier.heightIn(max = 240.dp)) {
+                        items(results.size) { i ->
+                            val city = results[i]
+                            Column(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .clickable { onPickCity(city) }
+                                    .padding(vertical = 10.dp),
+                            ) {
+                                Text(
+                                    city.name,
+                                    color = themePalette.settingsMenuTitle,
+                                    fontSize = 14.sp,
+                                )
+                                val detail = listOf(city.region, city.country)
+                                    .filter { it.isNotBlank() }
+                                    .joinToString(", ")
+                                if (detail.isNotEmpty()) {
+                                    Text(detail, color = subtitleColor, fontSize = 12.sp)
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        },
+        confirmButton = {},
+        dismissButton = {
+            TextButton(onClick = onDismiss) {
+                Text(stringResource(R.string.action_cancel), color = themePalette.settingsMenuBody)
+            }
+        },
+    )
+}
+
+@Composable
 private fun GlanceSettingsOverlay(
     glanceEnabled: Boolean,
     glanceShowFlashlight: Boolean,
@@ -10981,6 +11188,7 @@ private fun GlanceSettingsOverlay(
     glanceShowAlarm: Boolean,
     glanceShowSoundProfile: Boolean,
     glanceWeatherUnit: GlanceWeatherUnit,
+    weatherLocationSubtitle: String,
     themePalette: LauncherThemePalette,
     onGlanceEnabled: (Boolean) -> Unit,
     onGlanceShowFlashlight: (Boolean) -> Unit,
@@ -10989,6 +11197,7 @@ private fun GlanceSettingsOverlay(
     onGlanceShowAlarm: (Boolean) -> Unit,
     onGlanceShowSoundProfile: (Boolean) -> Unit,
     onGlanceWeatherUnit: (GlanceWeatherUnit) -> Unit,
+    onWeatherLocation: () -> Unit,
     onDismiss: () -> Unit,
 ) {
     val subtitleColor = Color(0xFF8E95A3)
@@ -10998,7 +11207,7 @@ private fun GlanceSettingsOverlay(
     val cardShape = RoundedCornerShape(12.dp)
     val glanceFR = remember { FocusRequester() }
     var focusedGlance by remember { mutableIntStateOf(0) }
-    val glanceBringers = remember { List(7) { BringIntoViewRequester() } }
+    val glanceBringers = remember { List(8) { BringIntoViewRequester() } }
     LaunchedEffect(focusedGlance) { glanceBringers[focusedGlance].bringIntoView() }
     BackHandler(enabled = true, onBack = onDismiss)
 
@@ -11067,16 +11276,17 @@ private fun GlanceSettingsOverlay(
                     nk?.keyCode == AndroidKeyEvent.KEYCODE_ENTER
                 when {
                     up    -> { focusedGlance = (focusedGlance - 1).coerceAtLeast(0); true }
-                    down  -> { focusedGlance = (focusedGlance + 1).coerceAtMost(6); true }
+                    down  -> { focusedGlance = (focusedGlance + 1).coerceAtMost(7); true }
                     enter -> {
                         when (focusedGlance) {
                             0 -> onGlanceEnabled(!glanceEnabled)
                             1 -> onGlanceWeatherUnit(if (glanceWeatherUnit == GlanceWeatherUnit.CELSIUS) GlanceWeatherUnit.FAHRENHEIT else GlanceWeatherUnit.CELSIUS)
-                            2 -> if (glanceEnabled) onGlanceShowFlashlight(!glanceShowFlashlight)
-                            3 -> if (glanceEnabled) onGlanceShowCalendar(!glanceShowCalendar)
-                            4 -> if (glanceEnabled) onGlanceShowBattery(!glanceShowBattery)
-                            5 -> if (glanceEnabled) onGlanceShowAlarm(!glanceShowAlarm)
-                            6 -> if (glanceEnabled) onGlanceShowSoundProfile(!glanceShowSoundProfile)
+                            2 -> if (glanceEnabled) onWeatherLocation()
+                            3 -> if (glanceEnabled) onGlanceShowFlashlight(!glanceShowFlashlight)
+                            4 -> if (glanceEnabled) onGlanceShowCalendar(!glanceShowCalendar)
+                            5 -> if (glanceEnabled) onGlanceShowBattery(!glanceShowBattery)
+                            6 -> if (glanceEnabled) onGlanceShowAlarm(!glanceShowAlarm)
+                            7 -> if (glanceEnabled) onGlanceShowSoundProfile(!glanceShowSoundProfile)
                         }
                         true
                     }
@@ -11186,53 +11396,87 @@ private fun GlanceSettingsOverlay(
                         }
                     }
                 }
-                Box(modifier = Modifier.bringIntoViewRequester(glanceBringers[2])) {
+                Surface(
+                    shape = cardShape,
+                    color = if (focusedGlance == 2) cardFocusedBg else cardBg,
+                    border = if (focusedGlance == 2) cardFocusedBorder else null,
+                    modifier = Modifier.fillMaxWidth().bringIntoViewRequester(glanceBringers[2]),
+                ) {
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .clickable(enabled = glanceEnabled) { onWeatherLocation() }
+                            .padding(horizontal = 16.dp, vertical = 12.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                    ) {
+                        Column(modifier = Modifier.weight(1f)) {
+                            Text(
+                                stringResource(R.string.weather_location_dialog_title),
+                                style = MaterialTheme.typography.bodyLarge.copy(
+                                    color = themePalette.settingsMenuTitle,
+                                    fontWeight = FontWeight.Medium,
+                                ),
+                            )
+                            Text(
+                                weatherLocationSubtitle,
+                                style = MaterialTheme.typography.bodySmall.copy(color = subtitleColor),
+                            )
+                        }
+                        Icon(
+                            Icons.AutoMirrored.Rounded.ArrowForward,
+                            contentDescription = null,
+                            tint = subtitleColor,
+                            modifier = Modifier.size(18.dp),
+                        )
+                    }
+                }
+                Box(modifier = Modifier.bringIntoViewRequester(glanceBringers[3])) {
                     ToggleCard(
                         title = stringResource(R.string.glance_flashlight_title),
                         subtitle = stringResource(R.string.glance_flashlight_subtitle),
                         checked = glanceShowFlashlight,
                         enabled = glanceEnabled,
-                        focused = focusedGlance == 2,
+                        focused = focusedGlance == 3,
                         onCheckedChange = onGlanceShowFlashlight,
                     )
                 }
-                Box(modifier = Modifier.bringIntoViewRequester(glanceBringers[3])) {
+                Box(modifier = Modifier.bringIntoViewRequester(glanceBringers[4])) {
                     ToggleCard(
                         title = stringResource(R.string.glance_calendar_title),
                         subtitle = stringResource(R.string.glance_calendar_subtitle),
                         checked = glanceShowCalendar,
                         enabled = glanceEnabled,
-                        focused = focusedGlance == 3,
+                        focused = focusedGlance == 4,
                         onCheckedChange = onGlanceShowCalendar,
                     )
                 }
-                Box(modifier = Modifier.bringIntoViewRequester(glanceBringers[4])) {
+                Box(modifier = Modifier.bringIntoViewRequester(glanceBringers[5])) {
                     ToggleCard(
                         title = stringResource(R.string.glance_battery_title),
                         subtitle = stringResource(R.string.glance_battery_subtitle),
                         checked = glanceShowBattery,
                         enabled = glanceEnabled,
-                        focused = focusedGlance == 4,
+                        focused = focusedGlance == 5,
                         onCheckedChange = onGlanceShowBattery,
                     )
                 }
-                Box(modifier = Modifier.bringIntoViewRequester(glanceBringers[5])) {
+                Box(modifier = Modifier.bringIntoViewRequester(glanceBringers[6])) {
                     ToggleCard(
                         title = stringResource(R.string.glance_alarm_title),
                         subtitle = stringResource(R.string.glance_alarm_subtitle),
                         checked = glanceShowAlarm,
                         enabled = glanceEnabled,
-                        focused = focusedGlance == 5,
+                        focused = focusedGlance == 6,
                         onCheckedChange = onGlanceShowAlarm,
                     )
                 }
-                Box(modifier = Modifier.bringIntoViewRequester(glanceBringers[6])) {
+                Box(modifier = Modifier.bringIntoViewRequester(glanceBringers[7])) {
                     ToggleCard(
                         title = stringResource(R.string.glance_sound_profile_title),
                         subtitle = stringResource(R.string.glance_sound_profile_subtitle),
                         checked = glanceShowSoundProfile,
                         enabled = glanceEnabled,
-                        focused = focusedGlance == 6,
+                        focused = focusedGlance == 7,
                         onCheckedChange = onGlanceShowSoundProfile,
                     )
                 }

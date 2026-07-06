@@ -372,4 +372,10 @@
     <string name="glance_sound_profile_title">Klangprofil</string>
     <string name="glance_sound_profile_subtitle">Tippe auf das Symbol, um zwischen Klingeln, Vibrieren oder Nicht stören zu wechseln</string>
     <string name="glance_nothing_to_show">Nichts anzuzeigen</string>
+    <string name="weather_tap_set_location">Zum Festlegen des Standorts tippen</string>
+    <string name="weather_location_dialog_title">Wetterstandort</string>
+    <string name="weather_location_search_hint">Stadt suchen…</string>
+    <string name="weather_location_no_results">Keine Treffer gefunden</string>
+    <string name="weather_location_use_device">Gerätestandort verwenden</string>
+    <string name="weather_location_device">Gerätestandort</string>
 </resources>

@@ -372,4 +372,10 @@
     <string name="glance_sound_profile_title">Profil suara</string>
     <string name="glance_sound_profile_subtitle">Ketuk ikon untuk beralih antara dering, getar, atau JJG</string>
     <string name="glance_nothing_to_show">Tidak ada yang ditampilkan</string>
+    <string name="weather_tap_set_location">Ketuk untuk mengatur lokasi</string>
+    <string name="weather_location_dialog_title">Lokasi cuaca</string>
+    <string name="weather_location_search_hint">Cari kota…</string>
+    <string name="weather_location_no_results">Tidak ada hasil yang cocok</string>
+    <string name="weather_location_use_device">Gunakan lokasi perangkat</string>
+    <string name="weather_location_device">Lokasi perangkat</string>
 </resources>

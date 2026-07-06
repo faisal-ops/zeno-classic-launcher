@@ -145,6 +145,8 @@ data class LauncherPrefs(
     val glanceWeatherLocationMode: GlanceWeatherLocationMode = GlanceWeatherLocationMode.DEVICE,
     val glanceWeatherManualLatitude: String = "",
     val glanceWeatherManualLongitude: String = "",
+    /** Display label for the manually chosen weather city (e.g. "Faridabad, Haryana, India"). */
+    val glanceWeatherManualCityName: String = "",
     /** Named home-screen app groups; strip layout uses [homeStripSlots] / [effectiveHomeStripSlotOrder]. */
     val homeGroups: List<HomeGroup> = emptyList(),
     /**
@@ -272,6 +274,7 @@ class LauncherPrefsRepository(private val context: Context) {
         val GLANCE_WEATHER_LOCATION_MODE = stringPreferencesKey("glanceWeatherLocationMode")
         val GLANCE_WEATHER_MANUAL_LAT = stringPreferencesKey("glanceWeatherManualLatitude")
         val GLANCE_WEATHER_MANUAL_LON = stringPreferencesKey("glanceWeatherManualLongitude")
+        val GLANCE_WEATHER_MANUAL_CITY = stringPreferencesKey("glanceWeatherManualCityName")
         val HOME_GROUPS = stringPreferencesKey("homeGroupsJson")
         val HOME_STRIP_ORDER = stringPreferencesKey("homeStripOrderCsv")
         val HOME_STRIP_SLOTS = stringPreferencesKey("homeStripSlotsCsv")
@@ -366,6 +369,7 @@ class LauncherPrefsRepository(private val context: Context) {
                 ?: DEFAULT_PREFS.glanceWeatherLocationMode
         val glanceWeatherManualLat = p[Keys.GLANCE_WEATHER_MANUAL_LAT]?.trim() ?: ""
         val glanceWeatherManualLon = p[Keys.GLANCE_WEATHER_MANUAL_LON]?.trim() ?: ""
+        val glanceWeatherManualCity = p[Keys.GLANCE_WEATHER_MANUAL_CITY]?.trim() ?: ""
         val homeGroups = parseHomeGroupsJson(p[Keys.HOME_GROUPS])
         val homeStripOrder = parseCsvList(p[Keys.HOME_STRIP_ORDER])
         val homeStripSlots = parseSlotCsvList(p[Keys.HOME_STRIP_SLOTS])
@@ -456,6 +460,7 @@ class LauncherPrefsRepository(private val context: Context) {
             glanceWeatherLocationMode = glanceWeatherLocationMode,
             glanceWeatherManualLatitude = glanceWeatherManualLat,
             glanceWeatherManualLongitude = glanceWeatherManualLon,
+            glanceWeatherManualCityName = glanceWeatherManualCity,
             homeGroups = homeGroups,
             homeStripOrder = homeStripOrder,
             homeStripSlots = homeStripSlots,
@@ -727,6 +732,10 @@ class LauncherPrefsRepository(private val context: Context) {
         context.dataStore.edit { it[Keys.GLANCE_WEATHER_MANUAL_LON] = longitude.trim() }
     }
 
+    suspend fun setGlanceWeatherManualCityName(cityName: String) {
+        context.dataStore.edit { it[Keys.GLANCE_WEATHER_MANUAL_CITY] = cityName.trim() }
+    }
+
     suspend fun resetThemeJson() {
         context.dataStore.edit { it[Keys.THEME] = DEFAULT_THEME_JSON }
     }
@@ -909,6 +918,7 @@ class LauncherPrefsRepository(private val context: Context) {
             s[Keys.GLANCE_WEATHER_LOCATION_MODE] = prefs.glanceWeatherLocationMode.name
             s[Keys.GLANCE_WEATHER_MANUAL_LAT] = prefs.glanceWeatherManualLatitude.trim()
             s[Keys.GLANCE_WEATHER_MANUAL_LON] = prefs.glanceWeatherManualLongitude.trim()
+            s[Keys.GLANCE_WEATHER_MANUAL_CITY] = prefs.glanceWeatherManualCityName.trim()
             s[Keys.HOME_GROUPS] = homeGroupsToJson(prefs.homeGroups)
             s[Keys.HOME_STRIP_ORDER] = prefs.homeStripOrder.joinToString(",")
             s[Keys.HOME_WIDGET_ID] = prefs.homeWidget.appWidgetId

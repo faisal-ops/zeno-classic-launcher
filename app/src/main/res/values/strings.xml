@@ -397,4 +397,10 @@
     <string name="glance_sound_profile_title">Sound Profile</string>
     <string name="glance_sound_profile_subtitle">Tap the icon to switch ring, vibrate, or DND</string>
     <string name="glance_nothing_to_show">Nothing to show</string>
+    <string name="weather_tap_set_location">Tap to set location</string>
+    <string name="weather_location_dialog_title">Weather location</string>
+    <string name="weather_location_search_hint">Search city…</string>
+    <string name="weather_location_no_results">No matches found</string>
+    <string name="weather_location_use_device">Use device location</string>
+    <string name="weather_location_device">Device location</string>
 </resources>

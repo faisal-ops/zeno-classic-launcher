@@ -97,6 +97,9 @@ class GlanceDateWeatherEventsView @JvmOverloads constructor(
     private lateinit var weatherView: TextView
     private lateinit var soundProfileSpacer: View
 
+    /** Set by the host to open the manual city picker when the whole location chain fails. */
+    var onRequestManualLocation: (() -> Unit)? = null
+
     private data class GlanceItem(
         val text: String,
         val action: (() -> Unit)? = null,
@@ -550,7 +553,11 @@ class GlanceDateWeatherEventsView @JvmOverloads constructor(
                     weatherView.text = "$t ${cached.condition}"
                     weatherView.isVisible = true
                 } else {
-                    weatherView.isVisible = false
+                    // Whole location/fetch chain failed \u2014 offer the manual city picker instead
+                    // of silently hiding weather (looked like a broken feature, not a location gap).
+                    weatherView.text = context.getString(R.string.weather_tap_set_location)
+                    weatherView.isVisible = true
+                    weatherView.setOnClickListener { onRequestManualLocation?.invoke() }
                 }
             }
             // Heavy network: on a fixed cadence while visible, not tied to carousel ticks.

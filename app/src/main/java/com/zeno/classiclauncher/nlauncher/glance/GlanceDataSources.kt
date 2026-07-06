@@ -8,6 +8,8 @@ import android.content.Intent
 import android.content.pm.PackageManager
 import android.hardware.camera2.CameraManager
 import android.location.Location
+import android.net.ConnectivityManager
+import android.net.NetworkCapabilities
 import android.location.LocationListener
 import android.location.LocationManager
 import android.os.BatteryManager
@@ -55,6 +57,15 @@ internal data class GlanceCalendarEvent(
 internal class GlanceDataSources(private val context: Context) {
     private companion object {
         const val MAX_CALENDAR_EVENTS = 5
+        const val PERSIST_DEVICE = "device"
+        const val PERSIST_IP = "ip"
+        const val FRESH_FIX_TIMEOUT_MS = 30_000L // GPS cold start regularly needs >15 s
+        const val DEVICE_FIX_REUSE_MS = 24L * 60 * 60 * 1000 // same city assumption for weather
+        const val IP_FIX_REUSE_MS = 6L * 60 * 60 * 1000 // don't re-hit the geolocation service
+        val IP_GEO_ENDPOINTS = listOf(
+            "https://get.geojs.io/v1/ip/geo.json",
+            "https://ipwho.is/",
+        )
     }
 
     private var cachedWeather: GlanceWeatherData? = null
@@ -85,11 +96,20 @@ internal class GlanceDataSources(private val context: Context) {
     }
 
     /**
-     * Passive [LocationManager.getLastKnownLocation] only reflects a fix some other app
-     * already requested — on ROMs without a network location backend (e.g. degoogled
-     * LineageOS with no microG), that can mean it never updates after first boot. If the
-     * passive read is missing or stale, actively request one fresh fix (with a timeout)
-     * so weather doesn't silently stop working forever.
+     * Resolves a usable location through a chain of Google-free fallbacks so weather keeps
+     * working on any ROM (stock, Lineage, degoogled) and survives process restarts:
+     *
+     *  1. In-memory fix under 2 h old.
+     *  2. Passive [LocationManager.getLastKnownLocation] under 2 h old — a fix some other
+     *     app already requested. On ROMs without a network location backend (degoogled,
+     *     no microG) this may never update after boot, hence the tiers below.
+     *  3. Active single fix request (GPS/network) with a 30 s timeout — GPS cold starts
+     *     routinely need more than the 15 s this used to allow.
+     *  4. Device fix persisted to disk by a previous session (< 24 h).
+     *  5. IP-based geolocation — city-level, no permissions, works degoogled. Skipped when
+     *     a VPN is active (it would resolve the exit server's city) and sanity-checked
+     *     against the last real device fix.
+     *  6. Any persisted fix, however old — the right city beats no weather at all.
      */
     @Suppress("DEPRECATION")
     suspend fun getLastLocation(): Location? {
@@ -112,16 +132,117 @@ internal class GlanceDataSources(private val context: Context) {
             null
         }
         if (passive != null && now - passive.time < locationCacheMs) {
-            cachedLocation = passive
-            locationFetchedAt = now
-            return passive
+            return passive.also { remember(it); persistFix(PERSIST_DEVICE, it) }
         }
-        val fresh = requestFreshLocation(lm) ?: passive
-        if (fresh != null) {
-            cachedLocation = fresh
-            locationFetchedAt = now
+        requestFreshLocation(lm)?.let { fresh ->
+            return fresh.also { remember(it); persistFix(PERSIST_DEVICE, it) }
         }
-        return fresh
+        // Stale passive fix is still a genuine device fix — persist with its own timestamp.
+        passive?.let { persistFix(PERSIST_DEVICE, it) }
+
+        readPersistedFix(PERSIST_DEVICE)?.let { fix ->
+            if (now - fix.timeMs < DEVICE_FIX_REUSE_MS) return fix.toLocation().also { remember(it) }
+        }
+        readPersistedFix(PERSIST_IP)?.let { fix ->
+            if (now - fix.timeMs < IP_FIX_REUSE_MS) return fix.toLocation().also { remember(it) }
+        }
+        if (!isVpnActive()) {
+            fetchIpLocation()?.let { ip ->
+                val device = readPersistedFix(PERSIST_DEVICE)
+                val trusted = shouldTrustIpLocation(
+                    ipLatitude = ip.latitude,
+                    ipLongitude = ip.longitude,
+                    lastDeviceLatitude = device?.latitude,
+                    lastDeviceLongitude = device?.longitude,
+                    lastDeviceAgeMs = device?.let { now - it.timeMs },
+                )
+                if (trusted) {
+                    persistFix(PERSIST_IP, ip)
+                    return ip.also { remember(it) }
+                }
+                if (device != null) return device.toLocation().also { remember(it) }
+            }
+        }
+        (readPersistedFix(PERSIST_DEVICE) ?: readPersistedFix(PERSIST_IP))?.let { fix ->
+            return fix.toLocation().also { remember(it) }
+        }
+        return null
+    }
+
+    private fun remember(loc: Location) {
+        cachedLocation = loc
+        locationFetchedAt = System.currentTimeMillis()
+    }
+
+    private data class PersistedFix(val latitude: Double, val longitude: Double, val timeMs: Long) {
+        fun toLocation(): Location = Location("cache").apply {
+            latitude = this@PersistedFix.latitude
+            longitude = this@PersistedFix.longitude
+            time = timeMs
+        }
+    }
+
+    private val locationStore by lazy {
+        context.getSharedPreferences("zeno_weather_location", Context.MODE_PRIVATE)
+    }
+
+    private fun persistFix(prefix: String, loc: Location) {
+        val fixTime = if (loc.time > 0) loc.time else System.currentTimeMillis()
+        locationStore.edit()
+            .putLong("${prefix}_lat", loc.latitude.toRawBits())
+            .putLong("${prefix}_lon", loc.longitude.toRawBits())
+            .putLong("${prefix}_time", fixTime)
+            .apply()
+    }
+
+    private fun readPersistedFix(prefix: String): PersistedFix? {
+        if (!locationStore.contains("${prefix}_time")) return null
+        return PersistedFix(
+            latitude = Double.fromBits(locationStore.getLong("${prefix}_lat", 0L)),
+            longitude = Double.fromBits(locationStore.getLong("${prefix}_lon", 0L)),
+            timeMs = locationStore.getLong("${prefix}_time", 0L),
+        )
+    }
+
+    private fun isVpnActive(): Boolean = runCatching {
+        val cm = context.getSystemService<ConnectivityManager>()
+        val caps = cm?.getNetworkCapabilities(cm.activeNetwork)
+        caps?.hasTransport(NetworkCapabilities.TRANSPORT_VPN) == true
+    }.getOrDefault(false)
+
+    /** City-level fix from the public IP. Two providers, both keyless HTTPS. */
+    private fun fetchIpLocation(): Location? {
+        for (endpoint in IP_GEO_ENDPOINTS) {
+            val body = httpGetJson(endpoint) ?: continue
+            val (lat, lon) = parseIpLocation(body) ?: continue
+            return Location("ip").apply {
+                latitude = lat
+                longitude = lon
+                time = System.currentTimeMillis()
+            }
+        }
+        return null
+    }
+
+    private fun httpGetJson(urlStr: String): String? {
+        var conn: HttpURLConnection? = null
+        return try {
+            conn = (URL(urlStr).openConnection() as HttpURLConnection).apply {
+                connectTimeout = 8_000
+                readTimeout = 8_000
+                requestMethod = "GET"
+                setRequestProperty("Accept", "application/json")
+            }
+            if (conn.responseCode != 200) {
+                null
+            } else {
+                BufferedReader(InputStreamReader(conn.inputStream, Charsets.UTF_8)).use { it.readText() }
+            }
+        } catch (_: Exception) {
+            null
+        } finally {
+            conn?.disconnect()
+        }
     }
 
     @Suppress("DEPRECATION", "MissingPermission")
@@ -129,7 +250,7 @@ internal class GlanceDataSources(private val context: Context) {
         val providers = listOf(LocationManager.NETWORK_PROVIDER, LocationManager.GPS_PROVIDER)
             .filter { runCatching { lm.isProviderEnabled(it) }.getOrDefault(false) }
         if (providers.isEmpty()) return null
-        return withTimeoutOrNull(15_000L) {
+        return withTimeoutOrNull(FRESH_FIX_TIMEOUT_MS) {
             suspendCancellableCoroutine { cont ->
                 val listener = object : LocationListener {
                     override fun onLocationChanged(location: Location) {
@@ -208,7 +329,7 @@ internal class GlanceDataSources(private val context: Context) {
         if (cachedCalendarEvents.isNotEmpty() && now - calendarFetchedAt < calendarCacheMs) {
             return cachedCalendarEvents
         }
-        val end = now + lookAheadDays.toLong() * 24L * 60 * 60 * 1000
+        val end = calendarQueryWindowEnd(now, lookAheadDays)
         val uri = CalendarContract.Instances.CONTENT_URI.buildUpon().let {
             ContentUris.appendId(it, now)
             ContentUris.appendId(it, end)
@@ -348,6 +469,70 @@ internal class GlanceDataSources(private val context: Context) {
 
     private fun weatherCodeToCondition(code: Int): String = weatherCodeToCondition(context, code)
 }
+
+/** Great-circle distance in kilometres (haversine). */
+internal fun haversineKm(lat1: Double, lon1: Double, lat2: Double, lon2: Double): Double {
+    val earthRadiusKm = 6371.0
+    val dLat = Math.toRadians(lat2 - lat1)
+    val dLon = Math.toRadians(lon2 - lon1)
+    val a = kotlin.math.sin(dLat / 2) * kotlin.math.sin(dLat / 2) +
+        kotlin.math.cos(Math.toRadians(lat1)) * kotlin.math.cos(Math.toRadians(lat2)) *
+        kotlin.math.sin(dLon / 2) * kotlin.math.sin(dLon / 2)
+    return 2 * earthRadiusKm * kotlin.math.asin(kotlin.math.sqrt(a))
+}
+
+/**
+ * Whether an IP-derived fix is plausible. An IP fix far from a recent real device fix usually
+ * means a VPN or mis-geolocated ISP range, not actual travel — prefer the device fix then.
+ * With no recent device reference there is nothing to contradict, so trust the IP.
+ */
+internal fun shouldTrustIpLocation(
+    ipLatitude: Double,
+    ipLongitude: Double,
+    lastDeviceLatitude: Double?,
+    lastDeviceLongitude: Double?,
+    lastDeviceAgeMs: Long?,
+    maxDistanceKm: Double = 300.0,
+    referenceMaxAgeMs: Long = 48L * 60 * 60 * 1000,
+): Boolean {
+    if (lastDeviceLatitude == null || lastDeviceLongitude == null || lastDeviceAgeMs == null) return true
+    if (lastDeviceAgeMs > referenceMaxAgeMs) return true
+    return haversineKm(ipLatitude, ipLongitude, lastDeviceLatitude, lastDeviceLongitude) <= maxDistanceKm
+}
+
+/**
+ * Coordinates from an IP-geolocation response. Handles both GeoJS (string lat/long) and
+ * ipwho.is (numeric lat/long, plus a `success` flag). Returns null on failure markers,
+ * out-of-range values, or the (0,0) null island some services emit on lookup failure.
+ */
+internal fun parseIpLocation(json: String): Pair<Double, Double>? = runCatching {
+    val o = JSONObject(json)
+    if (o.has("success") && !o.optBoolean("success", true)) return@runCatching null
+    val lat = o.optString("latitude").toDoubleOrNull()
+    val lon = o.optString("longitude").toDoubleOrNull()
+    when {
+        lat == null || lon == null -> null
+        lat == 0.0 && lon == 0.0 -> null
+        kotlin.math.abs(lat) > 90.0 || kotlin.math.abs(lon) > 180.0 -> null
+        else -> lat to lon
+    }
+}.getOrNull()
+
+/**
+ * End of the calendar query window: local midnight after [lookAheadDays] full days beyond today.
+ * A rolling `now + N*24h` window would hide tomorrow-evening events whenever the current
+ * time-of-day is earlier than the event's \u2014 e.g. at 19:42 a rolling 1-day window ends at
+ * 19:42 tomorrow and misses a 23:00 meeting.
+ */
+internal fun calendarQueryWindowEnd(nowMs: Long, lookAheadDays: Int): Long =
+    Calendar.getInstance().apply {
+        timeInMillis = nowMs
+        add(Calendar.DAY_OF_YEAR, lookAheadDays + 1)
+        set(Calendar.HOUR_OF_DAY, 0)
+        set(Calendar.MINUTE, 0)
+        set(Calendar.SECOND, 0)
+        set(Calendar.MILLISECOND, 0)
+    }.timeInMillis
 
 /** WMO weather code \u2192 localized condition label (shared by the glance strip fetchers). */
 internal fun weatherCodeToCondition(context: Context, code: Int): String {

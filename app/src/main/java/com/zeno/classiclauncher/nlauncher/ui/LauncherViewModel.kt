@@ -1393,6 +1393,10 @@ class LauncherViewModel(app: Application) : AndroidViewModel(app) {
         viewModelScope.launch { prefsRepo.setGlanceWeatherManualLongitude(longitude) }
     }
 
+    fun setGlanceWeatherManualCityName(cityName: String) {
+        viewModelScope.launch { prefsRepo.setGlanceWeatherManualCityName(cityName) }
+    }
+
     fun launchApp(packageName: String) {
         NotificationRepository.clearForPackage(packageName)
         actions.launchApp(packageName)
