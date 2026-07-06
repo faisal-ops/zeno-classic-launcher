@@ -9,6 +9,7 @@ data class GlanceStripPreferences(
     val showBattery: Boolean = true,
     val showCalendar: Boolean = true,
     val showAlarm: Boolean = true,
+    val showSoundProfile: Boolean = true,
     val calendarLookAheadDays: Int = 1,
     val weatherUseDeviceLocation: Boolean = true,
     val weatherLatitude: Double? = null,

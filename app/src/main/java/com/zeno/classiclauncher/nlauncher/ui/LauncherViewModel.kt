@@ -364,6 +364,9 @@ class LauncherViewModel(app: Application) : AndroidViewModel(app) {
             privateMode = privateMode,
             privateQuery = privateQuery,
             normalQuery = normalQuery,
+            // Application context ignores the in-app language picker; wrap it so the
+            // fallback folder title follows the launcher language.
+            folderFallbackName = LauncherLocale.apply(getApplication()).getString(R.string.folder_default_name),
         )
     }
 
@@ -497,7 +500,8 @@ class LauncherViewModel(app: Application) : AndroidViewModel(app) {
                         .mapNotNull { pkg -> byPkg[pkg]?.label }
                         .minWithOrNull { a, b -> collator.compare(a, b) }
                     if (!addedLabel.isNullOrBlank()) {
-                        _newAppAddedToast.value = getApplication<Application>().getString(R.string.new_app_added, addedLabel)
+                        // Wrap the app context so the toast follows the in-app language picker.
+                        _newAppAddedToast.value = LauncherLocale.apply(getApplication()).getString(R.string.new_app_added, addedLabel)
                     }
 
                     if (!isStrictDrawerAlphabeticalMode()) return@collect
@@ -1363,6 +1367,10 @@ class LauncherViewModel(app: Application) : AndroidViewModel(app) {
 
     fun setGlanceShowAlarm(show: Boolean) {
         viewModelScope.launch { prefsRepo.setGlanceShowAlarm(show) }
+    }
+
+    fun setGlanceShowSoundProfile(show: Boolean) {
+        viewModelScope.launch { prefsRepo.setGlanceShowSoundProfile(show) }
     }
 
     fun setGlanceCalendarRange(range: GlanceCalendarRange) {

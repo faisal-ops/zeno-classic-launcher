@@ -15,8 +15,10 @@
         android:paddingTop="0dp"
         android:paddingBottom="4dp">
 
-        <!-- Sound profile slot: compact spacer so events sit closer to the icon -->
+        <!-- Sound profile slot: compact spacer so events sit closer to the icon.
+             Collapsed to 0dp at runtime when the icon is toggled off (Glance Strip settings). -->
         <Space
+            android:id="@+id/glance_sound_profile_spacer"
             android:layout_width="42dp"
             android:layout_height="1dp" />
 

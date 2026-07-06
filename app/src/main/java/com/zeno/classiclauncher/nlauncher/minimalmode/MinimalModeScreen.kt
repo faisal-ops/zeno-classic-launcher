@@ -829,7 +829,7 @@ internal fun MinimalModeTopBar(
             if (headsetConnected) {
                 Icon(
                     imageVector = Icons.Rounded.Headset,
-                    contentDescription = "Headset connected",
+                    contentDescription = stringResource(R.string.cd_headset_connected),
                     tint = Color(0xFFEAF0F6),
                     modifier = Modifier.size(20.dp),
                 )
@@ -1957,7 +1957,7 @@ private fun QuickReplyOverlay(
                                 .focusRequester(fieldFocus),
                             decorationBox = { inner ->
                                 if (replyText.isEmpty()) {
-                                    Text("Reply…", fontSize = 15.sp, color = MUTED_TEXT)
+                                    Text(stringResource(R.string.minimal_mode_reply_hint), fontSize = 15.sp, color = MUTED_TEXT)
                                 }
                                 inner()
                             },

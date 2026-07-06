@@ -138,6 +138,8 @@ data class LauncherPrefs(
     val glanceShowBattery: Boolean = true,
     val glanceShowCalendar: Boolean = true,
     val glanceShowAlarm: Boolean = true,
+    /** Sound-profile cycle icon overlaid on the glance strip — duplicates the QS "Notifications" tile. */
+    val glanceShowSoundProfile: Boolean = true,
     val glanceCalendarRange: GlanceCalendarRange = GlanceCalendarRange.DAY,
     val glanceWeatherUnit: GlanceWeatherUnit = GlanceWeatherUnit.CELSIUS,
     val glanceWeatherLocationMode: GlanceWeatherLocationMode = GlanceWeatherLocationMode.DEVICE,
@@ -264,6 +266,7 @@ class LauncherPrefsRepository(private val context: Context) {
         val GLANCE_BATTERY = booleanPreferencesKey("glanceShowBattery")
         val GLANCE_CALENDAR = booleanPreferencesKey("glanceShowCalendar")
         val GLANCE_ALARM = booleanPreferencesKey("glanceShowAlarm")
+        val GLANCE_SOUND_PROFILE = booleanPreferencesKey("glanceShowSoundProfile")
         val GLANCE_CALENDAR_RANGE = stringPreferencesKey("glanceCalendarRange")
         val GLANCE_WEATHER_UNIT = stringPreferencesKey("glanceWeatherUnit")
         val GLANCE_WEATHER_LOCATION_MODE = stringPreferencesKey("glanceWeatherLocationMode")
@@ -351,6 +354,7 @@ class LauncherPrefsRepository(private val context: Context) {
         val glanceBat = p[Keys.GLANCE_BATTERY] ?: DEFAULT_PREFS.glanceShowBattery
         val glanceCal = p[Keys.GLANCE_CALENDAR] ?: DEFAULT_PREFS.glanceShowCalendar
         val glanceAlm = p[Keys.GLANCE_ALARM] ?: DEFAULT_PREFS.glanceShowAlarm
+        val glanceSound = p[Keys.GLANCE_SOUND_PROFILE] ?: DEFAULT_PREFS.glanceShowSoundProfile
         val glanceCalendarRange =
             p[Keys.GLANCE_CALENDAR_RANGE]?.let { v -> GlanceCalendarRange.entries.firstOrNull { it.name == v } }
                 ?: DEFAULT_PREFS.glanceCalendarRange
@@ -446,6 +450,7 @@ class LauncherPrefsRepository(private val context: Context) {
             glanceShowBattery = glanceBat,
             glanceShowCalendar = glanceCal,
             glanceShowAlarm = glanceAlm,
+            glanceShowSoundProfile = glanceSound,
             glanceCalendarRange = glanceCalendarRange,
             glanceWeatherUnit = glanceWeatherUnit,
             glanceWeatherLocationMode = glanceWeatherLocationMode,
@@ -698,6 +703,10 @@ class LauncherPrefsRepository(private val context: Context) {
         context.dataStore.edit { it[Keys.GLANCE_ALARM] = show }
     }
 
+    suspend fun setGlanceShowSoundProfile(show: Boolean) {
+        context.dataStore.edit { it[Keys.GLANCE_SOUND_PROFILE] = show }
+    }
+
     suspend fun setGlanceCalendarRange(range: GlanceCalendarRange) {
         context.dataStore.edit { it[Keys.GLANCE_CALENDAR_RANGE] = range.name }
     }
@@ -894,6 +903,7 @@ class LauncherPrefsRepository(private val context: Context) {
             s[Keys.GLANCE_BATTERY] = prefs.glanceShowBattery
             s[Keys.GLANCE_CALENDAR] = prefs.glanceShowCalendar
             s[Keys.GLANCE_ALARM] = prefs.glanceShowAlarm
+            s[Keys.GLANCE_SOUND_PROFILE] = prefs.glanceShowSoundProfile
             s[Keys.GLANCE_CALENDAR_RANGE] = prefs.glanceCalendarRange.name
             s[Keys.GLANCE_WEATHER_UNIT] = prefs.glanceWeatherUnit.name
             s[Keys.GLANCE_WEATHER_LOCATION_MODE] = prefs.glanceWeatherLocationMode.name

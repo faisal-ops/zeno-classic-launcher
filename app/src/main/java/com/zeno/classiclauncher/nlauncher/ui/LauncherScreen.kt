@@ -308,6 +308,7 @@ import com.zeno.classiclauncher.nlauncher.power.SleepManager
 import com.zeno.classiclauncher.nlauncher.folders.DrawerGridCell
 import com.zeno.classiclauncher.nlauncher.folders.FolderIds
 import com.zeno.classiclauncher.nlauncher.locale.LauncherLocale
+import com.zeno.classiclauncher.nlauncher.search.HangulSearch
 import com.zeno.classiclauncher.nlauncher.theme.LauncherThemePalette
 import com.zeno.classiclauncher.nlauncher.prefs.GridPreset
 import com.zeno.classiclauncher.nlauncher.prefs.GlanceWeatherUnit
@@ -1296,6 +1297,7 @@ fun LauncherScreen(
                             prefs.glanceShowBattery,
                             prefs.glanceShowCalendar,
                             prefs.glanceShowAlarm,
+                            prefs.glanceShowSoundProfile,
                             prefs.glanceWeatherUnit,
                         ) {
                             GlanceStripPreferences(
@@ -1303,6 +1305,7 @@ fun LauncherScreen(
                                 showBattery = prefs.glanceShowBattery,
                                 showCalendar = prefs.glanceShowCalendar,
                                 showAlarm = prefs.glanceShowAlarm,
+                                showSoundProfile = prefs.glanceShowSoundProfile,
                                 calendarLookAheadDays = 1,
                                 weatherUseDeviceLocation = true,
                                 weatherLatitude = null,
@@ -2128,6 +2131,7 @@ fun LauncherScreen(
                             glanceShowBattery = prefs.glanceShowBattery,
                             glanceShowCalendar = prefs.glanceShowCalendar,
                             glanceShowAlarm = prefs.glanceShowAlarm,
+                            glanceShowSoundProfile = prefs.glanceShowSoundProfile,
                             glanceWeatherUnit = prefs.glanceWeatherUnit,
                             themePalette = themePalette,
                             onGlanceEnabled = vm::setGlanceEnabled,
@@ -2135,6 +2139,7 @@ fun LauncherScreen(
                             onGlanceShowBattery = vm::setGlanceShowBattery,
                             onGlanceShowCalendar = vm::setGlanceShowCalendar,
                             onGlanceShowAlarm = vm::setGlanceShowAlarm,
+                            onGlanceShowSoundProfile = vm::setGlanceShowSoundProfile,
                             onGlanceWeatherUnit = vm::setGlanceWeatherUnit,
                             onDismiss = { showGlanceSettings = false },
                         )
@@ -2161,14 +2166,28 @@ fun LauncherScreen(
             )
         }
 
-        // DockShortcutPickerOverlay at parent level so it works both from settings
+        // AppSelectorOverlay at parent level so it works both from settings
         // AND from the home-screen dock long-press (when showSettings = false).
         val activeDockSlot = showDockSlotPicker
         if (activeDockSlot != null) {
-            DockShortcutPickerOverlay(
+            AppSelectorOverlay(
+                title = when (activeDockSlot) {
+                    DockSlot.Mail -> stringResource(R.string.dock_shortcut_mail_title)
+                    DockSlot.Shortcut -> stringResource(R.string.dock_shortcut_second_title)
+                    DockSlot.Camera -> stringResource(R.string.dock_shortcut_camera_title)
+                },
                 apps = allApps,
                 themePalette = themePalette,
-                slot = activeDockSlot,
+                selectedPackage = when (activeDockSlot) {
+                    DockSlot.Mail -> prefs.dockMailPackage
+                    DockSlot.Shortcut -> prefs.dockSecondPackage
+                    DockSlot.Camera -> prefs.dockCameraPackage
+                },
+                unsetLabel = when (activeDockSlot) {
+                    DockSlot.Mail -> stringResource(R.string.dock_use_default_mail)
+                    DockSlot.Shortcut -> stringResource(R.string.dock_use_default_messages)
+                    DockSlot.Camera -> stringResource(R.string.dock_use_default_camera)
+                },
                 onSelect = { pkg ->
                     when (activeDockSlot) {
                         DockSlot.Mail -> vm.setDockMailPackage(pkg)
@@ -2177,17 +2196,19 @@ fun LauncherScreen(
                     }
                     showDockSlotPicker = null
                 },
-                onUseDefault = {
-                    when (activeDockSlot) {
-                        DockSlot.Mail -> vm.setDockMailPackage("")
-                        DockSlot.Shortcut -> vm.setDockSecondPackage("")
-                        DockSlot.Camera -> vm.setDockCameraPackage("")
-                    }
-                    showDockSlotPicker = null
-                },
                 onDismiss = { showDockSlotPicker = null },
-                dockSecondEnabled = prefs.dockSecondEnabled,
-                onToggleDockSecond = { vm.setDockSecondEnabled(!prefs.dockSecondEnabled) },
+                topToggle = if (activeDockSlot == DockSlot.Shortcut) {
+                    {
+                        AppSelectorToggleRow(
+                            label = stringResource(R.string.dock_show_in_dock),
+                            checked = prefs.dockSecondEnabled,
+                            onToggle = { vm.setDockSecondEnabled(!prefs.dockSecondEnabled) },
+                            themePalette = themePalette,
+                        )
+                    }
+                } else {
+                    null
+                },
             )
         }
 
@@ -3118,6 +3139,11 @@ private fun HomePage(
     }
 
     var searchFocusIndex by remember { mutableStateOf(-1) }
+    // Korean locale → compose Hangul from physical-keyboard keys (no IME in key-event search).
+    val homeSearchConfig = LocalConfiguration.current
+    val koreanSearchInput = remember(homeSearchConfig) {
+        runCatching { homeSearchConfig.locales[0].language == "ko" }.getOrDefault(false)
+    }
     val searchResults = remember(searchQuery, allApps, hiddenPackages) {
         rankHomeSearchApps(
             query = searchQuery,
@@ -3168,7 +3194,7 @@ private fun HomePage(
             .onPreviewKeyEvent { ev ->
                 if (!homeActive) return@onPreviewKeyEvent false
                 if (ev.type != KeyEventType.KeyDown) return@onPreviewKeyEvent false
-                val newQuery = tryConsumeSearchKey(ev, searchQuery)
+                val newQuery = tryConsumeSearchKey(ev, searchQuery, koreanSearchInput)
                 if (newQuery != null) {
                     onSearchQueryChange(newQuery)
                     return@onPreviewKeyEvent true
@@ -3586,6 +3612,7 @@ private fun HomePage(
                             v.applyStripPreferences(glanceStripPreferences)
                         },
                     )
+                    if (glanceStripPreferences.showSoundProfile) {
                     Box(modifier = Modifier.align(Alignment.CenterStart)) {
                         SoundProfileHeaderIcon(
                             profile = soundProfile,
@@ -3656,6 +3683,7 @@ private fun HomePage(
                             }
                         }
                     }
+                    }
                 }
             }
             Box(
@@ -3700,7 +3728,11 @@ private fun HomePage(
         // Home search overlay — compact top card, wallpaper visible below
         if (homeActive && searchQuery.isNotEmpty()) {
             val allFiltered = remember(searchQuery, allApps, hiddenPackages) {
-                allApps.filter { it.label.contains(searchQuery, ignoreCase = true) && it.packageName !in hiddenPackages }
+                allApps.filter {
+                    it.packageName !in hiddenPackages &&
+                        (it.label.contains(searchQuery, ignoreCase = true) ||
+                            HangulSearch.matches(it.label.lowercase(), searchQuery.lowercase()))
+                }
             }
             val extra = allFiltered.size - searchResults.size
             BackHandler { onSearchQueryChange("") }
@@ -3920,7 +3952,7 @@ private fun HomePage(
                     }
                     Spacer(Modifier.width(12.dp))
                     Text(
-                        text = "Search \"$searchQuery\" on Play Store",
+                        text = stringResource(R.string.search_play_store, searchQuery),
                         color = Color(0xFF84D5F6),
                         fontSize = 14.sp,
                         maxLines = 1,
@@ -4058,7 +4090,11 @@ internal fun QuickSettingsOverlay(
     val quickSettingsKeyboardModePermissionPrompt = stringResource(R.string.quick_settings_keyboard_mode_permission_prompt)
     val quickSettingsBluetoothBlocked = stringResource(R.string.quick_settings_bluetooth_blocked)
     val quickSettingsAutoRotatePermissionPrompt = stringResource(R.string.quick_settings_auto_rotate_permission_prompt)
-    val dateFormatter = remember { SimpleDateFormat("EEEE, MMMM d", Locale.getDefault()) }
+    val dateFormatter = remember {
+        // Locale-correct field order (e.g. ko "M월 d일 EEEE", de "EEEE, d. MMMM") — never hardcode "MMMM d".
+        val pattern = android.text.format.DateFormat.getBestDateTimePattern(Locale.getDefault(), "EEEEMMMMd")
+        SimpleDateFormat(pattern, Locale.getDefault())
+    }
     var dateText by remember { mutableStateOf(dateFormatter.format(Date())) }
     var bluetoothEnabled by remember { mutableStateOf(actions.isBluetoothEnabled()) }
     val btPermissionLauncher = rememberLauncherForActivityResult(
@@ -4908,7 +4944,6 @@ internal fun QuickSettingsOverlay(
     }
     val settingsDefaultApp = stringResource(R.string.settings_default_app)
     val qrScannerTitle = stringResource(R.string.quick_settings_qr_scanner_title)
-    val qrScannerSubtitle = stringResource(R.string.quick_settings_qr_scanner_subtitle)
     val qrScannerDefaultText = stringResource(R.string.quick_settings_qr_use_default)
     val visibleQrApps = remember(allApps, hiddenPackages) {
         allApps.filter { it.packageName !in hiddenPackages && !it.internal }
@@ -5220,21 +5255,17 @@ internal fun QuickSettingsOverlay(
             )
         }
         if (showQrScannerPicker) {
-            AppPickerOverlay(
+            AppSelectorOverlay(
                 title = qrScannerTitle,
-                subtitle = qrScannerSubtitle,
                 apps = visibleQrApps,
                 themePalette = themePalette,
+                selectedPackage = qrScannerPackage,
+                unsetLabel = qrScannerDefaultText,
                 onSelect = {
                     onSetQrScannerPackage(it)
                     showQrScannerPicker = false
                 },
-                onUseDefault = {
-                    onSetQrScannerPackage("")
-                    showQrScannerPicker = false
-                },
                 onDismiss = { showQrScannerPicker = false },
-                useDefaultLabel = qrScannerDefaultText,
             )
         }
     }
@@ -5297,7 +5328,7 @@ private fun QuickSettingsTileEditorOverlay(
                     )
                 }
                 Text(
-                    text = "Edit",
+                    text = stringResource(R.string.qs_edit_title),
                     color = Color(0xFFEAF0F6),
                     style = MaterialTheme.typography.titleLarge.copy(
                         fontWeight = FontWeight.SemiBold,
@@ -5307,14 +5338,14 @@ private fun QuickSettingsTileEditorOverlay(
                 )
                 TextButton(onClick = onReset) {
                     Text(
-                        "RESET",
+                        stringResource(R.string.qs_edit_reset),
                         color = Color(0xFFEAF0F6),
                         style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.SemiBold),
                     )
                 }
             }
             Text(
-                text = "Hold and drag to rearrange tiles",
+                text = stringResource(R.string.qs_edit_hint),
                 color = Color(0xFFB8C1CE),
                 style = MaterialTheme.typography.bodyLarge.copy(fontSize = 16.sp),
                 modifier = Modifier
@@ -5601,7 +5632,7 @@ private fun PinAppToHomeSheet(
             )
             Spacer(Modifier.height(4.dp))
             Text(
-                "Pins an app icon to the strip above the dock.",
+                stringResource(R.string.pin_to_strip_hint),
                 style = MaterialTheme.typography.bodySmall,
                 color = themePalette.settingsMenuBody,
             )
@@ -6696,6 +6727,11 @@ private fun AppDrawer(
     LaunchedEffect(isActive) {
         if (isActive) focusRequester.requestFocus()
     }
+    // Korean locale → compose Hangul from physical-keyboard keys (no IME in key-event search).
+    val drawerSearchConfig = LocalConfiguration.current
+    val drawerKoreanSearchInput = remember(drawerSearchConfig) {
+        runCatching { drawerSearchConfig.locales[0].language == "ko" }.getOrDefault(false)
+    }
     LaunchedEffect(classicDock) {
         if (nav.area == FocusArea.Dock) {
             nav = NavState(area = FocusArea.Dock, dockIndex = 0)
@@ -6791,7 +6827,7 @@ private fun AppDrawer(
                 if (ev.isVolumePanelKey()) return@onPreviewKeyEvent false
                 // BB Classic red button: always go home from anywhere in the drawer.
                 if (ev.isEndCallKey()) { onExitToHome(); return@onPreviewKeyEvent true }
-                val searchUpdate = tryConsumeSearchKey(ev, searchQuery)
+                val searchUpdate = tryConsumeSearchKey(ev, searchQuery, drawerKoreanSearchInput)
                 if (searchUpdate != null) {
                     onSearchQueryChange(searchUpdate)
                     nav = nav.copy(area = FocusArea.DrawerGrid)
@@ -6996,7 +7032,7 @@ private fun AppDrawer(
                     contentPadding = PaddingValues(horizontal = 8.dp, vertical = 0.dp),
                 ) {
                     Text(
-                        text = "Search \"$searchQuery\" on Play Store",
+                        text = stringResource(R.string.search_play_store, searchQuery),
                         color = Color(0xFF84D5F6),
                         maxLines = 1,
                         overflow = TextOverflow.Ellipsis,
@@ -7017,7 +7053,7 @@ private fun AppDrawer(
                 if (reorderMode) {
                     // Arrange mode active — show Done button
                     Text(
-                        text = "Done",
+                        text = stringResource(R.string.action_done),
                         fontSize = 13.sp,
                         fontWeight = FontWeight.SemiBold,
                         color = Color(0xFF4FC3F7),
@@ -7537,9 +7573,17 @@ private val SETTINGS_SEARCH_ENTRIES = listOf(
 private fun matchSettingsEntries(query: String): List<SettingsSearchEntry> {
     if (query.length < 2) return emptyList()
     val q = query.lowercase()
+    // Hangul composed from QWERTY keys still matches the English keyword list.
+    val latinAlt = if (HangulSearch.containsHangul(q)) {
+        HangulSearch.toLatinKeys(q).takeIf { it.length >= 2 }
+    } else {
+        null
+    }
     return SETTINGS_SEARCH_ENTRIES.filter { entry ->
-        entry.label.contains(q, ignoreCase = true) ||
-            entry.keywords.any { it.contains(q, ignoreCase = true) || q.contains(it, ignoreCase = true) }
+        listOfNotNull(q, latinAlt).any { needle ->
+            entry.label.contains(needle, ignoreCase = true) ||
+                entry.keywords.any { it.contains(needle, ignoreCase = true) || needle.contains(it, ignoreCase = true) }
+        }
     }.take(3)
 }
 
@@ -7551,20 +7595,26 @@ private fun rankHomeSearchApps(
     if (query.isBlank()) return emptyList()
     val q = query.trim().lowercase()
     if (q.isEmpty()) return emptyList()
+    // Hangul query typed on QWERTY also matches Latin labels ("ㅛㅐㅕ…" → "youtube").
+    val latinAlt = if (HangulSearch.containsHangul(q)) HangulSearch.toLatinKeys(q) else null
+    fun scoreFor(label: String, pkg: String, needle: String): Int? = when {
+        label == needle -> 0
+        label.startsWith(needle) -> 1
+        label.split(Regex("[\\s._-]+")).any { it.startsWith(needle) } -> 2
+        label.contains(needle) -> 3
+        pkg.contains(needle) -> 4
+        else -> null
+    }
     return allApps
         .asSequence()
         .filter { it.packageName !in hiddenPackages }
         .mapNotNull { app ->
             val label = app.label.lowercase()
             val pkg = app.packageName.lowercase()
-            val score = when {
-                label == q -> 0
-                label.startsWith(q) -> 1
-                label.split(Regex("[\\s._-]+")).any { it.startsWith(q) } -> 2
-                label.contains(q) -> 3
-                pkg.contains(q) -> 4
-                else -> null
-            } ?: return@mapNotNull null
+            val score = scoreFor(label, pkg, q)
+                ?: latinAlt?.let { scoreFor(label, pkg, it) }
+                ?: (if (HangulSearch.matches(label, q)) 3 else null)
+                ?: return@mapNotNull null
             Triple(score, app.label.lowercase(), app)
         }
         .sortedWith(compareBy<Triple<Int, String, AppEntry>> { it.first }.thenBy { it.second })
@@ -7573,19 +7623,28 @@ private fun rankHomeSearchApps(
 }
 
 /** @return new query if key updates search; null if not a text/search key. */
-private fun tryConsumeSearchKey(ev: KeyEvent, searchQuery: String): String? {
+internal fun tryConsumeSearchKey(ev: KeyEvent, searchQuery: String, koreanInput: Boolean = false): String? {
     if (ev.type != KeyEventType.KeyDown) return null
-    if (ev.key == Key.Backspace && searchQuery.isNotEmpty()) return searchQuery.dropLast(1)
+    if (ev.key == Key.Backspace && searchQuery.isNotEmpty()) {
+        // Korean: delete one jamo at a time (값 → 갑), matching IME behavior.
+        return if (koreanInput) HangulSearch.deleteLastJamo(searchQuery) else searchQuery.dropLast(1)
+    }
     if (ev.key == Key.Back && searchQuery.isNotEmpty()) return ""
     val native = ev.nativeKeyEvent
     val uc = native?.getUnicodeChar(native.metaState) ?: 0
     if (uc != 0 && Character.isValidCodePoint(uc)) {
         runCatching { String(Character.toChars(uc)) }.getOrNull()?.let { str ->
-            if (str.isNotEmpty() && !str.first().isISOControl()) return searchQuery + str
+            if (str.isNotEmpty() && !str.first().isISOControl()) {
+                if (koreanInput) HangulSearch.composeKey(searchQuery, str.first())?.let { return it }
+                return searchQuery + str
+            }
         }
     }
     val typed = keyToTypedChar(ev.key)
-    if (typed != null) return searchQuery + typed
+    if (typed != null) {
+        if (koreanInput) HangulSearch.composeKey(searchQuery, typed)?.let { return it }
+        return searchQuery + typed
+    }
     return null
 }
 
@@ -7607,7 +7666,7 @@ private fun openPlayStoreSearch(context: android.content.Context, query: String)
         }
 }
 
-private fun keyToTypedChar(key: Key): Char? = when (key) {
+internal fun keyToTypedChar(key: Key): Char? = when (key) {
     Key.A -> 'a'
     Key.B -> 'b'
     Key.C -> 'c'
@@ -8712,7 +8771,7 @@ private fun HomeGroupContextMenu(
                     onRenameGroup(renameText.trim().ifBlank { "Group" })
                     renameOpen = false
                     onDismiss()
-                }) { Text("Save", color = themePalette.settingsMenuBody) }
+                }) { Text(stringResource(R.string.action_save), color = themePalette.settingsMenuBody) }
             },
             dismissButton = {
                 TextButton(onClick = { renameOpen = false }) {
@@ -10557,372 +10616,6 @@ private fun DockEndSlot(
     }
 }
 
-@Composable
-private fun DockShortcutPickerOverlay(
-    apps: List<AppEntry>,
-    themePalette: LauncherThemePalette,
-    slot: DockSlot,
-    onSelect: (String) -> Unit,
-    onUseDefault: () -> Unit,
-    onDismiss: () -> Unit,
-    dockSecondEnabled: Boolean = true,
-    onToggleDockSecond: () -> Unit = {},
-) {
-    var query by remember { mutableStateOf("") }
-    val filtered = remember(apps, query) {
-        val q = query.trim().lowercase()
-        apps.filter {
-            if (it.internal) return@filter false
-            if (q.isEmpty()) return@filter true
-            it.label.lowercase().contains(q) || it.packageName.lowercase().contains(q)
-        }
-    }
-    val dockPickerFR = remember { FocusRequester() }
-    val searchFieldFR = remember { FocusRequester() }
-    var focusedApp by remember { mutableIntStateOf(0) }
-    val appListState = rememberLazyListState()
-    LaunchedEffect(filtered) { focusedApp = 0 }
-    LaunchedEffect(focusedApp) {
-        if (filtered.isNotEmpty()) appListState.animateScrollToItem(focusedApp.coerceIn(0, filtered.size - 1))
-    }
-    BackHandler(enabled = true, onBack = onDismiss)
-    Surface(
-        modifier = Modifier
-            .fillMaxSize()
-            .zIndex(420f)
-            .focusRequester(dockPickerFR)
-            .focusable()
-            .onPreviewKeyEvent { ev ->
-                if (ev.type != KeyEventType.KeyDown) return@onPreviewKeyEvent false
-                val nk = ev.nativeKeyEvent
-                val up    = ev.key == Key.DirectionUp    || nk?.keyCode == AndroidKeyEvent.KEYCODE_DPAD_UP
-                val down  = ev.key == Key.DirectionDown  || nk?.keyCode == AndroidKeyEvent.KEYCODE_DPAD_DOWN
-                val enter = ev.key == Key.Enter || ev.key == Key.NumPadEnter ||
-                    nk?.keyCode == AndroidKeyEvent.KEYCODE_DPAD_CENTER ||
-                    nk?.keyCode == AndroidKeyEvent.KEYCODE_ENTER
-                when {
-                    up    -> { focusedApp = (focusedApp - 1).coerceAtLeast(0); true }
-                    down  -> { focusedApp = (focusedApp + 1).coerceAtMost((filtered.size - 1).coerceAtLeast(0)); true }
-                    enter -> { filtered.getOrNull(focusedApp)?.let { onSelect(it.packageName) }; true }
-                    else  -> false
-                }
-            },
-        color = themePalette.settingsBg,
-    ) {
-        LaunchedEffect(Unit) { runCatching { searchFieldFR.requestFocus() } }
-        Column(
-            modifier = Modifier
-                .fillMaxSize()
-                .statusBarsPadding(),
-        ) {
-            Row(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(start = 4.dp, end = 8.dp, top = 8.dp),
-                verticalAlignment = Alignment.CenterVertically,
-            ) {
-                IconButton(onClick = onDismiss) {
-                    Icon(
-                        Icons.AutoMirrored.Rounded.ArrowBack,
-                        contentDescription = stringResource(R.string.action_back),
-                        tint = themePalette.settingsMenuTitle,
-                        modifier = Modifier.size(26.dp),
-                    )
-                }
-                Text(
-                    when (slot) {
-                        DockSlot.Mail -> stringResource(R.string.dock_shortcut_mail_title)
-                        DockSlot.Shortcut -> stringResource(R.string.dock_shortcut_second_title)
-                        DockSlot.Camera -> stringResource(R.string.dock_shortcut_camera_title)
-                    },
-                    style = MaterialTheme.typography.titleLarge.copy(
-                        color = themePalette.settingsMenuTitle,
-                        fontWeight = FontWeight.Medium,
-                    ),
-                )
-            }
-            // Toggle enable/disable — only for the second shortcut slot
-            if (slot == DockSlot.Shortcut) {
-                Row(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .clickable { onToggleDockSecond() }
-                        .padding(horizontal = 20.dp, vertical = 12.dp),
-                    verticalAlignment = Alignment.CenterVertically,
-                ) {
-                    Text(
-                        text = stringResource(R.string.dock_show_in_dock),
-                        color = themePalette.settingsMenuTitle,
-                        fontSize = 15.sp,
-                        modifier = Modifier.weight(1f),
-                    )
-                    Switch(
-                        checked = dockSecondEnabled,
-                        onCheckedChange = { onToggleDockSecond() },
-                    )
-                }
-                HorizontalDivider(color = Color(0x22FFFFFF), thickness = 0.5.dp)
-            }
-            TextButton(
-                onClick = onUseDefault,
-                modifier = Modifier.padding(horizontal = 16.dp),
-            ) {
-                Text(
-                    when (slot) {
-                        DockSlot.Mail -> stringResource(R.string.dock_use_default_mail)
-                        DockSlot.Shortcut -> stringResource(R.string.dock_use_default_messages)
-                        DockSlot.Camera -> stringResource(R.string.dock_use_default_camera)
-                    },
-                    color = Color(0xFF84D5F6),
-                )
-            }
-            OutlinedTextField(
-                value = query,
-                onValueChange = { query = it },
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(horizontal = 16.dp)
-                    .focusRequester(searchFieldFR),
-                placeholder = { Text(stringResource(R.string.search_apps_hint), color = themePalette.settingsMenuBody) },
-                singleLine = true,
-                colors = TextFieldDefaults.colors(
-                    focusedTextColor = themePalette.settingsMenuTitle,
-                    unfocusedTextColor = themePalette.settingsMenuTitle,
-                    focusedLabelColor = themePalette.settingsMenuBody,
-                    unfocusedLabelColor = themePalette.settingsMenuBody,
-                    focusedContainerColor = Color(0xFF1E2430),
-                    unfocusedContainerColor = Color(0xFF1E2430),
-                ),
-                keyboardOptions = KeyboardOptions(
-                    capitalization = KeyboardCapitalization.None,
-                    imeAction = ImeAction.Search,
-                ),
-            )
-            Spacer(Modifier.height(8.dp))
-            LazyColumn(
-                state = appListState,
-                modifier = Modifier
-                    .weight(1f)
-                    .fillMaxWidth(),
-            ) {
-                itemsIndexed(filtered, key = { _, app -> app.packageName }) { index, app ->
-                    Row(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .then(if (focusedApp == index) Modifier.background(Color.White.copy(alpha = 0.07f)) else Modifier)
-                            .clickable { onSelect(app.packageName) }
-                            .padding(horizontal = 16.dp, vertical = 12.dp),
-                        verticalAlignment = Alignment.CenterVertically,
-                    ) {
-                        AsyncImage(
-                            model = app.icon,
-                            contentDescription = null,
-                            modifier = Modifier.size(40.dp),
-                        )
-                        Spacer(Modifier.width(14.dp))
-                        Column(modifier = Modifier.weight(1f)) {
-                            Text(
-                                app.label,
-                                style = MaterialTheme.typography.bodyLarge.copy(
-                                    color = themePalette.settingsMenuTitle,
-                                    fontWeight = FontWeight.Medium,
-                                ),
-                            )
-                            Text(
-                                app.packageName,
-                                style = MaterialTheme.typography.bodySmall.copy(
-                                    color = themePalette.settingsMenuBody,
-                                    fontSize = 12.sp,
-                                ),
-                                maxLines = 1,
-                                overflow = TextOverflow.Ellipsis,
-                            )
-                        }
-                    }
-                    Box(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .padding(start = 70.dp)
-                            .height(0.5.dp)
-                            .background(Color(0xFF2C3340)),
-                    )
-                }
-            }
-        }
-    }
-}
-
-@Composable
-private fun AppPickerOverlay(
-    title: String,
-    subtitle: String,
-    apps: List<AppEntry>,
-    themePalette: LauncherThemePalette,
-    onSelect: (String) -> Unit,
-    onUseDefault: () -> Unit,
-    onDismiss: () -> Unit,
-    useDefaultLabel: String,
-) {
-    var query by remember { mutableStateOf("") }
-    val filtered = remember(apps, query) {
-        val q = query.trim().lowercase()
-        apps.filter {
-            if (it.internal) return@filter false
-            if (q.isEmpty()) return@filter true
-            it.label.lowercase().contains(q) || it.packageName.lowercase().contains(q)
-        }
-    }
-    Surface(
-        modifier = Modifier
-            .fillMaxSize()
-            .zIndex(420f),
-        color = themePalette.settingsBg,
-    ) {
-        Column(
-            modifier = Modifier
-                .fillMaxSize()
-                .statusBarsPadding(),
-        ) {
-            Row(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(start = 4.dp, end = 8.dp, top = 8.dp),
-                verticalAlignment = Alignment.CenterVertically,
-            ) {
-                IconButton(onClick = onDismiss) {
-                    Icon(
-                        Icons.AutoMirrored.Rounded.ArrowBack,
-                        contentDescription = stringResource(R.string.action_back),
-                        tint = themePalette.settingsMenuTitle,
-                        modifier = Modifier.size(26.dp),
-                    )
-                }
-                Column(modifier = Modifier.weight(1f)) {
-                    Text(
-                        title,
-                        style = MaterialTheme.typography.titleLarge.copy(
-                            color = themePalette.settingsMenuTitle,
-                            fontWeight = FontWeight.Medium,
-                        ),
-                    )
-                    Text(
-                        subtitle,
-                        style = MaterialTheme.typography.bodySmall,
-                        color = themePalette.settingsMenuBody,
-                    )
-                }
-            }
-            TextButton(
-                onClick = onUseDefault,
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(horizontal = 16.dp),
-            ) {
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    verticalAlignment = Alignment.CenterVertically,
-                ) {
-                    Icon(
-                        Icons.Outlined.Search,
-                        contentDescription = null,
-                        tint = Color(0xFF84D5F6),
-                        modifier = Modifier.size(22.dp),
-                    )
-                    Spacer(Modifier.width(14.dp))
-                    Column(modifier = Modifier.weight(1f)) {
-                        Text(
-                            useDefaultLabel,
-                            color = Color(0xFF84D5F6),
-                            style = MaterialTheme.typography.bodyLarge.copy(fontWeight = FontWeight.SemiBold),
-                        )
-                    }
-                    Icon(
-                        Icons.AutoMirrored.Rounded.ArrowForward,
-                        contentDescription = null,
-                        tint = themePalette.settingsMenuBody,
-                        modifier = Modifier.size(18.dp),
-                    )
-                }
-            }
-            Box(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(start = 70.dp)
-                    .height(0.5.dp)
-                    .background(Color(0xFF2C3340)),
-            )
-            OutlinedTextField(
-                value = query,
-                onValueChange = { query = it },
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(horizontal = 16.dp),
-                placeholder = { Text(stringResource(R.string.search_apps_hint), color = themePalette.settingsMenuBody) },
-                singleLine = true,
-                colors = TextFieldDefaults.colors(
-                    focusedTextColor = themePalette.settingsMenuTitle,
-                    unfocusedTextColor = themePalette.settingsMenuTitle,
-                    focusedLabelColor = themePalette.settingsMenuBody,
-                    unfocusedLabelColor = themePalette.settingsMenuBody,
-                    focusedContainerColor = Color(0xFF1E2430),
-                    unfocusedContainerColor = Color(0xFF1E2430),
-                ),
-                keyboardOptions = KeyboardOptions(
-                    capitalization = KeyboardCapitalization.None,
-                    imeAction = ImeAction.Search,
-                ),
-            )
-            Spacer(Modifier.height(8.dp))
-            LazyColumn(
-                modifier = Modifier
-                    .weight(1f)
-                    .fillMaxWidth(),
-            ) {
-                items(filtered, key = { it.packageName }) { app ->
-                    Row(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .clickable { onSelect(app.packageName) }
-                            .padding(horizontal = 16.dp, vertical = 12.dp),
-                        verticalAlignment = Alignment.CenterVertically,
-                    ) {
-                        AsyncImage(
-                            model = app.icon,
-                            contentDescription = null,
-                            modifier = Modifier.size(40.dp),
-                        )
-                        Spacer(Modifier.width(14.dp))
-                        Column(modifier = Modifier.weight(1f)) {
-                            Text(
-                                app.label,
-                                style = MaterialTheme.typography.bodyLarge.copy(
-                                    color = themePalette.settingsMenuTitle,
-                                    fontWeight = FontWeight.Medium,
-                                ),
-                            )
-                            Text(
-                                app.packageName,
-                                style = MaterialTheme.typography.bodySmall.copy(
-                                    color = themePalette.settingsMenuBody,
-                                    fontSize = 12.sp,
-                                ),
-                                maxLines = 1,
-                                overflow = TextOverflow.Ellipsis,
-                            )
-                        }
-                    }
-                    Box(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .padding(start = 70.dp)
-                            .height(0.5.dp)
-                            .background(Color(0xFF2C3340)),
-                    )
-                }
-            }
-        }
-    }
-}
 
 @Composable
 private fun HomeGroupsSettingsOverlay(
@@ -11286,6 +10979,7 @@ private fun GlanceSettingsOverlay(
     glanceShowBattery: Boolean,
     glanceShowCalendar: Boolean,
     glanceShowAlarm: Boolean,
+    glanceShowSoundProfile: Boolean,
     glanceWeatherUnit: GlanceWeatherUnit,
     themePalette: LauncherThemePalette,
     onGlanceEnabled: (Boolean) -> Unit,
@@ -11293,6 +10987,7 @@ private fun GlanceSettingsOverlay(
     onGlanceShowBattery: (Boolean) -> Unit,
     onGlanceShowCalendar: (Boolean) -> Unit,
     onGlanceShowAlarm: (Boolean) -> Unit,
+    onGlanceShowSoundProfile: (Boolean) -> Unit,
     onGlanceWeatherUnit: (GlanceWeatherUnit) -> Unit,
     onDismiss: () -> Unit,
 ) {
@@ -11303,7 +10998,7 @@ private fun GlanceSettingsOverlay(
     val cardShape = RoundedCornerShape(12.dp)
     val glanceFR = remember { FocusRequester() }
     var focusedGlance by remember { mutableIntStateOf(0) }
-    val glanceBringers = remember { List(6) { BringIntoViewRequester() } }
+    val glanceBringers = remember { List(7) { BringIntoViewRequester() } }
     LaunchedEffect(focusedGlance) { glanceBringers[focusedGlance].bringIntoView() }
     BackHandler(enabled = true, onBack = onDismiss)
 
@@ -11372,7 +11067,7 @@ private fun GlanceSettingsOverlay(
                     nk?.keyCode == AndroidKeyEvent.KEYCODE_ENTER
                 when {
                     up    -> { focusedGlance = (focusedGlance - 1).coerceAtLeast(0); true }
-                    down  -> { focusedGlance = (focusedGlance + 1).coerceAtMost(5); true }
+                    down  -> { focusedGlance = (focusedGlance + 1).coerceAtMost(6); true }
                     enter -> {
                         when (focusedGlance) {
                             0 -> onGlanceEnabled(!glanceEnabled)
@@ -11381,6 +11076,7 @@ private fun GlanceSettingsOverlay(
                             3 -> if (glanceEnabled) onGlanceShowCalendar(!glanceShowCalendar)
                             4 -> if (glanceEnabled) onGlanceShowBattery(!glanceShowBattery)
                             5 -> if (glanceEnabled) onGlanceShowAlarm(!glanceShowAlarm)
+                            6 -> if (glanceEnabled) onGlanceShowSoundProfile(!glanceShowSoundProfile)
                         }
                         true
                     }
@@ -11528,6 +11224,16 @@ private fun GlanceSettingsOverlay(
                         enabled = glanceEnabled,
                         focused = focusedGlance == 5,
                         onCheckedChange = onGlanceShowAlarm,
+                    )
+                }
+                Box(modifier = Modifier.bringIntoViewRequester(glanceBringers[6])) {
+                    ToggleCard(
+                        title = stringResource(R.string.glance_sound_profile_title),
+                        subtitle = stringResource(R.string.glance_sound_profile_subtitle),
+                        checked = glanceShowSoundProfile,
+                        enabled = glanceEnabled,
+                        focused = focusedGlance == 6,
+                        onCheckedChange = onGlanceShowSoundProfile,
                     )
                 }
             }
@@ -13721,15 +13427,18 @@ private fun LanguageSettingsOverlay(
                                 verticalAlignment = Alignment.CenterVertically,
                             ) {
                                 Column(Modifier.weight(1f)) {
+                                    // The "system default" entry is UI text, not a language name — localize it.
+                                    val entryTitle = if (language.code.isEmpty()) stringResource(R.string.language_system_default) else language.title
+                                    val entrySubtitle = if (language.code.isEmpty()) stringResource(R.string.language_system_default_subtitle) else language.subtitle
                                     Text(
-                                        language.title,
+                                        entryTitle,
                                         color = if (selected) Color(0xFFFF665C) else Color.White,
                                         fontSize = 21.sp,
                                         fontWeight = FontWeight.Medium,
                                     )
-                                    if (language.subtitle.isNotBlank()) {
+                                    if (entrySubtitle.isNotBlank()) {
                                         Text(
-                                            language.subtitle,
+                                            entrySubtitle,
                                             color = Color.White.copy(alpha = 0.42f),
                                             fontSize = 14.sp,
                                             maxLines = 1,

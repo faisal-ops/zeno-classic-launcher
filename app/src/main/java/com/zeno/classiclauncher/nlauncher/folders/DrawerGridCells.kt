@@ -2,12 +2,18 @@ package com.zeno.classiclauncher.nlauncher.folders
 
 import com.zeno.classiclauncher.nlauncher.apps.AppEntry
 import com.zeno.classiclauncher.nlauncher.apps.AppsRepository
+import com.zeno.classiclauncher.nlauncher.search.HangulSearch
 
-private fun folderDisplayTitle(folderId: String, members: List<AppEntry>, folderNames: Map<String, String>): String {
+private fun folderDisplayTitle(
+    folderId: String,
+    members: List<AppEntry>,
+    folderNames: Map<String, String>,
+    fallbackName: String,
+): String {
     folderNames[folderId]?.trim()?.takeIf { it.isNotEmpty() }?.let { return it }
-    if (members.isEmpty()) return "Folder"
+    if (members.isEmpty()) return fallbackName
     if (members.size == 1) return members.first().label
-    return "Folder (${members.size})"
+    return "$fallbackName (${members.size})"
 }
 
 fun buildDrawerGridCells(
@@ -19,6 +25,7 @@ fun buildDrawerGridCells(
     privateMode: Boolean,
     privateQuery: String,
     normalQuery: String,
+    folderFallbackName: String = "Folder",
 ): List<DrawerGridCell> {
     val byPkg = HashMap<String, AppEntry>(installed.size)
     for (app in installed) byPkg[app.packageName] = app
@@ -36,11 +43,13 @@ fun buildDrawerGridCells(
         if (privateMode) {
             if (a.packageName !in hiddenPackages) return false
             if (privateLower.isEmpty()) return true
-            return a.label.lowercase().contains(privateLower) || a.packageName.contains(privateLower)
+            return a.label.lowercase().contains(privateLower) || a.packageName.contains(privateLower) ||
+                HangulSearch.matches(a.label.lowercase(), privateLower)
         }
         if (a.packageName in hiddenPackages) return false
         if (normalLower.isEmpty()) return true
-        return a.label.lowercase().contains(normalLower) || a.packageName.contains(normalLower)
+        return a.label.lowercase().contains(normalLower) || a.packageName.contains(normalLower) ||
+            HangulSearch.matches(a.label.lowercase(), normalLower)
     }
 
     // Lower score = better match. Used to rank results when a search query is active.
@@ -83,10 +92,10 @@ fun buildDrawerGridCells(
                 .filter { it.packageName !in hiddenPackages }
             if (allNonHidden.isEmpty()) continue
 
-            val title = folderDisplayTitle(token, allNonHidden, folderNames)
+            val title = folderDisplayTitle(token, allNonHidden, folderNames, folderFallbackName)
             // When the folder title itself matches the query, show the whole folder (all members).
             val titleMatchesSearch = !privateMode && normalLower.isNotEmpty() &&
-                title.lowercase().contains(normalLower)
+                (title.lowercase().contains(normalLower) || HangulSearch.matches(title.lowercase(), normalLower))
             val members = if (titleMatchesSearch) {
                 allNonHidden
             } else {

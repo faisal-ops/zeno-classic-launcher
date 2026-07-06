@@ -17,6 +17,7 @@ import android.provider.AlarmClock
 import android.provider.CalendarContract
 import androidx.core.content.ContextCompat
 import androidx.core.content.getSystemService
+import com.zeno.classiclauncher.nlauncher.R
 import java.io.BufferedReader
 import java.io.InputStreamReader
 import java.net.HttpURLConnection
@@ -65,7 +66,14 @@ internal class GlanceDataSources(private val context: Context) {
     private val calendarAppPrefs by lazy {
         context.getSharedPreferences("zeno_glance_cal_app", Context.MODE_PRIVATE)
     }
-    private val timeFormat = SimpleDateFormat("h:mm a", Locale.getDefault())
+    // Skeleton-based pattern: locale-correct format and 12/24h per system setting.
+    private val timeFormat = SimpleDateFormat(
+        android.text.format.DateFormat.getBestDateTimePattern(
+            Locale.getDefault(),
+            if (android.text.format.DateFormat.is24HourFormat(context)) "Hm" else "hm",
+        ),
+        Locale.getDefault(),
+    )
     private val weatherCacheMs = 2 * 60 * 60 * 1000L
     private val locationCacheMs = 2 * 60 * 60 * 1000L
     private val calendarCacheMs = 60 * 60 * 1000L
@@ -163,7 +171,7 @@ internal class GlanceDataSources(private val context: Context) {
         return try {
             val url = URL(
                 "https://api.open-meteo.com/v1/forecast" +
-                    "?latitude=%.4f&longitude=%.4f".format(loc.latitude, loc.longitude) +
+                    "?latitude=%.4f&longitude=%.4f".format(Locale.US, loc.latitude, loc.longitude) +
                     "&current=temperature_2m,weathercode" +
                     "&daily=temperature_2m_max,temperature_2m_min" +
                     "&timezone=auto&forecast_days=1",
@@ -338,18 +346,24 @@ internal class GlanceDataSources(private val context: Context) {
             .take(2)
     }
 
-    private fun weatherCodeToCondition(code: Int): String = when (code) {
-        0 -> "Clear"
-        1 -> "Mainly clear"
-        2 -> "Partly cloudy"
-        3 -> "Overcast"
-        45, 48 -> "Fog"
-        51, 53, 55 -> "Drizzle"
-        61, 63, 65 -> "Rain"
-        71, 73, 75 -> "Snow"
-        80, 81, 82 -> "Showers"
-        95 -> "Thunderstorm"
-        96, 99 -> "Storm"
-        else -> "\u2014"
+    private fun weatherCodeToCondition(code: Int): String = weatherCodeToCondition(context, code)
+}
+
+/** WMO weather code \u2192 localized condition label (shared by the glance strip fetchers). */
+internal fun weatherCodeToCondition(context: Context, code: Int): String {
+    val res = when (code) {
+        0 -> R.string.weather_clear
+        1 -> R.string.weather_mainly_clear
+        2 -> R.string.weather_partly_cloudy
+        3 -> R.string.weather_overcast
+        45, 48 -> R.string.weather_fog
+        51, 53, 55 -> R.string.weather_drizzle
+        61, 63, 65 -> R.string.weather_rain
+        71, 73, 75 -> R.string.weather_snow
+        80, 81, 82 -> R.string.weather_showers
+        95 -> R.string.weather_thunderstorm
+        96, 99 -> R.string.weather_storm
+        else -> return "\u2014"
     }
+    return context.getString(res)
 }

@@ -43,6 +43,8 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.res.stringResource
+import com.zeno.classiclauncher.nlauncher.R
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.graphics.Color
@@ -182,12 +184,12 @@ fun PermissionsSettingsOverlay(
                 IconButton(onClick = onDismiss) {
                     Icon(
                         Icons.AutoMirrored.Rounded.ArrowBack,
-                        contentDescription = "Back",
+                        contentDescription = stringResource(R.string.action_back),
                         tint = themePalette.settingsMenuTitle,
                     )
                 }
                 Text(
-                    "Permissions",
+                    stringResource(R.string.permissions_title),
                     style = MaterialTheme.typography.headlineMedium.copy(
                         color = themePalette.settingsMenuTitle,
                         fontWeight = FontWeight.Normal,
@@ -203,18 +205,16 @@ fun PermissionsSettingsOverlay(
                 verticalArrangement = Arrangement.spacedBy(14.dp),
             ) {
                 Text(
-                    "Turn off a feature if you do not need it — then the system does not need that access. " +
-                        "When a feature is on, use Grant to approve the permission. " +
-                        "If access is already granted, turning off opens the right Settings screen so you can remove it.",
+                    stringResource(R.string.permissions_intro),
                     style = MaterialTheme.typography.bodyMedium,
                     color = subtitleMuted,
                 )
 
                 PermissionSwitchCard(
-                    title = "Unread badges (mail & shortcuts)",
-                    subtitleOff = "Off — notification access not required",
-                    subtitleOnOk = "On — notification access granted",
-                    subtitleOnMissing = "On — allow notification access for badges",
+                    title = stringResource(R.string.perm_badges_title),
+                    subtitleOff = stringResource(R.string.perm_badges_off),
+                    subtitleOnOk = stringResource(R.string.perm_badges_on_ok),
+                    subtitleOnMissing = stringResource(R.string.perm_badges_on_missing),
                     featureOn = prefs.notificationBadgesEnabled,
                     permissionOk = runtime.notificationAccess,
                     focused = focusedItem == 0,
@@ -229,7 +229,7 @@ fun PermissionsSettingsOverlay(
                             )
                         }
                     },
-                    grantLabel = "Open notification access",
+                    grantLabel = stringResource(R.string.perm_badges_grant_label),
                     openSystemSettingsWhenTurningOff =
                         if (prefs.notificationBadgesEnabled && runtime.notificationAccess) {
                             {
@@ -241,7 +241,7 @@ fun PermissionsSettingsOverlay(
                                 }
                                 Toast.makeText(
                                     context,
-                                    "Turn off notification access for this app, then return.",
+                                    context.getString(R.string.perm_badges_turn_off_toast),
                                     Toast.LENGTH_LONG,
                                 ).show()
                             }
@@ -251,13 +251,13 @@ fun PermissionsSettingsOverlay(
                 )
 
                 PermissionSwitchCard(
-                    title = "Double Tap to Lock",
-                    subtitleOff = "Off — lock access not required",
+                    title = stringResource(R.string.perm_lock_title),
+                    subtitleOff = stringResource(R.string.perm_lock_off),
                     subtitleOnOk = when {
-                        runtime.lockAccessibility -> "On — lock helper (face unlock)"
-                        else -> "On — built-in lock path"
+                        runtime.lockAccessibility -> stringResource(R.string.perm_lock_on_helper)
+                        else -> stringResource(R.string.perm_lock_on_builtin)
                     },
-                    subtitleOnMissing = "On — built-in lock path",
+                    subtitleOnMissing = stringResource(R.string.perm_lock_on_builtin),
                     featureOn = prefs.doubleTapToSleepEnabled,
                     permissionOk = true,
                     focused = focusedItem == 1,
@@ -275,15 +275,15 @@ fun PermissionsSettingsOverlay(
                             )
                         }
                     },
-                    grantLabel = "Open Accessibility (lock helper)",
+                    grantLabel = stringResource(R.string.perm_lock_grant_label),
                     openSystemSettingsWhenTurningOff = null,
                 )
 
                 PermissionSwitchCard(
-                    title = "Auto Unlock",
-                    subtitleOff = "Off — tap overlay + Enter required",
-                    subtitleOnOk = "On — skips overlay, auto-submits ${prefs.autoUnlockPinDigits}-digit PIN",
-                    subtitleOnMissing = "On — skips overlay, auto-submits ${prefs.autoUnlockPinDigits}-digit PIN",
+                    title = stringResource(R.string.perm_auto_unlock_title),
+                    subtitleOff = stringResource(R.string.perm_auto_unlock_off),
+                    subtitleOnOk = stringResource(R.string.perm_auto_unlock_on, prefs.autoUnlockPinDigits),
+                    subtitleOnMissing = stringResource(R.string.perm_auto_unlock_on, prefs.autoUnlockPinDigits),
                     featureOn = prefs.autoUnlockEnabled,
                     permissionOk = true,
                     focused = focusedItem == 2,
@@ -293,14 +293,16 @@ fun PermissionsSettingsOverlay(
                     onGrant = {
                         onAutoUnlockPinDigits(if (prefs.autoUnlockPinDigits == 4) 6 else 4)
                     },
-                    grantLabel = if (prefs.autoUnlockPinDigits == 4) "Switch to 6-digit PIN" else "Switch to 4-digit PIN",
+                    grantLabel = stringResource(
+                        if (prefs.autoUnlockPinDigits == 4) R.string.perm_auto_unlock_switch_to_6 else R.string.perm_auto_unlock_switch_to_4,
+                    ),
                 )
 
                 PermissionSwitchCard(
-                    title = "Glance Strip (Date & Weather)",
-                    subtitleOff = "Off — location not required for weather",
-                    subtitleOnOk = "On — location granted (weather)",
-                    subtitleOnMissing = "On — grant location for weather",
+                    title = stringResource(R.string.perm_glance_title),
+                    subtitleOff = stringResource(R.string.perm_glance_off),
+                    subtitleOnOk = stringResource(R.string.perm_glance_on_ok),
+                    subtitleOnMissing = stringResource(R.string.perm_glance_on_missing),
                     featureOn = prefs.glanceEnabled,
                     permissionOk = runtime.location,
                     focused = focusedItem == 3,
@@ -310,7 +312,7 @@ fun PermissionsSettingsOverlay(
                     onGrant = {
                         locationLauncher.launch(Manifest.permission.ACCESS_COARSE_LOCATION)
                     },
-                    grantLabel = "Grant location",
+                    grantLabel = stringResource(R.string.perm_glance_grant_label),
                     openSystemSettingsWhenTurningOff =
                         if (prefs.glanceEnabled && runtime.location) {
                             {
@@ -324,7 +326,7 @@ fun PermissionsSettingsOverlay(
                                 }
                                 Toast.makeText(
                                     context,
-                                    "In App info → Permissions, turn off Location if you want.",
+                                    context.getString(R.string.perm_glance_turn_off_toast),
                                     Toast.LENGTH_LONG,
                                 ).show()
                             }
@@ -334,12 +336,12 @@ fun PermissionsSettingsOverlay(
                 )
 
                 PermissionSwitchCard(
-                    title = "Calendar Events on Glance Strip",
-                    subtitleOff = "Off — calendar permission not required",
-                    subtitleOnOk = "On — calendar access granted",
+                    title = stringResource(R.string.perm_calendar_title),
+                    subtitleOff = stringResource(R.string.perm_calendar_off),
+                    subtitleOnOk = stringResource(R.string.perm_calendar_on_ok),
                     subtitleOnMissing = when {
-                        !prefs.glanceEnabled -> "Turn on Glance above to show events on home"
-                        else -> "On — grant calendar to show events"
+                        !prefs.glanceEnabled -> stringResource(R.string.perm_calendar_on_missing_glance_off)
+                        else -> stringResource(R.string.perm_calendar_on_missing)
                     },
                     featureOn = prefs.glanceShowCalendar,
                     permissionOk = runtime.calendar,
@@ -351,7 +353,7 @@ fun PermissionsSettingsOverlay(
                     onGrant = {
                         calendarLauncher.launch(Manifest.permission.READ_CALENDAR)
                     },
-                    grantLabel = "Grant calendar",
+                    grantLabel = stringResource(R.string.perm_calendar_grant_label),
                     openSystemSettingsWhenTurningOff =
                         if (prefs.glanceEnabled && prefs.glanceShowCalendar && runtime.calendar) {
                             {
@@ -365,7 +367,7 @@ fun PermissionsSettingsOverlay(
                                 }
                                 Toast.makeText(
                                     context,
-                                    "In App info → Permissions, turn off Calendar if you want.",
+                                    context.getString(R.string.perm_calendar_turn_off_toast),
                                     Toast.LENGTH_LONG,
                                 ).show()
                             }

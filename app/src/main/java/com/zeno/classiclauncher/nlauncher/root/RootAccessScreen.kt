@@ -48,8 +48,10 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import com.zeno.classiclauncher.nlauncher.R
 import kotlinx.coroutines.launch
 
 private val BG = Color(0xFF0E131B)
@@ -73,6 +75,7 @@ internal fun RootAccessScreen(
     onRootedQsToggled: (Boolean) -> Unit = {},
 ) {
     val scope = rememberCoroutineScope()
+    val context = androidx.compose.ui.platform.LocalContext.current
     var loading by remember { mutableStateOf(false) }
     var statusMessage by remember { mutableStateOf("") }
     var detection by remember { mutableStateOf<RootDetectionResult?>(null) }
@@ -90,17 +93,17 @@ internal fun RootAccessScreen(
             .verticalScroll(rememberScrollState()),
     ) {
         Spacer(Modifier.height(20.dp))
-        Text("Root Access", fontSize = 22.sp, fontWeight = FontWeight.SemiBold, color = TITLE_COLOR)
+        Text(stringResource(R.string.root_access_title), fontSize = 22.sp, fontWeight = FontWeight.SemiBold, color = TITLE_COLOR)
         Spacer(Modifier.height(4.dp))
-        Text("Grant root to unlock advanced launcher features", fontSize = 13.sp, color = SUBTITLE_COLOR)
+        Text(stringResource(R.string.root_access_subtitle), fontSize = 13.sp, color = SUBTITLE_COLOR)
         Spacer(Modifier.height(24.dp))
 
         // ── Permission status card ────────────────────────────────────────────
         RootCard {
             StatusRow(
                 icon = if (rootGranted) Icons.Outlined.LockOpen else Icons.Outlined.Lock,
-                label = "Launcher root permission",
-                value = if (rootGranted) "Granted" else "Not granted",
+                label = stringResource(R.string.root_launcher_permission_label),
+                value = if (rootGranted) stringResource(R.string.root_granted) else stringResource(R.string.root_not_granted),
                 valueColor = if (rootGranted) SUCCESS else SUBTITLE_COLOR,
             )
         }
@@ -125,7 +128,7 @@ internal fun RootAccessScreen(
         ) {
             Icon(Icons.Rounded.Search, contentDescription = null, modifier = Modifier.size(16.dp))
             Spacer(Modifier.width(8.dp))
-            Text(if (detecting) "Checking…" else "Check Root Status")
+            Text(if (detecting) stringResource(R.string.root_checking) else stringResource(R.string.root_check_status_button))
         }
 
         // Detection result — overall only
@@ -154,9 +157,9 @@ internal fun RootAccessScreen(
                             Column {
                                 Text(
                                     when {
-                                        d.highConfidence -> "Rooted"
-                                        d.isRooted -> "Rooted (low confidence)"
-                                        else -> "Not rooted"
+                                        d.highConfidence -> stringResource(R.string.root_status_rooted)
+                                        d.isRooted -> stringResource(R.string.root_status_rooted_low_confidence)
+                                        else -> stringResource(R.string.root_status_not_rooted)
                                     },
                                     fontSize = 15.sp,
                                     color = if (d.isRooted) SUCCESS else SUBTITLE_COLOR,
@@ -164,9 +167,9 @@ internal fun RootAccessScreen(
                                 )
                                 Text(
                                     when {
-                                        d.highConfidence -> "Root access confirmed on this device"
-                                        d.isRooted -> "Some root indicators found"
-                                        else -> "No root indicators detected"
+                                        d.highConfidence -> stringResource(R.string.root_status_rooted_desc)
+                                        d.isRooted -> stringResource(R.string.root_status_rooted_low_desc)
+                                        else -> stringResource(R.string.root_status_not_rooted_desc)
                                     },
                                     fontSize = 12.sp,
                                     color = SUBTITLE_COLOR,
@@ -186,22 +189,18 @@ internal fun RootAccessScreen(
                                     if (d.isRooted) {
                                         // Device is confirmed rooted — no need to go to Magisk, just tap Grant
                                         Text(
-                                            "Root detected. Tap Grant Root Access below to enable launcher features.",
+                                            stringResource(R.string.root_detected_tap_grant),
                                             fontSize = 12.sp, color = SUBTITLE_COLOR, lineHeight = 17.sp,
                                         )
                                     } else {
                                         // Root not detected — guide user through Magisk SuperUser grant
                                         Text(
-                                            "Detection blocked by Magisk DenyList + Shamiko (expected on well-spoofed devices).",
+                                            stringResource(R.string.root_detection_blocked),
                                             fontSize = 12.sp, color = SUBTITLE_COLOR, lineHeight = 17.sp,
                                         )
                                         Spacer(Modifier.height(6.dp))
                                         Text(
-                                            "To grant root access:\n" +
-                                                "1. Open the Magisk app\n" +
-                                                "2. Tap Superuser tab\n" +
-                                                "3. Find Zeno Classic → Allow\n" +
-                                                "4. Return here and tap Grant Root Access",
+                                            stringResource(R.string.root_grant_instructions),
                                             fontSize = 12.sp, color = SUBTITLE_COLOR, lineHeight = 18.sp,
                                         )
                                     }
@@ -233,12 +232,12 @@ internal fun RootAccessScreen(
                                 onRootGranted()
                                 // Re-run detection to update status
                                 detection = RootManager.detectRoot()
-                                statusMessage = "Root access granted. Features unlocked."
+                                statusMessage = context.getString(R.string.root_granted_status_msg)
                             } else {
-                                statusMessage = "Permission commands failed — device may not support them."
+                                statusMessage = context.getString(R.string.root_perm_commands_failed)
                             }
                         } else {
-                            statusMessage = "Root grant denied or timed out."
+                            statusMessage = context.getString(R.string.root_grant_denied)
                         }
                         loading = false
                     }
@@ -248,7 +247,7 @@ internal fun RootAccessScreen(
                 colors = ButtonDefaults.buttonColors(containerColor = ACCENT),
                 shape = RoundedCornerShape(12.dp),
             ) {
-                Text(if (loading) "Requesting…" else "Grant Root Access", fontWeight = FontWeight.SemiBold)
+                Text(if (loading) stringResource(R.string.root_requesting) else stringResource(R.string.root_grant_button), fontWeight = FontWeight.SemiBold)
             }
         } else {
             OutlinedButton(
@@ -270,17 +269,17 @@ internal fun RootAccessScreen(
                         // Step 3: verify root is actually gone — re-run detection so user can see proof
                         detecting = true
                         loading = false
-                        statusMessage = "Verifying root is fully removed…"
+                        statusMessage = context.getString(R.string.root_verifying)
                         val verification = RootManager.detectRoot()
                         detection = verification
                         detecting = false
                         statusMessage = when {
                             !verification.signals.any { it.id == RootSignalId.SU_EXEC && it.detected } ->
-                                "Root access fully removed. su is now blocked — confirmed."
+                                context.getString(R.string.root_fully_removed)
                             !managerRevoked ->
-                                "Permissions revoked. Could not auto-clear the SuperUser entry — go to your root manager app and remove Zeno Classic manually."
+                                context.getString(R.string.root_manager_not_auto_cleared)
                             else ->
-                                "Permissions revoked but su still responds. Remove Zeno Classic from your root manager's SuperUser tab manually."
+                                context.getString(R.string.root_su_still_responds)
                         }
                     }
                 },
@@ -289,7 +288,7 @@ internal fun RootAccessScreen(
                 colors = ButtonDefaults.outlinedButtonColors(contentColor = DANGER),
                 shape = RoundedCornerShape(12.dp),
             ) {
-                Text(if (loading) "Revoking…" else "Revoke Root Access", fontWeight = FontWeight.SemiBold)
+                Text(if (loading) stringResource(R.string.root_revoking) else stringResource(R.string.root_revoke_button), fontWeight = FontWeight.SemiBold)
             }
         }
 
@@ -300,12 +299,12 @@ internal fun RootAccessScreen(
 
         // ── Root features list ────────────────────────────────────────────────
         Spacer(Modifier.height(28.dp))
-        Text("Root Features", fontSize = 13.sp, color = SUBTITLE_COLOR, modifier = Modifier.padding(start = 4.dp, bottom = 8.dp))
+        Text(stringResource(R.string.root_features_section), fontSize = 13.sp, color = SUBTITLE_COLOR, modifier = Modifier.padding(start = 4.dp, bottom = 8.dp))
         RootCard {
             RootFeatureRow(
                 icon = Icons.Rounded.GridView,
-                title = "Rooted QS Tiles",
-                subtitle = "Tap tiles toggle directly (Wi-Fi, mobile data, battery saver, airplane mode, night light, greyscale…)",
+                title = stringResource(R.string.root_qs_tiles_title),
+                subtitle = stringResource(R.string.root_qs_tiles_subtitle),
                 active = rootGranted && rootedQsEnabled,
                 enabled = rootGranted,
                 onToggle = { if (rootGranted) onRootedQsToggled(it) },

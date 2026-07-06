@@ -53,7 +53,7 @@ internal suspend fun fetchMinimalModeWeather(
     try {
         val url = URL(
             "https://api.open-meteo.com/v1/forecast" +
-                "?latitude=%.4f&longitude=%.4f".format(loc.latitude, loc.longitude) +
+                "?latitude=%.4f&longitude=%.4f".format(Locale.US, loc.latitude, loc.longitude) +
                 "&daily=weathercode,temperature_2m_max,temperature_2m_min" +
                 "&timezone=auto&forecast_days=5",
         )

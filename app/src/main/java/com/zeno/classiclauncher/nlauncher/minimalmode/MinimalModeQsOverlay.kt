@@ -96,7 +96,11 @@ internal fun MinimalModeQsOverlay(
     val scope = rememberCoroutineScope()
     val actions = remember(context) { LauncherActions(context) }
     val lifecycleOwner = LocalLifecycleOwner.current
-    val dateFormatter = remember { SimpleDateFormat("EEEE, MMMM d", Locale.getDefault()) }
+    val dateFormatter = remember {
+        // Locale-correct field order (e.g. ko "M월 d일 EEEE") — never hardcode "MMMM d".
+        val pattern = android.text.format.DateFormat.getBestDateTimePattern(Locale.getDefault(), "EEEEMMMMd")
+        SimpleDateFormat(pattern, Locale.getDefault())
+    }
     var dateText by remember { mutableStateOf(dateFormatter.format(Date())) }
 
     var showQrPicker by remember { mutableStateOf(false) }

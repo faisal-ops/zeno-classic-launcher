@@ -184,7 +184,7 @@ internal fun MinimalModeSettingsOverlay(
             ) {
                 Icon(
                     Icons.AutoMirrored.Rounded.ArrowBack,
-                    contentDescription = "Back",
+                    contentDescription = stringResource(R.string.action_back),
                     tint = TITLE_COLOR,
                     modifier = Modifier
                         .size(22.dp)

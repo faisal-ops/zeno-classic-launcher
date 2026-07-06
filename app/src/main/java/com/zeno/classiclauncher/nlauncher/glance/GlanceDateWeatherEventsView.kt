@@ -36,6 +36,7 @@ import androidx.core.app.ActivityCompat
 import androidx.core.content.ContextCompat
 import androidx.core.content.getSystemService
 import androidx.core.view.isVisible
+import androidx.core.view.updateLayoutParams
 import com.zeno.classiclauncher.nlauncher.R
 import java.io.BufferedReader
 import java.io.InputStreamReader
@@ -94,6 +95,7 @@ class GlanceDateWeatherEventsView @JvmOverloads constructor(
     private lateinit var dotsText: TextView
     private lateinit var dateView: TextView
     private lateinit var weatherView: TextView
+    private lateinit var soundProfileSpacer: View
 
     private data class GlanceItem(
         val text: String,
@@ -169,8 +171,18 @@ class GlanceDateWeatherEventsView @JvmOverloads constructor(
         context.getSharedPreferences("zeno_glance_cal_app", Context.MODE_PRIVATE)
     }
 
-    private val dateFormat = SimpleDateFormat("EEE, MMM d", Locale.getDefault())
-    private val timeFormat = SimpleDateFormat("h:mm a", Locale.getDefault())
+    // Skeleton-based patterns give locale-correct field order and 12/24h per system setting.
+    private val dateFormat = SimpleDateFormat(
+        android.text.format.DateFormat.getBestDateTimePattern(Locale.getDefault(), "EEEMMMd"),
+        Locale.getDefault(),
+    )
+    private val timeFormat = SimpleDateFormat(
+        android.text.format.DateFormat.getBestDateTimePattern(
+            Locale.getDefault(),
+            if (android.text.format.DateFormat.is24HourFormat(context)) "Hm" else "hm",
+        ),
+        Locale.getDefault(),
+    )
     private val shadowColor = 0xCC000000.toInt()
 
     @Volatile private var screenOn = true
@@ -224,8 +236,15 @@ class GlanceDateWeatherEventsView @JvmOverloads constructor(
     }
 
     fun applyStripPreferences(p: GlanceStripPreferences) {
+        val soundProfileVisibilityChanged = stripPrefs.showSoundProfile != p.showSoundProfile
         stripPrefs = p
         glanceForceRebuild = true
+        if (soundProfileVisibilityChanged) {
+            // Collapse the icon's reserved slot to 0dp so carousel/fallback text can reach the
+            // left edge, matching the date's flush-right alignment on the other side.
+            val widthPx = if (p.showSoundProfile) (42 * resources.displayMetrics.density).toInt() else 0
+            soundProfileSpacer.updateLayoutParams { width = widthPx }
+        }
         // Preference changes (especially weather unit) should be visible immediately, not after
         // heavy-IO debounce windows.
         lastHeavyIoAtMs = 0L
@@ -271,6 +290,7 @@ class GlanceDateWeatherEventsView @JvmOverloads constructor(
         dotsText = findViewById(R.id.glance_dots_text)
         dateView = findViewById(R.id.glance_date)
         weatherView = findViewById(R.id.glance_weather)
+        soundProfileSpacer = findViewById(R.id.glance_sound_profile_spacer)
         for (tv in listOf(carouselText, dotsText, dateView, weatherView)) {
             tv.setShadowLayer(3f, 1f, 1f, shadowColor)
         }
@@ -586,9 +606,16 @@ class GlanceDateWeatherEventsView @JvmOverloads constructor(
 
         if (isNoAlerts) {
             carouselText.animate().cancel()
-            carouselText.text = ""
             carouselText.setOnClickListener(null)
-            carouselText.isVisible = false
+            if (stripPrefs.showSoundProfile) {
+                // Sound-profile icon already occupies this row — an empty carousel next to it
+                // doesn't need its own placeholder.
+                carouselText.text = ""
+                carouselText.isVisible = false
+            } else {
+                carouselText.text = context.getString(R.string.glance_nothing_to_show)
+                carouselText.isVisible = true
+            }
             updateDots(items)
             return
         }
@@ -622,6 +649,11 @@ class GlanceDateWeatherEventsView @JvmOverloads constructor(
     }
 
     private fun updateDots(items: List<GlanceItem>) {
+        // carouselText's marginStart only exists to separate it from the dots \u2014 drop it when
+        // the dots are hidden so the fallback/carousel text can sit flush against the left edge.
+        carouselText.updateLayoutParams<android.view.ViewGroup.MarginLayoutParams> {
+            marginStart = ((if (items.isNotEmpty()) 10 else 0) * resources.displayMetrics.density).toInt()
+        }
         if (items.isNotEmpty()) {
             val activeIndex = currentGlanceIndex % 3
             dotsText.text = List(3) { i ->
@@ -724,13 +756,17 @@ class GlanceDateWeatherEventsView @JvmOverloads constructor(
                 }
                 val suffix = if (remainMs > 0) {
                     val m = (remainMs / 60_000).toInt()
-                    if (m >= 60) " · Full in ${m / 60}h ${m % 60}m" else " · Full in ${m}m"
+                    " · " + if (m >= 60) {
+                        context.getString(R.string.glance_full_in_hm, m / 60, m % 60)
+                    } else {
+                        context.getString(R.string.glance_full_in_m, m)
+                    }
                 } else {
                     ""
                 }
-                GlanceItem(text = "Charging $level%$suffix", type = GlanceItemType.BATTERY)
+                GlanceItem(text = context.getString(R.string.glance_charging, level) + suffix, type = GlanceItemType.BATTERY)
             }
-            level <= 15 -> GlanceItem(text = "\uD83D\uDD0B Battery low · $level%", type = GlanceItemType.BATTERY)
+            level <= 15 -> GlanceItem(text = context.getString(R.string.glance_battery_low, level), type = GlanceItemType.BATTERY)
             else -> null
         }
     }
@@ -948,7 +984,7 @@ class GlanceDateWeatherEventsView @JvmOverloads constructor(
         val accountLabel = calendarAccountLabel(event.accountType)
 
         val checkBox = CheckBox(context).apply {
-            text = "Always open $accountLabel events with selected app"
+            text = context.getString(R.string.glance_always_open_events, accountLabel)
             isChecked = true
             setPadding(56, 32, 56, 8)
         }
@@ -1016,7 +1052,7 @@ class GlanceDateWeatherEventsView @JvmOverloads constructor(
         return try {
             val url = URL(
                 "https://api.open-meteo.com/v1/forecast" +
-                    "?latitude=%.4f&longitude=%.4f".format(loc.latitude, loc.longitude) +
+                    "?latitude=%.4f&longitude=%.4f".format(Locale.US, loc.latitude, loc.longitude) +
                     "&current=temperature_2m,weathercode" +
                     "&daily=temperature_2m_max,temperature_2m_min" +
                     "&timezone=auto&forecast_days=1",
@@ -1068,20 +1104,7 @@ class GlanceDateWeatherEventsView @JvmOverloads constructor(
         }
     }
 
-    private fun weatherCodeToCondition(code: Int): String = when (code) {
-        0 -> "Clear"
-        1 -> "Mainly clear"
-        2 -> "Partly cloudy"
-        3 -> "Overcast"
-        45, 48 -> "Fog"
-        51, 53, 55 -> "Drizzle"
-        61, 63, 65 -> "Rain"
-        71, 73, 75 -> "Snow"
-        80, 81, 82 -> "Showers"
-        95 -> "Thunderstorm"
-        96, 99 -> "Storm"
-        else -> "\u2014"
-    }
+    private fun weatherCodeToCondition(code: Int): String = weatherCodeToCondition(context, code)
 
     private fun cToF(celsius: Float): Float = (celsius * 9f / 5f) + 32f
 

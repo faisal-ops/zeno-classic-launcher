@@ -60,6 +60,7 @@ object LauncherBackup {
         p.put("glanceShowBattery", prefs.glanceShowBattery)
         p.put("glanceShowCalendar", prefs.glanceShowCalendar)
         p.put("glanceShowAlarm", prefs.glanceShowAlarm)
+        p.put("glanceShowSoundProfile", prefs.glanceShowSoundProfile)
         p.put("glanceCalendarRange", prefs.glanceCalendarRange.name)
         p.put("glanceWeatherUnit", prefs.glanceWeatherUnit.name)
         p.put("glanceWeatherLocationMode", prefs.glanceWeatherLocationMode.name)
@@ -202,6 +203,7 @@ object LauncherBackup {
         val glanceBat = p.optBoolean("glanceShowBattery", true)
         val glanceCal = p.optBoolean("glanceShowCalendar", true)
         val glanceAlm = p.optBoolean("glanceShowAlarm", true)
+        val glanceSound = p.optBoolean("glanceShowSoundProfile", true)
         val glanceCalendarRange = p.optString("glanceCalendarRange", "DAY").let { name ->
             GlanceCalendarRange.entries.firstOrNull { it.name == name } ?: GlanceCalendarRange.DAY
         }
@@ -346,6 +348,7 @@ object LauncherBackup {
             glanceShowBattery = glanceBat,
             glanceShowCalendar = glanceCal,
             glanceShowAlarm = glanceAlm,
+            glanceShowSoundProfile = glanceSound,
             glanceCalendarRange = glanceCalendarRange,
             glanceWeatherUnit = glanceWeatherUnit,
             glanceWeatherLocationMode = glanceWeatherLocationMode,

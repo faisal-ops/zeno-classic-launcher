@@ -64,6 +64,12 @@ class LauncherBackupExhaustiveTest {
         assertFalse(roundTrip(LauncherPrefs(showIconNotifBadge = false)).showIconNotifBadge)
     }
 
+    @Test
+    fun roundTrip_glanceShowSoundProfile_preserved() {
+        assertTrue(roundTrip(LauncherPrefs(glanceShowSoundProfile = true)).glanceShowSoundProfile)
+        assertFalse(roundTrip(LauncherPrefs(glanceShowSoundProfile = false)).glanceShowSoundProfile)
+    }
+
     // ─── Enum fields ─────────────────────────────────────────────────────────
 
     @Test
