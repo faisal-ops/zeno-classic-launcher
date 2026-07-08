@@ -29,6 +29,7 @@ object LauncherLocale {
         LauncherLanguage("ja", "日本語", "Japanese"),
         LauncherLanguage("ko", "한국어", "Korean"),
         LauncherLanguage("zh", "中文", "Chinese"),
+        LauncherLanguage("ar", "العربية", "Arabic"),
     )
 
     fun normalize(languageCode: String): String {

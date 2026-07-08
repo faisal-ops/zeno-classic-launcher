@@ -1,7 +1,7 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
     <string name="app_name">Zeno Classic</string>
-    <string name="home_menu_settings_title">Zeno Classic</string>
+    <string name="home_menu_settings_title">ゼノ クラシック</string>
     <string name="settings_language_title">言語設定</string>
     <string name="language_setting_title">言語設定</string>
     <string name="language_setting_restart_note">言語を選ぶとランチャーが更新されます。</string>
@@ -138,9 +138,9 @@
     <string name="icon_badge_toggle">通知バッジ</string>
     <string name="icon_badge_permission_required">通知アクセスが必要です</string>
     <string name="icon_badge_on">オン - 未読通知の星マーク</string>
-    <string name="settings_flip_clock_title">Zeno Flip Clock</string>
+    <string name="settings_flip_clock_title">ゼノ フリップクロック</string>
     <string name="settings_flip_clock_subtitle">分単位のフリップクロック スクリーンセーバー</string>
-    <string name="flip_clock_dream_label">Zeno Flip Clock</string>
+    <string name="flip_clock_dream_label">ゼノ フリップクロック</string>
 
     <!-- English fallback strings added to keep localized builds complete. -->\n    <string name="icon_pack_title">アイコンパック</string>
     <string name="icon_pack_subtitle">インストール済みのNova/Apexスタイルのアイコンパックを使用</string>
@@ -378,4 +378,31 @@
     <string name="weather_location_no_results">一致する結果がありません</string>
     <string name="weather_location_use_device">端末の位置情報を使用</string>
     <string name="weather_location_device">端末の位置情報</string>
+    <string name="cd_toggle_korean_input">韓国語と英語の入力を切り替え</string>
+    <string name="home_menu_title">ホーム</string>
+    <string name="home_menu_subtitle_widget">ウィジェット自体を長押しすると、サイズ変更・置き換え・削除ができます。</string>
+    <string name="home_menu_subtitle_no_widget">Zenoホームにウィジェット、グループ、ショートカットを追加します。</string>
+    <string name="home_menu_add_widget_title">システムウィジェットを追加</string>
+    <string name="home_menu_add_widget_subtitle">プレビューを選んでグリッドに配置します</string>
+    <string name="home_menu_edit_layout_title">ホームレイアウトを編集</string>
+    <string name="home_menu_edit_layout_subtitle">アプリとグループを並べ替え</string>
+    <string name="home_menu_remove_widget_title">ウィジェットを削除</string>
+    <string name="home_menu_remove_widget_subtitle">ホームグリッドから削除します</string>
+    <string name="home_menu_new_group_subtitle">コンパクトなホームフォルダを作成します</string>
+    <string name="home_menu_pin_home_strip_subtitle">ホームストリップにアプリを追加します</string>
+    <string name="home_menu_settings_subtitle">Zeno Classicをカスタマイズ</string>
+    <string name="home_menu_system_settings_title">システム設定</string>
+    <string name="home_menu_system_settings_subtitle">Android設定を開く</string>
+    <string name="icon_layout_label_size">ラベルサイズ</string>
+    <string name="icon_layout_label_weight">ラベルの太さ</string>
+    <string name="icon_shape_square">スクエア</string>
+    <string name="icon_shape_soft_square">ソフトスクエア</string>
+    <string name="icon_shape_squircle">スカーカル</string>
+    <string name="icon_shape_circle">円形</string>
+    <string name="icon_shape_cut_corner">カットコーナー</string>
+    <string name="font_weight_light">細い</string>
+    <string name="font_weight_normal">標準</string>
+    <string name="font_weight_medium">中太</string>
+    <string name="font_weight_semibold">やや太字</string>
+    <string name="font_weight_bold">太字</string>
 </resources>

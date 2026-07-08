@@ -1,7 +1,7 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
     <string name="app_name">Zeno Classic</string>
-    <string name="home_menu_settings_title">Zeno Classic</string>
+    <string name="home_menu_settings_title">Зено Классик</string>
     <string name="settings_language_title">Настройка языка</string>
     <string name="language_setting_title">Настройка языка</string>
     <string name="language_setting_restart_note">Лаунчер обновится после выбора языка.</string>
@@ -138,9 +138,9 @@
     <string name="icon_badge_toggle">Значок уведомления</string>
     <string name="icon_badge_permission_required">Требуется доступ к уведомлениям</string>
     <string name="icon_badge_on">Вкл. — звёздочка непрочитанного</string>
-    <string name="settings_flip_clock_title">Zeno Flip Clock</string>
+    <string name="settings_flip_clock_title">Зено Флип-Клок</string>
     <string name="settings_flip_clock_subtitle">Заставка-часы с переворотом по минутам</string>
-    <string name="flip_clock_dream_label">Zeno Flip Clock</string>
+    <string name="flip_clock_dream_label">Зено Флип-Клок</string>
 
     <!-- English fallback strings added to keep localized builds complete. -->\n    <string name="icon_pack_title">Пакет значков</string>
     <string name="icon_pack_subtitle">Использовать установленные пакеты значков в стиле Nova/Apex</string>
@@ -378,4 +378,31 @@
     <string name="weather_location_no_results">Совпадений не найдено</string>
     <string name="weather_location_use_device">Использовать местоположение устройства</string>
     <string name="weather_location_device">Местоположение устройства</string>
+    <string name="cd_toggle_korean_input">Переключение между корейским и английским вводом</string>
+    <string name="home_menu_title">Главный экран</string>
+    <string name="home_menu_subtitle_widget">Удерживайте сам виджет, чтобы изменить размер, заменить или удалить его.</string>
+    <string name="home_menu_subtitle_no_widget">Добавьте виджеты, группы и ярлыки на главный экран Zeno.</string>
+    <string name="home_menu_add_widget_title">Добавить системный виджет</string>
+    <string name="home_menu_add_widget_subtitle">Выберите превью и разместите его на сетке</string>
+    <string name="home_menu_edit_layout_title">Изменить макет главного экрана</string>
+    <string name="home_menu_edit_layout_subtitle">Измените порядок приложений и групп</string>
+    <string name="home_menu_remove_widget_title">Удалить виджет</string>
+    <string name="home_menu_remove_widget_subtitle">Удалите его с главной сетки</string>
+    <string name="home_menu_new_group_subtitle">Создайте компактную папку на главном экране</string>
+    <string name="home_menu_pin_home_strip_subtitle">Добавьте приложение на домашнюю панель</string>
+    <string name="home_menu_settings_subtitle">Настройте Zeno Classic</string>
+    <string name="home_menu_system_settings_title">Системные настройки</string>
+    <string name="home_menu_system_settings_subtitle">Открыть настройки Android</string>
+    <string name="icon_layout_label_size">Размер подписи</string>
+    <string name="icon_layout_label_weight">Насыщенность подписи</string>
+    <string name="icon_shape_square">Квадрат</string>
+    <string name="icon_shape_soft_square">Мягкий квадрат</string>
+    <string name="icon_shape_squircle">Сквиркл</string>
+    <string name="icon_shape_circle">Круг</string>
+    <string name="icon_shape_cut_corner">Срезанный угол</string>
+    <string name="font_weight_light">Тонкий</string>
+    <string name="font_weight_normal">Обычный</string>
+    <string name="font_weight_medium">Средний</string>
+    <string name="font_weight_semibold">Полужирный</string>
+    <string name="font_weight_bold">Жирный</string>
 </resources>

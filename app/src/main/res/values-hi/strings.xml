@@ -1,7 +1,7 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
     <string name="app_name">Zeno Classic</string>
-    <string name="home_menu_settings_title">Zeno Classic</string>
+    <string name="home_menu_settings_title">ज़ेनो क्लासिक</string>
     <string name="settings_language_title">भाषा सेटिंग</string>
     <string name="language_setting_title">भाषा सेटिंग</string>
     <string name="language_setting_restart_note">भाषा चुनने के बाद लॉन्चर रिफ्रेश होगा।</string>
@@ -138,9 +138,9 @@
     <string name="icon_badge_toggle">सूचना बैज</string>
     <string name="icon_badge_permission_required">सूचना एक्सेस आवश्यक</string>
     <string name="icon_badge_on">चालू - अपठित सूचना तारा</string>
-    <string name="settings_flip_clock_title">Zeno Flip Clock</string>
+    <string name="settings_flip_clock_title">ज़ेनो फ़्लिप क्लॉक</string>
     <string name="settings_flip_clock_subtitle">मिनट-आधारित फ्लिप-क्लॉक स्क्रीनसेवर</string>
-    <string name="flip_clock_dream_label">Zeno Flip Clock</string>
+    <string name="flip_clock_dream_label">ज़ेनो फ़्लिप क्लॉक</string>
 
     <!-- English fallback strings added to keep localized builds complete. -->\n    <string name="icon_pack_title">आइकन पैक</string>
     <string name="icon_pack_subtitle">इंस्टॉल किए गए Nova/Apex-स्टाइल आइकन पैक उपयोग करें</string>
@@ -378,4 +378,31 @@
     <string name="weather_location_no_results">कोई मिलान नहीं मिला</string>
     <string name="weather_location_use_device">डिवाइस स्थान उपयोग करें</string>
     <string name="weather_location_device">डिवाइस स्थान</string>
+    <string name="cd_toggle_korean_input">कोरियाई और अंग्रेज़ी इनपुट के बीच स्विच करें</string>
+    <string name="home_menu_title">होम</string>
+    <string name="home_menu_subtitle_widget">आकार बदलने, बदलने या हटाने के लिए विजेट को दबाकर रखें।</string>
+    <string name="home_menu_subtitle_no_widget">अपने Zeno होम में विजेट, समूह और शॉर्टकट जोड़ें।</string>
+    <string name="home_menu_add_widget_title">सिस्टम विजेट जोड़ें</string>
+    <string name="home_menu_add_widget_subtitle">पूर्वावलोकन चुनें और इसे ग्रिड पर रखें</string>
+    <string name="home_menu_edit_layout_title">होम लेआउट संपादित करें</string>
+    <string name="home_menu_edit_layout_subtitle">ऐप्स और समूहों को पुनर्व्यवस्थित करें</string>
+    <string name="home_menu_remove_widget_title">विजेट हटाएं</string>
+    <string name="home_menu_remove_widget_subtitle">इसे होम ग्रिड से हटाएं</string>
+    <string name="home_menu_new_group_subtitle">एक कॉम्पैक्ट होम फ़ोल्डर बनाएं</string>
+    <string name="home_menu_pin_home_strip_subtitle">होम स्ट्रिप में एक ऐप जोड़ें</string>
+    <string name="home_menu_settings_subtitle">Zeno Classic अनुकूलित करें</string>
+    <string name="home_menu_system_settings_title">सिस्टम सेटिंग्स</string>
+    <string name="home_menu_system_settings_subtitle">Android सेटिंग्स खोलें</string>
+    <string name="icon_layout_label_size">लेबल आकार</string>
+    <string name="icon_layout_label_weight">लेबल वज़न</string>
+    <string name="icon_shape_square">वर्ग</string>
+    <string name="icon_shape_soft_square">सॉफ्ट स्क्वेयर</string>
+    <string name="icon_shape_squircle">स्क्विर्कल</string>
+    <string name="icon_shape_circle">वृत्त</string>
+    <string name="icon_shape_cut_corner">कटा हुआ कोना</string>
+    <string name="font_weight_light">हल्का</string>
+    <string name="font_weight_normal">सामान्य</string>
+    <string name="font_weight_medium">मध्यम</string>
+    <string name="font_weight_semibold">अर्ध-बोल्ड</string>
+    <string name="font_weight_bold">बोल्ड</string>
 </resources>

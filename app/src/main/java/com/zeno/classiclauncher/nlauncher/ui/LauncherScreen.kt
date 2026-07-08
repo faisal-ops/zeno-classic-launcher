@@ -450,13 +450,14 @@ private fun iconMaskShape(shape: AppIconShape): Shape = when (shape) {
     AppIconShape.CUT_CORNER -> CutCornerShape(10.dp)
 }
 
+@Composable
 private fun appIconShapeLabel(shape: AppIconShape): String = when (shape) {
-    AppIconShape.SQUARE -> "Square"
-    AppIconShape.ROUNDED -> "Soft square"
-    AppIconShape.SQUIRCLE -> "Squircle"
-    AppIconShape.CIRCLE -> "Circle"
-    AppIconShape.SOFT_SQUARE -> "Soft square"
-    AppIconShape.CUT_CORNER -> "Cut corner"
+    AppIconShape.SQUARE -> stringResource(R.string.icon_shape_square)
+    AppIconShape.ROUNDED -> stringResource(R.string.icon_shape_soft_square)
+    AppIconShape.SQUIRCLE -> stringResource(R.string.icon_shape_squircle)
+    AppIconShape.CIRCLE -> stringResource(R.string.icon_shape_circle)
+    AppIconShape.SOFT_SQUARE -> stringResource(R.string.icon_shape_soft_square)
+    AppIconShape.CUT_CORNER -> stringResource(R.string.icon_shape_cut_corner)
 }
 
 @SuppressLint("MissingPermission")
@@ -617,6 +618,17 @@ fun LauncherScreen(
     val allApps by vm.apps.collectAsStateWithLifecycle()
     val gridCells by vm.filteredGridCells.collectAsStateWithLifecycle()
     val searchQuery by vm.searchQuery.collectAsStateWithLifecycle()
+    // Korean locale → compose Hangul from physical-keyboard keys (no IME in key-event search).
+    // Toggleable: every a-z key maps to a jamo in dubeolsik, so composing can't be told apart
+    // from "the user wants literal English" without an explicit switch. Shared by home and
+    // drawer search so the mode stays consistent across both surfaces.
+    val rootConfig = LocalConfiguration.current
+    var koreanSearchInput by remember(rootConfig) {
+        mutableStateOf(runCatching { rootConfig.locales[0].language == "ko" }.getOrDefault(false))
+    }
+    val showKoreanSearchToggle = remember(rootConfig) {
+        runCatching { rootConfig.locales[0].language == "ko" }.getOrDefault(false)
+    }
     val reorderMode by vm.isReorderMode.collectAsStateWithLifecycle()
     val moving by vm.moving.collectAsStateWithLifecycle()
     val hasUnreadMail by vm.hasUnreadMail.collectAsStateWithLifecycle()
@@ -1295,6 +1307,9 @@ fun LauncherScreen(
                         doubleTapToSleepEnabled = prefs.doubleTapToSleepEnabled,
                         searchQuery = searchQuery,
                         onSearchQueryChange = vm::setSearchQuery,
+                        koreanSearchInput = koreanSearchInput,
+                        showKoreanSearchToggle = showKoreanSearchToggle,
+                        onToggleKoreanSearchInput = { koreanSearchInput = !koreanSearchInput },
                         appIconShape = prefs.appIconShape,
                         themePalette = themePalette,
                         glanceEnabled = prefs.glanceEnabled && !prefs.classicMode,
@@ -1363,6 +1378,7 @@ fun LauncherScreen(
                         requestedPage = requestedDrawerPage,
                         searchQuery = searchQuery,
                         onSearchQueryChange = vm::setSearchQuery,
+                        koreanSearchInput = koreanSearchInput,
                         appIconShape = prefs.appIconShape,
                         showAppCardBackground = prefs.showAppCardBackground,
                         reorderMode = reorderMode,
@@ -1467,6 +1483,9 @@ fun LauncherScreen(
                 DrawerSearchBar(
                     query = searchQuery,
                     onClear = { vm.setSearchQuery("") },
+                    showLanguageToggle = showKoreanSearchToggle,
+                    isKoreanMode = koreanSearchInput,
+                    onToggleLanguage = { koreanSearchInput = !koreanSearchInput },
                 )
             } else {
                 if (pagerState.currentPage == 0 && homeStripNavEligible) {
@@ -3085,6 +3104,9 @@ private fun HomePage(
     doubleTapToSleepEnabled: Boolean,
     searchQuery: String,
     onSearchQueryChange: (String) -> Unit,
+    koreanSearchInput: Boolean,
+    showKoreanSearchToggle: Boolean,
+    onToggleKoreanSearchInput: () -> Unit,
     appIconShape: AppIconShape,
     themePalette: LauncherThemePalette,
     glanceEnabled: Boolean,
@@ -3184,11 +3206,6 @@ private fun HomePage(
     }
 
     var searchFocusIndex by remember { mutableStateOf(-1) }
-    // Korean locale → compose Hangul from physical-keyboard keys (no IME in key-event search).
-    val homeSearchConfig = LocalConfiguration.current
-    val koreanSearchInput = remember(homeSearchConfig) {
-        runCatching { homeSearchConfig.locales[0].language == "ko" }.getOrDefault(false)
-    }
     val searchResults = remember(searchQuery, allApps, hiddenPackages) {
         rankHomeSearchApps(
             query = searchQuery,
@@ -3773,6 +3790,7 @@ private fun HomePage(
 
         // Home search overlay — compact top card, wallpaper visible below
         if (homeActive && searchQuery.isNotEmpty()) {
+            val toggleLanguageDescription = stringResource(R.string.cd_toggle_korean_input)
             val allFiltered = remember(searchQuery, allApps, hiddenPackages) {
                 allApps.filter {
                     it.packageName !in hiddenPackages &&
@@ -3819,6 +3837,26 @@ private fun HomePage(
                         fontSize = 16.sp,
                         modifier = Modifier.weight(1f),
                     )
+                    if (showKoreanSearchToggle) {
+                        Box(
+                            modifier = Modifier
+                                .padding(end = 6.dp)
+                                .clip(RoundedCornerShape(6.dp))
+                                .background(Color(0xFF3A3F4A))
+                                .clickable { onToggleKoreanSearchInput() }
+                                .padding(horizontal = 7.dp, vertical = 3.dp),
+                        ) {
+                            Text(
+                                text = if (koreanSearchInput) "한" else "EN",
+                                color = Color.White,
+                                fontSize = 11.sp,
+                                fontWeight = FontWeight.SemiBold,
+                                modifier = Modifier.semantics {
+                                    contentDescription = toggleLanguageDescription
+                                },
+                            )
+                        }
+                    }
                     Box(
                         modifier = Modifier
                             .size(24.dp)
@@ -6572,16 +6610,22 @@ private fun HomeActionsSheet(
         Column(
             modifier = Modifier
                 .fillMaxWidth()
-                .padding(horizontal = 16.dp, vertical = 10.dp),
+                // Content height varies by language (e.g. Japanese/Chinese subtitles wrap to
+                // more lines than English) — cap at the available window height minus a small
+                // margin, and let it scroll rather than clip when translated text runs long.
+                .heightIn(max = LocalConfiguration.current.screenHeightDp.dp * 0.9f)
+                .verticalScroll(rememberScrollState())
+                .padding(horizontal = 16.dp, vertical = 10.dp)
+                .navigationBarsPadding(),
         ) {
             Text(
-                "Home",
+                stringResource(R.string.home_menu_title),
                 style = MaterialTheme.typography.titleLarge.copy(fontWeight = FontWeight.SemiBold),
                 color = labelColor,
                 modifier = Modifier.fillMaxWidth(),
             )
             Text(
-                if (hasWidget) "Long-press the widget itself to resize, replace, or remove it." else "Add widgets, groups, and shortcuts to your Zeno home.",
+                if (hasWidget) stringResource(R.string.home_menu_subtitle_widget) else stringResource(R.string.home_menu_subtitle_no_widget),
                 style = MaterialTheme.typography.bodySmall,
                 color = Color(0xFF9EADB8),
                 modifier = Modifier.padding(top = 2.dp, bottom = 10.dp),
@@ -6635,29 +6679,29 @@ private fun HomeActionsSheet(
             }
 
             if (!hasWidget) {
-                MenuRow(Icons.Rounded.AddAlarm, "Add system widget", "Pick a preview and place it on the grid", onClick = onAddWidget)
+                MenuRow(Icons.Rounded.AddAlarm, stringResource(R.string.home_menu_add_widget_title), stringResource(R.string.home_menu_add_widget_subtitle), onClick = onAddWidget)
             } else {
-                MenuRow(Icons.Rounded.GridView, "Edit home layout", "Rearrange apps and groups", onClick = onEditHomeLayout)
-                MenuRow(Icons.Rounded.EventBusy, "Remove widget", "Delete it from the home grid", danger = true, onClick = onRemoveWidget)
+                MenuRow(Icons.Rounded.GridView, stringResource(R.string.home_menu_edit_layout_title), stringResource(R.string.home_menu_edit_layout_subtitle), onClick = onEditHomeLayout)
+                MenuRow(Icons.Rounded.EventBusy, stringResource(R.string.home_menu_remove_widget_title), stringResource(R.string.home_menu_remove_widget_subtitle), danger = true, onClick = onRemoveWidget)
             }
             if (newHomeGroupEnabled) {
-                MenuRow(Icons.Rounded.Folder, "New group", "Create a compact home folder", onClick = onNewHomeGroup)
+                MenuRow(Icons.Rounded.Folder, stringResource(R.string.dialog_new_group_title), stringResource(R.string.home_menu_new_group_subtitle), onClick = onNewHomeGroup)
             }
             if (pinToHomepageEnabled) {
                 MenuRow(
                     Icons.AutoMirrored.Rounded.PlaylistAdd,
                     stringResource(R.string.action_pin_to_home_strip),
-                    "Add an app to the home strip",
+                    stringResource(R.string.home_menu_pin_home_strip_subtitle),
                     onClick = onPinToHomeStrip,
                 )
             }
             MenuRow(
                 Icons.Rounded.Settings,
                 LocalContext.current.getString(R.string.home_menu_settings_title),
-                "Customize Zeno Classic",
+                stringResource(R.string.home_menu_settings_subtitle),
                 onClick = onOpenSettings,
             )
-            MenuRow(Icons.Rounded.Tune, "System settings", "Open Android settings", onClick = onOpenSystemSettings)
+            MenuRow(Icons.Rounded.Tune, stringResource(R.string.home_menu_system_settings_title), stringResource(R.string.home_menu_system_settings_subtitle), onClick = onOpenSystemSettings)
             Spacer(Modifier.height(12.dp))
         }
     }
@@ -6689,6 +6733,7 @@ private fun AppDrawer(
     requestedPage: Int,
     searchQuery: String,
     onSearchQueryChange: (String) -> Unit,
+    koreanSearchInput: Boolean,
     appIconShape: AppIconShape,
     showAppCardBackground: Boolean,
     reorderMode: Boolean,
@@ -6772,11 +6817,6 @@ private fun AppDrawer(
 
     LaunchedEffect(isActive) {
         if (isActive) focusRequester.requestFocus()
-    }
-    // Korean locale → compose Hangul from physical-keyboard keys (no IME in key-event search).
-    val drawerSearchConfig = LocalConfiguration.current
-    val drawerKoreanSearchInput = remember(drawerSearchConfig) {
-        runCatching { drawerSearchConfig.locales[0].language == "ko" }.getOrDefault(false)
     }
     LaunchedEffect(classicDock) {
         if (nav.area == FocusArea.Dock) {
@@ -6873,7 +6913,7 @@ private fun AppDrawer(
                 if (ev.isVolumePanelKey()) return@onPreviewKeyEvent false
                 // BB Classic red button: always go home from anywhere in the drawer.
                 if (ev.isEndCallKey()) { onExitToHome(); return@onPreviewKeyEvent true }
-                val searchUpdate = tryConsumeSearchKey(ev, searchQuery, drawerKoreanSearchInput)
+                val searchUpdate = tryConsumeSearchKey(ev, searchQuery, koreanSearchInput)
                 if (searchUpdate != null) {
                     onSearchQueryChange(searchUpdate)
                     nav = nav.copy(area = FocusArea.DrawerGrid)
@@ -9192,6 +9232,17 @@ private fun fontWeightFromName(name: String): FontWeight = when (name) {
     else       -> FontWeight.Normal
 }
 
+// `name` is the stable, persisted identifier (English, matches fontWeightFromName) — this only
+// maps it to a localized label for display, never used for storage/comparison.
+@Composable
+private fun fontWeightDisplayName(name: String): String = when (name) {
+    "Light"    -> stringResource(R.string.font_weight_light)
+    "Medium"   -> stringResource(R.string.font_weight_medium)
+    "SemiBold" -> stringResource(R.string.font_weight_semibold)
+    "Bold"     -> stringResource(R.string.font_weight_bold)
+    else       -> stringResource(R.string.font_weight_normal)
+}
+
 private fun compactAppLabelStyle(
     fontSizeSp: Int,
     textColor: Color,
@@ -10139,7 +10190,11 @@ private fun HomeShortcutStrip(
 private fun DrawerSearchBar(
     query: String,
     onClear: () -> Unit,
+    showLanguageToggle: Boolean = false,
+    isKoreanMode: Boolean = false,
+    onToggleLanguage: () -> Unit = {},
 ) {
+    val languageToggleDescription = stringResource(R.string.cd_toggle_korean_input)
     val scroll = rememberScrollState()
     LaunchedEffect(query) {
         scroll.scrollTo(scroll.maxValue)
@@ -10172,6 +10227,26 @@ private fun DrawerSearchBar(
                     .weight(1f)
                     .horizontalScroll(scroll),
             )
+            if (showLanguageToggle) {
+                Box(
+                    modifier = Modifier
+                        .padding(end = 6.dp)
+                        .clip(RoundedCornerShape(6.dp))
+                        .background(Color(0xFF3A3F4A))
+                        .clickable { onToggleLanguage() }
+                        .padding(horizontal = 7.dp, vertical = 3.dp),
+                ) {
+                    Text(
+                        text = if (isKoreanMode) "한" else "EN",
+                        color = Color.White,
+                        fontSize = 11.sp,
+                        fontWeight = FontWeight.SemiBold,
+                        modifier = Modifier.semantics {
+                            contentDescription = languageToggleDescription
+                        },
+                    )
+                }
+            }
             Box(
                 modifier = Modifier
                     .padding(clearPad)
@@ -12351,7 +12426,7 @@ private fun IconLayoutSettingsOverlay(
                                         verticalAlignment = Alignment.CenterVertically,
                                     ) {
                                         Text(
-                                            "Label size",
+                                            stringResource(R.string.icon_layout_label_size),
                                             color = Color.White,
                                             fontSize = SETTINGS_TITLE_TEXT_SP,
                                             fontWeight = FontWeight.SemiBold,
@@ -12417,9 +12492,9 @@ private fun IconLayoutSettingsOverlay(
                                     .then(if (focusedItem == 2) Modifier.background(Color.White.copy(alpha = 0.07f)) else Modifier),
                             ) {
                                 IconLayoutValueRow(
-                                    label = "Label weight",
-                                    subtitle = "Grid",
-                                    value = themePalette.appCardFontWeightName,
+                                    label = stringResource(R.string.icon_layout_label_weight),
+                                    subtitle = stringResource(R.string.icon_layout_grid),
+                                    value = fontWeightDisplayName(themePalette.appCardFontWeightName),
                                     onClick = {
                                         val cur = weightOptions.indexOf(themePalette.appCardFontWeightName).coerceAtLeast(0)
                                         onAppGridFontWeight(weightOptions[(cur + 1) % weightOptions.size])
@@ -12447,7 +12522,7 @@ private fun IconLayoutSettingsOverlay(
                             // Grid (columns × rows)
                             Box(modifier = Modifier.bringIntoViewRequester(itemBringers[4])) {
                                 IconLayoutValueRow(
-                                    label = "Grid",
+                                    label = stringResource(R.string.icon_layout_grid),
                                     subtitle = stringResource(R.string.icon_layout_grid),
                                     value = "${gridPreset.cols} × ${gridPreset.rows}",
                                     onClick = {
@@ -13656,9 +13731,11 @@ private fun LanguageSettingsOverlay(
                         state = langListState,
                         modifier = Modifier
                             .fillMaxWidth()
-                            // AdaptiveLayout.sheetListMaxHeightDp (50% of screen height).
-                            // Old 420dp = 84% on 500dp devices; 50% leaves room for header + bars.
-                            .heightIn(max = adaptiveLayout.sheetListMaxHeightDp),
+                            // weight(fill = false) instead of a fixed max-height: the header and
+                            // footer note vary in height by language (e.g. longer translations
+                            // wrap to more lines), so they must always get the space they need —
+                            // the list takes whatever's left and scrolls internally for the rest.
+                            .weight(1f, fill = false),
                     ) {
                         itemsIndexed(LauncherLocale.supportedLanguages) { index, language ->
                             val selected = language.code == selectedCode

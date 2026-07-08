@@ -1,7 +1,7 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
     <string name="app_name">Zeno Classic</string>
-    <string name="home_menu_settings_title">Zeno Classic</string>
+    <string name="home_menu_settings_title">泽诺经典</string>
     <string name="settings_language_title">语言设置</string>
     <string name="language_setting_title">语言设置</string>
     <string name="language_setting_restart_note">选择语言后启动器会刷新。</string>
@@ -138,9 +138,9 @@
     <string name="icon_badge_toggle">通知徽章</string>
     <string name="icon_badge_permission_required">需要通知访问权限</string>
     <string name="icon_badge_on">开启 - 未读通知红星</string>
-    <string name="settings_flip_clock_title">Zeno Flip Clock</string>
+    <string name="settings_flip_clock_title">泽诺翻页时钟</string>
     <string name="settings_flip_clock_subtitle">以分钟为单位的翻页时钟屏保</string>
-    <string name="flip_clock_dream_label">Zeno Flip Clock</string>
+    <string name="flip_clock_dream_label">泽诺翻页时钟</string>
 
     <!-- English fallback strings added to keep localized builds complete. -->\n    <string name="icon_pack_title">图标包</string>
     <string name="icon_pack_subtitle">使用已安装的 Nova/Apex 风格图标包</string>
@@ -378,4 +378,31 @@
     <string name="weather_location_no_results">未找到匹配结果</string>
     <string name="weather_location_use_device">使用设备位置</string>
     <string name="weather_location_device">设备位置</string>
+    <string name="cd_toggle_korean_input">切换韩语和英语输入</string>
+    <string name="home_menu_title">主屏幕</string>
+    <string name="home_menu_subtitle_widget">长按小部件本身可调整大小、替换或移除。</string>
+    <string name="home_menu_subtitle_no_widget">为您的 Zeno 主屏幕添加小部件、分组和快捷方式。</string>
+    <string name="home_menu_add_widget_title">添加系统小部件</string>
+    <string name="home_menu_add_widget_subtitle">选择预览并将其放置在网格上</string>
+    <string name="home_menu_edit_layout_title">编辑主屏幕布局</string>
+    <string name="home_menu_edit_layout_subtitle">重新排列应用和分组</string>
+    <string name="home_menu_remove_widget_title">移除小部件</string>
+    <string name="home_menu_remove_widget_subtitle">从主屏幕网格中删除</string>
+    <string name="home_menu_new_group_subtitle">创建一个紧凑的主屏幕文件夹</string>
+    <string name="home_menu_pin_home_strip_subtitle">将应用添加到主屏条</string>
+    <string name="home_menu_settings_subtitle">自定义 Zeno Classic</string>
+    <string name="home_menu_system_settings_title">系统设置</string>
+    <string name="home_menu_system_settings_subtitle">打开 Android 设置</string>
+    <string name="icon_layout_label_size">标签大小</string>
+    <string name="icon_layout_label_weight">标签字重</string>
+    <string name="icon_shape_square">方形</string>
+    <string name="icon_shape_soft_square">圆角方形</string>
+    <string name="icon_shape_squircle">方圆形</string>
+    <string name="icon_shape_circle">圆形</string>
+    <string name="icon_shape_cut_corner">切角</string>
+    <string name="font_weight_light">细体</string>
+    <string name="font_weight_normal">标准</string>
+    <string name="font_weight_medium">中等</string>
+    <string name="font_weight_semibold">半粗体</string>
+    <string name="font_weight_bold">粗体</string>
 </resources>

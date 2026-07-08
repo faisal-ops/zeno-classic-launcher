@@ -1,7 +1,7 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
     <string name="app_name">Zeno Classic</string>
-    <string name="home_menu_settings_title">Zeno Classic</string>
+    <string name="home_menu_settings_title">제노 클래식</string>
     <string name="settings_language_title">언어 설정</string>
     <string name="language_setting_title">언어 설정</string>
     <string name="language_setting_restart_note">언어를 선택하면 런처가 새로 고침됩니다.</string>
@@ -138,9 +138,9 @@
     <string name="quick_settings_keyboard_mode_permission_prompt">\'시스템 설정 수정\'을 허용한 후 키보드 타일을 다시 탭하세요.</string>
     <string name="quick_settings_keyboard_mode_failed">키보드 모드 변경을 적용할 수 없습니다. 길게 눌러 설정을 여세요.</string>
     <string name="quick_settings_bluetooth_blocked">Android가 Bluetooth 직접 전환을 차단했습니다. 이 타일을 길게 눌러 Bluetooth 설정을 여세요.</string>
-    <string name="settings_flip_clock_title">Zeno Flip Clock</string>
+    <string name="settings_flip_clock_title">제노 플립 클락</string>
     <string name="settings_flip_clock_subtitle">분 단위 플립 시계 화면 보호기</string>
-    <string name="flip_clock_dream_label">Zeno Flip Clock</string>
+    <string name="flip_clock_dream_label">제노 플립 클락</string>
 
     <!-- English fallback strings added to keep localized builds complete. -->\n    <string name="icon_pack_title">아이콘 팩</string>
     <string name="icon_pack_subtitle">설치된 Nova/Apex 스타일 아이콘 팩 사용</string>
@@ -378,4 +378,31 @@
     <string name="weather_location_no_results">일치하는 결과 없음</string>
     <string name="weather_location_use_device">기기 위치 사용</string>
     <string name="weather_location_device">기기 위치</string>
+    <string name="cd_toggle_korean_input">한국어와 영어 입력 전환</string>
+    <string name="home_menu_title">홈</string>
+    <string name="home_menu_subtitle_widget">위젯을 길게 눌러 크기 조절, 교체 또는 제거하세요.</string>
+    <string name="home_menu_subtitle_no_widget">Zeno 홈에 위젯, 그룹, 바로가기를 추가하세요.</string>
+    <string name="home_menu_add_widget_title">시스템 위젯 추가</string>
+    <string name="home_menu_add_widget_subtitle">미리보기를 선택하여 그리드에 배치하세요</string>
+    <string name="home_menu_edit_layout_title">홈 레이아웃 편집</string>
+    <string name="home_menu_edit_layout_subtitle">앱과 그룹 재정렬</string>
+    <string name="home_menu_remove_widget_title">위젯 제거</string>
+    <string name="home_menu_remove_widget_subtitle">홈 그리드에서 삭제</string>
+    <string name="home_menu_new_group_subtitle">간편한 홈 폴더 만들기</string>
+    <string name="home_menu_pin_home_strip_subtitle">홈 스트립에 앱 추가</string>
+    <string name="home_menu_settings_subtitle">Zeno Classic 사용자 지정</string>
+    <string name="home_menu_system_settings_title">시스템 설정</string>
+    <string name="home_menu_system_settings_subtitle">Android 설정 열기</string>
+    <string name="icon_layout_label_size">라벨 크기</string>
+    <string name="icon_layout_label_weight">라벨 굵기</string>
+    <string name="icon_shape_square">사각형</string>
+    <string name="icon_shape_soft_square">부드러운 사각형</string>
+    <string name="icon_shape_squircle">스퀴클</string>
+    <string name="icon_shape_circle">원형</string>
+    <string name="icon_shape_cut_corner">각진 모서리</string>
+    <string name="font_weight_light">가늘게</string>
+    <string name="font_weight_normal">보통</string>
+    <string name="font_weight_medium">중간</string>
+    <string name="font_weight_semibold">세미볼드</string>
+    <string name="font_weight_bold">볼드</string>
 </resources>

@@ -41,6 +41,7 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.graphics.Color
@@ -53,6 +54,8 @@ import androidx.compose.ui.input.key.type
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -95,9 +98,15 @@ fun AppSelectorOverlay(
     specialOptions: List<AppSelectorSpecialOption> = emptyList(),
 ) {
     val subtitleColor = Color(0xFF8E95A3)
+    val toggleLanguageDescription = stringResource(R.string.cd_toggle_korean_input)
     var query by remember { mutableStateOf("") }
     val configuration = LocalConfiguration.current
-    val koreanInput = remember(configuration) {
+    // Toggleable, not a fixed locale check — every a-z key maps to a jamo in dubeolsik, so
+    // composing can't be told apart from "the user wants literal English" without a switch.
+    var koreanInput by remember(configuration) {
+        mutableStateOf(runCatching { configuration.locales[0].language == "ko" }.getOrDefault(false))
+    }
+    val showLanguageToggle = remember(configuration) {
         runCatching { configuration.locales[0].language == "ko" }.getOrDefault(false)
     }
 
@@ -238,6 +247,26 @@ fun AppSelectorOverlay(
                         maxLines = 1,
                         modifier = Modifier.weight(1f),
                     )
+                    if (showLanguageToggle) {
+                        Box(
+                            modifier = Modifier
+                                .padding(end = 8.dp)
+                                .clip(RoundedCornerShape(6.dp))
+                                .background(Color(0xFF2C3340))
+                                .clickable { koreanInput = !koreanInput }
+                                .padding(horizontal = 7.dp, vertical = 3.dp),
+                        ) {
+                            Text(
+                                text = if (koreanInput) "한" else "EN",
+                                color = themePalette.settingsMenuTitle,
+                                fontSize = 11.sp,
+                                fontWeight = FontWeight.SemiBold,
+                                modifier = Modifier.semantics {
+                                    contentDescription = toggleLanguageDescription
+                                },
+                            )
+                        }
+                    }
                     Icon(
                         Icons.Outlined.Close,
                         contentDescription = stringResource(R.string.action_clear_search),
