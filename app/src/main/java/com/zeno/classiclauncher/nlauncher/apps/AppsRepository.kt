@@ -8,10 +8,16 @@ import android.content.IntentFilter
 import android.content.pm.PackageManager
 import android.graphics.Bitmap
 import android.graphics.Canvas
+import android.graphics.Color
+import android.graphics.Paint
+import android.graphics.Path
+import android.graphics.Rect
+import android.graphics.Typeface
 import android.graphics.drawable.AdaptiveIconDrawable
 import android.graphics.drawable.BitmapDrawable
 import android.graphics.drawable.Drawable
 import android.os.Build
+import java.util.Calendar
 import com.zeno.classiclauncher.nlauncher.R
 import kotlinx.coroutines.channels.BufferOverflow
 import kotlinx.coroutines.channels.awaitClose
@@ -86,6 +92,50 @@ class AppsRepository(private val context: Context) {
         return BitmapDrawable(context.resources, bitmap)
     }
 
+    /**
+     * Synthesizes a Google-Calendar-style icon (white card, colored header strip, big day
+     * number) for calendar apps whose installed build doesn't ship its own date-adaptive
+     * icon resources. Cached under the package name like any other icon, and evicted at
+     * midnight by the same [appsFlow] date-change listener that clears real dynamic icons.
+     */
+    private fun buildCalendarBadgeIcon(day: Int): Drawable {
+        val size = ICON_SIZE_PX
+        val bitmap = Bitmap.createBitmap(size, size, Bitmap.Config.ARGB_8888)
+        val canvas = Canvas(bitmap)
+
+        val cornerRadius = size * 0.22f
+        val outline = Path().apply {
+            addRoundRect(0f, 0f, size.toFloat(), size.toFloat(), cornerRadius, cornerRadius, Path.Direction.CW)
+        }
+        canvas.clipPath(outline)
+        canvas.drawColor(Color.WHITE)
+
+        val headerHeight = size * 0.24f
+        val headerPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply { color = Color.parseColor("#EA4335") }
+        canvas.drawRect(0f, 0f, size.toFloat(), headerHeight, headerPaint)
+
+        val numberPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+            color = Color.parseColor("#3C4043")
+            textAlign = Paint.Align.CENTER
+            textSize = size * 0.46f
+            typeface = Typeface.create(Typeface.DEFAULT, Typeface.BOLD)
+        }
+        val text = day.toString()
+        val textBounds = Rect()
+        numberPaint.getTextBounds(text, 0, text.length, textBounds)
+        val cx = size / 2f
+        val cy = headerHeight + (size - headerHeight) / 2f - (textBounds.top + textBounds.bottom) / 2f
+        canvas.drawText(text, cx, cy, numberPaint)
+
+        return BitmapDrawable(context.resources, bitmap)
+    }
+
+    private fun getCachedCalendarBadgeIcon(pkg: String): Drawable {
+        iconCache[pkg]?.let { return it }
+        val day = Calendar.getInstance().get(Calendar.DAY_OF_MONTH)
+        return buildCalendarBadgeIcon(day).also { iconCache[pkg] = it }
+    }
+
     @Suppress("NOTHING_TO_INLINE")
     private inline fun getCachedIcon(pkg: String, component: ComponentName? = null): Drawable? {
         iconCache[pkg]?.let { return it }
@@ -109,6 +159,13 @@ class AppsRepository(private val context: Context) {
             addCategory(Intent.CATEGORY_LAUNCHER)
         }
         val resolveInfos = pm.queryIntentActivities(intent, 0)
+        // Standard Android signal an app uses to mark itself as a calendar app (same category
+        // launchers use to find "the" calendar app for shortcuts) — no package names hardcoded.
+        val calendarPackages = runCatching {
+            pm.queryIntentActivities(Intent(Intent.ACTION_MAIN).addCategory(Intent.CATEGORY_APP_CALENDAR), 0)
+                .mapNotNull { it.activityInfo?.applicationInfo?.packageName }
+                .toSet()
+        }.getOrDefault(emptySet())
         val installed = ArrayList<AppEntry>(resolveInfos.size + 1)
         // Maps package name → index in `installed`. Using a map (not a set) so that a later
         // activity alias with a distinct date-specific icon (Google Calendar, BB Hub+ Calendar)
@@ -124,6 +181,9 @@ class AppsRepository(private val context: Context) {
             // the Google Calendar / BB Hub+ Calendar pattern: 31 day aliases, one enabled per day.
             val activityHasOwnIcon = ri.activityInfo.icon != 0 &&
                 ri.activityInfo.icon != ri.activityInfo.applicationInfo.icon
+            // Declares itself a calendar app but its installed build has no per-day icon
+            // resources of its own — synthesize a day-number badge instead.
+            val needsSynthesizedBadge = !activityHasOwnIcon && pkg in calendarPackages
 
             val existingIdx = seenPackages[pkg]
             if (existingIdx != null) {
@@ -145,9 +205,13 @@ class AppsRepository(private val context: Context) {
             installed.add(AppEntry(
                 packageName = pkg,
                 label = label,
-                icon = getCachedIcon(pkg, if (activityHasOwnIcon) component else null),
+                icon = when {
+                    activityHasOwnIcon -> getCachedIcon(pkg, component)
+                    needsSynthesizedBadge -> getCachedCalendarBadgeIcon(pkg)
+                    else -> getCachedIcon(pkg, null)
+                },
                 componentName = component,
-                hasDynamicIcon = activityHasOwnIcon,
+                hasDynamicIcon = activityHasOwnIcon || needsSynthesizedBadge,
             ))
         }
 
