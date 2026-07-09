@@ -94,7 +94,7 @@ enum class DrawerSortMode {
 
 class LauncherViewModel(app: Application) : AndroidViewModel(app) {
     private val prefsRepo = LauncherPrefsRepository(app.applicationContext)
-    private val appsRepo = AppsRepository(app.applicationContext)
+    private val appsRepo = AppsRepository(app.applicationContext, prefsRepo)
     private val iconPackRepo = IconPackRepository(app.applicationContext)
     private val actions = LauncherActions(app.applicationContext)
 

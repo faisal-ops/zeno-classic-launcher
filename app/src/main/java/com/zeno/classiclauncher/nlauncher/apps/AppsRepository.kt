@@ -17,20 +17,33 @@ import android.graphics.drawable.AdaptiveIconDrawable
 import android.graphics.drawable.BitmapDrawable
 import android.graphics.drawable.Drawable
 import android.os.Build
+import java.text.SimpleDateFormat
 import java.util.Calendar
+import java.util.Locale
 import com.zeno.classiclauncher.nlauncher.R
+import com.zeno.classiclauncher.nlauncher.prefs.AppIconShape
+import com.zeno.classiclauncher.nlauncher.prefs.LauncherPrefsRepository
 import kotlinx.coroutines.channels.BufferOverflow
 import kotlinx.coroutines.channels.awaitClose
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.callbackFlow
+import kotlinx.coroutines.flow.distinctUntilChanged
+import kotlinx.coroutines.flow.drop
+import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import java.util.concurrent.ConcurrentHashMap
 
-class AppsRepository(private val context: Context) {
+class AppsRepository(private val context: Context, private val prefsRepository: LauncherPrefsRepository) {
     private val pm: PackageManager = context.packageManager
+
+    /** Current icon shape, kept in sync by [appsFlow]'s prefs collector so synthesized
+     *  icons (e.g. the calendar badge) can mirror whatever shape the user has chosen
+     *  instead of baking in a fixed corner style. */
+    @Volatile private var currentIconShape: AppIconShape = AppIconShape.SOFT_SQUARE
 
     /** Warm size for typical device app counts; reduces map resize churn when listing the grid. */
     private val iconCache = ConcurrentHashMap<String, Drawable>(256)
@@ -93,31 +106,71 @@ class AppsRepository(private val context: Context) {
     }
 
     /**
-     * Synthesizes a Google-Calendar-style icon (white card, colored header strip, big day
-     * number) for calendar apps whose installed build doesn't ship its own date-adaptive
-     * icon resources. Cached under the package name like any other icon, and evicted at
-     * midnight by the same [appsFlow] date-change listener that clears real dynamic icons.
+     * Outline for [shape] at [size]px, mirroring the corner styles Compose applies via
+     * `iconMaskShape()` in LauncherScreen.kt. There's no shared Canvas-usable definition of
+     * those shapes (that helper returns a Compose `Shape`, usable only via `Modifier.clip`),
+     * so the corner-radius fractions here are a plain-Canvas approximation of the same look.
      */
-    private fun buildCalendarBadgeIcon(day: Int): Drawable {
+    private fun shapedIconOutline(shape: AppIconShape, size: Float): Path = Path().apply {
+        when (shape) {
+            AppIconShape.SQUARE -> addRect(0f, 0f, size, size, Path.Direction.CW)
+            AppIconShape.CIRCLE -> addOval(0f, 0f, size, size, Path.Direction.CW)
+            AppIconShape.SQUIRCLE -> {
+                val r = size * 0.35f
+                addRoundRect(0f, 0f, size, size, r, r, Path.Direction.CW)
+            }
+            AppIconShape.CUT_CORNER -> {
+                val cut = size * 0.18f
+                moveTo(cut, 0f)
+                lineTo(size - cut, 0f)
+                lineTo(size, cut)
+                lineTo(size, size - cut)
+                lineTo(size - cut, size)
+                lineTo(cut, size)
+                lineTo(0f, size - cut)
+                lineTo(0f, cut)
+                close()
+            }
+            AppIconShape.ROUNDED, AppIconShape.SOFT_SQUARE -> {
+                val r = size * 0.17f
+                addRoundRect(0f, 0f, size, size, r, r, Path.Direction.CW)
+            }
+        }
+    }
+
+    /**
+     * Synthesizes a Google-Calendar-style icon (white card, colored header strip with the
+     * month, big day number) for calendar apps whose installed build doesn't ship its own
+     * date-adaptive icon resources. Shape mirrors [currentIconShape] so it stays consistent
+     * with the rest of the grid. Cached under the package name like any other icon, and
+     * evicted at midnight by the same [appsFlow] date-change listener that clears real
+     * dynamic icons, and whenever the icon shape preference changes.
+     */
+    private fun buildCalendarBadgeIcon(day: Int, month: String, shape: AppIconShape): Drawable {
         val size = ICON_SIZE_PX
         val bitmap = Bitmap.createBitmap(size, size, Bitmap.Config.ARGB_8888)
         val canvas = Canvas(bitmap)
 
-        val cornerRadius = size * 0.22f
-        val outline = Path().apply {
-            addRoundRect(0f, 0f, size.toFloat(), size.toFloat(), cornerRadius, cornerRadius, Path.Direction.CW)
-        }
-        canvas.clipPath(outline)
+        canvas.clipPath(shapedIconOutline(shape, size.toFloat()))
         canvas.drawColor(Color.WHITE)
 
-        val headerHeight = size * 0.24f
+        val headerHeight = size * 0.26f
         val headerPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply { color = Color.parseColor("#EA4335") }
         canvas.drawRect(0f, 0f, size.toFloat(), headerHeight, headerPaint)
+
+        val monthPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+            color = Color.WHITE
+            textAlign = Paint.Align.CENTER
+            textSize = size * 0.11f
+            typeface = Typeface.create(Typeface.DEFAULT, Typeface.BOLD)
+            letterSpacing = 0.08f
+        }
+        canvas.drawText(month, size / 2f, headerHeight * 0.66f, monthPaint)
 
         val numberPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
             color = Color.parseColor("#3C4043")
             textAlign = Paint.Align.CENTER
-            textSize = size * 0.46f
+            textSize = size * 0.42f
             typeface = Typeface.create(Typeface.DEFAULT, Typeface.BOLD)
         }
         val text = day.toString()
@@ -132,8 +185,10 @@ class AppsRepository(private val context: Context) {
 
     private fun getCachedCalendarBadgeIcon(pkg: String): Drawable {
         iconCache[pkg]?.let { return it }
-        val day = Calendar.getInstance().get(Calendar.DAY_OF_MONTH)
-        return buildCalendarBadgeIcon(day).also { iconCache[pkg] = it }
+        val now = Calendar.getInstance()
+        val day = now.get(Calendar.DAY_OF_MONTH)
+        val month = SimpleDateFormat("MMM", Locale.getDefault()).format(now.time).uppercase(Locale.getDefault())
+        return buildCalendarBadgeIcon(day, month, currentIconShape).also { iconCache[pkg] = it }
     }
 
     @Suppress("NOTHING_TO_INLINE")
@@ -283,7 +338,18 @@ class AppsRepository(private val context: Context) {
             context.registerReceiver(receiver, dateFilter)
         }
 
-        launch { emitNow() }
+        val shapeFlow = prefsRepository.prefsFlow.map { it.appIconShape }.distinctUntilChanged()
+        launch {
+            currentIconShape = shapeFlow.first()
+            emitNow()
+            // Re-emit (with a cleared cache) whenever the user changes the icon shape, so
+            // synthesized icons like the calendar badge pick up the new shape immediately.
+            shapeFlow.drop(1).collect { shape ->
+                currentIconShape = shape
+                iconCache.clear()
+                emitNow()
+            }
+        }
 
         // Re-emit when a custom icon is saved or cleared
         launch { refreshTrigger.collect { emitNow() } }
