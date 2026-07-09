@@ -7955,6 +7955,8 @@ private fun FolderTile(
     useOutlinedLabel: Boolean = true,
     /** When true, [reorderDragModifier] owns long-press (e.g. home strip); inner tap must not register long-press. */
     stripOuterDragOwnsLongPress: Boolean = false,
+    /** See [AppTile]'s parameter of the same name. */
+    topSpacerWeight: Float = 0f,
 ) {
     /** Match app-tile geometry so folder labels/focus look identical in the drawer. */
     val folderShape = RoundedCornerShape(8.dp)
@@ -8080,6 +8082,9 @@ private fun FolderTile(
                 .fillMaxSize()
                 .padding(vertical = contentVerticalInset),
         ) {
+            if (topSpacerWeight > 0f) {
+                Spacer(Modifier.weight(topSpacerWeight))
+            }
             Box(
                 modifier = Modifier
                     .padding(top = iconPadTop, bottom = iconPadBottom, start = 6.dp, end = 6.dp)
@@ -8198,6 +8203,12 @@ private fun AppTile(
     useOutlinedLabel: Boolean = true,
     /** When true, [reorderDragModifier] owns long-press (e.g. home strip); inner tap must not register long-press. */
     stripOuterDragOwnsLongPress: Boolean = false,
+    /**
+     * Fraction of the tile's leftover vertical space (after the icon) reserved above the
+     * icon+label group, nudging it down toward the tile's bottom edge. A weight, not a fixed
+     * dp offset, so it scales with the tile's actual height across densities/font scales.
+     */
+    topSpacerWeight: Float = 0f,
 ) {
     // Flutter `app_card.dart` uses the raw title; no artificial line breaks.
     val displayLabel = app.label
@@ -8332,6 +8343,9 @@ private fun AppTile(
                 .fillMaxSize()
                 .padding(vertical = contentVerticalInset),
         ) {
+            if (topSpacerWeight > 0f) {
+                Spacer(Modifier.weight(topSpacerWeight))
+            }
             Box(
                 modifier = Modifier
                     .padding(top = iconPadTop, bottom = iconPadBottom, start = 7.dp, end = 7.dp)
@@ -9917,7 +9931,10 @@ private fun HomeShortcutStrip(
                 .align(Alignment.BottomCenter),
         ) {
             val viewportWidth = maxWidth
-            val minLabelBlock = with(density) { (labelSizeSp * 2.3f).sp.toDp() }
+            // Home strip labels are always a single short line (unlike the app drawer's grid,
+            // which reserves worst-case 2-line space for long app names) — reserving that same
+            // 2-line space here just leaves unused slack between the icon/label and the divider.
+            val minLabelBlock = with(density) { (labelSizeSp * 1.3f).sp.toDp() }
             val minCellHeight = 3.dp + iconSize + HOME_STRIP_ICON_LABEL_GAP + 2.dp + minLabelBlock
             val minCellWidth = iconSize + 10.dp
             // AdaptiveLayout: capped at STRIP_TOTAL_SLOTS (5) but safe for very narrow screens.
@@ -9998,7 +10015,8 @@ private fun HomeShortcutStrip(
                                 hideSourceWhileFingerDragging = isMovingThisGroup,
                                 focusHorizontalInset = HOME_STRIP_FOCUS_INSET,
                                 contentVerticalInset = HOME_STRIP_CONTENT_VERTICAL_INSET,
-                                labelContentAlignment = Alignment.BottomCenter,
+                                labelContentAlignment = Alignment.TopCenter,
+                                topSpacerWeight = 0.20f,
                                 useOutlinedLabel = false,
                                 onGloballyPositioned = { coords -> cellLayouts[stripToken] = coords },
                                 onClick = {
@@ -10054,7 +10072,8 @@ private fun HomeShortcutStrip(
                                             hasNotifBadge = app.packageName in unreadPackages,
                                             focusHorizontalInset = HOME_STRIP_FOCUS_INSET,
                                             contentVerticalInset = HOME_STRIP_CONTENT_VERTICAL_INSET,
-                                            labelContentAlignment = Alignment.BottomCenter,
+                                            labelContentAlignment = Alignment.TopCenter,
+                                            topSpacerWeight = 0.20f,
                                             useOutlinedLabel = false,
                                             onGloballyPositioned = { coords -> cellLayouts[stripToken] = coords },
                                             onClick = {
@@ -10094,7 +10113,8 @@ private fun HomeShortcutStrip(
                                             hideSourceWhileFingerDragging = isMovingThis,
                                             focusHorizontalInset = HOME_STRIP_FOCUS_INSET,
                                             contentVerticalInset = HOME_STRIP_CONTENT_VERTICAL_INSET,
-                                            labelContentAlignment = Alignment.BottomCenter,
+                                            labelContentAlignment = Alignment.TopCenter,
+                                            topSpacerWeight = 0.20f,
                                             useOutlinedLabel = false,
                                             onGloballyPositioned = { coords -> cellLayouts[stripToken] = coords },
                                             onClick = {
@@ -10207,7 +10227,8 @@ private fun HomeShortcutStrip(
                                 hideSourceWhileFingerDragging = false,
                                 focusHorizontalInset = HOME_STRIP_FOCUS_INSET,
                                 contentVerticalInset = HOME_STRIP_CONTENT_VERTICAL_INSET,
-                                labelContentAlignment = Alignment.BottomCenter,
+                                labelContentAlignment = Alignment.TopCenter,
+                                topSpacerWeight = 0.20f,
                                 useOutlinedLabel = false,
                                 onGloballyPositioned = {},
                                 onClick = {},
