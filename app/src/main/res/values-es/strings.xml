@@ -252,6 +252,7 @@
     <string name="drawer_no_apps_found">No se encontraron apps</string>
     <string name="widget_save_failed">No se pudo guardar el widget</string>
     <string name="widget_remove_failed">No se pudo quitar el widget</string>
+    <string name="widget_no_space">No hay suficiente espacio para este widget</string>
     <string name="app_hidden_toast">App oculta · Escribe \"private\" en el cajón para verla</string>
     <string name="home_groups_already_exist">Los grupos ya existen</string>
     <string name="home_strip_pinned">Fijado a la barra de inicio</string>

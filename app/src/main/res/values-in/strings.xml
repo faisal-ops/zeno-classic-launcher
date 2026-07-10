@@ -252,6 +252,7 @@
     <string name="drawer_no_apps_found">Tidak ada aplikasi ditemukan</string>
     <string name="widget_save_failed">Tidak dapat menyimpan widget</string>
     <string name="widget_remove_failed">Tidak dapat menghapus widget</string>
+    <string name="widget_no_space">Ruang tidak cukup untuk widget ini</string>
     <string name="app_hidden_toast">Aplikasi disembunyikan · Ketik \"private\" di laci untuk melihat</string>
     <string name="home_groups_already_exist">Grup sudah ada</string>
     <string name="home_strip_pinned">Disematkan ke strip beranda</string>

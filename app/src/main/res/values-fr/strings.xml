@@ -252,6 +252,7 @@
     <string name="drawer_no_apps_found">Aucune appli trouvée</string>
     <string name="widget_save_failed">Impossible d\'enregistrer le widget</string>
     <string name="widget_remove_failed">Impossible de retirer le widget</string>
+    <string name="widget_no_space">Pas assez d\'espace pour ce widget</string>
     <string name="app_hidden_toast">Appli masquée · Tapez \"private\" dans le tiroir pour la voir</string>
     <string name="home_groups_already_exist">Les groupes existent déjà</string>
     <string name="home_strip_pinned">Épinglé à la barre d\'accueil</string>

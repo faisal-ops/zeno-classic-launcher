@@ -252,6 +252,7 @@
     <string name="drawer_no_apps_found">Приложения не найдены</string>
     <string name="widget_save_failed">Не удалось сохранить виджет</string>
     <string name="widget_remove_failed">Не удалось убрать виджет</string>
+    <string name="widget_no_space">Недостаточно места для этого виджета</string>
     <string name="app_hidden_toast">Приложение скрыто · Введите \"private\" в меню, чтобы увидеть</string>
     <string name="home_groups_already_exist">Группы уже существуют</string>
     <string name="home_strip_pinned">Закреплено на панели</string>

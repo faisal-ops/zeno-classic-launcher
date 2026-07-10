@@ -249,6 +249,7 @@
     <string name="drawer_no_apps_found">لم يتم العثور على تطبيقات</string>
     <string name="widget_save_failed">تعذر حفظ الأداة</string>
     <string name="widget_remove_failed">تعذرت إزالة الأداة</string>
+    <string name="widget_no_space">لا توجد مساحة كافية لهذه الأداة</string>
     <string name="app_hidden_toast">تم إخفاء التطبيق · اكتب \"private\" في الدرج لعرضه</string>
     <string name="home_groups_already_exist">المجموعات موجودة بالفعل</string>
     <string name="home_strip_pinned">تم التثبيت في شريط الشاشة الرئيسية</string>

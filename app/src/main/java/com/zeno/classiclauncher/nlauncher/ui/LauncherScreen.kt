@@ -409,6 +409,8 @@ private fun Modifier.expandHorizontally(amount: Dp): Modifier = this.layout { me
 private const val HOME_WIDGET_HOST_ID = 7777
 private const val HOME_GRID_COLS = 4
 private const val HOME_GRID_ROWS = 4
+/** Minimum grid cells always left unoccupied by widgets — see [exceedsWidgetAreaCap]. */
+private const val HOME_WIDGET_MIN_FREE_CELLS = HOME_GRID_COLS
 private val HOME_SHORTCUT_ICON_DP = 52.dp
 private val HOME_SHORTCUT_FALLBACK_ICON_DP = 48.dp
 private val HOME_STRIP_LABEL_COLOR = Color(0xFFE8EEF7)
@@ -637,9 +639,9 @@ internal fun overlapsAnyWidget(others: List<HomeWidgetConfig>, col: Int, row: In
 /**
  * Finds a row/col for a new [cols]x[rows] widget that doesn't overlap any already-[placed]
  * widget. Prefers [preferredCol]/[preferredRow] (typically grid-centered) when that spot is
- * free; otherwise scans the grid row-major for the first free fit. Falls back to (0, 0) if the
- * grid is fully packed — placing widgets in a visibly stacked/overlapping state is better than
- * silently failing to place a newly added widget at all.
+ * free; otherwise scans the grid row-major for the first free fit. Returns null if no
+ * non-overlapping slot exists anywhere in the grid — the caller must not place the widget in
+ * that case (placing it overlapping would silently corrupt the layout).
  */
 internal fun findFreeWidgetSlot(
     placed: List<HomeWidgetConfig>,
@@ -649,14 +651,36 @@ internal fun findFreeWidgetSlot(
     gridRows: Int,
     preferredCol: Int,
     preferredRow: Int,
-): Pair<Int, Int> {
+): Pair<Int, Int>? {
     if (!overlapsAnyWidget(placed, preferredCol, preferredRow, cols, rows)) return preferredCol to preferredRow
     for (row in 0..(gridRows - rows)) {
         for (col in 0..(gridCols - cols)) {
             if (!overlapsAnyWidget(placed, col, row, cols, rows)) return col to row
         }
     }
-    return 0 to 0
+    return null
+}
+
+/** Total grid cells occupied by [placed] widgets. */
+internal fun occupiedWidgetCells(placed: List<HomeWidgetConfig>): Int = placed.sumOf { it.cols * it.rows }
+
+/**
+ * True if adding a [cols]x[rows] widget alongside [placed] would leave fewer than
+ * [minFreeCells] cells empty in a [gridCols]x[gridRows] grid. Keeps at least one row's worth of
+ * the home screen permanently free so there's always empty wallpaper to long-press (open the
+ * Home Actions menu) or swipe on, even after placing many widgets.
+ */
+internal fun exceedsWidgetAreaCap(
+    placed: List<HomeWidgetConfig>,
+    cols: Int,
+    rows: Int,
+    gridCols: Int,
+    gridRows: Int,
+    minFreeCells: Int,
+): Boolean {
+    val totalCells = gridCols * gridRows
+    val afterAdd = occupiedWidgetCells(placed) + cols * rows
+    return totalCells - afterAdd < minFreeCells
 }
 
 private fun minimumCenteredRect(bounds: Rect, minSizePx: Float): Rect {
@@ -835,10 +859,26 @@ fun LauncherScreen(
     var pendingWidgetId by remember { mutableStateOf<Int?>(null) }
     var pendingWidgetProvider by remember { mutableStateOf<AppWidgetProviderInfo?>(null) }
     val appWidgetManager = remember(context) { AppWidgetManager.getInstance(context) }
+    // Reject an add attempt: free the allocated widget id, clear pending state, and toast.
+    // The picker sheet is left open (caller doesn't touch showWidgetPicker) so the user can
+    // immediately try a smaller widget instead.
+    fun rejectWidgetNoSpace(widgetId: Int) {
+        runCatching { appWidgetHost.deleteAppWidgetId(widgetId) }
+        pendingWidgetId = null
+        pendingWidgetProvider = null
+        Toast.makeText(context, context.getString(R.string.widget_no_space), Toast.LENGTH_SHORT).show()
+    }
     fun commitHomeWidget(widgetId: Int) {
         val info = appWidgetManager.getAppWidgetInfo(widgetId)
         val span = info?.let(::estimateHomeWidgetSpan) ?: HomeWidgetSpan(4, 2)
-        val (col, row) = findFreeWidgetSlot(
+        // Always leave a minimum amount of the grid unoccupied, even if a geometric slot would
+        // technically fit — otherwise widgets can fill the entire home screen, leaving no empty
+        // wallpaper to long-press (Home Actions menu) or swipe on.
+        if (exceedsWidgetAreaCap(prefs.homeWidgets, span.cols, span.rows, HOME_GRID_COLS, HOME_GRID_ROWS, HOME_WIDGET_MIN_FREE_CELLS)) {
+            rejectWidgetNoSpace(widgetId)
+            return
+        }
+        val slot = findFreeWidgetSlot(
             placed = prefs.homeWidgets,
             cols = span.cols,
             rows = span.rows,
@@ -847,6 +887,13 @@ fun LauncherScreen(
             preferredCol = (HOME_GRID_COLS - span.cols) / 2,
             preferredRow = (HOME_GRID_ROWS - span.rows) / 2,
         )
+        if (slot == null) {
+            // No room anywhere for a widget this size — reject rather than silently overlapping
+            // an already-placed widget.
+            rejectWidgetNoSpace(widgetId)
+            return
+        }
+        val (col, row) = slot
         val nextConfig =
             HomeWidgetConfig(
                 appWidgetId = widgetId,
@@ -864,7 +911,6 @@ fun LauncherScreen(
                     pendingWidgetId = null
                     pendingWidgetProvider = null
                     showWidgetPicker = false
-                    configModeWidgetId = widgetId
                 } else {
                     runCatching { appWidgetHost.deleteAppWidgetId(widgetId) }
                     Toast.makeText(context, context.getString(R.string.widget_save_failed), Toast.LENGTH_SHORT).show()

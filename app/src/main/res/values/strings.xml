@@ -273,6 +273,7 @@
     <string name="drawer_no_apps_found">No apps found</string>
     <string name="widget_save_failed">Could not save widget</string>
     <string name="widget_remove_failed">Could not remove widget</string>
+    <string name="widget_no_space">Not enough space for this widget</string>
     <string name="app_hidden_toast">App hidden · Type "private" in drawer to view</string>
     <string name="home_groups_already_exist">Groups already exist</string>
     <string name="home_strip_pinned">Pinned to Home Strip</string>
