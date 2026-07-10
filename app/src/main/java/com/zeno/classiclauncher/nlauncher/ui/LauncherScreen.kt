@@ -1406,11 +1406,6 @@ fun LauncherScreen(
                         },
                         onDismissWidgetConfigMode = { configModeWidgetId = null },
                         onUpdateHomeWidget = vm::addOrUpdateHomeWidget,
-                        onReplaceWidget = { widgetId ->
-                            configModeWidgetId = null
-                            removeHomeWidget(widgetId)
-                            showWidgetPicker = true
-                        },
                         onRemoveWidget = { widgetId ->
                             removeWidgetConfirmId = widgetId
                         },
@@ -2832,11 +2827,9 @@ private fun HomeGridCanvas(
     removeDropBounds: Rect?,
     onRemoveDropVisibleChanged: (Boolean) -> Unit,
     onRemoveDropActiveChanged: (Boolean) -> Unit,
-    onReplaceWidget: () -> Unit,
     onRemoveWidget: () -> Unit,
     onUpdateHomeWidget: (HomeWidgetConfig) -> Unit,
     onWidgetBoundsChanged: (Rect?) -> Unit,
-    onWidgetControlsBoundsChanged: (Rect?) -> Unit,
     onWidgetDragActiveChanged: (Boolean) -> Unit,
 ) {
     val view = LocalView.current
@@ -2855,9 +2848,6 @@ private fun HomeGridCanvas(
     }
     LaunchedEffect(widgetInfo) {
         if (widgetInfo == null) onWidgetBoundsChanged(null)
-    }
-    LaunchedEffect(widgetConfigMode, widgetInfo) {
-        if (!widgetConfigMode || widgetInfo == null) onWidgetControlsBoundsChanged(null)
     }
     var widgetDragOffset by remember { mutableStateOf(Offset.Zero) }
     var widgetDragging by remember { mutableStateOf(false) }
@@ -2941,23 +2931,6 @@ private fun HomeGridCanvas(
             val widgetWidthDp = width.value.roundToInt().coerceAtLeast(1)
             val widgetHeightDp = height.value.roundToInt().coerceAtLeast(1)
             val widgetHeightPx = with(density) { height.toPx() }
-            val controlsCompact = span.cols <= 1 || width < 176.dp
-            val controlsMedium = !controlsCompact && width < 260.dp
-            val controlsPanelWidth = when {
-                controlsCompact -> 124.dp
-                controlsMedium -> width.coerceIn(184.dp, 220.dp)
-                else -> width.coerceIn(244.dp, 320.dp)
-            }.coerceAtMost(maxWidth)
-            val controlsPanelHeight = if (controlsCompact) 132.dp else 48.dp
-            val controlsGap = 8.dp
-            val maxControlsX = (maxWidth - controlsPanelWidth).coerceAtLeast(0.dp)
-            val controlsX = (baseX + width / 2 - controlsPanelWidth / 2).coerceIn(0.dp, maxControlsX)
-            val belowControlsY = baseY + height + controlsGap
-            val controlsY = if (belowControlsY + controlsPanelHeight <= maxHeight) {
-                belowControlsY
-            } else {
-                (baseY - controlsPanelHeight - controlsGap).coerceAtLeast(0.dp)
-            }
             val removeHoverOffset = currentRemoveDropBounds.value
                 ?.takeIf { widgetDragging && widgetRemoveActive }
                 ?.let { bounds ->
@@ -3190,28 +3163,6 @@ private fun HomeGridCanvas(
                     }
                 }
             }
-            AnimatedVisibility(
-                visible = widgetConfigMode && !widgetDragging,
-                modifier = Modifier
-                    .align(Alignment.TopStart)
-                    .offset(x = controlsX, y = controlsY)
-                    .width(controlsPanelWidth)
-                    .zIndex(8f),
-                enter = fadeIn() + expandVertically(),
-                exit = fadeOut() + shrinkVertically(),
-            ) {
-                WidgetConfigControls(
-                    compact = controlsCompact,
-                    onReplaceWidget = onReplaceWidget,
-                    onRemoveWidget = onRemoveWidget,
-                    modifier = Modifier
-                        .clip(RoundedCornerShape(18.dp))
-                        .background(Color(0xE6111720))
-                        .border(0.6.dp, Color.White.copy(alpha = 0.10f), RoundedCornerShape(18.dp))
-                        .onGloballyPositioned { onWidgetControlsBoundsChanged(it.boundsInRoot()) }
-                        .padding(horizontal = 8.dp, vertical = 6.dp),
-                )
-            }
             if (widgetConfigMode && !widgetDragging) {
                 val minSpan = remember(info) { estimateHomeWidgetSpan(info) }
                 val cellWpx = with(density) { (cellW + gap).toPx() }
@@ -3249,8 +3200,8 @@ private fun HomeGridCanvas(
                 fun ResizeHandle(x: Dp, y: Dp, rightEdge: Boolean, bottomEdge: Boolean) {
                     var accumX by remember { mutableStateOf(0f) }
                     var accumY by remember { mutableStateOf(0f) }
-                    val handleVisual = 14.dp
-                    val touchPadding = 14.dp
+                    val handleVisual = 16.dp
+                    val touchPadding = 20.dp
                     Box(
                         modifier = Modifier
                             .align(Alignment.TopStart)
@@ -3258,10 +3209,22 @@ private fun HomeGridCanvas(
                             .size(handleVisual + touchPadding * 2)
                             .zIndex(9f)
                             .pointerInput(widgetId, span) {
-                                detectDragGestures(
-                                    onDragStart = { accumX = 0f; accumY = 0f },
-                                    onDrag = { change, dragAmount ->
+                                // Claim the gesture on the Initial pass, same reason as the
+                                // widget's own move-drag: an interactive widget underneath (e.g.
+                                // a search bar) can call requestDisallowInterceptTouchEvent on
+                                // its own touch-down, stealing the rest of a Main-pass gesture
+                                // (detectDragGestures) before it ever reaches this handle.
+                                awaitEachGesture {
+                                    val down = awaitFirstDown(requireUnconsumed = false, pass = PointerEventPass.Initial)
+                                    down.consume()
+                                    accumX = 0f
+                                    accumY = 0f
+                                    while (true) {
+                                        val event = awaitPointerEvent(PointerEventPass.Initial)
+                                        val change = event.changes.firstOrNull { it.id == down.id } ?: break
                                         change.consume()
+                                        if (!change.pressed) break
+                                        val dragAmount = change.position - change.previousPosition
                                         accumX += dragAmount.x
                                         accumY += dragAmount.y
                                         val deltaCols = (accumX / cellWpx).roundToInt()
@@ -3271,8 +3234,8 @@ private fun HomeGridCanvas(
                                             accumX -= deltaCols * cellWpx
                                             accumY -= deltaRows * cellHpx
                                         }
-                                    },
-                                )
+                                    }
+                                }
                             }
                             .padding(touchPadding),
                     ) {
@@ -3302,58 +3265,6 @@ private fun HomeGridCanvas(
     }
 }
 
-@Composable
-private fun WidgetConfigControls(
-    compact: Boolean,
-    onReplaceWidget: () -> Unit,
-    onRemoveWidget: () -> Unit,
-    modifier: Modifier = Modifier,
-) {
-    if (compact) {
-        Column(
-            modifier = modifier.fillMaxWidth(),
-            verticalArrangement = Arrangement.spacedBy(6.dp),
-        ) {
-            WidgetEditChip("Change", onReplaceWidget, modifier = Modifier.fillMaxWidth())
-            WidgetEditChip("Remove", onRemoveWidget, danger = true, modifier = Modifier.fillMaxWidth())
-        }
-    } else {
-        Row(
-            modifier = modifier.fillMaxWidth(),
-            horizontalArrangement = Arrangement.spacedBy(6.dp),
-            verticalAlignment = Alignment.CenterVertically,
-        ) {
-            WidgetEditChip(
-                "Change",
-                onReplaceWidget,
-                modifier = Modifier.weight(1f),
-            )
-            WidgetEditChip("Remove", onRemoveWidget, danger = true, modifier = Modifier.weight(1f))
-        }
-    }
-}
-
-@Composable
-private fun WidgetEditChip(
-    label: String,
-    onClick: () -> Unit,
-    danger: Boolean = false,
-    modifier: Modifier = Modifier,
-) {
-    Text(
-        text = label,
-        color = if (danger) Color(0xFFFFCED5) else Color(0xFFEAF2F8),
-        style = MaterialTheme.typography.labelMedium.copy(fontWeight = FontWeight.SemiBold),
-        textAlign = TextAlign.Center,
-        maxLines = 1,
-        overflow = TextOverflow.Ellipsis,
-        modifier = modifier
-            .clip(RoundedCornerShape(13.dp))
-            .background(if (danger) Color(0x662B1217) else Color(0xFF202B36))
-            .clickable(onClick = onClick)
-            .padding(horizontal = 10.dp, vertical = 7.dp),
-    )
-}
 
 @Composable
 private fun HomePage(
@@ -3384,7 +3295,6 @@ private fun HomePage(
     onOpenWidgetConfigMode: (Int) -> Unit,
     onDismissWidgetConfigMode: () -> Unit,
     onUpdateHomeWidget: (HomeWidgetConfig) -> Unit,
-    onReplaceWidget: (Int) -> Unit,
     onRemoveWidget: (Int) -> Unit,
     onLongPress: () -> Unit,
     doubleTapToSleepEnabled: Boolean,
@@ -3417,7 +3327,6 @@ private fun HomePage(
     // (swipe-to-QS, app-launch taps, double-tap-to-sleep) from firing over ANY widget, not just
     // whichever one happens to be selected for editing.
     var homeWidgetBoundsById by remember { mutableStateOf<Map<Int, Rect>>(emptyMap()) }
-    var homeWidgetControlsBounds by remember { mutableStateOf<Rect?>(null) }
     // At most one widget can be actively dragged at a time (single-touch gesture), so a single
     // id is enough to track which one, if any, is currently mid-drag.
     var activeDragWidgetId by remember { mutableStateOf<Int?>(null) }
@@ -3425,7 +3334,6 @@ private fun HomePage(
     LaunchedEffect(reorderMode) {
         if (!reorderMode) {
             activeDragWidgetId = null
-            homeWidgetControlsBounds = null
             onRemoveDropVisibleChanged(false)
             onRemoveDropActiveChanged(false)
             onRemoveDropBoundsChanged(null)
@@ -3526,7 +3434,7 @@ private fun HomePage(
             .focusRequester(focusRequester)
             .focusable()
             .onGloballyPositioned { homePageBounds = it.boundsInRoot() }
-            .pointerInput(reorderMode, configModeWidgetId, searchQuery, homeStripBounds, homeWidgetBoundsById, homeWidgetControlsBounds, homePageBounds, homeWidgetDragActive) {
+            .pointerInput(reorderMode, configModeWidgetId, searchQuery, homeStripBounds, homeWidgetBoundsById, homePageBounds, homeWidgetDragActive) {
                 val widgetConfigMode = configModeWidgetId != null
                 if ((!reorderMode && !widgetConfigMode) || searchQuery.isNotEmpty()) return@pointerInput
                 awaitEachGesture {
@@ -3538,8 +3446,7 @@ private fun HomePage(
                         // dismiss config mode AND launch whatever was underneath.
                         val downRoot = homePageBounds?.let { it.topLeft + down.position }
                         val downInsideWidget = downRoot != null && homeWidgetBoundsById.values.any { it.contains(downRoot) }
-                        val downInsideControls = downRoot != null && homeWidgetControlsBounds?.contains(downRoot) == true
-                        if (!downInsideWidget && !downInsideControls) {
+                        if (!downInsideWidget) {
                             down.consume()
                             onDismissWidgetConfigMode()
                             waitForUpOrCancellation(pass = PointerEventPass.Initial)?.consume()
@@ -3550,9 +3457,8 @@ private fun HomePage(
                     val pageBounds = homePageBounds ?: return@awaitEachGesture
                     val tapRoot = pageBounds.topLeft + up.position
                     val insideWidget = homeWidgetBoundsById.values.any { it.contains(tapRoot) }
-                    val insideControls = homeWidgetControlsBounds?.contains(tapRoot) == true
                     val insideStrip = homeStripBounds?.contains(tapRoot) == true
-                    if (!insideStrip && !insideWidget && !insideControls && !homeWidgetDragActive) {
+                    if (!insideStrip && !insideWidget && !homeWidgetDragActive) {
                         onExitReorderMode()
                         down.consume()
                         up.consume()
@@ -3759,6 +3665,31 @@ private fun HomePage(
                         waitForUpOrCancellation(pass = PointerEventPass.Initial)
                         return@awaitEachGesture
                     }
+                    // Check double-tap completion FIRST, before the long-press timeout race
+                    // below. If this down arrives within the double-tap window, treat it as the
+                    // completing tap immediately regardless of how long it's held — otherwise a
+                    // second tap held even slightly past longPressMs (any touch lag) would fall
+                    // through to the long-press branch below and wrongly open Home Actions
+                    // instead of completing the double-tap.
+                    val downAt = SystemClock.uptimeMillis()
+                    if (downAt - lastTapMs <= doubleTapMs) {
+                        lastTapMs = 0L
+                        down.consume()
+                        when {
+                            doubleTapToSleepEnabled -> {
+                                // doVibrate fires unconditionally (ignores hapticsEnabled) and
+                                // calls VibrationEffect directly so screen-off can't cancel it
+                                doVibrate(view, hapticIntensity)
+                                SleepManager.lockNow(context)
+                            }
+                            doubleTapPackage.isNotEmpty() -> {
+                                doNavFeedback(view, hapticsEnabled, hapticIntensity)
+                                onLaunchApp(doubleTapPackage)
+                            }
+                        }
+                        waitForUpOrCancellation(pass = PointerEventPass.Initial)
+                        return@awaitEachGesture
+                    }
                     var cancelledByMove = false
                     var releasedBeforeLongPress = false
                     withTimeoutOrNull(longPressMs) {
@@ -3784,24 +3715,9 @@ private fun HomePage(
                         waitForUpOrCancellation(pass = PointerEventPass.Initial)
                         return@awaitEachGesture
                     }
-                    val now = SystemClock.uptimeMillis()
-                    if (now - lastTapMs <= doubleTapMs) {
-                        lastTapMs = 0L
-                        when {
-                            doubleTapToSleepEnabled -> {
-                                // doVibrate fires unconditionally (ignores hapticsEnabled) and
-                                // calls VibrationEffect directly so screen-off can't cancel it
-                                doVibrate(view, hapticIntensity)
-                                SleepManager.lockNow(context)
-                            }
-                            doubleTapPackage.isNotEmpty() -> {
-                                doNavFeedback(view, hapticsEnabled, hapticIntensity)
-                                onLaunchApp(doubleTapPackage)
-                            }
-                        }
-                    } else {
-                        lastTapMs = now
-                    }
+                    // First tap of a potential double-tap — remember it. The action itself fires
+                    // above, on the next down, if it arrives within doubleTapMs.
+                    lastTapMs = SystemClock.uptimeMillis()
                 }
             }
             .pointerInput(swipeUpPackage, searchQuery, homeWidgetBoundsById, homePageBounds, reorderMode, configModeWidgetId) {
@@ -4072,7 +3988,13 @@ private fun HomePage(
                             // Break out of this Box's 6dp + the outer Column's 8dp horizontal padding
                             // so the outermost grid column can reach the true screen edge. Uses a
                             // custom layout modifier, not Modifier.padding() — that throws on negatives.
-                            modifier = Modifier.expandHorizontally(14.dp),
+                            // zIndex: each widget is otherwise stacked purely by list order, so with
+                            // multiple widgets close together the selected/dragging one's resize
+                            // handles and Change/Remove panel could render underneath a sibling
+                            // widget. Boost it above every other widget while active.
+                            modifier = Modifier
+                                .expandHorizontally(14.dp)
+                                .zIndex(if (widgetId == configModeWidgetId || widgetId == activeDragWidgetId) 10f else 0f),
                             homeWidgetId = widgetId,
                             homeWidgetConfig = widgetConfig,
                             otherWidgets = homeWidgets.filter { it.appWidgetId != widgetId },
@@ -4086,10 +4008,6 @@ private fun HomePage(
                             removeDropBounds = removeDropBounds,
                             onRemoveDropVisibleChanged = onRemoveDropVisibleChanged,
                             onRemoveDropActiveChanged = onRemoveDropActiveChanged,
-                            onReplaceWidget = {
-                                if (reorderMode) onExitReorderMode()
-                                onReplaceWidget(widgetId)
-                            },
                             onRemoveWidget = {
                                 onRemoveWidget(widgetId)
                                 if (reorderMode) onExitReorderMode()
@@ -4102,7 +4020,6 @@ private fun HomePage(
                                     homeWidgetBoundsById - widgetId
                                 }
                             },
-                            onWidgetControlsBoundsChanged = { homeWidgetControlsBounds = it },
                             onWidgetDragActiveChanged = { active ->
                                 activeDragWidgetId = when {
                                     active -> widgetId
