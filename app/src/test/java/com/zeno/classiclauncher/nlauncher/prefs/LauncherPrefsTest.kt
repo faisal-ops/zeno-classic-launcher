@@ -31,29 +31,62 @@ class LauncherPrefsTest {
     fun launcherBackup_roundTripsWidgetProviderButRequiresRebinding() {
         val prefs = LauncherPrefs(
             iconPackPackage = "com.example.iconpack",
-            homeWidget = HomeWidgetConfig(
-                appWidgetId = 42,
-                providerPackage = "com.example",
-                providerClass = "com.example.Widget",
-                row = 1,
-                col = 1,
-                cols = 2,
-                rows = 2,
+            homeWidgets = listOf(
+                HomeWidgetConfig(
+                    appWidgetId = 42,
+                    providerPackage = "com.example",
+                    providerClass = "com.example.Widget",
+                    row = 1,
+                    col = 1,
+                    cols = 2,
+                    rows = 2,
+                ),
+                HomeWidgetConfig(
+                    appWidgetId = 43,
+                    providerPackage = "com.example.two",
+                    providerClass = "com.example.two.Widget",
+                    row = 0,
+                    col = 0,
+                    cols = 1,
+                    rows = 1,
+                ),
             ),
             quickSettingsTileOrder = listOf("battery", "internet"),
         )
 
         val restored = LauncherBackup.fromJson(LauncherBackup.toJson(prefs)).getOrThrow()
 
-        assertFalse(restored.homeWidget.hasWidget)
-        assertEquals("com.example", restored.homeWidget.providerPackage)
-        assertEquals("com.example.Widget", restored.homeWidget.providerClass)
-        assertEquals(1, restored.homeWidget.row)
-        assertEquals(1, restored.homeWidget.col)
-        assertEquals(2, restored.homeWidget.cols)
-        assertEquals(2, restored.homeWidget.rows)
+        assertEquals(2, restored.homeWidgets.size)
+        assertFalse(restored.homeWidgets[0].hasWidget)
+        assertEquals("com.example", restored.homeWidgets[0].providerPackage)
+        assertEquals("com.example.Widget", restored.homeWidgets[0].providerClass)
+        assertEquals(1, restored.homeWidgets[0].row)
+        assertEquals(1, restored.homeWidgets[0].col)
+        assertEquals(2, restored.homeWidgets[0].cols)
+        assertEquals(2, restored.homeWidgets[0].rows)
+        assertEquals("com.example.two", restored.homeWidgets[1].providerPackage)
         assertEquals("com.example.iconpack", restored.iconPackPackage)
         assertEquals(listOf("battery", "internet"), restored.quickSettingsTileOrder)
+    }
+
+    @Test
+    fun homeWidgetsJson_roundTripsMultipleWidgets() {
+        val widgets = listOf(
+            HomeWidgetConfig(appWidgetId = 1, providerPackage = "a.pkg", providerClass = "a.Cls", row = 0, col = 0, cols = 2, rows = 1),
+            HomeWidgetConfig(appWidgetId = 2, providerPackage = "b.pkg", providerClass = "b.Cls", row = 2, col = 1, cols = 1, rows = 2),
+        )
+
+        val restored = parseHomeWidgetsJson(homeWidgetsToJson(widgets))
+
+        assertEquals(widgets, restored)
+    }
+
+    @Test
+    fun parseHomeWidgetsJson_dropsEntriesWithoutAppWidgetId() {
+        val restored = parseHomeWidgetsJson("""[{"providerPackage":"a.pkg"},{"appWidgetId":5,"providerPackage":"b.pkg"}]""")
+
+        assertEquals(1, restored.size)
+        assertEquals(5, restored[0].appWidgetId)
     }
 
     @Test

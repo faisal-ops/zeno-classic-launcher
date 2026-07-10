@@ -79,15 +79,20 @@ object LauncherBackup {
         p.put("homeGroups", homeGroupsArr)
         p.put("homeStripOrder", JSONArray(prefs.homeStripOrder))
         p.put("homeStripSlots", JSONArray(prefs.homeStripSlots.map { it ?: "" }))
-        JSONObject().also { w ->
-            w.put("providerPackage", prefs.homeWidget.providerPackage)
-            w.put("providerClass", prefs.homeWidget.providerClass)
-            w.put("row", prefs.homeWidget.row)
-            w.put("col", prefs.homeWidget.col)
-            w.put("cols", prefs.homeWidget.cols)
-            w.put("rows", prefs.homeWidget.rows)
-            p.put("homeWidget", w)
+        // appWidgetId intentionally omitted — widget instance ids are allocated per-device by
+        // AppWidgetHost and don't survive a restore; the user re-adds the widget afterwards.
+        val homeWidgetsArr = JSONArray()
+        prefs.homeWidgets.forEach { hw ->
+            val w = JSONObject()
+            w.put("providerPackage", hw.providerPackage)
+            w.put("providerClass", hw.providerClass)
+            w.put("row", hw.row)
+            w.put("col", hw.col)
+            w.put("cols", hw.cols)
+            w.put("rows", hw.rows)
+            homeWidgetsArr.put(w)
         }
+        p.put("homeWidgets", homeWidgetsArr)
         p.put("doubleTapToSleepEnabled", prefs.doubleTapToSleepEnabled)
         p.put("swipeUpPackage", prefs.swipeUpPackage)
         p.put("swipeRightPackage", prefs.swipeRightPackage)
@@ -307,22 +312,28 @@ object LauncherBackup {
                 }
             }
         } ?: emptyList()
-        val homeWidget = p.optJSONObject("homeWidget")?.let { w ->
-            HomeWidgetConfig(
-                appWidgetId = -1,
-                providerPackage = w.optString("providerPackage", "").trim(),
-                providerClass = w.optString("providerClass", "").trim(),
-                row = w.optInt("row", 1).coerceIn(0, 3),
-                col = w.optInt("col", 0).coerceIn(0, 3),
-                cols = w.optInt("cols", 4).coerceIn(1, 4),
-                rows = w.optInt("rows", 2).coerceIn(1, 4),
-            ).let { cfg ->
-                cfg.copy(
-                    row = cfg.row.coerceAtMost(4 - cfg.rows),
-                    col = cfg.col.coerceAtMost(4 - cfg.cols),
-                )
+        fun widgetConfigFromJson(w: JSONObject) = HomeWidgetConfig(
+            appWidgetId = -1,
+            providerPackage = w.optString("providerPackage", "").trim(),
+            providerClass = w.optString("providerClass", "").trim(),
+            row = w.optInt("row", 1).coerceIn(0, 3),
+            col = w.optInt("col", 0).coerceIn(0, 3),
+            cols = w.optInt("cols", 4).coerceIn(1, 4),
+            rows = w.optInt("rows", 2).coerceIn(1, 4),
+        ).let { cfg ->
+            cfg.copy(
+                row = cfg.row.coerceAtMost(4 - cfg.rows),
+                col = cfg.col.coerceAtMost(4 - cfg.cols),
+            )
+        }
+        val homeWidgets = p.optJSONArray("homeWidgets")?.let { arr ->
+            buildList {
+                for (i in 0 until arr.length()) {
+                    arr.optJSONObject(i)?.let { add(widgetConfigFromJson(it)) }
+                }
             }
-        } ?: HomeWidgetConfig()
+        } ?: p.optJSONObject("homeWidget")?.let { listOf(widgetConfigFromJson(it)) } // legacy single-widget backups
+        ?: emptyList()
         LauncherThemePalette.fromJson(theme)
         LauncherPrefs(
             gridPreset = grid,
@@ -360,7 +371,7 @@ object LauncherBackup {
             homeGroups = homeGroups,
             homeStripOrder = homeStripOrder,
             homeStripSlots = homeStripSlots,
-            homeWidget = homeWidget,
+            homeWidgets = homeWidgets,
             doubleTapToSleepEnabled = doubleTapSleep,
             swipeUpPackage = swipeUpPackage,
             swipeRightPackage = swipeRightPackage,

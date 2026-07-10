@@ -1488,24 +1488,24 @@ class LauncherViewModel(app: Application) : AndroidViewModel(app) {
         viewModelScope.launch { prefsRepo.setSetupComplete(complete) }
     }
 
-    fun setHomeWidget(config: HomeWidgetConfig) {
-        setHomeWidget(config, onComplete = null)
+    fun addOrUpdateHomeWidget(config: HomeWidgetConfig) {
+        addOrUpdateHomeWidget(config, onComplete = null)
     }
 
-    fun setHomeWidget(config: HomeWidgetConfig, onComplete: ((Throwable?) -> Unit)?) {
+    fun addOrUpdateHomeWidget(config: HomeWidgetConfig, onComplete: ((Throwable?) -> Unit)?) {
         viewModelScope.launch {
-            val result = runCatching { prefsRepo.setHomeWidget(config) }
+            val result = runCatching { prefsRepo.addOrUpdateHomeWidget(config) }
             onComplete?.invoke(result.exceptionOrNull())
         }
     }
 
-    fun clearHomeWidget() {
-        clearHomeWidget(onComplete = null)
+    fun removeHomeWidget(appWidgetId: Int) {
+        removeHomeWidget(appWidgetId, onComplete = null)
     }
 
-    fun clearHomeWidget(onComplete: ((Throwable?) -> Unit)?) {
+    fun removeHomeWidget(appWidgetId: Int, onComplete: ((Throwable?) -> Unit)?) {
         viewModelScope.launch {
-            val result = runCatching { prefsRepo.clearHomeWidget() }
+            val result = runCatching { prefsRepo.removeHomeWidget(appWidgetId) }
             onComplete?.invoke(result.exceptionOrNull())
         }
     }

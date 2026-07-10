@@ -193,6 +193,7 @@ import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import com.zeno.classiclauncher.nlauncher.backup.SettingsDownloads
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.key
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.CompositionLocalProvider
@@ -617,6 +618,47 @@ private fun normalizedHomeWidgetConfig(
     )
 }
 
+/** True if a [aCols]x[aRows] rect at ([aCol], [aRow]) overlaps a [bCols]x[bRows] rect at ([bCol], [bRow]). */
+internal fun widgetSlotsOverlap(
+    aCol: Int,
+    aRow: Int,
+    aCols: Int,
+    aRows: Int,
+    bCol: Int,
+    bRow: Int,
+    bCols: Int,
+    bRows: Int,
+): Boolean = aCol < bCol + bCols && aCol + aCols > bCol && aRow < bRow + bRows && aRow + aRows > bRow
+
+/** True if a [cols]x[rows] widget at ([col], [row]) would overlap any of [others]. */
+internal fun overlapsAnyWidget(others: List<HomeWidgetConfig>, col: Int, row: Int, cols: Int, rows: Int): Boolean =
+    others.any { widgetSlotsOverlap(col, row, cols, rows, it.col, it.row, it.cols, it.rows) }
+
+/**
+ * Finds a row/col for a new [cols]x[rows] widget that doesn't overlap any already-[placed]
+ * widget. Prefers [preferredCol]/[preferredRow] (typically grid-centered) when that spot is
+ * free; otherwise scans the grid row-major for the first free fit. Falls back to (0, 0) if the
+ * grid is fully packed — placing widgets in a visibly stacked/overlapping state is better than
+ * silently failing to place a newly added widget at all.
+ */
+internal fun findFreeWidgetSlot(
+    placed: List<HomeWidgetConfig>,
+    cols: Int,
+    rows: Int,
+    gridCols: Int,
+    gridRows: Int,
+    preferredCol: Int,
+    preferredRow: Int,
+): Pair<Int, Int> {
+    if (!overlapsAnyWidget(placed, preferredCol, preferredRow, cols, rows)) return preferredCol to preferredRow
+    for (row in 0..(gridRows - rows)) {
+        for (col in 0..(gridCols - cols)) {
+            if (!overlapsAnyWidget(placed, col, row, cols, rows)) return col to row
+        }
+    }
+    return 0 to 0
+}
+
 private fun minimumCenteredRect(bounds: Rect, minSizePx: Float): Rect {
     val width = maxOf(bounds.width, minSizePx)
     val height = maxOf(bounds.height, minSizePx)
@@ -779,8 +821,10 @@ fun LauncherScreen(
     var showHomeActions by remember { mutableStateOf(false) }
     var showPinAppToHome by remember { mutableStateOf(false) }
     var showWidgetPicker by remember { mutableStateOf(false) }
-    var showWidgetConfigMode by remember { mutableStateOf(false) }
-    var showRemoveWidgetConfirm by remember { mutableStateOf(false) }
+    // Which placed widget (by appWidgetId), if any, currently shows drag/resize controls.
+    // Null when none are selected for editing; at most one widget is ever in this state.
+    var configModeWidgetId by remember { mutableStateOf<Int?>(null) }
+    var removeWidgetConfirmId by remember { mutableStateOf<Int?>(null) }
     var showNewHomeGroupDialog by remember { mutableStateOf(false) }
     var newHomeGroupName by remember { mutableStateOf("") }
     val newHomeGroupFocusRequester = remember { FocusRequester() }
@@ -788,35 +832,39 @@ fun LauncherScreen(
     var showSpotlightOverlay by remember { mutableStateOf(false) }
     var spotlightInitialQuery by remember { mutableStateOf("") }
     val appWidgetHost = remember(context) { AppWidgetHost(context, HOME_WIDGET_HOST_ID) }
-    var homeWidgetId by remember { mutableStateOf<Int?>(null) }
     var pendingWidgetId by remember { mutableStateOf<Int?>(null) }
     var pendingWidgetProvider by remember { mutableStateOf<AppWidgetProviderInfo?>(null) }
     val appWidgetManager = remember(context) { AppWidgetManager.getInstance(context) }
     fun commitHomeWidget(widgetId: Int) {
         val info = appWidgetManager.getAppWidgetInfo(widgetId)
         val span = info?.let(::estimateHomeWidgetSpan) ?: HomeWidgetSpan(4, 2)
-        val previousWidgetId = homeWidgetId
+        val (col, row) = findFreeWidgetSlot(
+            placed = prefs.homeWidgets,
+            cols = span.cols,
+            rows = span.rows,
+            gridCols = HOME_GRID_COLS,
+            gridRows = HOME_GRID_ROWS,
+            preferredCol = (HOME_GRID_COLS - span.cols) / 2,
+            preferredRow = (HOME_GRID_ROWS - span.rows) / 2,
+        )
         val nextConfig =
             HomeWidgetConfig(
                 appWidgetId = widgetId,
                 providerPackage = info?.provider?.packageName.orEmpty(),
                 providerClass = info?.provider?.className.orEmpty(),
-                row = (HOME_GRID_ROWS - span.rows) / 2,
-                col = (HOME_GRID_COLS - span.cols) / 2,
+                row = row,
+                col = col,
                 cols = span.cols,
                 rows = span.rows,
             )
-        vm.setHomeWidget(
+        vm.addOrUpdateHomeWidget(
             nextConfig,
             onComplete = { error ->
                 if (error == null) {
-                    previousWidgetId?.let { oldId ->
-                        if (oldId != widgetId) runCatching { appWidgetHost.deleteAppWidgetId(oldId) }
-                    }
-                    homeWidgetId = widgetId
                     pendingWidgetId = null
                     pendingWidgetProvider = null
                     showWidgetPicker = false
+                    configModeWidgetId = widgetId
                 } else {
                     runCatching { appWidgetHost.deleteAppWidgetId(widgetId) }
                     Toast.makeText(context, context.getString(R.string.widget_save_failed), Toast.LENGTH_SHORT).show()
@@ -824,14 +872,12 @@ fun LauncherScreen(
             },
         )
     }
-    fun removeHomeWidget() {
-        val widgetId = homeWidgetId
-        vm.clearHomeWidget { error ->
+    fun removeHomeWidget(widgetId: Int) {
+        vm.removeHomeWidget(widgetId) { error ->
             if (error == null) {
-                widgetId?.let { runCatching { appWidgetHost.deleteAppWidgetId(it) } }
-                homeWidgetId = null
-                showWidgetConfigMode = false
-                showRemoveWidgetConfirm = false
+                runCatching { appWidgetHost.deleteAppWidgetId(widgetId) }
+                if (configModeWidgetId == widgetId) configModeWidgetId = null
+                removeWidgetConfirmId = null
             } else {
                 Toast.makeText(context, context.getString(R.string.widget_remove_failed), Toast.LENGTH_SHORT).show()
             }
@@ -855,12 +901,7 @@ fun LauncherScreen(
     val configureWidgetLauncher = rememberLauncherForActivityResult(ActivityResultContracts.StartActivityForResult()) {
         val widgetId = pendingWidgetId
         if (widgetId != null && appWidgetManager.getAppWidgetInfo(widgetId) != null) {
-            if (widgetId == homeWidgetId) {
-                pendingWidgetId = null
-                pendingWidgetProvider = null
-            } else {
-                commitHomeWidget(widgetId)
-            }
+            commitHomeWidget(widgetId)
         } else {
             pendingWidgetId = null
             pendingWidgetProvider = null
@@ -914,9 +955,6 @@ fun LauncherScreen(
                 },
             )
         }
-    }
-    LaunchedEffect(prefs.homeWidget.appWidgetId) {
-        homeWidgetId = prefs.homeWidget.appWidgetId.takeIf { it > 0 }
     }
     // ── Trackpad-aware focus visibility ──────────────────────────────────────
     // The focus highlight is only shown while the trackpad/D-pad is in use.
@@ -1045,7 +1083,7 @@ fun LauncherScreen(
             openFolder != null -> openFolder = null
             showHomeActions -> showHomeActions = false
             showPinAppToHome -> showPinAppToHome = false
-            showWidgetConfigMode -> showWidgetConfigMode = false
+            configModeWidgetId != null -> configModeWidgetId = null
             reorderMode -> vm.toggleReorderMode()
             searchQuery.isNotEmpty() -> vm.setSearchQuery("")
             !classicMode && pagerState.currentPage != 0 -> scope.launch { pagerState.animateScrollToPage(0) }
@@ -1081,8 +1119,8 @@ fun LauncherScreen(
             showHomeActions = false
             showPinAppToHome = false
             showWidgetPicker = false
-            showWidgetConfigMode = false
-            showRemoveWidgetConfirm = false
+            configModeWidgetId = null
+            removeWidgetConfirmId = null
             showNewHomeGroupDialog = false
             showQuickSettingsOverlay = false
             showSpotlightOverlay = false
@@ -1100,13 +1138,13 @@ fun LauncherScreen(
 
     androidx.compose.runtime.LaunchedEffect(reorderMode, moving) {
         if (reorderMode && moving == null) {
-            showWidgetConfigMode = false
+            configModeWidgetId = null
             kotlinx.coroutines.delay(10_000L)
             if (reorderMode && moving == null) vm.toggleReorderMode()
         }
     }
     androidx.compose.runtime.LaunchedEffect(reorderMode) {
-        if (reorderMode) showWidgetConfigMode = false
+        if (reorderMode) configModeWidgetId = null
     }
 
     // Dock shows which app-drawer page is active; trackpad flings can move the outer home/drawer pager
@@ -1313,22 +1351,22 @@ fun LauncherScreen(
                         doubleTapPackage = prefs.doubleTapPackage,
                         hapticsEnabled = prefs.hapticsEnabled,
                         hapticIntensity = prefs.hapticIntensity,
-                        homeWidgetId = homeWidgetId,
-                        homeWidgetConfig = prefs.homeWidget,
+                        homeWidgets = prefs.homeWidgets,
                         appWidgetHost = appWidgetHost,
-                        widgetConfigMode = showWidgetConfigMode,
-                        onOpenWidgetConfigMode = {
+                        configModeWidgetId = configModeWidgetId,
+                        onOpenWidgetConfigMode = { widgetId ->
                             if (reorderMode) vm.toggleReorderMode()
-                            showWidgetConfigMode = true
+                            configModeWidgetId = widgetId
                         },
-                        onDismissWidgetConfigMode = { showWidgetConfigMode = false },
-                        onUpdateHomeWidget = vm::setHomeWidget,
-                        onReplaceWidget = {
-                            showWidgetConfigMode = false
+                        onDismissWidgetConfigMode = { configModeWidgetId = null },
+                        onUpdateHomeWidget = vm::addOrUpdateHomeWidget,
+                        onReplaceWidget = { widgetId ->
+                            configModeWidgetId = null
+                            removeHomeWidget(widgetId)
                             showWidgetPicker = true
                         },
-                        onRemoveWidget = {
-                            showRemoveWidgetConfirm = true
+                        onRemoveWidget = { widgetId ->
+                            removeWidgetConfirmId = widgetId
                         },
                         onLongPress = { showHomeActions = true },
                         doubleTapToSleepEnabled = prefs.doubleTapToSleepEnabled,
@@ -2546,7 +2584,7 @@ fun LauncherScreen(
         if (showHomeActions) {
             HomeActionsSheet(
                 themePalette = themePalette,
-                hasWidget = homeWidgetId != null,
+                hasWidget = prefs.homeWidgets.isNotEmpty(),
                 newHomeGroupEnabled = !classicMode && prefs.homeStripEnabled && prefs.canAddHomeStripItem(),
                 pinToHomepageEnabled = pinToHomepageEnabled,
                 onAddWidget = {
@@ -2555,7 +2593,7 @@ fun LauncherScreen(
                 },
                 onEditHomeLayout = {
                     showHomeActions = false
-                    showWidgetConfigMode = false
+                    configModeWidgetId = null
                     if (!reorderMode) vm.toggleReorderMode()
                 },
                 onOpenSettings = {
@@ -2601,9 +2639,9 @@ fun LauncherScreen(
             )
         }
 
-        if (showRemoveWidgetConfirm) {
+        if (removeWidgetConfirmId != null) {
             AlertDialog(
-                onDismissRequest = { showRemoveWidgetConfirm = false },
+                onDismissRequest = { removeWidgetConfirmId = null },
                 containerColor = Color(0xFF111820),
                 titleContentColor = Color(0xFFEAF2F8),
                 textContentColor = Color(0xFFB7C2CF),
@@ -2621,7 +2659,7 @@ fun LauncherScreen(
                     )
                 },
                 confirmButton = {
-                    TextButton(onClick = { removeHomeWidget() }) {
+                    TextButton(onClick = { removeWidgetConfirmId?.let(::removeHomeWidget) }) {
                         Text(
                             stringResource(R.string.action_remove),
                             color = Color(0xFFFF9EAA),
@@ -2631,7 +2669,7 @@ fun LauncherScreen(
                     }
                 },
                 dismissButton = {
-                    TextButton(onClick = { showRemoveWidgetConfirm = false }) {
+                    TextButton(onClick = { removeWidgetConfirmId = null }) {
                         Text(stringResource(R.string.action_cancel), color = Color(0xFF9AE2FF), fontSize = 14.sp)
                     }
                 },
@@ -2735,6 +2773,9 @@ private fun HomeGridCanvas(
     modifier: Modifier = Modifier,
     homeWidgetId: Int?,
     homeWidgetConfig: HomeWidgetConfig,
+    // The other placed widgets (this one excluded), used to keep drag/resize from landing on
+    // top of them — see [widgetSlotsOverlap].
+    otherWidgets: List<HomeWidgetConfig>,
     appWidgetHost: AppWidgetHost,
     appWidgetManager: AppWidgetManager,
     reorderMode: Boolean,
@@ -2754,6 +2795,7 @@ private fun HomeGridCanvas(
 ) {
     val view = LocalView.current
     val density = LocalDensity.current
+    val currentOtherWidgets = rememberUpdatedState(otherWidgets)
     val currentRemoveDropBounds = rememberUpdatedState(removeDropBounds)
     val currentOnOpenWidgetConfigMode = rememberUpdatedState(onOpenWidgetConfigMode)
     val currentOnRemoveDropVisibleChanged = rememberUpdatedState(onRemoveDropVisibleChanged)
@@ -2779,6 +2821,9 @@ private fun HomeGridCanvas(
     var gridCoords by remember { mutableStateOf<LayoutCoordinates?>(null) }
     var widgetPreviewCol by remember { mutableStateOf<Int?>(null) }
     var widgetPreviewRow by remember { mutableStateOf<Int?>(null) }
+    // True when the current drag preview position would overlap another placed widget —
+    // drives the red/blue preview tint and blocks the drop on release.
+    var widgetPreviewBlocked by remember { mutableStateOf(false) }
     fun resetWidgetDrag() {
         widgetDragging = false
         widgetDragOffset = Offset.Zero
@@ -2786,6 +2831,7 @@ private fun HomeGridCanvas(
         widgetFingerRoot = Offset.Zero
         widgetPreviewCol = null
         widgetPreviewRow = null
+        widgetPreviewBlocked = false
         currentOnWidgetDragActiveChanged.value(false)
         currentOnRemoveDropVisibleChanged.value(false)
         currentOnRemoveDropActiveChanged.value(false)
@@ -2880,6 +2926,8 @@ private fun HomeGridCanvas(
                 }
                 ?: widgetDragOffset
             if (widgetDragging && !widgetRemoveActive && widgetPreviewCol != null && widgetPreviewRow != null) {
+                val previewFill = if (widgetPreviewBlocked) Color(0x29FF6B7A) else Color(0x2984D5F6)
+                val previewBorder = if (widgetPreviewBlocked) Color(0xFFFF6B7A) else Color(0xFF84D5F6)
                 Box(
                     modifier = Modifier
                         .align(Alignment.TopStart)
@@ -2891,8 +2939,8 @@ private fun HomeGridCanvas(
                         .height(height)
                         .zIndex(1f)
                         .clip(RoundedCornerShape(14.dp))
-                        .background(Color(0x2984D5F6))
-                        .border(1.5.dp, Color(0xFF84D5F6), RoundedCornerShape(14.dp)),
+                        .background(previewFill)
+                        .border(1.5.dp, previewBorder, RoundedCornerShape(14.dp)),
                 )
             }
             Box(
@@ -3012,10 +3060,12 @@ private fun HomeGridCanvas(
                             if (widgetRemoveActive) {
                                 widgetPreviewCol = null
                                 widgetPreviewRow = null
+                                widgetPreviewBlocked = false
                             } else {
                                 snappedTarget()?.let { (col, row) ->
                                     widgetPreviewCol = col
                                     widgetPreviewRow = row
+                                    widgetPreviewBlocked = overlapsAnyWidget(currentOtherWidgets.value, col, row, span.cols, span.rows)
                                 }
                             }
                         }
@@ -3023,7 +3073,12 @@ private fun HomeGridCanvas(
                             val shouldRemove = widgetDragging && widgetRemoveActive
                             if (!shouldRemove) {
                                 snappedTarget()?.let { (nextCol, nextRow) ->
-                                    currentOnUpdateHomeWidget.value(span.copy(col = nextCol, row = nextRow))
+                                    // Blocked drop: leave the config unchanged so the widget's
+                                    // position animates back to where it started instead of
+                                    // landing on top of another placed widget.
+                                    if (!overlapsAnyWidget(currentOtherWidgets.value, nextCol, nextRow, span.cols, span.rows)) {
+                                        currentOnUpdateHomeWidget.value(span.copy(col = nextCol, row = nextRow))
+                                    }
                                 }
                             }
                             resetWidgetDrag()
@@ -3137,6 +3192,10 @@ private fun HomeGridCanvas(
                         newRows = (span.rows - deltaRows).coerceIn(minSpan.rows, fixedBottom)
                         newRow = (fixedBottom - newRows).coerceIn(0, HOME_GRID_ROWS - newRows)
                     }
+                    // Blocked resize: stop growing into another placed widget. The user's
+                    // continued drag will simply have no further effect until they reverse
+                    // direction — same feel as dragging a window edge into a neighbor.
+                    if (overlapsAnyWidget(currentOtherWidgets.value, newCol, newRow, newCols, newRows)) return
                     currentOnUpdateHomeWidget.value(span.copy(cols = newCols, rows = newRows, col = newCol, row = newRow))
                 }
 
@@ -3273,15 +3332,14 @@ private fun HomePage(
     doubleTapPackage: String,
     hapticsEnabled: Boolean,
     hapticIntensity: Int,
-    homeWidgetId: Int?,
-    homeWidgetConfig: HomeWidgetConfig,
+    homeWidgets: List<HomeWidgetConfig>,
     appWidgetHost: AppWidgetHost,
-    widgetConfigMode: Boolean,
-    onOpenWidgetConfigMode: () -> Unit,
+    configModeWidgetId: Int?,
+    onOpenWidgetConfigMode: (Int) -> Unit,
     onDismissWidgetConfigMode: () -> Unit,
     onUpdateHomeWidget: (HomeWidgetConfig) -> Unit,
-    onReplaceWidget: () -> Unit,
-    onRemoveWidget: () -> Unit,
+    onReplaceWidget: (Int) -> Unit,
+    onRemoveWidget: (Int) -> Unit,
     onLongPress: () -> Unit,
     doubleTapToSleepEnabled: Boolean,
     searchQuery: String,
@@ -3309,12 +3367,18 @@ private fun HomePage(
     var dockIndex by remember { mutableStateOf(0) }
     val dockSize = if (classicMode) 2 else 4
     var homePageBounds by remember { mutableStateOf<Rect?>(null) }
-    var homeWidgetBounds by remember { mutableStateOf<Rect?>(null) }
+    // Bounds of every currently placed widget, keyed by appWidgetId — used to keep gestures
+    // (swipe-to-QS, app-launch taps, double-tap-to-sleep) from firing over ANY widget, not just
+    // whichever one happens to be selected for editing.
+    var homeWidgetBoundsById by remember { mutableStateOf<Map<Int, Rect>>(emptyMap()) }
     var homeWidgetControlsBounds by remember { mutableStateOf<Rect?>(null) }
-    var homeWidgetDragActive by remember { mutableStateOf(false) }
+    // At most one widget can be actively dragged at a time (single-touch gesture), so a single
+    // id is enough to track which one, if any, is currently mid-drag.
+    var activeDragWidgetId by remember { mutableStateOf<Int?>(null) }
+    val homeWidgetDragActive = activeDragWidgetId != null
     LaunchedEffect(reorderMode) {
         if (!reorderMode) {
-            homeWidgetDragActive = false
+            activeDragWidgetId = null
             homeWidgetControlsBounds = null
             onRemoveDropVisibleChanged(false)
             onRemoveDropActiveChanged(false)
@@ -3374,17 +3438,23 @@ private fun HomePage(
     val currentOnLongPress = rememberUpdatedState(onLongPress)
     fun isInsideHomeWidget(localPosition: Offset): Boolean {
         val pageBounds = homePageBounds ?: return false
-        val widgetBounds = homeWidgetBounds ?: return false
-        return widgetBounds.contains(pageBounds.topLeft + localPosition)
+        val point = pageBounds.topLeft + localPosition
+        return homeWidgetBoundsById.values.any { it.contains(point) }
     }
     fun isInsideHomeWidgetManagementTarget(localPosition: Offset): Boolean {
         val pageBounds = homePageBounds ?: return false
-        val widgetBounds = homeWidgetBounds ?: return false
-        val targetBounds = minimumCenteredRect(
-            bounds = widgetBounds,
-            minSizePx = with(density) { 96.dp.toPx() },
-        )
-        return targetBounds.contains(pageBounds.topLeft + localPosition)
+        val point = pageBounds.topLeft + localPosition
+        val minSizePx = with(density) { 96.dp.toPx() }
+        return homeWidgetBoundsById.values.any { minimumCenteredRect(it, minSizePx).contains(point) }
+    }
+    /** appWidgetId of whichever placed widget's management target [localPosition] falls inside, if any. */
+    fun widgetManagementTargetIdAt(localPosition: Offset): Int? {
+        val pageBounds = homePageBounds ?: return null
+        val point = pageBounds.topLeft + localPosition
+        val minSizePx = with(density) { 96.dp.toPx() }
+        return homeWidgetBoundsById.entries.firstOrNull { (_, bounds) ->
+            minimumCenteredRect(bounds, minSizePx).contains(point)
+        }?.key
     }
 
     var searchFocusIndex by remember { mutableStateOf(-1) }
@@ -3410,7 +3480,8 @@ private fun HomePage(
             .focusRequester(focusRequester)
             .focusable()
             .onGloballyPositioned { homePageBounds = it.boundsInRoot() }
-            .pointerInput(reorderMode, widgetConfigMode, searchQuery, homeStripBounds, homeWidgetBounds, homeWidgetControlsBounds, homePageBounds, homeWidgetDragActive) {
+            .pointerInput(reorderMode, configModeWidgetId, searchQuery, homeStripBounds, homeWidgetBoundsById, homeWidgetControlsBounds, homePageBounds, homeWidgetDragActive) {
+                val widgetConfigMode = configModeWidgetId != null
                 if ((!reorderMode && !widgetConfigMode) || searchQuery.isNotEmpty()) return@pointerInput
                 awaitEachGesture {
                     val down = awaitFirstDown(requireUnconsumed = false, pass = PointerEventPass.Initial)
@@ -3420,7 +3491,7 @@ private fun HomePage(
                         // gesture already register in the meantime, causing the tap to both
                         // dismiss config mode AND launch whatever was underneath.
                         val downRoot = homePageBounds?.let { it.topLeft + down.position }
-                        val downInsideWidget = downRoot != null && homeWidgetBounds?.contains(downRoot) == true
+                        val downInsideWidget = downRoot != null && homeWidgetBoundsById.values.any { it.contains(downRoot) }
                         val downInsideControls = downRoot != null && homeWidgetControlsBounds?.contains(downRoot) == true
                         if (!downInsideWidget && !downInsideControls) {
                             down.consume()
@@ -3432,7 +3503,7 @@ private fun HomePage(
                     val up = waitForUpOrCancellation(pass = PointerEventPass.Initial) ?: return@awaitEachGesture
                     val pageBounds = homePageBounds ?: return@awaitEachGesture
                     val tapRoot = pageBounds.topLeft + up.position
-                    val insideWidget = homeWidgetBounds?.contains(tapRoot) == true
+                    val insideWidget = homeWidgetBoundsById.values.any { it.contains(tapRoot) }
                     val insideControls = homeWidgetControlsBounds?.contains(tapRoot) == true
                     val insideStrip = homeStripBounds?.contains(tapRoot) == true
                     if (!insideStrip && !insideWidget && !insideControls && !homeWidgetDragActive) {
@@ -3591,7 +3662,7 @@ private fun HomePage(
                     else -> false
                 }
             }
-            .pointerInput(doubleTapToSleepEnabled, doubleTapPackage, searchQuery, homeWidgetBounds, homePageBounds) {
+            .pointerInput(doubleTapToSleepEnabled, doubleTapPackage, searchQuery, homeWidgetBoundsById, homePageBounds) {
                 if (reorderMode) return@pointerInput
                 val longPressMs = android.view.ViewConfiguration.getLongPressTimeout().toLong()
                 val doubleTapMs = android.view.ViewConfiguration.getDoubleTapTimeout().toLong()
@@ -3599,7 +3670,8 @@ private fun HomePage(
                 var lastTapMs = 0L
                 awaitEachGesture {
                     val down = awaitFirstDown(requireUnconsumed = false, pass = PointerEventPass.Initial)
-                    if (isInsideHomeWidgetManagementTarget(down.position)) {
+                    val downWidgetId = widgetManagementTargetIdAt(down.position)
+                    if (downWidgetId != null) {
                         var cancelledByMove = false
                         var releasedBeforeLongPress = false
                         withTimeoutOrNull(longPressMs) {
@@ -3621,7 +3693,7 @@ private fun HomePage(
                             if (hapticsEnabled) {
                                 view.performHapticFeedback(HapticFeedbackConstants.LONG_PRESS)
                             }
-                            onOpenWidgetConfigMode()
+                            onOpenWidgetConfigMode(downWidgetId)
                             while (true) {
                                 val event = awaitPointerEvent(PointerEventPass.Initial)
                                 event.changes.forEach { it.consume() }
@@ -3686,8 +3758,8 @@ private fun HomePage(
                     }
                 }
             }
-            .pointerInput(swipeUpPackage, searchQuery, homeWidgetBounds, homePageBounds, reorderMode, widgetConfigMode) {
-                if (reorderMode || widgetConfigMode) return@pointerInput
+            .pointerInput(swipeUpPackage, searchQuery, homeWidgetBoundsById, homePageBounds, reorderMode, configModeWidgetId) {
+                if (reorderMode || configModeWidgetId != null) return@pointerInput
                 val threshold = 80.dp.toPx()
                 awaitPointerEventScope {
                     while (true) {
@@ -3711,8 +3783,8 @@ private fun HomePage(
                     }
                 }
             }
-            .pointerInput(swipeRightPackage, searchQuery, homeWidgetBounds, homePageBounds, reorderMode, widgetConfigMode) {
-                if (reorderMode || widgetConfigMode) return@pointerInput
+            .pointerInput(swipeRightPackage, searchQuery, homeWidgetBoundsById, homePageBounds, reorderMode, configModeWidgetId) {
+                if (reorderMode || configModeWidgetId != null) return@pointerInput
                 val threshold = 80.dp.toPx()
                 awaitPointerEventScope {
                     while (true) {
@@ -3752,8 +3824,8 @@ private fun HomePage(
                     }
                 }
             }
-            .pointerInput(searchQuery, homeWidgetBounds, homePageBounds, reorderMode, widgetConfigMode) {
-                if (reorderMode || widgetConfigMode) return@pointerInput
+            .pointerInput(searchQuery, homeWidgetBoundsById, homePageBounds, reorderMode, configModeWidgetId) {
+                if (reorderMode || configModeWidgetId != null) return@pointerInput
                 val threshold = 72.dp.toPx()
                 awaitPointerEventScope {
                     while (true) {
@@ -3780,7 +3852,7 @@ private fun HomePage(
                 }
             },
     ) {
-        if ((reorderMode || widgetConfigMode) && removeDropVisible) {
+        if ((reorderMode || configModeWidgetId != null) && removeDropVisible) {
             val removeBandAlpha by animateFloatAsState(
                 targetValue = if (removeDropActive) 1f else 0.82f,
                 animationSpec = tween(140),
@@ -3944,36 +4016,57 @@ private fun HomePage(
                     .weight(1f)
                     .padding(horizontal = 6.dp, vertical = 8.dp),
             ) {
-                HomeGridCanvas(
-                    // Break out of this Box's 6dp + the outer Column's 8dp horizontal padding so
-                    // the outermost grid column can reach the true screen edge. Uses a custom
-                    // layout modifier, not Modifier.padding() — that throws on negative values.
-                    modifier = Modifier.expandHorizontally(14.dp),
-                    homeWidgetId = homeWidgetId,
-                    homeWidgetConfig = homeWidgetConfig,
-                    appWidgetHost = appWidgetHost,
-                    appWidgetManager = appWidgetManager,
-                    reorderMode = reorderMode,
-                    onEnterReorderMode = onEnterReorderMode,
-                    widgetConfigMode = widgetConfigMode,
-                    onOpenWidgetConfigMode = onOpenWidgetConfigMode,
-                    hapticsEnabled = hapticsEnabled,
-                    removeDropBounds = removeDropBounds,
-                    onRemoveDropVisibleChanged = onRemoveDropVisibleChanged,
-                    onRemoveDropActiveChanged = onRemoveDropActiveChanged,
-                    onReplaceWidget = {
-                        if (reorderMode) onExitReorderMode()
-                        onReplaceWidget()
-                    },
-                    onRemoveWidget = {
-                        onRemoveWidget()
-                        if (reorderMode) onExitReorderMode()
-                    },
-                    onUpdateHomeWidget = onUpdateHomeWidget,
-                    onWidgetBoundsChanged = { homeWidgetBounds = it },
-                    onWidgetControlsBoundsChanged = { homeWidgetControlsBounds = it },
-                    onWidgetDragActiveChanged = { homeWidgetDragActive = it },
-                )
+                // One HomeGridCanvas per placed widget, keyed by its stable appWidgetId so each
+                // instance's internal drag/resize/bounds state (all `remember`'d locally inside
+                // HomeGridCanvas) stays independent across recompositions and widget reordering.
+                homeWidgets.forEach { widgetConfig ->
+                    key(widgetConfig.appWidgetId) {
+                        val widgetId = widgetConfig.appWidgetId
+                        HomeGridCanvas(
+                            // Break out of this Box's 6dp + the outer Column's 8dp horizontal padding
+                            // so the outermost grid column can reach the true screen edge. Uses a
+                            // custom layout modifier, not Modifier.padding() — that throws on negatives.
+                            modifier = Modifier.expandHorizontally(14.dp),
+                            homeWidgetId = widgetId,
+                            homeWidgetConfig = widgetConfig,
+                            otherWidgets = homeWidgets.filter { it.appWidgetId != widgetId },
+                            appWidgetHost = appWidgetHost,
+                            appWidgetManager = appWidgetManager,
+                            reorderMode = reorderMode,
+                            onEnterReorderMode = onEnterReorderMode,
+                            widgetConfigMode = configModeWidgetId == widgetId,
+                            onOpenWidgetConfigMode = { onOpenWidgetConfigMode(widgetId) },
+                            hapticsEnabled = hapticsEnabled,
+                            removeDropBounds = removeDropBounds,
+                            onRemoveDropVisibleChanged = onRemoveDropVisibleChanged,
+                            onRemoveDropActiveChanged = onRemoveDropActiveChanged,
+                            onReplaceWidget = {
+                                if (reorderMode) onExitReorderMode()
+                                onReplaceWidget(widgetId)
+                            },
+                            onRemoveWidget = {
+                                onRemoveWidget(widgetId)
+                                if (reorderMode) onExitReorderMode()
+                            },
+                            onUpdateHomeWidget = onUpdateHomeWidget,
+                            onWidgetBoundsChanged = { bounds ->
+                                homeWidgetBoundsById = if (bounds != null) {
+                                    homeWidgetBoundsById + (widgetId to bounds)
+                                } else {
+                                    homeWidgetBoundsById - widgetId
+                                }
+                            },
+                            onWidgetControlsBoundsChanged = { homeWidgetControlsBounds = it },
+                            onWidgetDragActiveChanged = { active ->
+                                activeDragWidgetId = when {
+                                    active -> widgetId
+                                    activeDragWidgetId == widgetId -> null
+                                    else -> activeDragWidgetId
+                                }
+                            },
+                        )
+                    }
+                }
             }
         }
 
@@ -6759,9 +6852,8 @@ private fun HomeActionsSheet(
                 }
             }
 
-            if (!hasWidget) {
-                MenuRow(Icons.Rounded.AddAlarm, stringResource(R.string.home_menu_add_widget_title), stringResource(R.string.home_menu_add_widget_subtitle), onClick = onAddWidget)
-            } else {
+            MenuRow(Icons.Rounded.AddAlarm, stringResource(R.string.home_menu_add_widget_title), stringResource(R.string.home_menu_add_widget_subtitle), onClick = onAddWidget)
+            if (hasWidget) {
                 MenuRow(Icons.Rounded.GridView, stringResource(R.string.home_menu_edit_layout_title), stringResource(R.string.home_menu_edit_layout_subtitle), onClick = onEditHomeLayout)
             }
             if (newHomeGroupEnabled) {

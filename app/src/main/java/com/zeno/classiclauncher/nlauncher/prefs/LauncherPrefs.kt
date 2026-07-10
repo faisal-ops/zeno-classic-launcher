@@ -183,8 +183,8 @@ data class LauncherPrefs(
     val showHomeGroups: Boolean = true,
     /** Master on/off for the entire home strip (shortcuts + groups). */
     val homeStripEnabled: Boolean = true,
-    /** Current single home widget plus its 4x4 grid placement/span. */
-    val homeWidget: HomeWidgetConfig = HomeWidgetConfig(),
+    /** All widgets placed on the home screen, each with its own 4x4 grid placement/span. */
+    val homeWidgets: List<HomeWidgetConfig> = emptyList(),
     /** Swipe-down custom quick settings overlay on home page. */
     val customQuickSettingsEnabled: Boolean = false,
     /** Package to launch from the QR scanner quick-settings tile. Empty = built-in scanner. */
@@ -279,6 +279,8 @@ class LauncherPrefsRepository(private val context: Context) {
         val HOME_STRIP_ORDER = stringPreferencesKey("homeStripOrderCsv")
         val HOME_STRIP_SLOTS = stringPreferencesKey("homeStripSlotsCsv")
         val HOME_PINNED_FOLDERS = stringPreferencesKey("homePinnedFoldersCsv")
+        // Legacy single-widget keys. Read-only now, used solely to migrate a pre-existing
+        // widget into the new [HOME_WIDGETS_JSON] list on first read after upgrading.
         val HOME_WIDGET_ID = intPreferencesKey("homeWidgetId")
         val HOME_WIDGET_PROVIDER_PKG = stringPreferencesKey("homeWidgetProviderPackage")
         val HOME_WIDGET_PROVIDER_CLASS = stringPreferencesKey("homeWidgetProviderClass")
@@ -286,6 +288,7 @@ class LauncherPrefsRepository(private val context: Context) {
         val HOME_WIDGET_COL = intPreferencesKey("homeWidgetCol")
         val HOME_WIDGET_COLS = intPreferencesKey("homeWidgetCols")
         val HOME_WIDGET_ROWS = intPreferencesKey("homeWidgetRows")
+        val HOME_WIDGETS_JSON = stringPreferencesKey("homeWidgetsJson")
         val DOUBLE_TAP_SLEEP = booleanPreferencesKey("doubleTapToSleepEnabled")
         val AUTO_UNLOCK = booleanPreferencesKey("autoUnlockEnabled")
         val AUTO_UNLOCK_PIN_DIGITS = intPreferencesKey("autoUnlockPinDigits")
@@ -374,19 +377,34 @@ class LauncherPrefsRepository(private val context: Context) {
         val homeStripOrder = parseCsvList(p[Keys.HOME_STRIP_ORDER])
         val homeStripSlots = parseSlotCsvList(p[Keys.HOME_STRIP_SLOTS])
         val homePinnedFolderIds = parseCsvList(p[Keys.HOME_PINNED_FOLDERS]).filter { FolderIds.isFolderId(it) }
-        val homeWidget = HomeWidgetConfig(
-            appWidgetId = p[Keys.HOME_WIDGET_ID] ?: -1,
-            providerPackage = p[Keys.HOME_WIDGET_PROVIDER_PKG]?.trim() ?: "",
-            providerClass = p[Keys.HOME_WIDGET_PROVIDER_CLASS]?.trim() ?: "",
-            row = (p[Keys.HOME_WIDGET_ROW] ?: DEFAULT_PREFS.homeWidget.row).coerceIn(0, 3),
-            col = (p[Keys.HOME_WIDGET_COL] ?: DEFAULT_PREFS.homeWidget.col).coerceIn(0, 3),
-            cols = (p[Keys.HOME_WIDGET_COLS] ?: DEFAULT_PREFS.homeWidget.cols).coerceIn(1, 4),
-            rows = (p[Keys.HOME_WIDGET_ROWS] ?: DEFAULT_PREFS.homeWidget.rows).coerceIn(1, 4),
-        ).let { cfg ->
-            cfg.copy(
-                col = cfg.col.coerceAtMost(4 - cfg.cols),
-                row = cfg.row.coerceAtMost(4 - cfg.rows),
-            )
+        val homeWidgetsJsonRaw = p[Keys.HOME_WIDGETS_JSON]
+        val homeWidgets = if (homeWidgetsJsonRaw != null) {
+            // New key has been written at least once on this device (even as "[]", e.g. after
+            // a backup restore with no widgets) — it is now the sole source of truth.
+            parseHomeWidgetsJson(homeWidgetsJsonRaw)
+        } else {
+            // Migration: fold a pre-multi-widget install's single legacy widget into the list.
+            val legacyId = p[Keys.HOME_WIDGET_ID] ?: -1
+            if (legacyId > 0) {
+                listOf(
+                    HomeWidgetConfig(
+                        appWidgetId = legacyId,
+                        providerPackage = p[Keys.HOME_WIDGET_PROVIDER_PKG]?.trim() ?: "",
+                        providerClass = p[Keys.HOME_WIDGET_PROVIDER_CLASS]?.trim() ?: "",
+                        row = (p[Keys.HOME_WIDGET_ROW] ?: 1).coerceIn(0, 3),
+                        col = (p[Keys.HOME_WIDGET_COL] ?: 0).coerceIn(0, 3),
+                        cols = (p[Keys.HOME_WIDGET_COLS] ?: 4).coerceIn(1, 4),
+                        rows = (p[Keys.HOME_WIDGET_ROWS] ?: 2).coerceIn(1, 4),
+                    ).let { cfg ->
+                        cfg.copy(
+                            col = cfg.col.coerceAtMost(4 - cfg.cols),
+                            row = cfg.row.coerceAtMost(4 - cfg.rows),
+                        )
+                    },
+                )
+            } else {
+                emptyList()
+            }
         }
         val doubleTapSleep = p[Keys.DOUBLE_TAP_SLEEP] ?: DEFAULT_PREFS.doubleTapToSleepEnabled
         val autoUnlock = p[Keys.AUTO_UNLOCK] ?: DEFAULT_PREFS.autoUnlockEnabled
@@ -464,7 +482,7 @@ class LauncherPrefsRepository(private val context: Context) {
             homeGroups = homeGroups,
             homeStripOrder = homeStripOrder,
             homeStripSlots = homeStripSlots,
-            homeWidget = homeWidget,
+            homeWidgets = homeWidgets,
             doubleTapToSleepEnabled = doubleTapSleep,
             autoUnlockEnabled = autoUnlock,
             autoUnlockPinDigits = autoUnlockPinDigits,
@@ -562,29 +580,36 @@ class LauncherPrefsRepository(private val context: Context) {
         }
     }
 
-    suspend fun setHomeWidget(config: HomeWidgetConfig) {
+    /** Adds [config] as a new widget instance, or — if a widget with the same
+     *  [HomeWidgetConfig.appWidgetId] is already placed — updates it in place
+     *  (e.g. after a drag/resize). appWidgetId is allocated by AppWidgetHost and is
+     *  unique per instance, so it doubles as the list's stable identity key. */
+    suspend fun addOrUpdateHomeWidget(config: HomeWidgetConfig) {
         val cols = config.cols.coerceIn(1, 4)
         val rows = config.rows.coerceIn(1, 4)
+        val normalized = config.copy(
+            cols = cols,
+            rows = rows,
+            col = config.col.coerceIn(0, 4 - cols),
+            row = config.row.coerceIn(0, 4 - rows),
+        )
         context.dataStore.edit { p ->
-            p[Keys.HOME_WIDGET_ID] = config.appWidgetId
-            p[Keys.HOME_WIDGET_PROVIDER_PKG] = config.providerPackage.trim()
-            p[Keys.HOME_WIDGET_PROVIDER_CLASS] = config.providerClass.trim()
-            p[Keys.HOME_WIDGET_COLS] = cols
-            p[Keys.HOME_WIDGET_ROWS] = rows
-            p[Keys.HOME_WIDGET_COL] = config.col.coerceIn(0, 4 - cols)
-            p[Keys.HOME_WIDGET_ROW] = config.row.coerceIn(0, 4 - rows)
+            val current = parseHomeWidgetsJson(p[Keys.HOME_WIDGETS_JSON])
+            val next = if (current.any { it.appWidgetId == normalized.appWidgetId }) {
+                current.map { if (it.appWidgetId == normalized.appWidgetId) normalized else it }
+            } else {
+                current + normalized
+            }
+            p[Keys.HOME_WIDGETS_JSON] = homeWidgetsToJson(next)
         }
     }
 
-    suspend fun clearHomeWidget() {
+    /** Removes the widget with [appWidgetId] from the placed list. Deleting its host id is
+     *  the caller's responsibility (needs the live [android.appwidget.AppWidgetHost]). */
+    suspend fun removeHomeWidget(appWidgetId: Int) {
         context.dataStore.edit { p ->
-            p.remove(Keys.HOME_WIDGET_ID)
-            p.remove(Keys.HOME_WIDGET_PROVIDER_PKG)
-            p.remove(Keys.HOME_WIDGET_PROVIDER_CLASS)
-            p.remove(Keys.HOME_WIDGET_ROW)
-            p.remove(Keys.HOME_WIDGET_COL)
-            p.remove(Keys.HOME_WIDGET_COLS)
-            p.remove(Keys.HOME_WIDGET_ROWS)
+            val current = parseHomeWidgetsJson(p[Keys.HOME_WIDGETS_JSON])
+            p[Keys.HOME_WIDGETS_JSON] = homeWidgetsToJson(current.filterNot { it.appWidgetId == appWidgetId })
         }
     }
 
@@ -921,13 +946,10 @@ class LauncherPrefsRepository(private val context: Context) {
             s[Keys.GLANCE_WEATHER_MANUAL_CITY] = prefs.glanceWeatherManualCityName.trim()
             s[Keys.HOME_GROUPS] = homeGroupsToJson(prefs.homeGroups)
             s[Keys.HOME_STRIP_ORDER] = prefs.homeStripOrder.joinToString(",")
-            s[Keys.HOME_WIDGET_ID] = prefs.homeWidget.appWidgetId
-            s[Keys.HOME_WIDGET_PROVIDER_PKG] = prefs.homeWidget.providerPackage
-            s[Keys.HOME_WIDGET_PROVIDER_CLASS] = prefs.homeWidget.providerClass
-            s[Keys.HOME_WIDGET_ROW] = prefs.homeWidget.row.coerceIn(0, 3)
-            s[Keys.HOME_WIDGET_COL] = prefs.homeWidget.col.coerceIn(0, 3)
-            s[Keys.HOME_WIDGET_COLS] = prefs.homeWidget.cols.coerceIn(1, 4)
-            s[Keys.HOME_WIDGET_ROWS] = prefs.homeWidget.rows.coerceIn(1, 4)
+            // Legacy singular keys are intentionally left unwritten here — HOME_WIDGETS_JSON
+            // is the sole source of truth going forward; any stale legacy keys from a prior
+            // install are ignored once this key is present (see the parse/migration block).
+            s[Keys.HOME_WIDGETS_JSON] = homeWidgetsToJson(prefs.homeWidgets)
             s[Keys.DOUBLE_TAP_SLEEP] = prefs.doubleTapToSleepEnabled
             s[Keys.AUTO_UNLOCK] = prefs.autoUnlockEnabled
             s[Keys.SWIPE_UP_PKG] = prefs.swipeUpPackage
@@ -1158,6 +1180,48 @@ private fun homeGroupsToJson(groups: List<HomeGroup>): String {
         o.put("title", g.title)
         o.put("packages", JSONArray(g.packageNames))
         o.put("side", g.side.name)
+        arr.put(o)
+    }
+    return arr.toString()
+}
+
+fun parseHomeWidgetsJson(raw: String?): List<HomeWidgetConfig> {
+    if (raw.isNullOrBlank()) return emptyList()
+    return runCatching {
+        val arr = JSONArray(raw.trim())
+        buildList {
+            for (i in 0 until arr.length()) {
+                val o = arr.getJSONObject(i)
+                val appWidgetId = o.optInt("appWidgetId", -1)
+                val cols = o.optInt("cols", 4).coerceIn(1, 4)
+                val rows = o.optInt("rows", 2).coerceIn(1, 4)
+                add(
+                    HomeWidgetConfig(
+                        appWidgetId = appWidgetId,
+                        providerPackage = o.optString("providerPackage", "").trim(),
+                        providerClass = o.optString("providerClass", "").trim(),
+                        row = o.optInt("row", 1).coerceIn(0, 4 - rows),
+                        col = o.optInt("col", 0).coerceIn(0, 4 - cols),
+                        cols = cols,
+                        rows = rows,
+                    ),
+                )
+            }
+        }.filter { it.appWidgetId > 0 }
+    }.getOrDefault(emptyList())
+}
+
+fun homeWidgetsToJson(widgets: List<HomeWidgetConfig>): String {
+    val arr = JSONArray()
+    widgets.forEach { w ->
+        val o = JSONObject()
+        o.put("appWidgetId", w.appWidgetId)
+        o.put("providerPackage", w.providerPackage)
+        o.put("providerClass", w.providerClass)
+        o.put("row", w.row)
+        o.put("col", w.col)
+        o.put("cols", w.cols)
+        o.put("rows", w.rows)
         arr.put(o)
     }
     return arr.toString()
