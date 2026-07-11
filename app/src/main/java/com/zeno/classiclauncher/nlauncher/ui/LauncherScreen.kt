@@ -2805,12 +2805,20 @@ private fun HomeGridCanvas(
     val currentOnRemoveWidget = rememberUpdatedState(onRemoveWidget)
     val currentOnUpdateHomeWidget = rememberUpdatedState(onUpdateHomeWidget)
     val currentOnWidgetDragActiveChanged = rememberUpdatedState(onWidgetDragActiveChanged)
+    val currentOnWidgetBoundsChanged = rememberUpdatedState(onWidgetBoundsChanged)
     val removeFallbackTopPx = with(density) { 116.dp.toPx() }
     val widgetInfo = remember(homeWidgetId) {
         homeWidgetId?.let { appWidgetManager.getAppWidgetInfo(it) }
     }
     LaunchedEffect(widgetInfo) {
         if (widgetInfo == null) onWidgetBoundsChanged(null)
+    }
+    // When this widget is removed, its HomeGridCanvas instance (key'd by appWidgetId) is torn
+    // out of composition entirely — without this, its last-registered bounds would linger
+    // forever in the parent's homeWidgetBoundsById map, permanently blocking double-tap-to-lock
+    // and the long-press home menu in the empty spot it used to occupy.
+    DisposableEffect(homeWidgetId) {
+        onDispose { currentOnWidgetBoundsChanged.value(null) }
     }
     var widgetDragOffset by remember { mutableStateOf(Offset.Zero) }
     var widgetDragging by remember { mutableStateOf(false) }
