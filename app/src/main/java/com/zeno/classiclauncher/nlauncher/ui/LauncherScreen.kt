@@ -843,7 +843,6 @@ fun LauncherScreen(
     var showModesFromQs by remember { mutableStateOf(false) }
     var showDevDiagnostics by remember { mutableStateOf(false) }
     var showHomeActions by remember { mutableStateOf(false) }
-    var showPinAppToHome by remember { mutableStateOf(false) }
     var showWidgetPicker by remember { mutableStateOf(false) }
     // Which placed widget (by appWidgetId), if any, currently shows drag/resize controls.
     // Null when none are selected for editing; at most one widget is ever in this state.
@@ -1128,7 +1127,6 @@ fun LauncherScreen(
             openHomeGroup != null -> openHomeGroup = null
             openFolder != null -> openFolder = null
             showHomeActions -> showHomeActions = false
-            showPinAppToHome -> showPinAppToHome = false
             configModeWidgetId != null -> configModeWidgetId = null
             reorderMode -> vm.toggleReorderMode()
             searchQuery.isNotEmpty() -> vm.setSearchQuery("")
@@ -1163,7 +1161,6 @@ fun LauncherScreen(
             showModesFromQs = false
             showDevDiagnostics = false
             showHomeActions = false
-            showPinAppToHome = false
             showWidgetPicker = false
             configModeWidgetId = null
             removeWidgetConfirmId = null
@@ -2613,29 +2610,14 @@ fun LauncherScreen(
             )
         }
 
-        val pinToHomepageEnabled =
-            !classicMode &&
-                prefs.homeStripEnabled &&
-                prefs.showShortcutApps &&
-                prefs.canAddHomeStripItem()
-        val pinnedPackageNamesForPicker = remember(prefs.homeShortcutPackages) {
-            prefs.homeShortcutPackages.mapTo(HashSet()) { parseHomeShortcutToken(it).first }
-        }
-
         if (showHomeActions) {
             HomeActionsSheet(
                 themePalette = themePalette,
                 hasWidget = prefs.homeWidgets.isNotEmpty(),
                 newHomeGroupEnabled = !classicMode && prefs.homeStripEnabled && prefs.canAddHomeStripItem(),
-                pinToHomepageEnabled = pinToHomepageEnabled,
                 onAddWidget = {
                     showHomeActions = false
                     showWidgetPicker = true
-                },
-                onEditHomeLayout = {
-                    showHomeActions = false
-                    configModeWidgetId = null
-                    if (!reorderMode) vm.toggleReorderMode()
                 },
                 onOpenSettings = {
                     showHomeActions = false
@@ -2653,10 +2635,6 @@ fun LauncherScreen(
                     showHomeActions = false
                     newHomeGroupName = ""
                     showNewHomeGroupDialog = true
-                },
-                onPinToHomeStrip = {
-                    showHomeActions = false
-                    showPinAppToHome = true
                 },
                 onDismiss = { showHomeActions = false },
             )
@@ -2714,21 +2692,6 @@ fun LauncherScreen(
                         Text(stringResource(R.string.action_cancel), color = Color(0xFF9AE2FF), fontSize = 14.sp)
                     }
                 },
-            )
-        }
-
-        if (showPinAppToHome) {
-            PinAppToHomeSheet(
-                allApps = allApps,
-                hiddenPackages = prefs.hiddenPackages,
-                pinnedPackageNames = pinnedPackageNamesForPicker,
-                appIconShape = prefs.appIconShape,
-                themePalette = themePalette,
-                onSelect = { app ->
-                    vm.addHomeShortcut(app.packageName)
-                    showPinAppToHome = false
-                },
-                onDismiss = { showPinAppToHome = false },
             )
         }
 
@@ -4387,6 +4350,7 @@ internal fun QuickSettingsOverlay(
     val quickSettingsBluetoothTitle = stringResource(R.string.quick_settings_bluetooth)
     val quickSettingsQrTileTitle = stringResource(R.string.quick_settings_qr_tile)
     val quickSettingsWirelessDebuggingTitle = stringResource(R.string.quick_settings_wireless_debugging)
+    val quickSettingsWirelessDebugToggleFailed = stringResource(R.string.quick_settings_wireless_debug_toggle_failed)
     val quickSettingsBatteryTitle = stringResource(R.string.quick_settings_battery)
     val quickSettingsAeroplaneModeTitle = stringResource(R.string.quick_settings_aeroplane_mode)
     val quickSettingsTorchTitle = stringResource(R.string.quick_settings_torch)
@@ -4922,6 +4886,7 @@ internal fun QuickSettingsOverlay(
                             val ok = RootManager.execute("settings put global adb_wifi_enabled ${if (next) 1 else 0}")
                             if (!ok) {
                                 wirelessDebugOn = !next
+                                Toast.makeText(context, quickSettingsWirelessDebugToggleFailed, Toast.LENGTH_SHORT).show()
                                 actions.openWirelessDebuggingSettings()
                             } else {
                                 delay(1000L)
@@ -5916,128 +5881,6 @@ private fun ClassicQuickTile(
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-private fun PinAppToHomeSheet(
-    allApps: List<AppEntry>,
-    hiddenPackages: Set<String>,
-    pinnedPackageNames: Set<String>,
-    appIconShape: AppIconShape,
-    themePalette: LauncherThemePalette,
-    onSelect: (AppEntry) -> Unit,
-    onDismiss: () -> Unit,
-) {
-    var query by remember { mutableStateOf("") }
-    val maxListHeight = rememberAdaptiveLayout().sheetListMaxHeightDp
-    val visibleApps = remember(allApps, hiddenPackages, pinnedPackageNames, query) {
-        allApps
-            .asSequence()
-            .filter { it.packageName !in hiddenPackages }
-            .filter { it.packageName != AppsRepository.INTERNAL_SETTINGS_PACKAGE }
-            .filter { it.packageName !in pinnedPackageNames }
-            .filter {
-                query.isBlank() ||
-                    it.label.contains(query, ignoreCase = true) ||
-                    it.packageName.contains(query, ignoreCase = true)
-            }
-            .sortedBy { it.label.lowercase(Locale.getDefault()) }
-            .toList()
-    }
-    val state = rememberModalBottomSheetState(skipPartiallyExpanded = true)
-    ModalBottomSheet(
-        onDismissRequest = onDismiss,
-        sheetState = state,
-        containerColor = themePalette.settingsBg,
-        contentColor = themePalette.settingsMenuTitle,
-    ) {
-        Column(
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(horizontal = 16.dp, vertical = 8.dp)
-                .navigationBarsPadding(),
-        ) {
-            Text(
-                stringResource(R.string.action_pin_to_home_strip),
-                style = MaterialTheme.typography.titleLarge.copy(fontWeight = FontWeight.SemiBold),
-                color = themePalette.settingsMenuTitle,
-            )
-            Spacer(Modifier.height(4.dp))
-            Text(
-                stringResource(R.string.pin_to_strip_hint),
-                style = MaterialTheme.typography.bodySmall,
-                color = themePalette.settingsMenuBody,
-            )
-            Spacer(Modifier.height(12.dp))
-            OutlinedTextField(
-                value = query,
-                onValueChange = { query = it },
-                modifier = Modifier.fillMaxWidth(),
-                singleLine = true,
-                label = { Text(stringResource(R.string.search_apps_hint), color = themePalette.settingsMenuBody) },
-                placeholder = { Text(stringResource(R.string.search_apps_filter_hint), color = themePalette.settingsMenuBody.copy(alpha = 0.55f)) },
-                keyboardOptions = KeyboardOptions(imeAction = ImeAction.Search),
-                colors = TextFieldDefaults.colors(
-                    focusedTextColor = Color(0xFFE8EEF7),
-                    unfocusedTextColor = Color(0xFFE8EEF7),
-                    focusedLabelColor = themePalette.settingsMenuBody,
-                    unfocusedLabelColor = themePalette.settingsMenuBody,
-                    focusedIndicatorColor = Color(0xFF5B9BD5),
-                    unfocusedIndicatorColor = Color(0xFF5F6A78),
-                    focusedContainerColor = Color(0xFF1E2430),
-                    unfocusedContainerColor = Color(0xFF1E2430),
-                    disabledContainerColor = Color(0xFF1E2430),
-                    cursorColor = Color(0xFF84D5F6),
-                    focusedPlaceholderColor = themePalette.settingsMenuBody.copy(alpha = 0.7f),
-                    unfocusedPlaceholderColor = themePalette.settingsMenuBody.copy(alpha = 0.7f),
-                ),
-            )
-            Spacer(Modifier.height(8.dp))
-            if (visibleApps.isEmpty()) {
-                Text(
-                    "No apps match.",
-                    style = MaterialTheme.typography.bodyMedium,
-                    color = themePalette.settingsMenuBody,
-                    modifier = Modifier.padding(vertical = 24.dp),
-                )
-            } else {
-                LazyColumn(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .heightIn(max = maxListHeight),
-                ) {
-                    items(visibleApps, key = { it.packageName }) { app ->
-                        Row(
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .clip(RoundedCornerShape(10.dp))
-                                .clickable { onSelect(app) }
-                                .padding(horizontal = 8.dp, vertical = 10.dp),
-                            verticalAlignment = Alignment.CenterVertically,
-                        ) {
-                            AsyncImage(
-                                model = app.icon,
-                                contentDescription = app.label,
-                                contentScale = ContentScale.Crop,
-                                modifier = Modifier.size(40.dp).clip(iconMaskShape(appIconShape)),
-                            )
-                            Spacer(Modifier.width(12.dp))
-                            Text(
-                                app.label,
-                                style = MaterialTheme.typography.bodyLarge,
-                                color = themePalette.settingsMenuTitle,
-                                maxLines = 1,
-                                overflow = TextOverflow.Ellipsis,
-                                modifier = Modifier.weight(1f),
-                            )
-                        }
-                    }
-                }
-            }
-            Spacer(Modifier.height(12.dp))
-        }
-    }
-}
-
-@OptIn(ExperimentalMaterial3Api::class)
-@Composable
 private fun AddAppToContainerSheet(
     title: String,
     allApps: List<AppEntry>,
@@ -6726,13 +6569,10 @@ private fun HomeActionsSheet(
     themePalette: LauncherThemePalette,
     hasWidget: Boolean,
     newHomeGroupEnabled: Boolean,
-    pinToHomepageEnabled: Boolean,
     onAddWidget: () -> Unit,
-    onEditHomeLayout: () -> Unit,
     onOpenSettings: () -> Unit,
     onOpenSystemSettings: () -> Unit,
     onNewHomeGroup: () -> Unit,
-    onPinToHomeStrip: () -> Unit,
     onDismiss: () -> Unit,
 ) {
     val state = rememberModalBottomSheetState(skipPartiallyExpanded = true)
@@ -6816,19 +6656,8 @@ private fun HomeActionsSheet(
             }
 
             MenuRow(Icons.Rounded.AddAlarm, stringResource(R.string.home_menu_add_widget_title), stringResource(R.string.home_menu_add_widget_subtitle), onClick = onAddWidget)
-            if (hasWidget) {
-                MenuRow(Icons.Rounded.GridView, stringResource(R.string.home_menu_edit_layout_title), stringResource(R.string.home_menu_edit_layout_subtitle), onClick = onEditHomeLayout)
-            }
             if (newHomeGroupEnabled) {
                 MenuRow(Icons.Rounded.Folder, stringResource(R.string.dialog_new_group_title), stringResource(R.string.home_menu_new_group_subtitle), onClick = onNewHomeGroup)
-            }
-            if (pinToHomepageEnabled) {
-                MenuRow(
-                    Icons.AutoMirrored.Rounded.PlaylistAdd,
-                    stringResource(R.string.action_pin_to_home_strip),
-                    stringResource(R.string.home_menu_pin_home_strip_subtitle),
-                    onClick = onPinToHomeStrip,
-                )
             }
             MenuRow(
                 Icons.Rounded.Settings,

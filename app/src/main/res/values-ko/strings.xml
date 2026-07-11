@@ -134,6 +134,7 @@
     <string name="quick_settings_bluetooth_permission_denied">Bluetooth 권한이 거부됨</string>
     <string name="quick_settings_wifi_name_permission_denied">Wi-Fi 이름에 대한 위치 권한이 거부됨</string>
     <string name="quick_settings_torch_toggle_failed">손전등을 전환할 수 없습니다</string>
+    <string name="quick_settings_wireless_debug_toggle_failed">무선 디버깅을 전환할 수 없습니다 — 설정을 엽니다</string>
     <string name="quick_settings_camera_permission_denied">손전등에 대한 카메라 권한이 거부됨</string>
     <string name="quick_settings_keyboard_mode_permission_prompt">\'시스템 설정 수정\'을 허용한 후 키보드 타일을 다시 탭하세요.</string>
     <string name="quick_settings_keyboard_mode_failed">키보드 모드 변경을 적용할 수 없습니다. 길게 눌러 설정을 여세요.</string>
