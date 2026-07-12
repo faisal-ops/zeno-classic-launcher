@@ -110,8 +110,6 @@
     <string name="quick_settings_wifi_name_permission_denied">Wi-Fi 名称的位置权限被拒绝</string>
     <string name="quick_settings_torch_toggle_failed">无法切换手电筒</string>
     <string name="quick_settings_wireless_debug_toggle_failed">无法切换无线调试 — 正在打开设置</string>
-    <string name="screen_time_widget_label">屏幕使用时间</string>
-    <string name="screen_time_widget_grant_permission">点击以允许使用情况访问</string>
     <string name="quick_settings_camera_permission_denied">手电筒的相机权限被拒绝</string>
     <string name="quick_settings_keyboard_mode_permission_prompt">请允许“修改系统设置”，然后再次点按键盘磁贴。</string>
     <string name="quick_settings_keyboard_mode_failed">无法应用键盘模式更改。长按以打开设置。</string>

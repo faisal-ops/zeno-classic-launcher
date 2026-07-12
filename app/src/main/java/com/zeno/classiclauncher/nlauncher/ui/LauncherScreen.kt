@@ -413,11 +413,6 @@ private const val HOME_GRID_COLS = 4
 private const val HOME_GRID_ROWS = 4
 /** Minimum grid cells always left unoccupied by widgets — see [exceedsWidgetAreaCap]. */
 private const val HOME_WIDGET_MIN_FREE_CELLS = HOME_GRID_COLS
-/** Sentinel providerPackage marking a [HomeWidgetConfig] as a launcher-drawn card rather than a
- *  hosted AppWidget. Combined with a negative appWidgetId (see [allocateInternalWidgetId]) so it
- *  can never collide with a real widget id from AppWidgetHost, which only ever allocates positive
- *  ids. */
-private const val INTERNAL_SCREEN_TIME_PROVIDER = "zeno.internal.screentime"
 private val HOME_SHORTCUT_ICON_DP = 52.dp
 private val HOME_SHORTCUT_FALLBACK_ICON_DP = 48.dp
 private val HOME_STRIP_LABEL_COLOR = Color(0xFFE8EEF7)
@@ -690,15 +685,6 @@ internal fun exceedsWidgetAreaCap(
     return totalCells - afterAdd < minFreeCells
 }
 
-/** True if [this] is a launcher-drawn card (e.g. the built-in Screen Time pill) rather than a
- *  hosted AppWidget. */
-internal fun HomeWidgetConfig.isBuiltInWidget(): Boolean = appWidgetId < 0
-
-/** Next free negative id for a new built-in widget, scoped only against other built-in widgets
- *  already placed — never collides with real (always-positive) AppWidgetHost ids. */
-internal fun allocateInternalWidgetId(existing: List<HomeWidgetConfig>): Int =
-    (existing.filter { it.appWidgetId < 0 }.minOfOrNull { it.appWidgetId } ?: 0) - 1
-
 private fun minimumCenteredRect(bounds: Rect, minSizePx: Float): Rect {
     val width = maxOf(bounds.width, minSizePx)
     val height = maxOf(bounds.height, minSizePx)
@@ -944,50 +930,11 @@ fun LauncherScreen(
     fun removeHomeWidget(widgetId: Int) {
         vm.removeHomeWidget(widgetId) { error ->
             if (error == null) {
-                // Built-in widgets (negative ids) were never allocated on appWidgetHost.
-                if (widgetId > 0) runCatching { appWidgetHost.deleteAppWidgetId(widgetId) }
+                runCatching { appWidgetHost.deleteAppWidgetId(widgetId) }
                 if (configModeWidgetId == widgetId) configModeWidgetId = null
                 removeWidgetConfirmId = null
             } else {
                 Toast.makeText(context, context.getString(R.string.widget_remove_failed), Toast.LENGTH_SHORT).show()
-            }
-        }
-    }
-    /** Adds the launcher-drawn Screen Time card — no AppWidgetHost binding needed since it isn't
-     *  a real AppWidget. Mirrors [commitHomeWidget]'s placement checks (area cap, collision). */
-    fun addBuiltInScreenTimeWidget(span: HomeWidgetSpan) {
-        if (exceedsWidgetAreaCap(prefs.homeWidgets, span.cols, span.rows, HOME_GRID_COLS, HOME_GRID_ROWS, HOME_WIDGET_MIN_FREE_CELLS)) {
-            Toast.makeText(context, context.getString(R.string.widget_no_space), Toast.LENGTH_SHORT).show()
-            return
-        }
-        val slot = findFreeWidgetSlot(
-            placed = prefs.homeWidgets,
-            cols = span.cols,
-            rows = span.rows,
-            gridCols = HOME_GRID_COLS,
-            gridRows = HOME_GRID_ROWS,
-            preferredCol = (HOME_GRID_COLS - span.cols) / 2,
-            preferredRow = (HOME_GRID_ROWS - span.rows) / 2,
-        )
-        if (slot == null) {
-            Toast.makeText(context, context.getString(R.string.widget_no_space), Toast.LENGTH_SHORT).show()
-            return
-        }
-        val (col, row) = slot
-        val config = HomeWidgetConfig(
-            appWidgetId = allocateInternalWidgetId(prefs.homeWidgets),
-            providerPackage = INTERNAL_SCREEN_TIME_PROVIDER,
-            providerClass = "",
-            row = row,
-            col = col,
-            cols = span.cols,
-            rows = span.rows,
-        )
-        vm.addOrUpdateHomeWidget(config) { error ->
-            if (error == null) {
-                showWidgetPicker = false
-            } else {
-                Toast.makeText(context, context.getString(R.string.widget_save_failed), Toast.LENGTH_SHORT).show()
             }
         }
     }
@@ -2712,7 +2659,6 @@ fun LauncherScreen(
                 appWidgetManager = appWidgetManager,
                 themePalette = themePalette,
                 onSelectWidget = ::addWidgetFromProvider,
-                onSelectBuiltIn = ::addBuiltInScreenTimeWidget,
                 onOpenSystemPicker = {
                     val id = appWidgetHost.allocateAppWidgetId()
                     pendingWidgetId = id
@@ -2833,370 +2779,6 @@ fun LauncherScreen(
         )
     }
     } // end CompositionLocalProvider(LocalTrackpadActive)
-}
-
-/** Content of the built-in Screen Time pill — total foreground time today via
- *  [UsageStatsRepository], refreshed every minute. Falls back to a permission prompt if
- *  PACKAGE_USAGE_STATS hasn't been granted. */
-@Composable
-private fun ScreenTimePillContent() {
-    val context = LocalContext.current
-    var hasPermission by remember { mutableStateOf(UsageStatsRepository.hasPermission(context)) }
-    var screenTimeMs by remember { mutableStateOf(0L) }
-    LaunchedEffect(Unit) {
-        while (true) {
-            hasPermission = UsageStatsRepository.hasPermission(context)
-            screenTimeMs = if (hasPermission) UsageStatsRepository.getTodayScreenOnTime(context) else 0L
-            delay(60_000L)
-        }
-    }
-    if (!hasPermission) {
-        Text(
-            stringResource(R.string.screen_time_widget_grant_permission),
-            color = Color(0xFFB9F6CA),
-            fontSize = 11.sp,
-            textAlign = TextAlign.Center,
-            maxLines = 2,
-            modifier = Modifier
-                .padding(horizontal = 14.dp)
-                .clickable {
-                    runCatching {
-                        context.startActivity(
-                            Intent(Settings.ACTION_USAGE_ACCESS_SETTINGS).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK),
-                        )
-                    }
-                },
-        )
-        return
-    }
-    Column(horizontalAlignment = Alignment.CenterHorizontally) {
-        Text(
-            stringResource(R.string.screen_time_widget_label),
-            color = Color(0xFFB9C9C0),
-            fontSize = 11.sp,
-            maxLines = 1,
-        )
-        Text(
-            UsageStatsRepository.formatUsage(screenTimeMs),
-            color = Color(0xFFB9F6CA),
-            fontSize = 22.sp,
-            fontWeight = FontWeight.Bold,
-            maxLines = 1,
-        )
-    }
-}
-
-/**
- * Grid host for the launcher-drawn Screen Time card — same placement/drag/resize/delete
- * mechanics as [HomeGridCanvas], but the content is our own composable instead of a hosted
- * AppWidgetHostView. Deliberately a separate, self-contained composable rather than a
- * generalization of HomeGridCanvas: that function is deeply tied to AppWidget hosting
- * (AndroidView interop, WidgetHostContext, Initial-pass touch stealing workarounds) and is
- * already load-bearing/hardened; duplicating the simpler parts here is lower risk than
- * threading a content-slot through it. Standard Main-pass gesture detectors are enough here
- * since there's no embedded AndroidView to steal touches from us.
- */
-@Composable
-private fun BuiltInScreenTimeCanvas(
-    modifier: Modifier = Modifier,
-    homeWidgetId: Int,
-    homeWidgetConfig: HomeWidgetConfig,
-    otherWidgets: List<HomeWidgetConfig>,
-    reorderMode: Boolean,
-    widgetConfigMode: Boolean,
-    onOpenWidgetConfigMode: () -> Unit,
-    hapticsEnabled: Boolean,
-    removeDropBounds: Rect?,
-    onRemoveDropVisibleChanged: (Boolean) -> Unit,
-    onRemoveDropActiveChanged: (Boolean) -> Unit,
-    onRemoveWidget: () -> Unit,
-    onUpdateHomeWidget: (HomeWidgetConfig) -> Unit,
-    onWidgetBoundsChanged: (Rect?) -> Unit,
-    onWidgetDragActiveChanged: (Boolean) -> Unit,
-) {
-    val view = LocalView.current
-    val density = LocalDensity.current
-    val currentOtherWidgets = rememberUpdatedState(otherWidgets)
-    val currentRemoveDropBounds = rememberUpdatedState(removeDropBounds)
-    val currentOnUpdateHomeWidget = rememberUpdatedState(onUpdateHomeWidget)
-    val currentOnWidgetDragActiveChanged = rememberUpdatedState(onWidgetDragActiveChanged)
-    val currentOnWidgetBoundsChanged = rememberUpdatedState(onWidgetBoundsChanged)
-    val removeFallbackTopPx = with(density) { 116.dp.toPx() }
-
-    DisposableEffect(homeWidgetId) {
-        onDispose { currentOnWidgetBoundsChanged.value(null) }
-    }
-
-    var widgetDragOffset by remember { mutableStateOf(Offset.Zero) }
-    var widgetDragging by remember { mutableStateOf(false) }
-    var widgetRemoveActive by remember { mutableStateOf(false) }
-    var widgetFingerRoot by remember { mutableStateOf(Offset.Zero) }
-    var widgetCoords by remember { mutableStateOf<LayoutCoordinates?>(null) }
-    var gridCoords by remember { mutableStateOf<LayoutCoordinates?>(null) }
-    var widgetPreviewCol by remember { mutableStateOf<Int?>(null) }
-    var widgetPreviewRow by remember { mutableStateOf<Int?>(null) }
-    var widgetPreviewBlocked by remember { mutableStateOf(false) }
-
-    fun resetWidgetDrag() {
-        widgetDragging = false
-        widgetDragOffset = Offset.Zero
-        widgetRemoveActive = false
-        widgetFingerRoot = Offset.Zero
-        widgetPreviewCol = null
-        widgetPreviewRow = null
-        widgetPreviewBlocked = false
-        currentOnWidgetDragActiveChanged.value(false)
-        onRemoveDropVisibleChanged(false)
-        onRemoveDropActiveChanged(false)
-    }
-    fun updateWidgetRemoveTarget(fingerRoot: Offset) {
-        val inRemove = currentRemoveDropBounds.value?.contains(fingerRoot) == true || fingerRoot.y <= removeFallbackTopPx
-        if (inRemove != widgetRemoveActive) {
-            widgetRemoveActive = inRemove
-            onRemoveDropActiveChanged(inRemove)
-            if (inRemove && hapticsEnabled) view.performHapticFeedback(HapticFeedbackConstants.TEXT_HANDLE_MOVE)
-        }
-    }
-    LaunchedEffect(reorderMode) {
-        if (!reorderMode && widgetDragging) resetWidgetDrag()
-    }
-
-    BoxWithConstraints(
-        modifier = modifier
-            .fillMaxSize()
-            .onGloballyPositioned { gridCoords = it },
-    ) {
-        val gap = 8.dp
-        val cellW = ((maxWidth - gap * (HOME_GRID_COLS - 1)) / HOME_GRID_COLS).coerceAtLeast(54.dp)
-        val cellH = ((maxHeight - gap * (HOME_GRID_ROWS - 1)) / HOME_GRID_ROWS).coerceAtLeast(54.dp)
-
-        if (widgetDragging && !widgetRemoveActive) {
-            Box(
-                modifier = Modifier
-                    .fillMaxSize()
-                    .zIndex(0.5f)
-                    .border(1.dp, Color(0x5584D5F6), RoundedCornerShape(18.dp)),
-            )
-        }
-
-        val span = normalizedHomeWidgetConfig(homeWidgetConfig, HomeWidgetSpan(2, 1))
-        val width = (cellW * span.cols + gap * (span.cols - 1)).coerceAtMost(maxWidth)
-        val height = (cellH * span.rows + gap * (span.rows - 1)).coerceAtMost(maxHeight)
-        val baseX = (cellW + gap) * span.col
-        val baseY = (cellH + gap) * span.row
-        val animatedBaseX by animateDpAsState(baseX, tween(180, easing = FastOutSlowInEasing), label = "builtinSnapX")
-        val animatedBaseY by animateDpAsState(baseY, tween(180, easing = FastOutSlowInEasing), label = "builtinSnapY")
-
-        if (widgetDragging && !widgetRemoveActive && widgetPreviewCol != null && widgetPreviewRow != null) {
-            val previewFill = if (widgetPreviewBlocked) Color(0x29FF6B7A) else Color(0x2984D5F6)
-            val previewBorder = if (widgetPreviewBlocked) Color(0xFFFF6B7A) else Color(0xFF84D5F6)
-            Box(
-                modifier = Modifier
-                    .align(Alignment.TopStart)
-                    .offset(
-                        x = (cellW + gap) * widgetPreviewCol!!,
-                        y = (cellH + gap) * widgetPreviewRow!!,
-                    )
-                    .width(width)
-                    .height(height)
-                    .zIndex(1f)
-                    .clip(RoundedCornerShape(999.dp))
-                    .background(previewFill)
-                    .border(1.5.dp, previewBorder, RoundedCornerShape(999.dp)),
-            )
-        }
-
-        Box(
-            modifier = Modifier
-                .align(Alignment.TopStart)
-                .offset(
-                    x = if (widgetDragging) baseX else animatedBaseX,
-                    y = if (widgetDragging) baseY else animatedBaseY,
-                )
-                .width(width)
-                .height(height)
-                .zIndex(2f)
-                .onGloballyPositioned {
-                    widgetCoords = it
-                    onWidgetBoundsChanged(it.boundsInRoot())
-                }
-                .then(
-                    if (widgetDragging) {
-                        Modifier.graphicsLayer {
-                            translationX = widgetDragOffset.x
-                            translationY = widgetDragOffset.y
-                            scaleX = if (widgetRemoveActive) 1.02f else 1.04f
-                            scaleY = if (widgetRemoveActive) 1.02f else 1.04f
-                            alpha = 0.96f
-                            shadowElevation = 16f
-                        }
-                    } else {
-                        Modifier
-                    },
-                ),
-        ) {
-            Box(
-                modifier = Modifier
-                    .fillMaxSize()
-                    .clip(RoundedCornerShape(999.dp))
-                    .background(Color(0xE6132118))
-                    .combinedClickable(
-                        onClick = {},
-                        onLongClick = {
-                            onOpenWidgetConfigMode()
-                            if (hapticsEnabled) view.performHapticFeedback(HapticFeedbackConstants.LONG_PRESS)
-                        },
-                    ),
-                contentAlignment = Alignment.Center,
-            ) {
-                ScreenTimePillContent()
-            }
-            if (reorderMode || widgetConfigMode) {
-                Box(
-                    modifier = Modifier
-                        .matchParentSize()
-                        .pointerInput(homeWidgetId, reorderMode, widgetConfigMode) {
-                            detectDragGesturesAfterLongPress(
-                                onDragStart = {
-                                    widgetDragging = true
-                                    widgetDragOffset = Offset.Zero
-                                    widgetRemoveActive = false
-                                    currentOnWidgetDragActiveChanged.value(true)
-                                    onRemoveDropVisibleChanged(true)
-                                    onRemoveDropActiveChanged(false)
-                                    if (hapticsEnabled) view.performHapticFeedback(HapticFeedbackConstants.LONG_PRESS)
-                                    widgetFingerRoot = widgetCoords
-                                        ?.takeIf { it.isAttached }
-                                        ?.localToRoot(it)
-                                        ?: Offset.Zero
-                                    updateWidgetRemoveTarget(widgetFingerRoot)
-                                },
-                                onDrag = { change, dragAmount ->
-                                    change.consume()
-                                    widgetDragOffset += dragAmount
-                                    widgetFingerRoot += dragAmount
-                                    updateWidgetRemoveTarget(widgetFingerRoot)
-                                    if (widgetRemoveActive) {
-                                        widgetPreviewCol = null
-                                        widgetPreviewRow = null
-                                    } else {
-                                        val grid = gridCoords?.takeIf { it.isAttached }
-                                        val widget = widgetCoords?.takeIf { it.isAttached }
-                                        if (grid != null && widget != null) {
-                                            val gridBounds = grid.boundsInRoot()
-                                            val widgetTopLeft = widget.boundsInRoot().topLeft + widgetDragOffset
-                                            val cellWpx = with(density) { (cellW + gap).toPx() }
-                                            val cellHpx = with(density) { (cellH + gap).toPx() }
-                                            val nextCol = ((widgetTopLeft.x - gridBounds.left) / cellWpx)
-                                                .roundToInt()
-                                                .coerceIn(0, HOME_GRID_COLS - span.cols)
-                                            val nextRow = ((widgetTopLeft.y - gridBounds.top) / cellHpx)
-                                                .roundToInt()
-                                                .coerceIn(0, HOME_GRID_ROWS - span.rows)
-                                            widgetPreviewCol = nextCol
-                                            widgetPreviewRow = nextRow
-                                            widgetPreviewBlocked = overlapsAnyWidget(currentOtherWidgets.value, nextCol, nextRow, span.cols, span.rows)
-                                        }
-                                    }
-                                },
-                                onDragEnd = {
-                                    val shouldRemove = widgetDragging && widgetRemoveActive
-                                    if (!shouldRemove) {
-                                        val c = widgetPreviewCol
-                                        val r = widgetPreviewRow
-                                        if (c != null && r != null && !overlapsAnyWidget(currentOtherWidgets.value, c, r, span.cols, span.rows)) {
-                                            currentOnUpdateHomeWidget.value(span.copy(col = c, row = r))
-                                        }
-                                    }
-                                    resetWidgetDrag()
-                                    if (shouldRemove) {
-                                        if (hapticsEnabled) view.performHapticFeedback(HapticFeedbackConstants.CLOCK_TICK)
-                                        onRemoveWidget()
-                                    }
-                                },
-                                onDragCancel = { resetWidgetDrag() },
-                            )
-                        },
-                )
-            }
-        }
-        if (widgetConfigMode && !widgetDragging) {
-            val cellWpx = with(density) { (cellW + gap).toPx() }
-            val cellHpx = with(density) { (cellH + gap).toPx() }
-            fun applyResize(deltaCols: Int, deltaRows: Int, rightEdge: Boolean, bottomEdge: Boolean) {
-                val newCols: Int
-                val newCol: Int
-                if (rightEdge) {
-                    newCols = (span.cols + deltaCols).coerceIn(2, HOME_GRID_COLS - span.col)
-                    newCol = span.col
-                } else {
-                    val fixedRight = span.col + span.cols
-                    newCols = (span.cols - deltaCols).coerceIn(2, fixedRight)
-                    newCol = (fixedRight - newCols).coerceIn(0, HOME_GRID_COLS - newCols)
-                }
-                val newRows: Int
-                val newRow: Int
-                if (bottomEdge) {
-                    newRows = (span.rows + deltaRows).coerceIn(1, HOME_GRID_ROWS - span.row)
-                    newRow = span.row
-                } else {
-                    val fixedBottom = span.row + span.rows
-                    newRows = (span.rows - deltaRows).coerceIn(1, fixedBottom)
-                    newRow = (fixedBottom - newRows).coerceIn(0, HOME_GRID_ROWS - newRows)
-                }
-                if (overlapsAnyWidget(currentOtherWidgets.value, newCol, newRow, newCols, newRows)) return
-                currentOnUpdateHomeWidget.value(span.copy(cols = newCols, rows = newRows, col = newCol, row = newRow))
-            }
-
-            @Composable
-            fun ResizeHandle(x: Dp, y: Dp, rightEdge: Boolean, bottomEdge: Boolean) {
-                var accumX by remember { mutableStateOf(0f) }
-                var accumY by remember { mutableStateOf(0f) }
-                val handleVisual = 16.dp
-                val touchPadding = 20.dp
-                Box(
-                    modifier = Modifier
-                        .align(Alignment.TopStart)
-                        .offset(x = x - handleVisual / 2 - touchPadding, y = y - handleVisual / 2 - touchPadding)
-                        .size(handleVisual + touchPadding * 2)
-                        .zIndex(9f)
-                        .pointerInput(homeWidgetId, span) {
-                            detectDragGestures(
-                                onDragStart = { accumX = 0f; accumY = 0f },
-                                onDrag = { change, dragAmount ->
-                                    change.consume()
-                                    accumX += dragAmount.x
-                                    accumY += dragAmount.y
-                                    val deltaCols = (accumX / cellWpx).roundToInt()
-                                    val deltaRows = (accumY / cellHpx).roundToInt()
-                                    if (deltaCols != 0 || deltaRows != 0) {
-                                        applyResize(deltaCols, deltaRows, rightEdge, bottomEdge)
-                                        accumX -= deltaCols * cellWpx
-                                        accumY -= deltaRows * cellHpx
-                                    }
-                                },
-                            )
-                        }
-                        .padding(touchPadding),
-                ) {
-                    Box(
-                        Modifier
-                            .fillMaxSize()
-                            .clip(CircleShape)
-                            .background(Color(0xFF84D5F6))
-                            .border(2.dp, Color.White, CircleShape),
-                    )
-                }
-            }
-
-            val insetX = (width * 0.1f).coerceIn(6.dp, 20.dp)
-            val insetY = (height * 0.1f).coerceIn(6.dp, 20.dp)
-            ResizeHandle(x = baseX + insetX, y = baseY + insetY, rightEdge = false, bottomEdge = false)
-            ResizeHandle(x = baseX + width - insetX, y = baseY + insetY, rightEdge = true, bottomEdge = false)
-            ResizeHandle(x = baseX + insetX, y = baseY + height - insetY, rightEdge = false, bottomEdge = true)
-            ResizeHandle(x = baseX + width - insetX, y = baseY + height - insetY, rightEdge = true, bottomEdge = true)
-        }
-    }
 }
 
 /**
@@ -4416,56 +3998,33 @@ private fun HomePage(
                                 else -> activeDragWidgetId
                             }
                         }
-                        if (widgetConfig.isBuiltInWidget()) {
-                            BuiltInScreenTimeCanvas(
-                                modifier = Modifier.expandHorizontally(14.dp).then(zIndexModifier),
-                                homeWidgetId = widgetId,
-                                homeWidgetConfig = widgetConfig,
-                                otherWidgets = homeWidgets.filter { it.appWidgetId != widgetId },
-                                reorderMode = reorderMode,
-                                widgetConfigMode = configModeWidgetId == widgetId,
-                                onOpenWidgetConfigMode = { onOpenWidgetConfigMode(widgetId) },
-                                hapticsEnabled = hapticsEnabled,
-                                removeDropBounds = removeDropBounds,
-                                onRemoveDropVisibleChanged = onRemoveDropVisibleChanged,
-                                onRemoveDropActiveChanged = onRemoveDropActiveChanged,
-                                onRemoveWidget = {
-                                    onRemoveWidget(widgetId)
-                                    if (reorderMode) onExitReorderMode()
-                                },
-                                onUpdateHomeWidget = onUpdateHomeWidget,
-                                onWidgetBoundsChanged = boundsChanged,
-                                onWidgetDragActiveChanged = dragActiveChanged,
-                            )
-                        } else {
-                            HomeGridCanvas(
-                                // Break out of this Box's 6dp + the outer Column's 8dp horizontal
-                                // padding so the outermost grid column can reach the true screen
-                                // edge. Uses a custom layout modifier, not Modifier.padding() —
-                                // that throws on negatives.
-                                modifier = Modifier.expandHorizontally(14.dp).then(zIndexModifier),
-                                homeWidgetId = widgetId,
-                                homeWidgetConfig = widgetConfig,
-                                otherWidgets = homeWidgets.filter { it.appWidgetId != widgetId },
-                                appWidgetHost = appWidgetHost,
-                                appWidgetManager = appWidgetManager,
-                                reorderMode = reorderMode,
-                                onEnterReorderMode = onEnterReorderMode,
-                                widgetConfigMode = configModeWidgetId == widgetId,
-                                onOpenWidgetConfigMode = { onOpenWidgetConfigMode(widgetId) },
-                                hapticsEnabled = hapticsEnabled,
-                                removeDropBounds = removeDropBounds,
-                                onRemoveDropVisibleChanged = onRemoveDropVisibleChanged,
-                                onRemoveDropActiveChanged = onRemoveDropActiveChanged,
-                                onRemoveWidget = {
-                                    onRemoveWidget(widgetId)
-                                    if (reorderMode) onExitReorderMode()
-                                },
-                                onUpdateHomeWidget = onUpdateHomeWidget,
-                                onWidgetBoundsChanged = boundsChanged,
-                                onWidgetDragActiveChanged = dragActiveChanged,
-                            )
-                        }
+                        HomeGridCanvas(
+                            // Break out of this Box's 6dp + the outer Column's 8dp horizontal
+                            // padding so the outermost grid column can reach the true screen
+                            // edge. Uses a custom layout modifier, not Modifier.padding() —
+                            // that throws on negatives.
+                            modifier = Modifier.expandHorizontally(14.dp).then(zIndexModifier),
+                            homeWidgetId = widgetId,
+                            homeWidgetConfig = widgetConfig,
+                            otherWidgets = homeWidgets.filter { it.appWidgetId != widgetId },
+                            appWidgetHost = appWidgetHost,
+                            appWidgetManager = appWidgetManager,
+                            reorderMode = reorderMode,
+                            onEnterReorderMode = onEnterReorderMode,
+                            widgetConfigMode = configModeWidgetId == widgetId,
+                            onOpenWidgetConfigMode = { onOpenWidgetConfigMode(widgetId) },
+                            hapticsEnabled = hapticsEnabled,
+                            removeDropBounds = removeDropBounds,
+                            onRemoveDropVisibleChanged = onRemoveDropVisibleChanged,
+                            onRemoveDropActiveChanged = onRemoveDropActiveChanged,
+                            onRemoveWidget = {
+                                onRemoveWidget(widgetId)
+                                if (reorderMode) onExitReorderMode()
+                            },
+                            onUpdateHomeWidget = onUpdateHomeWidget,
+                            onWidgetBoundsChanged = boundsChanged,
+                            onWidgetDragActiveChanged = dragActiveChanged,
+                        )
                     }
                 }
             }
@@ -6738,95 +6297,12 @@ private fun SetupModeCard(
     }
 }
 
-/** Picker entry for the launcher-drawn Screen Time card — no AppWidgetProviderInfo, no preview
- *  image loading, just a fixed pair of size options matching the pill card's own layout. */
-@Composable
-private fun BuiltInScreenTimeCard(onSelect: (HomeWidgetSpan) -> Unit) {
-    val sizeOptions = listOf(
-        HomeWidgetSizeOption("Compact", HomeWidgetSpan(2, 1), recommended = true),
-        HomeWidgetSizeOption("Wide", HomeWidgetSpan(4, 1)),
-    )
-    Surface(
-        modifier = Modifier
-            .fillMaxWidth()
-            .height(178.dp)
-            .clickable { onSelect(sizeOptions.first().span) },
-        shape = RoundedCornerShape(2.dp),
-        color = Color(0xFF203236),
-        border = BorderStroke(0.6.dp, Color.Black.copy(alpha = 0.28f)),
-    ) {
-        Column {
-            Row(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .background(Color(0xFF34464A))
-                    .padding(horizontal = 10.dp, vertical = 8.dp),
-                verticalAlignment = Alignment.CenterVertically,
-            ) {
-                Text(
-                    "Screen Time",
-                    color = Color(0xFFEAF2F8),
-                    fontSize = 17.sp,
-                    fontWeight = FontWeight.Normal,
-                    maxLines = 1,
-                    overflow = TextOverflow.Ellipsis,
-                    modifier = Modifier.weight(1f),
-                )
-            }
-            Row(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .background(Color(0xFF2A3A3D))
-                    .padding(horizontal = 10.dp, vertical = 6.dp),
-                horizontalArrangement = Arrangement.spacedBy(6.dp),
-            ) {
-                sizeOptions.forEach { option ->
-                    Text(
-                        "${option.label} ${option.span.cols}×${option.span.rows}",
-                        color = Color(0xFFEAF2F8),
-                        fontSize = 11.sp,
-                        fontWeight = FontWeight.Medium,
-                        maxLines = 1,
-                        overflow = TextOverflow.Ellipsis,
-                        modifier = Modifier
-                            .clip(RoundedCornerShape(11.dp))
-                            .background(if (option.recommended) Color(0xFF3C6E76) else Color(0xFF162326))
-                            .clickable { onSelect(option.span) }
-                            .padding(horizontal = 9.dp, vertical = 4.dp),
-                    )
-                }
-            }
-            Box(
-                modifier = Modifier
-                    .fillMaxSize()
-                    .padding(14.dp),
-                contentAlignment = Alignment.Center,
-            ) {
-                Box(
-                    modifier = Modifier
-                        .fillMaxWidth(0.86f)
-                        .height(56.dp)
-                        .clip(RoundedCornerShape(999.dp))
-                        .background(Color(0xE6132118)),
-                    contentAlignment = Alignment.Center,
-                ) {
-                    Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                        Text("Screen time", color = Color(0xFFB9C9C0), fontSize = 10.sp)
-                        Text("2h 15m", color = Color(0xFFB9F6CA), fontSize = 18.sp, fontWeight = FontWeight.Bold)
-                    }
-                }
-            }
-        }
-    }
-}
-
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 private fun HomeWidgetPickerSheet(
     appWidgetManager: AppWidgetManager,
     themePalette: LauncherThemePalette,
     onSelectWidget: (AppWidgetProviderInfo, HomeWidgetSpan) -> Unit,
-    onSelectBuiltIn: (HomeWidgetSpan) -> Unit,
     onOpenSystemPicker: () -> Unit,
     onDismiss: () -> Unit,
 ) {
@@ -7072,27 +6548,7 @@ private fun HomeWidgetPickerSheet(
                 horizontalArrangement = Arrangement.spacedBy(10.dp),
                 verticalArrangement = Arrangement.spacedBy(10.dp),
             ) {
-                val showBuiltIn = query.isBlank() ||
-                    "screen time".contains(query.trim(), ignoreCase = true) ||
-                    "zeno classic".contains(query.trim(), ignoreCase = true)
-                if (showBuiltIn) {
-                    item(
-                        key = "header:zeno-classic",
-                        span = { GridItemSpan(maxLineSpan) },
-                    ) {
-                        Text(
-                            "Zeno Classic",
-                            color = Color(0xFFB9C7CB),
-                            fontSize = 13.sp,
-                            fontWeight = FontWeight.SemiBold,
-                            modifier = Modifier.padding(top = 4.dp, bottom = 2.dp),
-                        )
-                    }
-                    item(key = "builtin:screen_time") {
-                        BuiltInScreenTimeCard(onSelect = onSelectBuiltIn)
-                    }
-                }
-                if (grouped.isEmpty() && !showBuiltIn) {
+                if (grouped.isEmpty()) {
                     item(span = { GridItemSpan(maxLineSpan) }) {
                         Box(
                             modifier = Modifier

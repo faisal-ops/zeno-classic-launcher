@@ -45,6 +45,32 @@ enum class SoundProfileMode {
     DND,
 }
 
+/**
+ * Resolves the package that would actually handle a Mail dock tap when no app is explicitly
+ * pinned to that slot — same resolution [LauncherActions.launchMail] uses (system default
+ * mailto: handler, falling back to a short list of common mail apps). Used to scope the dock
+ * Mail notification badge to the app that will actually open, instead of badging on any
+ * mail-like app. Returns "" if nothing resolves.
+ */
+fun resolveDefaultMailPackage(context: Context): String {
+    val pm = context.packageManager
+    val intent = Intent(Intent.ACTION_SENDTO, Uri.parse("mailto:"))
+    val resolved = pm.resolveActivity(intent, PackageManager.MATCH_DEFAULT_ONLY)
+    if (resolved != null) {
+        val pkg = resolved.activityInfo.packageName
+        if (!pkg.startsWith("android")) return pkg
+    }
+    val mailFallbacks = listOf(
+        "com.google.android.gm",
+        "com.microsoft.office.outlook",
+        "com.yahoo.mobile.client.android.mail",
+    )
+    for (pkg in mailFallbacks) {
+        if (pm.getLaunchIntentForPackage(pkg) != null) return pkg
+    }
+    return ""
+}
+
 class LauncherActions(private val context: Context) {
     private val pm: PackageManager = context.packageManager
     private val bitwardenPackage = "com.x8bit.bitwarden"

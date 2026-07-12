@@ -35,7 +35,6 @@ import com.zeno.classiclauncher.nlauncher.prefs.canAddHomeStripItem
 import com.zeno.classiclauncher.nlauncher.prefs.effectiveHomeStripOrder
 import com.zeno.classiclauncher.nlauncher.prefs.effectiveHomeStripSlotOrder
 import com.zeno.classiclauncher.nlauncher.prefs.moveHomeStripSlot
-import com.zeno.classiclauncher.nlauncher.prefs.MailBadgeCandidates
 import com.zeno.classiclauncher.nlauncher.prefs.SecondShortcutTarget
 import com.zeno.classiclauncher.nlauncher.prefs.DEFAULT_THEME_JSON
 import com.zeno.classiclauncher.nlauncher.prefs.LauncherBackup
@@ -1132,17 +1131,6 @@ class LauncherViewModel(app: Application) : AndroidViewModel(app) {
 
     fun setSecondShortcutTarget(target: SecondShortcutTarget) {
         viewModelScope.launch { prefsRepo.setSecondShortcutTarget(target) }
-    }
-
-    fun cycleMailBadgePackage() {
-        viewModelScope.launch {
-            val candidates = MailBadgeCandidates.installedCandidates(apps.value)
-            val options = (listOf("") + candidates.map { it.packageName })
-            val cur = prefs.value.mailBadgePackage
-            val idx = options.indexOf(cur).takeIf { it >= 0 } ?: 0
-            val next = options[(idx + 1) % options.size]
-            prefsRepo.setMailBadgePackage(next)
-        }
     }
 
     fun launchFromDock(slot: DockSlot) {

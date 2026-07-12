@@ -110,8 +110,6 @@
     <string name="quick_settings_wifi_name_permission_denied">वाई-फ़ाई नाम के लिए स्थान अनुमति अस्वीकृत</string>
     <string name="quick_settings_torch_toggle_failed">टॉर्च चालू/बंद नहीं हो सकी</string>
     <string name="quick_settings_wireless_debug_toggle_failed">वायरलेस डिबगिंग चालू/बंद नहीं हो सकी — सेटिंग खोली जा रही है</string>
-    <string name="screen_time_widget_label">स्क्रीन समय</string>
-    <string name="screen_time_widget_grant_permission">उपयोग एक्सेस की अनुमति देने के लिए टैप करें</string>
     <string name="quick_settings_camera_permission_denied">टॉर्च के लिए कैमरा अनुमति अस्वीकृत</string>
     <string name="quick_settings_keyboard_mode_permission_prompt">“सिस्टम सेटिंग्स बदलें” अनुमति दें, फिर कीबोर्ड टाइल पर फिर टैप करें।</string>
     <string name="quick_settings_keyboard_mode_failed">कीबोर्ड मोड बदलाव लागू नहीं हो सका। सेटिंग्स खोलने के लिए दबाकर रखें।</string>

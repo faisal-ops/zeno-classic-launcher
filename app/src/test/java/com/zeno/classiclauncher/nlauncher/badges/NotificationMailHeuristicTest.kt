@@ -99,4 +99,24 @@ class NotificationMailHeuristicTest {
     fun hubPackage_isMailLike() =
         // BB Hub-style apps should count as mail
         assertTrue(NotificationRepository.isMailLikePackage("com.blackberry.hub"))
+
+    // ─── matchesDockMailPackage ─────────────────────────────────────────────
+    // Regression: the dock Mail badge must only light up for the app pinned to the dock's Mail
+    // slot, not for every mail-like app heuristically matched (e.g. BB Hub notifying should not
+    // badge the dock icon when Gmail, not BB Hub, is the configured dock mail app).
+
+    @Test
+    fun matchesDockMailPackage_noAppConfigured_fallsBackToBroadMatch() {
+        NotificationRepository.dockMailPackage = ""
+        assertTrue(NotificationRepository.matchesDockMailPackage("com.blackberry.hub"))
+        assertTrue(NotificationRepository.matchesDockMailPackage("com.google.android.gm"))
+    }
+
+    @Test
+    fun matchesDockMailPackage_configuredApp_onlyThatAppMatches() {
+        NotificationRepository.dockMailPackage = "com.google.android.gm"
+        assertTrue(NotificationRepository.matchesDockMailPackage("com.google.android.gm"))
+        assertFalse(NotificationRepository.matchesDockMailPackage("com.blackberry.hub"))
+        NotificationRepository.dockMailPackage = ""
+    }
 }

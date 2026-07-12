@@ -11,6 +11,8 @@ private const val NOW = MIDNIGHT + 8 * 3_600_000L  // 8 h after midnight
 private fun resumed(pkg: String, t: Long) = RawUsageEvent(UsageEvents.Event.ACTIVITY_RESUMED, pkg, t)
 private fun paused(pkg: String, t: Long) = RawUsageEvent(UsageEvents.Event.ACTIVITY_PAUSED, pkg, t)
 private fun stopped(pkg: String, t: Long) = RawUsageEvent(UsageEvents.Event.ACTIVITY_STOPPED, pkg, t)
+private fun screenOff(t: Long) = RawUsageEvent(UsageEvents.Event.SCREEN_NON_INTERACTIVE, "android", t)
+private fun screenOn(t: Long) = RawUsageEvent(UsageEvents.Event.SCREEN_INTERACTIVE, "android", t)
 
 private fun accumulate(vararg events: RawUsageEvent) =
     accumulateUsageEvents(events.toList(), MIDNIGHT, NOW)
@@ -107,6 +109,52 @@ class UsageStatsLogicTest {
         assertTrue(result.isEmpty())
     }
 
+    @Test
+    fun screenOffWhileResumed_closesSessionAtScreenOff_notAtNow() {
+        // App resumed, screen turns off 30s later but no PAUSED ever arrives, then hours pass
+        // before the query window ends. Must NOT count the screen-off dead time.
+        val result = accumulate(
+            resumed("com.app", MIDNIGHT + 0L),
+            screenOff(MIDNIGHT + 30_000L),
+        )
+        assertEquals(30_000L, result["com.app"])
+    }
+
+    @Test
+    fun screenOffThenBackOn_newSessionCountedSeparately() {
+        val result = accumulate(
+            resumed("com.app", MIDNIGHT + 0L),
+            screenOff(MIDNIGHT + 30_000L),
+            screenOn(MIDNIGHT + 100_000L),
+            resumed("com.app", MIDNIGHT + 100_000L),
+            paused("com.app", MIDNIGHT + 130_000L),
+        )
+        assertEquals(60_000L, result["com.app"])
+    }
+
+    @Test
+    fun screenOff_closesMultipleOpenSessions() {
+        val result = accumulate(
+            resumed("com.a", MIDNIGHT + 0L),
+            resumed("com.b", MIDNIGHT + 10_000L),
+            screenOff(MIDNIGHT + 40_000L),
+        )
+        assertEquals(40_000L, result["com.a"])
+        assertEquals(30_000L, result["com.b"])
+    }
+
+    @Test
+    fun staleP_afterScreenOff_notDoubleCredited() {
+        // A PAUSED that arrives after SCREEN_NON_INTERACTIVE already closed the session
+        // must not re-apply the midnight-carryover credit and double-count.
+        val result = accumulate(
+            resumed("com.app", MIDNIGHT + 0L),
+            screenOff(MIDNIGHT + 30_000L),
+            paused("com.app", MIDNIGHT + 35_000L),
+        )
+        assertEquals(30_000L, result["com.app"])
+    }
+
     // ─── mergeUsageMaps ──────────────────────────────────────────────────────
 
     @Test
@@ -145,5 +193,64 @@ class UsageStatsLogicTest {
         val event = mapOf("com.app" to 45 * 60_000L)
         val result = mergeUsageMaps(daily, event)
         assertEquals(90 * 60_000L, result["com.app"])
+    }
+
+    // ─── computeForegroundUnionMs ───────────────────────────────────────────
+
+    private fun union(vararg events: RawUsageEvent) =
+        computeForegroundUnionMs(events.toList(), MIDNIGHT, NOW)
+
+    @Test
+    fun union_singleSession_matchesDuration() {
+        val result = union(
+            resumed("com.app", MIDNIGHT + 0L),
+            paused("com.app", MIDNIGHT + 60_000L),
+        )
+        assertEquals(60_000L, result)
+    }
+
+    @Test
+    fun union_sequentialApps_summed() {
+        val result = union(
+            resumed("com.a", MIDNIGHT + 0L),
+            paused("com.a", MIDNIGHT + 10_000L),
+            resumed("com.b", MIDNIGHT + 10_000L),
+            paused("com.b", MIDNIGHT + 30_000L),
+        )
+        assertEquals(30_000L, result)
+    }
+
+    @Test
+    fun union_overlappingPip_notDoubleCounted() {
+        // com.video stays resumed (PiP) the whole time; com.browser opens on top of it.
+        // Naive per-package summation would give 30s(video) + 20s(browser) = 50s;
+        // the real screen-on time is only the 30s union.
+        val result = union(
+            resumed("com.video", MIDNIGHT + 0L),
+            resumed("com.browser", MIDNIGHT + 5_000L),
+            paused("com.browser", MIDNIGHT + 25_000L),
+            paused("com.video", MIDNIGHT + 30_000L),
+        )
+        assertEquals(30_000L, result)
+    }
+
+    @Test
+    fun union_screenOff_closesOpenSession() {
+        val result = union(
+            resumed("com.app", MIDNIGHT + 0L),
+            screenOff(MIDNIGHT + 30_000L),
+        )
+        assertEquals(30_000L, result)
+    }
+
+    @Test
+    fun union_openSessionAtNow_closedAtNow() {
+        val result = union(resumed("com.app", MIDNIGHT + 0L))
+        assertEquals(NOW - MIDNIGHT, result)
+    }
+
+    @Test
+    fun union_emptyEvents_returnsZero() {
+        assertEquals(0L, union())
     }
 }

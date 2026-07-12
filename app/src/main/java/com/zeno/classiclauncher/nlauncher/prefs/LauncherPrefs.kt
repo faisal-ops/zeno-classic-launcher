@@ -94,8 +94,6 @@ data class LauncherPrefs(
     val setupComplete: Boolean = false,
     val gridPreset: GridPreset = GridPreset.R3C5,
     val secondShortcutTarget: SecondShortcutTarget = SecondShortcutTarget.MESSAGES,
-    /** Empty = auto (heuristic). Otherwise badge count for this package only. */
-    val mailBadgePackage: String = "",
     /** Empty = launch default mail app resolution; else launch this package. */
     val dockMailPackage: String = "",
     /** Empty = launch default messaging app resolution; else launch this package. */
@@ -244,7 +242,6 @@ class LauncherPrefsRepository(private val context: Context) {
         val GRID = stringPreferencesKey("gridPreset")
         val SETUP_COMPLETE = booleanPreferencesKey("setupComplete")
         val SHORTCUT = stringPreferencesKey("secondShortcut")
-        val MAIL_BADGE = stringPreferencesKey("mailBadgePackage")
         val DOCK_MAIL = stringPreferencesKey("dockMailPackage")
         val DOCK_SECOND = stringPreferencesKey("dockSecondPackage")
         val DOCK_CAMERA = stringPreferencesKey("dockCameraPackage")
@@ -334,7 +331,6 @@ class LauncherPrefsRepository(private val context: Context) {
         val grid = p[Keys.GRID]?.let { v -> GridPreset.entries.firstOrNull { it.name == v } } ?: DEFAULT_PREFS.gridPreset
         val shortcut =
             p[Keys.SHORTCUT]?.let { v -> SecondShortcutTarget.entries.firstOrNull { it.name == v } } ?: DEFAULT_PREFS.secondShortcutTarget
-        val mailBadge = p[Keys.MAIL_BADGE]?.trim() ?: ""
         val dockMail = p[Keys.DOCK_MAIL]?.trim() ?: ""
         val dockSecond = (p[Keys.DOCK_SECOND]?.trim() ?: "").ifEmpty {
             if (shortcut == SecondShortcutTarget.WHATSAPP) "com.whatsapp" else ""
@@ -447,7 +443,6 @@ class LauncherPrefsRepository(private val context: Context) {
             setupComplete = setupComplete,
             gridPreset = grid,
             secondShortcutTarget = shortcut,
-            mailBadgePackage = mailBadge,
             dockMailPackage = dockMail,
             dockSecondPackage = dockSecond,
             dockCameraPackage = dockCamera,
@@ -534,10 +529,6 @@ class LauncherPrefsRepository(private val context: Context) {
 
     suspend fun setSecondShortcutTarget(target: SecondShortcutTarget) {
         context.dataStore.edit { it[Keys.SHORTCUT] = target.name }
-    }
-
-    suspend fun setMailBadgePackage(packageName: String) {
-        context.dataStore.edit { it[Keys.MAIL_BADGE] = packageName.trim() }
     }
 
     suspend fun setDockMailPackage(packageName: String) {
@@ -914,7 +905,6 @@ class LauncherPrefsRepository(private val context: Context) {
         context.dataStore.edit { s ->
             s[Keys.GRID] = prefs.gridPreset.name
             s[Keys.SHORTCUT] = prefs.secondShortcutTarget.name
-            s[Keys.MAIL_BADGE] = prefs.mailBadgePackage.trim()
             s[Keys.DOCK_MAIL] = prefs.dockMailPackage.trim()
             s[Keys.DOCK_SECOND] = prefs.dockSecondPackage.trim()
             s[Keys.DOCK_CAMERA] = prefs.dockCameraPackage.trim()
@@ -1192,10 +1182,6 @@ fun parseHomeWidgetsJson(raw: String?): List<HomeWidgetConfig> {
         buildList {
             for (i in 0 until arr.length()) {
                 val o = arr.getJSONObject(i)
-                // 0 (never a real AppWidgetHost id, which is always positive, nor a built-in
-                // id, which is always negative — see allocateInternalWidgetId) marks a field
-                // genuinely missing from the JSON, distinct from -1 which is a legitimate
-                // built-in widget id.
                 val appWidgetId = o.optInt("appWidgetId", 0)
                 val cols = o.optInt("cols", 4).coerceIn(1, 4)
                 val rows = o.optInt("rows", 2).coerceIn(1, 4)
@@ -1211,7 +1197,10 @@ fun parseHomeWidgetsJson(raw: String?): List<HomeWidgetConfig> {
                     ),
                 )
             }
-        }.filter { it.appWidgetId != 0 }
+        // Drop legacy built-in cards (negative ids, e.g. the removed Screen Time card) — no
+        // longer a supported widget type, and rendering one now would try to bind it as a real
+        // AppWidget and fail.
+        }.filter { it.appWidgetId > 0 }
     }.getOrDefault(emptyList())
 }
 

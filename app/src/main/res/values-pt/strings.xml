@@ -110,8 +110,6 @@
     <string name="quick_settings_wifi_name_permission_denied">Permissão de localização negada para o nome do Wi-Fi</string>
     <string name="quick_settings_torch_toggle_failed">Não foi possível alternar a lanterna</string>
     <string name="quick_settings_wireless_debug_toggle_failed">Não foi possível alternar a depuração sem fio — abrindo configurações</string>
-    <string name="screen_time_widget_label">Tempo de tela</string>
-    <string name="screen_time_widget_grant_permission">Toque para permitir acesso de uso</string>
     <string name="quick_settings_camera_permission_denied">Permissão de câmera negada para a lanterna</string>
     <string name="quick_settings_keyboard_mode_permission_prompt">Permita \'Modificar configurações do sistema\' e toque novamente no bloco do teclado.</string>
     <string name="quick_settings_keyboard_mode_failed">Não foi possível aplicar a mudança de modo de teclado. Toque e segure para abrir as configurações.</string>

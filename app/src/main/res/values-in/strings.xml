@@ -110,8 +110,6 @@
     <string name="quick_settings_wifi_name_permission_denied">Izin lokasi ditolak untuk nama Wi-Fi</string>
     <string name="quick_settings_torch_toggle_failed">Tidak dapat mengalihkan senter</string>
     <string name="quick_settings_wireless_debug_toggle_failed">Tidak dapat mengalihkan Wireless Debugging — membuka setelan</string>
-    <string name="screen_time_widget_label">Waktu layar</string>
-    <string name="screen_time_widget_grant_permission">Ketuk untuk mengizinkan akses penggunaan</string>
     <string name="quick_settings_camera_permission_denied">Izin kamera untuk senter ditolak</string>
     <string name="quick_settings_keyboard_mode_permission_prompt">Izinkan Ubah setelan sistem, lalu ketuk ubin papan ketik lagi.</string>
     <string name="quick_settings_keyboard_mode_failed">Tidak dapat menerapkan perubahan mode papan ketik. Tahan untuk membuka setelan.</string>

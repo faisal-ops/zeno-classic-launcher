@@ -29,7 +29,6 @@ object LauncherBackup {
         val p = JSONObject()
         p.put("gridPreset", prefs.gridPreset.name)
         p.put("secondShortcut", prefs.secondShortcutTarget.name)
-        p.put("mailBadgePackage", prefs.mailBadgePackage)
         p.put("dockMailPackage", prefs.dockMailPackage)
         p.put("dockSecondPackage", prefs.dockSecondPackage)
         p.put("dockCameraPackage", prefs.dockCameraPackage)
@@ -145,7 +144,6 @@ object LauncherBackup {
             SecondShortcutTarget.entries.firstOrNull { it.name == name }
                 ?: throw IllegalArgumentException("Invalid secondShortcut: $name")
         }
-        val mail = p.optString("mailBadgePackage", "").trim()
         val dockMail = p.optString("dockMailPackage", "").trim()
         val dockSecond = p.optString("dockSecondPackage", "").trim()
         val dockCam = p.optString("dockCameraPackage", "").trim()
@@ -338,7 +336,6 @@ object LauncherBackup {
         LauncherPrefs(
             gridPreset = grid,
             secondShortcutTarget = shortcut,
-            mailBadgePackage = mail,
             dockMailPackage = dockMail,
             dockSecondPackage = dockSecond,
             dockCameraPackage = dockCam,

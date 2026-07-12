@@ -65,6 +65,10 @@ class MainActivity : AppCompatActivity() {
                         .minimalModeActive = prefs.minimalModeEnabled
                     com.zeno.classiclauncher.nlauncher.badges.NotificationRepository
                         .badgesEnabled = prefs.notificationBadgesEnabled
+                    com.zeno.classiclauncher.nlauncher.badges.NotificationRepository
+                        .dockMailPackage = prefs.dockMailPackage.ifEmpty {
+                            com.zeno.classiclauncher.nlauncher.apps.resolveDefaultMailPackage(this@MainActivity)
+                        }
                 }
             }
         }
@@ -92,6 +96,10 @@ class MainActivity : AppCompatActivity() {
             .minimalModeActive = currentPrefs.minimalModeEnabled
         com.zeno.classiclauncher.nlauncher.badges.NotificationRepository
             .badgesEnabled = currentPrefs.notificationBadgesEnabled
+        com.zeno.classiclauncher.nlauncher.badges.NotificationRepository
+            .dockMailPackage = currentPrefs.dockMailPackage.ifEmpty {
+                com.zeno.classiclauncher.nlauncher.apps.resolveDefaultMailPackage(this@MainActivity)
+            }
     }
 
     override fun onWindowFocusChanged(hasFocus: Boolean) {

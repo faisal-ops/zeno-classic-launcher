@@ -90,19 +90,6 @@ class LauncherPrefsTest {
     }
 
     @Test
-    fun homeWidgetsJson_roundTripsBuiltInWidgetWithNegativeId() {
-        // Built-in (non-AppWidget) cards like the Screen Time card use negative ids — must
-        // survive round-trip, not be mistaken for a "missing field" default and dropped.
-        val widgets = listOf(
-            HomeWidgetConfig(appWidgetId = -1, providerPackage = "zeno.internal.screentime", providerClass = "", row = 0, col = 0, cols = 2, rows = 1),
-        )
-
-        val restored = parseHomeWidgetsJson(homeWidgetsToJson(widgets))
-
-        assertEquals(widgets, restored)
-    }
-
-    @Test
     fun launcherBackup_rejectsUnknownFutureVersions() {
         val json = LauncherBackup.toJson(LauncherPrefs())
             .replace(

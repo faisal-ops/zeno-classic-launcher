@@ -4,6 +4,7 @@ import android.app.AppOpsManager
 import android.app.usage.UsageEvents
 import android.app.usage.UsageStatsManager
 import android.content.Context
+import android.content.Intent
 import android.os.Build
 import android.os.Process
 import androidx.core.content.getSystemService
@@ -41,15 +42,29 @@ object UsageStatsRepository {
         val startOfDay = midnightToday()
         val events = usm.queryEvents(startOfDay, now) ?: return 0L
         val launcherPkg = context.packageName
+        val allowedPkgs = launchableAppPackages(context)
         val event = UsageEvents.Event()
         val eventList = mutableListOf<RawUsageEvent>()
         while (events.hasNextEvent()) {
             events.getNextEvent(event)
-            if (event.packageName != launcherPkg) {
+            val isScreenEvent = event.eventType == UsageEvents.Event.SCREEN_NON_INTERACTIVE ||
+                event.eventType == UsageEvents.Event.SCREEN_INTERACTIVE
+            if (isScreenEvent || (event.packageName != launcherPkg && event.packageName in allowedPkgs)) {
                 eventList.add(RawUsageEvent(event.eventType, event.packageName, event.timeStamp))
             }
         }
-        return accumulateUsageEvents(eventList, startOfDay, now).values.sum()
+        return computeForegroundUnionMs(eventList, startOfDay, now)
+    }
+
+    /**
+     * Packages with a launcher-visible activity — mirrors what Digital Wellbeing counts as
+     * "apps". Excludes System UI, IME, permission controller, and other system components
+     * that fire foreground RESUMED/PAUSED events but aren't apps the user intentionally opened.
+     */
+    private fun launchableAppPackages(context: Context): Set<String> {
+        val intent = Intent(Intent.ACTION_MAIN, null).apply { addCategory(Intent.CATEGORY_LAUNCHER) }
+        return context.packageManager.queryIntentActivities(intent, 0)
+            .mapTo(mutableSetOf()) { it.activityInfo.packageName }
     }
 
     /**
@@ -153,6 +168,9 @@ internal data class RawUsageEvent(val eventType: Int, val packageName: String, v
  * - A PAUSED with no prior RESUMED gets a one-time midnight carry-over credit (the app was
  *   already in the foreground when the query window started).
  * - [midnightCreditUsed] ensures that credit is applied at most once per package.
+ * - SCREEN_NON_INTERACTIVE closes every currently open session at the screen-off timestamp,
+ *   so a missed/delayed PAUSED (or an app still "resumed" while the screen is off) never
+ *   accrues dead time — otherwise an open session would run all the way to [now].
  * - Open sessions at [now] are closed and counted.
  */
 internal fun accumulateUsageEvents(
@@ -173,6 +191,13 @@ internal fun accumulateUsageEvents(
                 else null
                 if (start != null) totals[pkg] = (totals[pkg] ?: 0L) + e.timeStamp - start
             }
+            UsageEvents.Event.SCREEN_NON_INTERACTIVE -> {
+                resumedAt.forEach { (openPkg, start) ->
+                    totals[openPkg] = (totals[openPkg] ?: 0L) + e.timeStamp - start
+                    midnightCreditUsed.add(openPkg)
+                }
+                resumedAt.clear()
+            }
         }
     }
     resumedAt.forEach { (pkg, start) ->
@@ -188,4 +213,53 @@ internal fun accumulateUsageEvents(
 internal fun mergeUsageMaps(a: Map<String, Long>, b: Map<String, Long>): Map<String, Long> {
     val allPkgs = a.keys + b.keys
     return allPkgs.associateWith { pkg -> maxOf(a[pkg] ?: 0L, b[pkg] ?: 0L) }
+}
+
+/**
+ * Total "screen was actively in use" duration — the union of foreground intervals across all
+ * packages, not their sum. Unlike [accumulateUsageEvents] (per-package totals, used for "Most
+ * Used" ranking), this must not double-count overlapping foreground sessions: e.g. a video app
+ * left resumed in Picture-in-Picture while the user browses a second app would otherwise be
+ * counted twice, inflating "Screen time" past what Digital Wellbeing reports for the same day.
+ */
+internal fun computeForegroundUnionMs(
+    events: List<RawUsageEvent>,
+    startOfDay: Long,
+    now: Long,
+): Long {
+    val sorted = events.sortedBy { it.timeStamp }
+    val openPkgs = mutableSetOf<String>()
+    val midnightCreditUsed = mutableSetOf<String>()
+    var sessionStart: Long? = null
+    var total = 0L
+
+    fun closeSession(at: Long) {
+        val start = sessionStart ?: return
+        total += at - start
+        sessionStart = null
+    }
+
+    for (e in sorted) {
+        when (e.eventType) {
+            UsageEvents.Event.ACTIVITY_RESUMED -> {
+                if (openPkgs.isEmpty()) sessionStart = e.timeStamp
+                openPkgs.add(e.packageName)
+            }
+            UsageEvents.Event.ACTIVITY_PAUSED -> {
+                if (e.packageName !in openPkgs) {
+                    if (!midnightCreditUsed.add(e.packageName)) continue
+                    if (openPkgs.isEmpty()) sessionStart = startOfDay
+                    openPkgs.add(e.packageName)
+                }
+                openPkgs.remove(e.packageName)
+                if (openPkgs.isEmpty()) closeSession(e.timeStamp)
+            }
+            UsageEvents.Event.SCREEN_NON_INTERACTIVE -> {
+                closeSession(e.timeStamp)
+                openPkgs.clear()
+            }
+        }
+    }
+    closeSession(now)
+    return total
 }

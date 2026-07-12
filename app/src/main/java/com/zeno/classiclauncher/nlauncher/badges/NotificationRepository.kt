@@ -22,6 +22,14 @@ import kotlinx.coroutines.flow.asStateFlow
  * legacy priority — any active status-bar notification from that app counts toward the mail badge,
  * including bundled **group summaries**.
  *
+ * **Mail badge scoping:** [dockMailPackage] restricts which app's notifications actually light up
+ * the dock Mail badge — a mail-like notification only counts if it matches the app pinned to the
+ * dock's Mail slot. When no app is explicitly pinned, [dockMailPackage] is set (by MainActivity)
+ * to [com.zeno.classiclauncher.nlauncher.apps.resolveDefaultMailPackage] — the same resolution
+ * [com.zeno.classiclauncher.nlauncher.apps.LauncherActions.launchMail] uses — so the badge still
+ * tracks whichever app a tap would actually open. Only falls back to the broad heuristic (any
+ * mail-like app) if that resolution itself comes up empty.
+ *
  * **State:** Three independent [StateFlow]s expose only presence (no counts). Each update touches
  * at most one bucket with O(1) set add/remove; full resync runs only on listener connect.
  *
@@ -60,6 +68,14 @@ object NotificationRepository {
      */
     @Volatile
     var badgesEnabled: Boolean = true
+
+    /**
+     * Mirrors prefs.dockMailPackage. Scopes the mail badge to only the app pinned to the dock's
+     * Mail slot — empty means no app is pinned, so the broad mail-like heuristic is used instead.
+     * Wired from MainActivity immediately after the prefs StateFlow emits.
+     */
+    @Volatile
+    var dockMailPackage: String = ""
 
     private val lock = Any()
 
@@ -182,8 +198,14 @@ object NotificationRepository {
         when {
             pkg == WHATSAPP_PACKAGE -> waKeys.add(key)
             pkg in SMS_PACKAGES -> smsKeys.add(key)
-            isMailLikePackage(pkg) -> mailKeys.add(key)
+            isMailLikePackage(pkg) && matchesDockMailPackage(pkg) -> mailKeys.add(key)
         }
+    }
+
+    /** True if [pkg] should count toward the dock Mail badge — see [dockMailPackage]. */
+    internal fun matchesDockMailPackage(pkg: String): Boolean {
+        val configured = dockMailPackage
+        return configured.isEmpty() || pkg == configured
     }
 
     /** True for known mail apps + broad package-name heuristic (excludes SMS / WhatsApp). */

@@ -79,8 +79,6 @@
     <string name="quick_settings_wifi_name_permission_denied">تم رفض إذن الموقع لاسم Wi-Fi</string>
     <string name="quick_settings_torch_toggle_failed">تعذر تبديل المصباح اليدوي</string>
     <string name="quick_settings_wireless_debug_toggle_failed">تعذر تبديل تصحيح أخطاء Wi-Fi — جارٍ فتح الإعدادات</string>
-    <string name="screen_time_widget_label">وقت الشاشة</string>
-    <string name="screen_time_widget_grant_permission">اضغط للسماح بالوصول إلى الاستخدام</string>
     <string name="quick_settings_camera_permission_denied">تم رفض إذن الكاميرا للمصباح اليدوي</string>
     <string name="quick_settings_location">الموقع</string>
     <string name="quick_settings_keyboard_mouse">لوحة المفاتيح/الفأرة</string>
