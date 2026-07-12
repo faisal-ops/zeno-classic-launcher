@@ -155,6 +155,22 @@ class LauncherViewModel(app: Application) : AndroidViewModel(app) {
             iconPackRepo.applyIconPack(list, pr.iconPackPackage, pr.customIconPackages)
         }.stateIn(viewModelScope, VIEWMODEL_SHARING, emptyList())
 
+    // Separate from [apps]: gesture pickers need per-activity granularity (a second launcher
+    // activity within a package, e.g. a companion "quick view" entry, must be individually
+    // selectable) rather than [apps]' one-entry-per-package collapse. Loaded on demand — see
+    // loadGestureTargetApps() — rather than kept as a live Flow, since it's only needed while
+    // the gesture settings overlay is open.
+    private val _gestureTargetApps = MutableStateFlow<List<AppEntry>>(emptyList())
+    val gestureTargetApps: StateFlow<List<AppEntry>> = _gestureTargetApps.asStateFlow()
+
+    fun loadGestureTargetApps() {
+        viewModelScope.launch {
+            val raw = appsRepo.loadGestureTargetApps()
+            val pr = prefs.value
+            _gestureTargetApps.value = iconPackRepo.applyIconPack(raw, pr.iconPackPackage, pr.customIconPackages)
+        }
+    }
+
     private val _minimalModeForecast = MutableStateFlow<List<MinimalModeWeatherDay>>(emptyList())
     val minimalModeForecast: StateFlow<List<MinimalModeWeatherDay>> = _minimalModeForecast.asStateFlow()
 
@@ -444,16 +460,16 @@ class LauncherViewModel(app: Application) : AndroidViewModel(app) {
                         if (filtered.isNotEmpty()) newFolders[id] = filtered
                     }
                     val newNames = p.folderNames.filterKeys { newFolders.containsKey(it) }
-                    val newOrder = if (isStrictDrawerAlphabeticalMode()) {
-                        strictAlphabeticalDrawerOrder(
-                            installed = list,
-                            folderContents = newFolders,
-                            folderNames = newNames,
-                        )
-                    } else {
-                        p.orderedPackages.filter { token ->
-                            !FolderIds.isFolderId(token) || newFolders.containsKey(token)
-                        }
+                    // Always the minimal prune (drop folder tokens for now-empty folders) on the
+                    // stored Classic order, regardless of which mode is currently being viewed.
+                    // This collector reacts to ANY prefs change, including a plain sort-mode
+                    // switch — recomputing a fresh alphabetical order here (as this used to do
+                    // while ALPHABETICAL was active) would persist it into orderedPackages,
+                    // silently overwriting the user's Classic arrangement. Alphabetical mode
+                    // doesn't need this: it's already recomputed fresh on every render in
+                    // _baseCells without touching orderedPackages at all.
+                    val newOrder = p.orderedPackages.filter { token ->
+                        !FolderIds.isFolderId(token) || newFolders.containsKey(token)
                     }
                     val pruned = p.homeGroups.map { g ->
                         g.copy(packageNames = g.packageNames.filter { it in pkgs })
@@ -504,24 +520,12 @@ class LauncherViewModel(app: Application) : AndroidViewModel(app) {
                         _newAppAddedToast.value = LauncherLocale.apply(getApplication()).getString(R.string.new_app_added, addedLabel)
                     }
 
-                    if (!isStrictDrawerAlphabeticalMode()) return@collect
-                    gridHomeMutex.withLock {
-                        val snap = prefs.value
-                        val folders = snap.folderContents
-                            .mapValues { (_, members) -> members.filter { it in pkgs } }
-                            .filterValues { it.isNotEmpty() }
-                        val names = snap.folderNames.filterKeys { folders.containsKey(it) }
-                        val finalOrder = strictAlphabeticalDrawerOrder(
-                            installed = list,
-                            folderContents = folders,
-                            folderNames = names,
-                        )
-                        val changed =
-                            finalOrder != snap.orderedPackages || folders != snap.folderContents || names != snap.folderNames
-                        if (changed) {
-                            prefsRepo.writeGridState(finalOrder, folders, names)
-                        }
-                    }
+                    // No further action needed here: Alphabetical mode is recomputed fresh from
+                    // `installed` on every render (see _baseCells), so a newly installed app
+                    // already appears in its correct alphabetical slot without writing anything
+                    // to orderedPackages — which would otherwise silently overwrite whatever
+                    // Classic arrangement the user has set up, the moment a new app installs
+                    // while they happen to be viewing Alphabetical mode.
                 }
         }
     }

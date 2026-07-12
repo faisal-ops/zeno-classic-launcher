@@ -119,4 +119,36 @@ class HomeWidgetPlacementTest {
         val placed = listOf(widget(0, 0, 4, 2))
         assertFalse(exceedsWidgetAreaCap(placed, cols = 2, rows = 2, gridCols = 4, gridRows = 4, minFreeCells = 4))
     }
+
+    // ─── isBuiltInWidget / allocateInternalWidgetId ───────────────────────
+
+    @Test
+    fun isBuiltInWidget_negativeId_isTrue() {
+        assertTrue(widget(0, 0, 1, 1).copy(appWidgetId = -1).isBuiltInWidget())
+    }
+
+    @Test
+    fun isBuiltInWidget_positiveId_isFalse() {
+        assertFalse(widget(0, 0, 1, 1).copy(appWidgetId = 42).isBuiltInWidget())
+    }
+
+    @Test
+    fun allocateInternalWidgetId_emptyList_startsAtMinusOne() {
+        assertEquals(-1, allocateInternalWidgetId(emptyList()))
+    }
+
+    @Test
+    fun allocateInternalWidgetId_ignoresRealWidgetIds() {
+        val existing = listOf(widget(0, 0, 1, 1).copy(appWidgetId = 42))
+        assertEquals(-1, allocateInternalWidgetId(existing))
+    }
+
+    @Test
+    fun allocateInternalWidgetId_decrementsPastExistingBuiltIns() {
+        val existing = listOf(
+            widget(0, 0, 1, 1).copy(appWidgetId = -1),
+            widget(1, 0, 1, 1).copy(appWidgetId = -2),
+        )
+        assertEquals(-3, allocateInternalWidgetId(existing))
+    }
 }

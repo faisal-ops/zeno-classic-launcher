@@ -1192,7 +1192,11 @@ fun parseHomeWidgetsJson(raw: String?): List<HomeWidgetConfig> {
         buildList {
             for (i in 0 until arr.length()) {
                 val o = arr.getJSONObject(i)
-                val appWidgetId = o.optInt("appWidgetId", -1)
+                // 0 (never a real AppWidgetHost id, which is always positive, nor a built-in
+                // id, which is always negative — see allocateInternalWidgetId) marks a field
+                // genuinely missing from the JSON, distinct from -1 which is a legitimate
+                // built-in widget id.
+                val appWidgetId = o.optInt("appWidgetId", 0)
                 val cols = o.optInt("cols", 4).coerceIn(1, 4)
                 val rows = o.optInt("rows", 2).coerceIn(1, 4)
                 add(
@@ -1207,7 +1211,7 @@ fun parseHomeWidgetsJson(raw: String?): List<HomeWidgetConfig> {
                     ),
                 )
             }
-        }.filter { it.appWidgetId > 0 }
+        }.filter { it.appWidgetId != 0 }
     }.getOrDefault(emptyList())
 }
 

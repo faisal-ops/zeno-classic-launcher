@@ -67,10 +67,23 @@ class LauncherActions(private val context: Context) {
     private var pendingSoundReapply: Runnable? = null
 
     fun launchApp(packageName: String): Boolean {
-        // Some dialer apps expose a launcher activity that only shows "set default phone app".
-        // If this package is the current default dialer, route through ACTION_DIAL first.
-        if (launchDefaultDialerTarget(packageName)) return true
-        val intent = pm.getLaunchIntentForPackage(packageName) ?: return false
+        // Gesture/shortcut targets may carry a "pkg#component.class.Name" suffix (see
+        // loadGestureTargetApps / homeShortcutStorageToken) when the user picked a secondary
+        // launcher activity within an app rather than its default entry point.
+        val (pkg, componentClass) = parseHomeShortcutToken(packageName)
+        if (componentClass == null) {
+            // Some dialer apps expose a launcher activity that only shows "set default phone app".
+            // If this package is the current default dialer, route through ACTION_DIAL first.
+            if (launchDefaultDialerTarget(pkg)) return true
+        }
+        val intent = if (componentClass != null) {
+            Intent(Intent.ACTION_MAIN).apply {
+                addCategory(Intent.CATEGORY_LAUNCHER)
+                setClassName(pkg, componentClass)
+            }
+        } else {
+            pm.getLaunchIntentForPackage(pkg)
+        } ?: return false
         intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
         context.startActivity(intent)
         return true

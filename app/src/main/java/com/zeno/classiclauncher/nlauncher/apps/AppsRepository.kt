@@ -286,6 +286,50 @@ class AppsRepository(private val context: Context, private val prefsRepository: 
         installed
     }
 
+    /**
+     * Every LAUNCHER activity as its own entry, unlike [loadLaunchableApps] which collapses
+     * same-package aliases (Google Calendar's day icons) into one entry for the drawer/dock.
+     * Gesture pickers need per-activity granularity so a second entry point in the same app
+     * (e.g. a companion "quick view" activity) is individually selectable. The first activity
+     * found per package keeps a bare package token (backward-compatible with existing stored
+     * gesture prefs); later activities with a genuinely different label get
+     * "pkg#component.class.Name" — the exact shape [homeShortcutStorageToken] already produces
+     * for pinned shortcuts, so [parseHomeShortcutToken] recovers (pkg, component) at launch
+     * time (see [LauncherActions.launchApp]). Same-label aliases (icon-only variants) are still
+     * collapsed, so calendar-style apps don't explode into dozens of entries here either.
+     */
+    suspend fun loadGestureTargetApps(): List<AppEntry> = withContext(Dispatchers.IO) {
+        val intent = Intent(Intent.ACTION_MAIN, null).apply { addCategory(Intent.CATEGORY_LAUNCHER) }
+        val resolveInfos = pm.queryIntentActivities(intent, 0)
+        val seenLabelsByPackage = HashMap<String, MutableSet<String>>()
+        val firstTokenIssued = HashSet<String>()
+
+        resolveInfos.mapNotNull { ri ->
+            val ai = ri.activityInfo?.applicationInfo ?: return@mapNotNull null
+            val pkg = ai.packageName ?: return@mapNotNull null
+            if (pkg == context.packageName) return@mapNotNull null
+
+            val label = runCatching { ri.loadLabel(pm)?.toString() }.getOrNull()
+                ?: pm.getApplicationLabel(ai)?.toString() ?: pkg
+
+            // Same label as an already-emitted entry for this package — an icon-only alias
+            // (e.g. Google Calendar's day icons), not a genuinely distinct entry point. Skip,
+            // matching loadLaunchableApps' collapse behavior.
+            val labelsSeen = seenLabelsByPackage.getOrPut(pkg) { mutableSetOf() }
+            if (!labelsSeen.add(label)) return@mapNotNull null
+
+            val component = ComponentName(pkg, ri.activityInfo.name)
+            val token = if (firstTokenIssued.add(pkg)) pkg else homeShortcutStorageToken(pkg, ri.activityInfo.name)
+
+            AppEntry(
+                packageName = token,
+                label = label,
+                icon = getCachedIcon(pkg, component),
+                componentName = component,
+            )
+        }.sortedWith(APP_LABEL_COMPARATOR)
+    }
+
     fun appsFlow(): Flow<List<AppEntry>> = callbackFlow {
         suspend fun emitNow() {
             trySend(loadLaunchableApps())
