@@ -110,6 +110,7 @@
     <string name="quick_settings_wifi_name_permission_denied">Autorizzazione posizione negata per il nome Wi-Fi</string>
     <string name="quick_settings_torch_toggle_failed">Impossibile attivare la torcia</string>
     <string name="quick_settings_wireless_debug_toggle_failed">Impossibile attivare il debug wireless — apertura impostazioni</string>
+    <string name="quick_settings_wireless_debug_needs_dev_options">Attiva prima le Opzioni sviluppatore — apertura impostazioni</string>
     <string name="quick_settings_camera_permission_denied">Autorizzazione fotocamera negata per la torcia</string>
     <string name="quick_settings_keyboard_mode_permission_prompt">Consenti \'Modifica impostazioni di sistema\', poi tocca di nuovo il riquadro tastiera.</string>
     <string name="quick_settings_keyboard_mode_failed">Impossibile applicare la modifica della modalità tastiera. Tieni premuto per aprire le impostazioni.</string>

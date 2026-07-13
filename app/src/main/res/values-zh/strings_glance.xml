@@ -4,5 +4,8 @@
     <string name="glance_grant_calendar">允许日历访问</string>
     <string name="glance_event_now">现在</string>
     <string name="glance_event_in_minutes">%1$d 分钟后</string>
+    <string name="glance_event_all_day">全天</string>
+    <string name="glance_event_tomorrow">明天</string>
+    <string name="glance_event_tomorrow_at">明天 %1$s</string>
     <string name="glance_tap_weather">📍 设置天气</string>
 </resources>

@@ -4,5 +4,8 @@
     <string name="glance_grant_calendar">캘린더 접근 허용</string>
     <string name="glance_event_now">지금</string>
     <string name="glance_event_in_minutes">%1$d분 후</string>
+    <string name="glance_event_all_day">종일</string>
+    <string name="glance_event_tomorrow">내일</string>
+    <string name="glance_event_tomorrow_at">내일 %1$s</string>
     <string name="glance_tap_weather">📍 날씨 설정</string>
 </resources>

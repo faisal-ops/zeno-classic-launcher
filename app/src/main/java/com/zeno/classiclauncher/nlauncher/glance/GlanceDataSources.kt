@@ -414,11 +414,22 @@ internal class GlanceDataSources(private val context: Context) {
         }
     }
 
-    fun formatCalendarEvent(event: GlanceCalendarEvent): String =
+    fun formatCalendarEvent(event: GlanceCalendarEvent, nowMs: Long = System.currentTimeMillis()): String =
         buildString {
             append(trimCalendarTitle(event.title))
             append(" \u00B7 ")
-            append(if (event.isAllDay) "All day" else formatEventTime(event.startTime).uppercase(Locale.getDefault()))
+            val isTomorrow = !isSameLocalDay(event.startTime, nowMs)
+            append(
+                when {
+                    event.isAllDay && isTomorrow -> context.getString(R.string.glance_event_tomorrow)
+                    event.isAllDay -> context.getString(R.string.glance_event_all_day)
+                    isTomorrow -> context.getString(
+                        R.string.glance_event_tomorrow_at,
+                        timeFormat.format(Date(event.startTime)),
+                    )
+                    else -> formatEventTime(event.startTime).uppercase(Locale.getDefault())
+                },
+            )
         }
 
     private fun trimCalendarTitle(title: String, maxChars: Int = 24): String {
@@ -432,14 +443,6 @@ internal class GlanceDataSources(private val context: Context) {
         nowMs: Long = System.currentTimeMillis(),
     ): List<GlanceCalendarEvent> {
         if (events.isEmpty()) return emptyList()
-
-        fun isSameLocalDay(a: Long, b: Long): Boolean {
-            val calA = Calendar.getInstance().apply { timeInMillis = a }
-            val calB = Calendar.getInstance().apply { timeInMillis = b }
-            return calA.get(Calendar.ERA) == calB.get(Calendar.ERA) &&
-                calA.get(Calendar.YEAR) == calB.get(Calendar.YEAR) &&
-                calA.get(Calendar.DAY_OF_YEAR) == calB.get(Calendar.DAY_OF_YEAR)
-        }
 
         val tomorrowMs = Calendar.getInstance().apply {
             timeInMillis = nowMs
@@ -533,6 +536,15 @@ internal fun calendarQueryWindowEnd(nowMs: Long, lookAheadDays: Int): Long =
         set(Calendar.SECOND, 0)
         set(Calendar.MILLISECOND, 0)
     }.timeInMillis
+
+/** True if [a] and [b] fall on the same calendar day in the device's local timezone. */
+internal fun isSameLocalDay(a: Long, b: Long): Boolean {
+    val calA = Calendar.getInstance().apply { timeInMillis = a }
+    val calB = Calendar.getInstance().apply { timeInMillis = b }
+    return calA.get(Calendar.ERA) == calB.get(Calendar.ERA) &&
+        calA.get(Calendar.YEAR) == calB.get(Calendar.YEAR) &&
+        calA.get(Calendar.DAY_OF_YEAR) == calB.get(Calendar.DAY_OF_YEAR)
+}
 
 /** WMO weather code \u2192 localized condition label (shared by the glance strip fetchers). */
 internal fun weatherCodeToCondition(context: Context, code: Int): String {

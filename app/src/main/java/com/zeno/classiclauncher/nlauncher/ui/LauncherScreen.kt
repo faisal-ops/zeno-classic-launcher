@@ -4385,6 +4385,7 @@ internal fun QuickSettingsOverlay(
     val quickSettingsQrTileTitle = stringResource(R.string.quick_settings_qr_tile)
     val quickSettingsWirelessDebuggingTitle = stringResource(R.string.quick_settings_wireless_debugging)
     val quickSettingsWirelessDebugToggleFailed = stringResource(R.string.quick_settings_wireless_debug_toggle_failed)
+    val quickSettingsWirelessDebugNeedsDevOptions = stringResource(R.string.quick_settings_wireless_debug_needs_dev_options)
     val quickSettingsBatteryTitle = stringResource(R.string.quick_settings_battery)
     val quickSettingsAeroplaneModeTitle = stringResource(R.string.quick_settings_aeroplane_mode)
     val quickSettingsTorchTitle = stringResource(R.string.quick_settings_torch)
@@ -4915,16 +4916,25 @@ internal fun QuickSettingsOverlay(
                 onTap = {
                     if (rootedQsEnabled) {
                         val next = !wirelessDebugOn
-                        wirelessDebugOn = next
-                        qsScope.launch {
-                            val ok = RootManager.execute("settings put global adb_wifi_enabled ${if (next) 1 else 0}")
-                            if (!ok) {
-                                wirelessDebugOn = !next
-                                Toast.makeText(context, quickSettingsWirelessDebugToggleFailed, Toast.LENGTH_SHORT).show()
-                                actions.openWirelessDebuggingSettings()
-                            } else {
-                                delay(1000L)
-                                wirelessDebugOn = actions.isWirelessDebuggingEnabled()
+                        if (next && !actions.isDeveloperOptionsEnabled()) {
+                            // Writing adb_wifi_enabled directly via root bypasses the Developer
+                            // Options gate — the OS's own dev-settings enforcement notices the
+                            // mismatch shortly after and force-disables it again, so don't even
+                            // start; send the user to enable Developer Options first.
+                            Toast.makeText(context, quickSettingsWirelessDebugNeedsDevOptions, Toast.LENGTH_SHORT).show()
+                            actions.openWirelessDebuggingSettings()
+                        } else {
+                            wirelessDebugOn = next
+                            qsScope.launch {
+                                val ok = RootManager.execute("settings put global adb_wifi_enabled ${if (next) 1 else 0}")
+                                if (!ok) {
+                                    wirelessDebugOn = !next
+                                    Toast.makeText(context, quickSettingsWirelessDebugToggleFailed, Toast.LENGTH_SHORT).show()
+                                    actions.openWirelessDebuggingSettings()
+                                } else {
+                                    delay(1000L)
+                                    wirelessDebugOn = actions.isWirelessDebuggingEnabled()
+                                }
                             }
                         }
                     } else {

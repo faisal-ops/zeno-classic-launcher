@@ -4,5 +4,8 @@
     <string name="glance_grant_calendar">Autoriser l’accès au calendrier</string>
     <string name="glance_event_now">Maintenant</string>
     <string name="glance_event_in_minutes">Dans %1$d min</string>
+    <string name="glance_event_all_day">Toute la journée</string>
+    <string name="glance_event_tomorrow">Demain</string>
+    <string name="glance_event_tomorrow_at">Demain, %1$s</string>
     <string name="glance_tap_weather">📍 Configurer la météo</string>
 </resources>

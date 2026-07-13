@@ -4,5 +4,8 @@
     <string name="glance_grant_calendar">Разрешить доступ к календарю</string>
     <string name="glance_event_now">Сейчас</string>
     <string name="glance_event_in_minutes">Через %1$d мин</string>
+    <string name="glance_event_all_day">Весь день</string>
+    <string name="glance_event_tomorrow">Завтра</string>
+    <string name="glance_event_tomorrow_at">Завтра, %1$s</string>
     <string name="glance_tap_weather">📍 Настроить погоду</string>
 </resources>

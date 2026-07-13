@@ -110,6 +110,7 @@
     <string name="quick_settings_wifi_name_permission_denied">Standortberechtigung für WLAN-Namen verweigert</string>
     <string name="quick_settings_torch_toggle_failed">Taschenlampe konnte nicht umgeschaltet werden</string>
     <string name="quick_settings_wireless_debug_toggle_failed">Wireless Debugging konnte nicht umgeschaltet werden — Einstellungen werden geöffnet</string>
+    <string name="quick_settings_wireless_debug_needs_dev_options">Aktiviere zuerst die Entwickleroptionen — Einstellungen werden geöffnet</string>
     <string name="quick_settings_camera_permission_denied">Kameraberechtigung für Taschenlampe verweigert</string>
     <string name="quick_settings_keyboard_mode_permission_prompt">Erlaube „Systemeinstellungen ändern”, tippe dann erneut auf die Tastatur-Kachel.</string>
     <string name="quick_settings_keyboard_mode_failed">Tastaturmodus konnte nicht geändert werden. Langes Drücken öffnet die Einstellungen.</string>

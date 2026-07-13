@@ -110,6 +110,7 @@
     <string name="quick_settings_wifi_name_permission_denied">Wi-Fi名の位置情報権限が拒否されました</string>
     <string name="quick_settings_torch_toggle_failed">懐中電灯を切り替えられませんでした</string>
     <string name="quick_settings_wireless_debug_toggle_failed">ワイヤレスデバッグを切り替えられませんでした — 設定を開きます</string>
+    <string name="quick_settings_wireless_debug_needs_dev_options">先に開発者向けオプションを有効にしてください — 設定を開きます</string>
     <string name="quick_settings_camera_permission_denied">懐中電灯用のカメラ権限が拒否されました</string>
     <string name="quick_settings_keyboard_mode_permission_prompt">「システム設定の変更」を許可してから、もう一度キーボードタイルをタップしてください。</string>
     <string name="quick_settings_keyboard_mode_failed">キーボードモードの変更を適用できませんでした。長押しで設定を開きます。</string>

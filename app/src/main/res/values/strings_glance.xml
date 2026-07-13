@@ -4,5 +4,8 @@
     <string name="glance_grant_calendar">Tap to allow Calendar access</string>
     <string name="glance_event_now">Now</string>
     <string name="glance_event_in_minutes">In %1$d min</string>
+    <string name="glance_event_all_day">All day</string>
+    <string name="glance_event_tomorrow">Tomorrow</string>
+    <string name="glance_event_tomorrow_at">Tomorrow, %1$s</string>
     <string name="glance_tap_weather">📍 Tap for weather</string>
 </resources>

@@ -4,5 +4,8 @@
     <string name="glance_grant_calendar">कैलेंडर एक्सेस की अनुमति दें</string>
     <string name="glance_event_now">अभी</string>
     <string name="glance_event_in_minutes">%1$d मिनट में</string>
+    <string name="glance_event_all_day">पूरे दिन</string>
+    <string name="glance_event_tomorrow">कल</string>
+    <string name="glance_event_tomorrow_at">कल, %1$s</string>
     <string name="glance_tap_weather">📍 मौसम सेट करें</string>
 </resources>

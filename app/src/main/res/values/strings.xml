@@ -81,6 +81,7 @@
     <string name="quick_settings_wifi_name_permission_denied">Location permission denied for Wi-Fi name</string>
     <string name="quick_settings_torch_toggle_failed">Could not toggle torch</string>
     <string name="quick_settings_wireless_debug_toggle_failed">Could not toggle Wireless Debugging — opening settings</string>
+    <string name="quick_settings_wireless_debug_needs_dev_options">Enable Developer Options first — opening settings</string>
     <string name="quick_settings_camera_permission_denied">Camera permission denied for torch</string>
     <string name="quick_settings_location">Location</string>
     <string name="quick_settings_keyboard_mouse">Keyboard/Mouse</string>

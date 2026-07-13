@@ -4,5 +4,8 @@
     <string name="glance_grant_calendar">Izinkan akses Kalender</string>
     <string name="glance_event_now">Sekarang</string>
     <string name="glance_event_in_minutes">Dalam %1$d mnt</string>
+    <string name="glance_event_all_day">Sepanjang hari</string>
+    <string name="glance_event_tomorrow">Besok</string>
+    <string name="glance_event_tomorrow_at">Besok, %1$s</string>
     <string name="glance_tap_weather">📍 Atur cuaca</string>
 </resources>

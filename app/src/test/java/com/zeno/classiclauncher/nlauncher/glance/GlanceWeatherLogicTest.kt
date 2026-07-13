@@ -50,6 +50,38 @@ class GlanceWeatherLogicTest {
         )
     }
 
+    // ─── isSameLocalDay ─────────────────────────────────────────────────────
+    // Regression: an all-day event tomorrow rendered as "Title · All day" with no indication
+    // it wasn't today, since formatCalendarEvent didn't compare the event's day against now.
+
+    @Test
+    fun isSameLocalDay_sameDayDifferentTimes_isTrue() {
+        val morning = localMillis(2026, Calendar.JULY, 13, 6, 0)
+        val night = localMillis(2026, Calendar.JULY, 13, 23, 59)
+        assertTrue(isSameLocalDay(morning, night))
+    }
+
+    @Test
+    fun isSameLocalDay_tomorrow_isFalse() {
+        val today = localMillis(2026, Calendar.JULY, 13, 14, 0)
+        val tomorrow = localMillis(2026, Calendar.JULY, 14, 14, 0)
+        assertFalse(isSameLocalDay(today, tomorrow))
+    }
+
+    @Test
+    fun isSameLocalDay_acrossMonthBoundary_isFalse() {
+        val endOfMonth = localMillis(2026, Calendar.JULY, 31, 23, 0)
+        val startOfNextMonth = localMillis(2026, Calendar.AUGUST, 1, 1, 0)
+        assertFalse(isSameLocalDay(endOfMonth, startOfNextMonth))
+    }
+
+    @Test
+    fun isSameLocalDay_acrossYearBoundary_isFalse() {
+        val endOfYear = localMillis(2026, Calendar.DECEMBER, 31, 23, 0)
+        val startOfNextYear = localMillis(2027, Calendar.JANUARY, 1, 1, 0)
+        assertFalse(isSameLocalDay(endOfYear, startOfNextYear))
+    }
+
     // ─── Haversine ───────────────────────────────────────────────────────────
 
     @Test

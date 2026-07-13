@@ -800,6 +800,17 @@ class LauncherActions(private val context: Context) {
     fun isWirelessDebuggingEnabled(): Boolean =
         readGlobalInt("adb_wifi_enabled") > 0
 
+    /**
+     * True if the Developer Options master switch is on. The rooted QS tile must check this
+     * before force-enabling adb_wifi_enabled via root — writing that key directly bypasses the
+     * Developer Options gate, and the OS's own dev-settings enforcement (which periodically
+     * re-syncs dependent keys like adb_wifi_enabled against this master switch) will silently
+     * disable wireless debugging again shortly after, since Developer Options is authoritatively
+     * off.
+     */
+    fun isDeveloperOptionsEnabled(): Boolean =
+        readGlobalInt("development_settings_enabled") > 0
+
     fun isBatterySaverEnabled(): Boolean =
         readGlobalInt("low_power") > 0
 
