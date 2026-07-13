@@ -7620,7 +7620,7 @@ private fun AppDrawer(
     }
 }
 
-private data class SettingsSearchEntry(
+internal data class SettingsSearchEntry(
     val label: String,
     val keywords: List<String>,
     val action: String,
@@ -7675,9 +7675,19 @@ private val SETTINGS_SEARCH_ENTRIES = listOf(
     SettingsSearchEntry("Software Update", listOf("update", "software update", "system update", "ota", "upgrade"), "android.settings.SYSTEM_UPDATE_SETTINGS"),
     SettingsSearchEntry("Cast / Screen Share", listOf("cast", "screen mirror", "chromecast", "screen share", "wireless display"), Settings.ACTION_CAST_SETTINGS),
     SettingsSearchEntry("Mobile Network", listOf("mobile network", "apn", "carrier", "operator", "preferred network", "roam"), Settings.ACTION_NETWORK_OPERATOR_SETTINGS),
+    SettingsSearchEntry("Manage Apps", listOf("apps", "manage apps", "uninstall", "app info", "installed apps", "all apps"), Settings.ACTION_MANAGE_APPLICATIONS_SETTINGS),
+    SettingsSearchEntry("Battery Optimization", listOf("battery optimization", "background restriction", "doze", "app standby", "unrestricted battery"), Settings.ACTION_IGNORE_BATTERY_OPTIMIZATION_SETTINGS),
+    SettingsSearchEntry("Screen Pinning", listOf("screen pinning", "pin app", "app pinning", "single app mode"), Settings.ACTION_SECURITY_SETTINGS),
+    SettingsSearchEntry("Print", listOf("print", "printer", "printing"), Settings.ACTION_PRINT_SETTINGS),
+    SettingsSearchEntry("Change Default Launcher", listOf("home app", "default launcher", "change launcher", "home screen app"), Settings.ACTION_HOME_SETTINGS),
+    SettingsSearchEntry("Voice Input & Assistant", listOf("voice input", "assistant", "google assistant", "voice assist", "speech"), Settings.ACTION_VOICE_INPUT_SETTINGS),
+    SettingsSearchEntry("Usage Access", listOf("usage access", "app usage", "screen time", "digital wellbeing"), Settings.ACTION_USAGE_ACCESS_SETTINGS),
+    SettingsSearchEntry("Multiple Users", listOf("users", "multiple users", "guest mode", "add user"), "android.settings.USER_SETTINGS"),
+    SettingsSearchEntry("Ambient Display", listOf("ambient display", "always on display", "aod", "lift to wake"), Settings.ACTION_DISPLAY_SETTINGS),
+    SettingsSearchEntry("Wallpaper", listOf("wallpaper", "background image", "lock screen wallpaper"), Intent.ACTION_SET_WALLPAPER),
 )
 
-private fun matchSettingsEntries(query: String): List<SettingsSearchEntry> {
+internal fun matchSettingsEntries(query: String): List<SettingsSearchEntry> {
     if (query.length < 2) return emptyList()
     val q = query.lowercase()
     // Hangul composed from QWERTY keys still matches the English keyword list.
