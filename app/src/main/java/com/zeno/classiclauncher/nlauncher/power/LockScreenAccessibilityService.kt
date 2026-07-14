@@ -17,12 +17,16 @@ import android.os.Handler
 import android.os.Looper
 import android.provider.Settings
 import android.util.Log
+import android.view.KeyEvent
 import android.view.accessibility.AccessibilityEvent
 import android.view.accessibility.AccessibilityNodeInfo
 import android.view.accessibility.AccessibilityWindowInfo
 import androidx.core.content.ContextCompat
 import com.zeno.classiclauncher.nlauncher.badges.BadgeNotificationListener
 import com.zeno.classiclauncher.nlauncher.prefs.LauncherPrefsRepository
+import com.zeno.classiclauncher.nlauncher.search.LauncherForegroundState
+import com.zeno.classiclauncher.nlauncher.search.SearchOverlayCaptureState
+import com.zeno.classiclauncher.nlauncher.search.SearchOverlayController
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
@@ -35,12 +39,18 @@ import kotlinx.coroutines.launch
  *  2. On screen-on with keyguard locked: clicks/swipes the lock screen overlay to reveal PIN entry.
  *  3. Polls the PIN field's text length every [POLL_INTERVAL_MS]ms; at [PIN_LENGTH] chars fires
  *     [GLOBAL_ACTION_DPAD_CENTER] to confirm — works for both physical keyboard and numpad.
+ *  4. Watches the user's own recorded key gesture (see the "── Global search overlay ──" section
+ *     below) to trigger the floating search overlay from any app. Deliberately kept in the same
+ *     service as (1)-(3) so the user only grants Accessibility once — but the search-overlay
+ *     state and logic live in their own fields/methods below and never touch lock-screen state,
+ *     so a bug there can't affect auto-unlock.
  *
  * Design notes:
  *  - Keyguard state from [KeyguardManager.isKeyguardLocked] (ground truth), not window events.
  *  - Polling is the only reliable detection path: TYPE_VIEW_TEXT_CHANGED is fired only through
  *    InputConnection (on-screen keyboard), not through physical key events.
- *  - onKeyEvent is intentionally blocked by Android on the secure keyguard.
+ *  - onKeyEvent is intentionally blocked by Android on the secure keyguard, so the search-overlay
+ *    trigger below naturally never fires on the lock screen either.
  *  - TYPE_KEYGUARD (API 35+, value 5) requires FLAG_RETRIEVE_INTERACTIVE_WINDOWS.
  */
 class LockScreenAccessibilityService : AccessibilityService() {
@@ -78,9 +88,11 @@ class LockScreenAccessibilityService : AccessibilityService() {
         instance = this
         keyguardManager = getSystemService(Context.KEYGUARD_SERVICE) as KeyguardManager
 
-        // FLAG_RETRIEVE_INTERACTIVE_WINDOWS is required for getWindows() to return keyguard window
+        // FLAG_RETRIEVE_INTERACTIVE_WINDOWS is required for getWindows() to return keyguard window.
+        // FLAG_REQUEST_FILTER_KEY_EVENTS is for the search-overlay trigger below.
         serviceInfo = serviceInfo.apply {
-            flags = flags or AccessibilityServiceInfo.FLAG_RETRIEVE_INTERACTIVE_WINDOWS
+            flags = flags or AccessibilityServiceInfo.FLAG_RETRIEVE_INTERACTIVE_WINDOWS or
+                AccessibilityServiceInfo.FLAG_REQUEST_FILTER_KEY_EVENTS
         }
 
         val filter = IntentFilter().apply {
@@ -97,19 +109,158 @@ class LockScreenAccessibilityService : AccessibilityService() {
             LauncherPrefsRepository(applicationContext).prefsFlow.collect { prefs ->
                 autoUnlockEnabled = prefs.autoUnlockEnabled
                 pinLength = prefs.autoUnlockPinDigits
+                searchOverlayEnabled = prefs.searchOverlayEnabled
+                searchOverlayKeyCode1 = prefs.searchOverlayCustomKeyCode1
+                searchOverlayKeyCode2 = prefs.searchOverlayCustomKeyCode2
                 Log.d(TAG, "prefs updated — autoUnlockEnabled=$autoUnlockEnabled pinLength=$pinLength")
             }
         }
-        Log.d(TAG, "Service connected — flagRetrieveInteractiveWindows set")
+        Log.d(TAG, "Service connected — flagRetrieveInteractiveWindows + flagRequestFilterKeyEvents set")
     }
 
     override fun onDestroy() {
         try { unregisterReceiver(screenReceiver) } catch (_: Exception) {}
         handler.removeCallbacksAndMessages(null)
+        resetSearchOverlayState()
         serviceScope.cancel()
         if (instance === this) instance = null
         Log.d(TAG, "Service destroyed")
         super.onDestroy()
+    }
+
+    // ── Global search overlay (see com.zeno.classiclauncher.nlauncher.search) ──────────────────
+    // Isolated from all lock-screen state/logic above — only shares this service instance so the
+    // user grants Accessibility once. onKeyEvent is the sole integration point.
+
+    // Hold-combo state (used when a second key is recorded).
+    @Volatile private var searchKey1Down = false
+    @Volatile private var searchKey2Down = false
+    /** Prevents re-firing on every key-repeat event while both keys are held. */
+    @Volatile private var searchTriggeredForThisHold = false
+
+    // Double-tap state (used when only one key is recorded) — timestamp of the last UP of the
+    // watched key; a DOWN arriving within [SEARCH_DOUBLE_TAP_WINDOW_MS] of it counts as the
+    // second tap.
+    @Volatile private var searchLastTapUpAt = 0L
+
+    /** Mirrors prefs.searchOverlayEnabled — lets the user turn off just the trigger without
+     *  disabling the whole accessibility service. */
+    @Volatile private var searchOverlayEnabled = true
+
+    /** Mirrors prefs.searchOverlayCustomKeyCode1/2. */
+    @Volatile private var searchOverlayKeyCode1 = 0
+    @Volatile private var searchOverlayKeyCode2 = 0
+
+    private val searchCaptureHeldKeys = mutableSetOf<Int>()
+    private val searchCaptureInvolvedKeys = mutableListOf<Int>()
+    private var searchCaptureMaxSimultaneous = 0
+    private var searchCaptureFirstTapKey = 0
+    private var searchCaptureFirstTapUpAt = 0L
+
+    override fun onKeyEvent(event: KeyEvent): Boolean {
+        if (SearchOverlayCaptureState.isRecording) {
+            handleSearchOverlayCapture(event)
+            return false
+        }
+        val key1 = searchOverlayKeyCode1
+        if (key1 != 0) {
+            val key2 = searchOverlayKeyCode2
+            if (key2 != 0) {
+                handleSearchOverlayHoldCombo(event, key1, key2)
+            } else {
+                handleSearchOverlayDoubleTap(event, key1)
+            }
+        }
+        return false
+    }
+
+    private fun handleSearchOverlayCapture(event: KeyEvent) {
+        val code = event.keyCode
+        when (event.action) {
+            KeyEvent.ACTION_DOWN -> {
+                if (searchCaptureHeldKeys.add(code)) {
+                    if (code !in searchCaptureInvolvedKeys) searchCaptureInvolvedKeys.add(code)
+                    searchCaptureMaxSimultaneous = maxOf(searchCaptureMaxSimultaneous, searchCaptureHeldKeys.size)
+                }
+            }
+            KeyEvent.ACTION_UP -> {
+                searchCaptureHeldKeys.remove(code)
+                if (searchCaptureHeldKeys.isNotEmpty()) return
+                if (searchCaptureMaxSimultaneous >= 2 && searchCaptureInvolvedKeys.size >= 2) {
+                    // Two keys were held together — hold-combo mode, finalize immediately.
+                    SearchOverlayCaptureState.reportCaptured(searchCaptureInvolvedKeys[0], searchCaptureInvolvedKeys[1])
+                    resetSearchOverlayCaptureState()
+                } else if (searchCaptureInvolvedKeys.size == 1) {
+                    val tapped = searchCaptureInvolvedKeys[0]
+                    val now = android.os.SystemClock.uptimeMillis()
+                    if (tapped == searchCaptureFirstTapKey && now - searchCaptureFirstTapUpAt in 0..SEARCH_DOUBLE_TAP_WINDOW_MS) {
+                        // Confirming second tap of the same key — finalize as double-tap mode.
+                        SearchOverlayCaptureState.reportCaptured(tapped, 0)
+                        resetSearchOverlayCaptureState()
+                    } else {
+                        // First tap only — wait for a confirming second tap before saving anything.
+                        searchCaptureFirstTapKey = tapped
+                        searchCaptureFirstTapUpAt = now
+                        searchCaptureInvolvedKeys.clear()
+                        searchCaptureMaxSimultaneous = 0
+                        SearchOverlayCaptureState.reportWaitingForSecondTap(tapped)
+                    }
+                }
+            }
+        }
+    }
+
+    private fun resetSearchOverlayCaptureState() {
+        searchCaptureHeldKeys.clear()
+        searchCaptureInvolvedKeys.clear()
+        searchCaptureMaxSimultaneous = 0
+        searchCaptureFirstTapKey = 0
+        searchCaptureFirstTapUpAt = 0L
+    }
+
+    private fun handleSearchOverlayHoldCombo(event: KeyEvent, keyCodeA: Int, keyCodeB: Int) {
+        when (event.keyCode) {
+            keyCodeA -> {
+                searchKey1Down = event.action == KeyEvent.ACTION_DOWN
+                if (!searchKey1Down) searchTriggeredForThisHold = false
+            }
+            keyCodeB -> {
+                searchKey2Down = event.action == KeyEvent.ACTION_DOWN
+                if (!searchKey2Down) searchTriggeredForThisHold = false
+            }
+        }
+        if (searchKey1Down && searchKey2Down && !searchTriggeredForThisHold) {
+            searchTriggeredForThisHold = true
+            fireSearchOverlayTrigger()
+        }
+    }
+
+    private fun handleSearchOverlayDoubleTap(event: KeyEvent, targetKeyCode: Int) {
+        if (event.keyCode != targetKeyCode) return
+        val now = android.os.SystemClock.uptimeMillis()
+        when (event.action) {
+            KeyEvent.ACTION_DOWN -> {
+                if (now - searchLastTapUpAt in 0..SEARCH_DOUBLE_TAP_WINDOW_MS) {
+                    searchLastTapUpAt = 0L
+                    fireSearchOverlayTrigger()
+                }
+            }
+            KeyEvent.ACTION_UP -> searchLastTapUpAt = now
+        }
+    }
+
+    private fun fireSearchOverlayTrigger() {
+        if (!searchOverlayEnabled) return
+        if (LauncherForegroundState.isForeground) return
+        SearchOverlayController.toggle(this)
+    }
+
+    private fun resetSearchOverlayState() {
+        searchKey1Down = false
+        searchKey2Down = false
+        searchTriggeredForThisHold = false
+        searchLastTapUpAt = 0L
+        resetSearchOverlayCaptureState()
     }
 
     override fun onAccessibilityEvent(event: AccessibilityEvent?) {}
@@ -441,6 +592,7 @@ class LockScreenAccessibilityService : AccessibilityService() {
         // field is visible so we catch completion quickly without burning extra tree walks.
         private const val POLL_INTERVAL_SEARCHING_MS = 1_000L
         private const val POLL_INTERVAL_TYPING_MS = 200L
+        private const val SEARCH_DOUBLE_TAP_WINDOW_MS = 400L
 
         const val ACTION_REQUEST_LOCK = "com.zeno.classiclauncher.nlauncher.action.REQUEST_LOCK"
         const val ACTION_REQUEST_NOTIFICATIONS = "com.zeno.classiclauncher.nlauncher.action.REQUEST_NOTIFICATIONS"

@@ -469,7 +469,7 @@ fun PermissionsSettingsOverlay(
 }
 
 /**
- * Capture happens inside [SearchOverlayAccessibilityService], not this composable — bare Alt/Sym
+ * Capture happens inside [com.zeno.classiclauncher.nlauncher.power.LockScreenAccessibilityService], not this composable — bare Alt/Sym
  * key-down events aren't reliably delivered to a normal focused View's key dispatch on this
  * hardware (they're consumed as modifier state before reaching app-level input handling), but
  * the accessibility service's key filter reliably sees them, since that's the same path the

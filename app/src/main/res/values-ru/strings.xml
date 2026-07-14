@@ -69,7 +69,7 @@
     <string name="icon_layout_shape_default">Мягкий квадрат по умолчанию</string>
     <string name="device_admin_explanation">Дополнительный вариант: блокирует экран, когда двойное касание включено, а помощник блокировки специальных возможностей отключен.</string>
     <string name="lock_accessibility_service_label">Zeno Classic</string>
-    <string name="lock_accessibility_service_description">Блокирует экран при двойном касании рабочего стола, как кнопка питания. Отслеживаются только события окон Zeno Classic; содержимое экрана не читается.</string>
+    <string name="lock_accessibility_service_description">Блокирует экран при двойном нажатии на домашний экран—как кнопка питания, чтобы работала разблокировка по лицу. Также открывает плавающий оверлей поиска при нажатии вашей записанной комбинации клавиш из любого приложения. Отслеживаются только события окон и нажатия физических клавиш Zeno Classic; содержимое экрана не считывается.</string>
 
     <!-- English fallback strings added to keep localized builds complete. -->
     <string name="drawer_sort_classic">Классический</string>

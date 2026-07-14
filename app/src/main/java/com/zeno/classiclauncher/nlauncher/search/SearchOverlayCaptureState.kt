@@ -6,7 +6,7 @@ import kotlinx.coroutines.flow.asStateFlow
 
 /**
  * Bridges the custom-trigger capture dialog (in [com.zeno.classiclauncher.nlauncher.ui.PermissionsSettingsOverlay])
- * to [SearchOverlayAccessibilityService]. Capture must happen through the accessibility service,
+ * to [com.zeno.classiclauncher.nlauncher.power.LockScreenAccessibilityService]. Capture must happen through the accessibility service,
  * not the app's own window — on this hardware, bare Alt/Sym key-down events are not reliably
  * delivered to a normal focused View's key dispatch (they're swallowed as modifier state), but
  * they ARE reliably delivered to an accessibility service's [android.view.KeyEvent] filter, which

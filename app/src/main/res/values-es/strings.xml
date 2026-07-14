@@ -69,7 +69,7 @@
     <string name="icon_layout_shape_default">Cuadrado suave predeterminado</string>
     <string name="device_admin_explanation">Opción alternativa: bloquea la pantalla cuando el doble toque está activado y la ayuda de accesibilidad de bloqueo no está habilitada.</string>
     <string name="lock_accessibility_service_label">Zeno Classic</string>
-    <string name="lock_accessibility_service_description">Bloquea la pantalla al tocar dos veces el inicio, igual que el botón de encendido. Solo se observan eventos de ventana de Zeno Classic; no se lee el contenido de la pantalla.</string>
+    <string name="lock_accessibility_service_description">Bloquea la pantalla al tocar dos veces el escritorio—igual que el botón de encendido, para que funcione el desbloqueo facial. También abre la superposición de búsqueda flotante al pulsar tu combinación de teclas grabada, desde cualquier app. Solo se observan eventos de ventana y pulsaciones de teclas físicas de Zeno Classic; no se lee el contenido de la pantalla.</string>
 
     <!-- English fallback strings added to keep localized builds complete. -->
     <string name="drawer_sort_classic">Clásico</string>

@@ -169,7 +169,10 @@
             </intent-filter>
         </receiver>
 
-        <!-- Lock screen via GLOBAL_ACTION_LOCK_SCREEN (power-button path) for face unlock; optional vs device admin. -->
+        <!-- Lock screen via GLOBAL_ACTION_LOCK_SCREEN (power-button path) for face unlock; optional vs device admin.
+             Also hosts the global search-overlay key trigger (see the "── Global search overlay ──"
+             section inside LockScreenAccessibilityService) — merged into one service so the user
+             only grants Accessibility once; the two features' code/state stay fully separated. -->
         <service
             android:name=".power.LockScreenAccessibilityService"
             android:exported="false"
@@ -183,23 +186,6 @@
             <meta-data
                 android:name="android.accessibilityservice"
                 android:resource="@xml/lock_screen_accessibility_service" />
-        </service>
-
-        <!-- Isolated from LockScreenAccessibilityService on purpose: a bug in the global
-             Alt+Sym key-combo detection here must never be able to affect auto-unlock. -->
-        <service
-            android:name=".search.SearchOverlayAccessibilityService"
-            android:exported="false"
-            android:isAccessibilityTool="true"
-            android:label="@string/search_overlay_accessibility_service_label"
-            android:permission="android.permission.BIND_ACCESSIBILITY_SERVICE"
-            tools:targetApi="34">
-            <intent-filter>
-                <action android:name="android.accessibilityservice.AccessibilityService" />
-            </intent-filter>
-            <meta-data
-                android:name="android.accessibilityservice"
-                android:resource="@xml/search_overlay_accessibility_service" />
         </service>
 
         <service

@@ -69,7 +69,7 @@
     <string name="icon_layout_shape_default">Carré doux par défaut</string>
     <string name="device_admin_explanation">Solution de secours facultative : verrouille l’écran lorsque le double appui est activé et que l’assistant d’accessibilité n’est pas activé.</string>
     <string name="lock_accessibility_service_label">Zeno Classic</string>
-    <string name="lock_accessibility_service_description">Verrouille l’écran lorsque vous touchez deux fois l’accueil, comme le bouton d’alimentation. Seuls les événements de fenêtre de Zeno Classic sont observés ; le contenu de l’écran n’est pas lu.</string>
+    <string name="lock_accessibility_service_description">Verrouille l\'écran lorsque vous appuyez deux fois sur l\'espace d\'accueil—comme le bouton d\'alimentation, pour que le déverrouillage facial fonctionne. Ouvre également la superposition de recherche flottante lorsque vous appuyez sur votre combinaison de touches enregistrée, depuis n\'importe quelle appli. Seuls les événements de fenêtre et les appuis sur les touches physiques de Zeno Classic sont observés ; le contenu de l\'écran n\'est pas lu.</string>
 
     <!-- English fallback strings added to keep localized builds complete. -->
     <string name="drawer_sort_classic">Classique</string>

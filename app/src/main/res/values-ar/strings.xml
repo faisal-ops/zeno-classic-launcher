@@ -180,7 +180,7 @@
     <string name="device_admin_explanation">بديل اختياري: قفل الشاشة عند تفعيل النقر المزدوج وعدم تفعيل مساعد القفل (إمكانية الوصول).</string>
     <string name="lock_accessibility_service_label">Zeno Classic</string>
     <string name="flip_clock_dream_label">زينو فليب كلوك</string>
-    <string name="lock_accessibility_service_description">يقفل الشاشة عند النقر المزدوج على مساحة العمل الرئيسية—تمامًا مثل زر الطاقة، بحيث يعمل فتح القفل بالوجه. تتم مراقبة أحداث النوافذ من Zeno Classic فقط؛ ولا تتم قراءة محتوى الشاشة.</string>
+    <string name="lock_accessibility_service_description">يقفل الشاشة عند النقر مرتين على الشاشة الرئيسية—تمامًا مثل زر الطاقة، لذا يعمل فتح القفل بالوجه. كما يفتح طبقة البحث العائمة عند الضغط على مجموعة المفاتيح المسجّلة، من أي تطبيق. تُرصد فقط أحداث النوافذ وضغطات المفاتيح الفعلية من Zeno Classic؛ لا تتم قراءة محتوى الشاشة.</string>
     <string name="action_back">رجوع</string>
     <string name="action_clear">مسح</string>
     <string name="action_clear_search">مسح البحث</string>

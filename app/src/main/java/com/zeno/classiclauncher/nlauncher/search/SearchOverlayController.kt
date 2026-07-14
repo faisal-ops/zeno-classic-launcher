@@ -24,8 +24,8 @@ import androidx.savedstate.setViewTreeSavedStateRegistryOwner
  * [SavedStateRegistryOwner] wired up manually; that's what [OverlayLifecycleOwner] is for.
  *
  * A plain top-level `object` (rather than a Service) is deliberate: the only thing that needs
- * a lifecycle here is the overlay window itself, and [SearchOverlayAccessibilityService] already
- * provides the long-lived process context that triggers [show]/[hide].
+ * a lifecycle here is the overlay window itself, and [com.zeno.classiclauncher.nlauncher.power.LockScreenAccessibilityService]
+ * already provides the long-lived process context that triggers [show]/[hide].
  *
  * [show] must be called with the accessibility service's own `Context` (not applicationContext)
  * — [WindowManager.LayoutParams.TYPE_ACCESSIBILITY_OVERLAY] is only permitted for a

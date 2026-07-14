@@ -69,7 +69,7 @@
     <string name="icon_layout_shape_default">Bawaan kotak lembut</string>
     <string name="device_admin_explanation">Cadangan opsional: mengunci layar saat ketuk dua kali aktif dan helper kunci Aksesibilitas tidak aktif.</string>
     <string name="lock_accessibility_service_label">Zeno Classic</string>
-    <string name="lock_accessibility_service_description">Mengunci layar saat Anda mengetuk dua kali workspace beranda, sama seperti tombol daya. Hanya event jendela dari Zeno Classic yang diamati; isi layar tidak dibaca.</string>
+    <string name="lock_accessibility_service_description">Mengunci layar saat Anda mengetuk dua kali ruang kerja utama—sama seperti tombol daya, agar pembuka kunci wajah berfungsi. Juga membuka overlay pencarian mengambang saat Anda menekan kombinasi tombol yang Anda rekam, dari aplikasi mana pun. Hanya peristiwa jendela dan penekanan tombol fisik dari Zeno Classic yang diamati; konten layar tidak dibaca.</string>
 
     <!-- English fallback strings added to keep localized builds complete. -->
     <string name="drawer_sort_classic">Klasik</string>

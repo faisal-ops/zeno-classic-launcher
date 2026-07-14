@@ -1,7 +1,9 @@
 <?xml version="1.0" encoding="utf-8"?>
 <!-- canRetrieveWindowContent: inspect PIN field nodes for text length polling.
      canPerformGestures: dispatch swipe-up to dismiss lock screen overlay.
-     canRequestFilterKeyEvents: keep as fallback in case future Android allows keyguard key events.
+     canRequestFilterKeyEvents: powers the global search-overlay key trigger (see
+       LockScreenAccessibilityService's onKeyEvent) — blocked on the secure keyguard itself, so no
+       effect there, but active everywhere else.
      flagRetrieveInteractiveWindows: required for getWindows() to return TYPE_KEYGUARD window. -->
 <accessibility-service xmlns:android="http://schemas.android.com/apk/res/android"
     android:accessibilityEventTypes="typeAnnouncement"

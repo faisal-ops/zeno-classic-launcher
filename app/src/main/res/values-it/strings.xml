@@ -69,7 +69,7 @@
     <string name="icon_layout_shape_default">Quadrato morbido predefinito</string>
     <string name="device_admin_explanation">Fallback opzionale: blocca lo schermo quando il doppio tocco è attivo e l’assistente di accessibilità non è abilitato.</string>
     <string name="lock_accessibility_service_label">Zeno Classic</string>
-    <string name="lock_accessibility_service_description">Blocca lo schermo quando tocchi due volte la schermata home, come il pulsante di accensione. Vengono osservati solo gli eventi finestra di Zeno Classic; il contenuto dello schermo non viene letto.</string>
+    <string name="lock_accessibility_service_description">Blocca lo schermo quando tocchi due volte lo spazio home—come il tasto di accensione, così lo sblocco col viso funziona. Apre anche l\'overlay di ricerca flottante quando premi la tua combinazione di tasti registrata, da qualsiasi app. Vengono osservati solo eventi finestra e pressioni di tasti fisici di Zeno Classic; il contenuto dello schermo non viene letto.</string>
 
     <!-- English fallback strings added to keep localized builds complete. -->
     <string name="drawer_sort_classic">Classico</string>

@@ -69,7 +69,7 @@
     <string name="icon_layout_shape_default">默认柔和方形</string>
     <string name="device_admin_explanation">可选备用方案：当双击锁屏开启且无障碍锁屏助手未启用时锁定屏幕。</string>
     <string name="lock_accessibility_service_label">Zeno Classic</string>
-    <string name="lock_accessibility_service_description">双击主屏幕时像电源键一样锁定屏幕。仅观察 Zeno Classic 的窗口事件；不会读取屏幕内容。</string>
+    <string name="lock_accessibility_service_description">双击主屏幕工作区时锁定屏幕——与电源按钮相同，因此面容解锁可以正常工作。在任意应用中按下你录制的按键组合时，还会打开悬浮搜索层。仅监测 Zeno Classic 的窗口事件和物理按键，不读取屏幕内容。</string>
 
     <!-- English fallback strings added to keep localized builds complete. -->
     <string name="drawer_sort_classic">经典</string>

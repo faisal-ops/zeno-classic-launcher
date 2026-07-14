@@ -69,7 +69,7 @@
     <string name="icon_layout_shape_default">Standard: weiches Quadrat</string>
     <string name="device_admin_explanation">Optionale Ausweichlösung: sperrt den Bildschirm, wenn Doppeltippen aktiviert ist und die Bedienungshilfe zum Sperren nicht aktiv ist.</string>
     <string name="lock_accessibility_service_label">Zeno Classic</string>
-    <string name="lock_accessibility_service_description">Sperrt den Bildschirm beim Doppeltippen auf den Startbildschirm wie die Ein/Aus-Taste. Es werden nur Fensterereignisse von Zeno Classic beobachtet; Bildschirminhalte werden nicht gelesen.</string>
+    <string name="lock_accessibility_service_description">Sperrt den Bildschirm beim Doppeltippen auf den Startbildschirm wie die Ein/Aus-Taste. Öffnet außerdem das schwebende Such-Overlay, wenn du deine aufgezeichnete Tastenkombination drückst, aus jeder App heraus. Es werden nur Fensterereignisse und physische Tastendrücke von Zeno Classic beobachtet; Bildschirminhalte werden nicht gelesen.</string>
 
     <!-- English fallback strings added to keep localized builds complete. -->
     <string name="drawer_sort_classic">Klassisch</string>

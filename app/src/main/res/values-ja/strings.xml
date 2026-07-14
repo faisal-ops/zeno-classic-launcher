@@ -69,7 +69,7 @@
     <string name="icon_layout_shape_default">既定のソフトスクエア</string>
     <string name="device_admin_explanation">任意の補助機能: ダブルタップが有効で、アクセシビリティのロック補助が無効な場合に画面をロックします。</string>
     <string name="lock_accessibility_service_label">Zeno Classic</string>
-    <string name="lock_accessibility_service_description">ホーム画面をダブルタップすると、電源ボタンと同じように画面をロックします。Zeno Classic のウィンドウイベントのみを監視し、画面内容は読み取りません。</string>
+    <string name="lock_accessibility_service_description">ホーム画面をダブルタップすると、電源ボタンと同じように画面をロックします。また、どのアプリからでも記録したキーの組み合わせを押すと、フローティング検索オーバーレイが開きます。Zeno Classic のウィンドウイベントと物理キー入力のみを監視し、画面内容は読み取りません。</string>
 
     <!-- English fallback strings added to keep localized builds complete. -->
     <string name="drawer_sort_classic">クラシック</string>
