@@ -1432,6 +1432,14 @@ class LauncherViewModel(app: Application) : AndroidViewModel(app) {
         viewModelScope.launch { prefsRepo.setNotificationBadgesEnabled(enabled) }
     }
 
+    fun setSearchOverlayEnabled(enabled: Boolean) {
+        viewModelScope.launch { prefsRepo.setSearchOverlayEnabled(enabled) }
+    }
+
+    fun setSearchOverlayCustomKeys(keyCode1: Int, keyCode2: Int) {
+        viewModelScope.launch { prefsRepo.setSearchOverlayCustomKeys(keyCode1, keyCode2) }
+    }
+
     fun setDoubleTapToSleepEnabled(enabled: Boolean) {
         viewModelScope.launch { prefsRepo.setDoubleTapToSleepEnabled(enabled) }
     }

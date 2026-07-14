@@ -49,6 +49,7 @@ enum class SecondShortcutTarget {
     WHATSAPP,
 }
 
+
 enum class AppIconShape {
     SQUARE,
     ROUNDED,
@@ -128,6 +129,14 @@ data class LauncherPrefs(
     val hapticIntensity: Int = 3,
     /** When false, mail/shortcut unread badges are off and notification listener access is not required. */
     val notificationBadgesEnabled: Boolean = true,
+    /** When false, the global search overlay never triggers, even if the accessibility service
+     *  is granted. */
+    val searchOverlayEnabled: Boolean = true,
+    /** User-recorded key that opens the global search overlay. 0 (KEYCODE_UNKNOWN) = not recorded
+     *  yet, feature does nothing until the user sets a combination in Settings. */
+    val searchOverlayCustomKeyCode1: Int = 0,
+    /** Second recorded key — 0 means single-key (double-tap) mode; non-zero means hold-combo mode. */
+    val searchOverlayCustomKeyCode2: Int = 0,
     val themeJson: String = DEFAULT_THEME_JSON,
     /** Master switch: when false, the home glance strip is not shown. */
     val glanceEnabled: Boolean = true,
@@ -259,6 +268,9 @@ class LauncherPrefsRepository(private val context: Context) {
         val HAPTICS = booleanPreferencesKey("hapticsEnabled")
         val HAPTIC_INTENSITY = intPreferencesKey("hapticIntensity")
         val NOTIFICATION_BADGES = booleanPreferencesKey("notificationBadgesEnabled")
+        val SEARCH_OVERLAY = booleanPreferencesKey("searchOverlayEnabled")
+        val SEARCH_OVERLAY_CUSTOM_KEY1 = intPreferencesKey("searchOverlayCustomKeyCode1")
+        val SEARCH_OVERLAY_CUSTOM_KEY2 = intPreferencesKey("searchOverlayCustomKeyCode2")
         val THEME = stringPreferencesKey("themeJson")
         val GLANCE_ENABLED = booleanPreferencesKey("glanceEnabled")
         val GLANCE_FLASHLIGHT = booleanPreferencesKey("glanceShowFlashlight")
@@ -350,6 +362,9 @@ class LauncherPrefsRepository(private val context: Context) {
         val haptics = p[Keys.HAPTICS] ?: DEFAULT_PREFS.hapticsEnabled
         val hapticIntensity = (p[Keys.HAPTIC_INTENSITY] ?: DEFAULT_PREFS.hapticIntensity).coerceIn(1, 5)
         val notifBadges = p[Keys.NOTIFICATION_BADGES] ?: DEFAULT_PREFS.notificationBadgesEnabled
+        val searchOverlay = p[Keys.SEARCH_OVERLAY] ?: DEFAULT_PREFS.searchOverlayEnabled
+        val searchOverlayCustomKey1 = p[Keys.SEARCH_OVERLAY_CUSTOM_KEY1] ?: DEFAULT_PREFS.searchOverlayCustomKeyCode1
+        val searchOverlayCustomKey2 = p[Keys.SEARCH_OVERLAY_CUSTOM_KEY2] ?: DEFAULT_PREFS.searchOverlayCustomKeyCode2
         val theme = p[Keys.THEME] ?: DEFAULT_THEME_JSON
         val glanceOn = p[Keys.GLANCE_ENABLED] ?: DEFAULT_PREFS.glanceEnabled
         val glanceFlash = p[Keys.GLANCE_FLASHLIGHT] ?: DEFAULT_PREFS.glanceShowFlashlight
@@ -461,6 +476,9 @@ class LauncherPrefsRepository(private val context: Context) {
             hapticsEnabled = haptics,
             hapticIntensity = hapticIntensity,
             notificationBadgesEnabled = notifBadges,
+            searchOverlayEnabled = searchOverlay,
+            searchOverlayCustomKeyCode1 = searchOverlayCustomKey1,
+            searchOverlayCustomKeyCode2 = searchOverlayCustomKey2,
             themeJson = theme,
             glanceEnabled = glanceOn,
             glanceShowFlashlight = glanceFlash,
@@ -624,6 +642,17 @@ class LauncherPrefsRepository(private val context: Context) {
 
     suspend fun setNotificationBadgesEnabled(enabled: Boolean) {
         context.dataStore.edit { it[Keys.NOTIFICATION_BADGES] = enabled }
+    }
+
+    suspend fun setSearchOverlayEnabled(enabled: Boolean) {
+        context.dataStore.edit { it[Keys.SEARCH_OVERLAY] = enabled }
+    }
+
+    suspend fun setSearchOverlayCustomKeys(keyCode1: Int, keyCode2: Int) {
+        context.dataStore.edit {
+            it[Keys.SEARCH_OVERLAY_CUSTOM_KEY1] = keyCode1
+            it[Keys.SEARCH_OVERLAY_CUSTOM_KEY2] = keyCode2
+        }
     }
 
     suspend fun setOrderedPackages(packages: List<String>) {
@@ -921,6 +950,9 @@ class LauncherPrefsRepository(private val context: Context) {
             s[Keys.HAPTICS] = prefs.hapticsEnabled
             s[Keys.HAPTIC_INTENSITY] = prefs.hapticIntensity.coerceIn(1, 5)
             s[Keys.NOTIFICATION_BADGES] = prefs.notificationBadgesEnabled
+            s[Keys.SEARCH_OVERLAY] = prefs.searchOverlayEnabled
+            s[Keys.SEARCH_OVERLAY_CUSTOM_KEY1] = prefs.searchOverlayCustomKeyCode1
+            s[Keys.SEARCH_OVERLAY_CUSTOM_KEY2] = prefs.searchOverlayCustomKeyCode2
             s[Keys.THEME] = prefs.themeJson
             s[Keys.GLANCE_ENABLED] = prefs.glanceEnabled
             s[Keys.GLANCE_FLASHLIGHT] = prefs.glanceShowFlashlight

@@ -71,6 +71,34 @@ class LauncherBackupExhaustiveTest {
     }
 
     @Test
+    fun roundTrip_searchOverlayEnabled_preserved() {
+        assertTrue(roundTrip(LauncherPrefs(searchOverlayEnabled = true)).searchOverlayEnabled)
+        assertFalse(roundTrip(LauncherPrefs(searchOverlayEnabled = false)).searchOverlayEnabled)
+    }
+
+    @Test
+    fun roundTrip_searchOverlayCustomKeys_holdComboMode_preserved() {
+        val prefs = LauncherPrefs(
+            searchOverlayCustomKeyCode1 = 29,
+            searchOverlayCustomKeyCode2 = 47,
+        )
+        val restored = roundTrip(prefs)
+        assertEquals(29, restored.searchOverlayCustomKeyCode1)
+        assertEquals(47, restored.searchOverlayCustomKeyCode2)
+    }
+
+    @Test
+    fun roundTrip_searchOverlayCustomKeys_doubleTapMode_preserved() {
+        val prefs = LauncherPrefs(
+            searchOverlayCustomKeyCode1 = 62,
+            searchOverlayCustomKeyCode2 = 0,
+        )
+        val restored = roundTrip(prefs)
+        assertEquals(62, restored.searchOverlayCustomKeyCode1)
+        assertEquals(0, restored.searchOverlayCustomKeyCode2)
+    }
+
+    @Test
     fun roundTrip_glanceWeatherManualCityName_preserved() {
         val prefs = LauncherPrefs(glanceWeatherManualCityName = "Faridabad, Haryana, India")
         assertEquals("Faridabad, Haryana, India", roundTrip(prefs).glanceWeatherManualCityName)

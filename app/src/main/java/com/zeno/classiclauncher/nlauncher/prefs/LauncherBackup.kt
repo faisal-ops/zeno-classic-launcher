@@ -53,6 +53,9 @@ object LauncherBackup {
         p.put("hapticsEnabled", prefs.hapticsEnabled)
         p.put("hapticIntensity", prefs.hapticIntensity)
         p.put("notificationBadgesEnabled", prefs.notificationBadgesEnabled)
+        p.put("searchOverlayEnabled", prefs.searchOverlayEnabled)
+        p.put("searchOverlayCustomKeyCode1", prefs.searchOverlayCustomKeyCode1)
+        p.put("searchOverlayCustomKeyCode2", prefs.searchOverlayCustomKeyCode2)
         p.put("themeJson", prefs.themeJson)
         p.put("glanceEnabled", prefs.glanceEnabled)
         p.put("glanceShowFlashlight", prefs.glanceShowFlashlight)
@@ -202,6 +205,9 @@ object LauncherBackup {
         val haptics = p.optBoolean("hapticsEnabled", true)
         val hapticIntensity = p.optInt("hapticIntensity", 3).coerceIn(1, 5)
         val notifBadges = p.optBoolean("notificationBadgesEnabled", true)
+        val searchOverlay = p.optBoolean("searchOverlayEnabled", true)
+        val searchOverlayCustomKey1 = p.optInt("searchOverlayCustomKeyCode1", 0)
+        val searchOverlayCustomKey2 = p.optInt("searchOverlayCustomKeyCode2", 0)
         val glanceEnabled = p.optBoolean("glanceEnabled", true)
         val glanceFlash = p.optBoolean("glanceShowFlashlight", true)
         val glanceBat = p.optBoolean("glanceShowBattery", true)
@@ -352,6 +358,9 @@ object LauncherBackup {
             hapticsEnabled = haptics,
             hapticIntensity = hapticIntensity,
             notificationBadgesEnabled = notifBadges,
+            searchOverlayEnabled = searchOverlay,
+            searchOverlayCustomKeyCode1 = searchOverlayCustomKey1,
+            searchOverlayCustomKeyCode2 = searchOverlayCustomKey2,
             themeJson = theme,
             glanceEnabled = glanceEnabled,
             glanceShowFlashlight = glanceFlash,

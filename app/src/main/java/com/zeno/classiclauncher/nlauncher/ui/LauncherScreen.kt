@@ -2441,6 +2441,8 @@ fun LauncherScreen(
                 onAutoUnlockPinDigits = vm::setAutoUnlockPinDigits,
                 onGlanceEnabled = vm::setGlanceEnabled,
                 onGlanceShowCalendar = vm::setGlanceShowCalendar,
+                onSearchOverlayEnabled = vm::setSearchOverlayEnabled,
+                onSearchOverlayCustomKeys = vm::setSearchOverlayCustomKeys,
             )
         }
 
@@ -7704,7 +7706,7 @@ internal fun matchSettingsEntries(query: String): List<SettingsSearchEntry> {
     }.take(3)
 }
 
-private fun rankHomeSearchApps(
+internal fun rankHomeSearchApps(
     query: String,
     allApps: List<AppEntry>,
     hiddenPackages: Set<String>,

@@ -183,6 +183,8 @@
     <string name="lock_accessibility_service_label">Zeno Classic</string>
     <string name="flip_clock_dream_label">Zeno Flip Clock</string>
     <string name="lock_accessibility_service_description">Locks the screen when you double-tap the home workspace—the same as the power button so face unlock works. Only window events from Zeno Classic are observed; screen content is not read.</string>
+    <string name="search_overlay_accessibility_service_label">Zeno Classic Search</string>
+    <string name="search_overlay_accessibility_service_description">Opens the floating search overlay when you press Alt+Sym together on the physical keyboard, from any app. Only physical key presses are observed; no screen content is read.</string>
     <!-- Common UI actions -->
     <string name="action_back">Back</string>
     <string name="action_clear">Clear</string>
@@ -341,6 +343,19 @@
     <string name="perm_badges_on_missing">On — allow notification access for badges</string>
     <string name="perm_badges_grant_label">Open notification access</string>
     <string name="perm_badges_turn_off_toast">Turn off notification access for this app, then return.</string>
+    <string name="perm_search_overlay_title">Quick Switch (Any App)</string>
+    <string name="perm_search_overlay_off">Off — accessibility access not required</string>
+    <string name="perm_search_overlay_on_ok">On — %1$s from any app to search</string>
+    <string name="perm_search_overlay_on_ok_unset">On — set your key combination below</string>
+    <string name="perm_search_overlay_on_missing">On — allow accessibility access to detect %1$s</string>
+    <string name="perm_search_overlay_grant_label">Open Accessibility settings</string>
+    <string name="perm_search_overlay_set_combination">Set combination</string>
+    <string name="perm_search_overlay_change_combination">Change combination</string>
+    <string name="perm_search_overlay_gesture_custom_hold">%1$s+%2$s</string>
+    <string name="perm_search_overlay_gesture_custom_tap">2× %1$s</string>
+    <string name="search_overlay_capture_title">Set custom trigger</string>
+    <string name="search_overlay_capture_instructions">Press one key for a double-tap trigger, or hold two keys together for a combo trigger</string>
+    <string name="search_overlay_capture_waiting_second_tap">Tap %1$s again to confirm</string>
     <string name="perm_lock_title">Double Tap to Lock</string>
     <string name="perm_lock_off">Off — lock access not required</string>
     <string name="perm_lock_on_helper">On — lock helper (face unlock)</string>

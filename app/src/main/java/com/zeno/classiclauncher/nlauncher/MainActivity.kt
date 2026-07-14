@@ -100,6 +100,12 @@ class MainActivity : AppCompatActivity() {
             .dockMailPackage = currentPrefs.dockMailPackage.ifEmpty {
                 com.zeno.classiclauncher.nlauncher.apps.resolveDefaultMailPackage(this@MainActivity)
             }
+        com.zeno.classiclauncher.nlauncher.search.LauncherForegroundState.isForeground = true
+    }
+
+    override fun onPause() {
+        super.onPause()
+        com.zeno.classiclauncher.nlauncher.search.LauncherForegroundState.isForeground = false
     }
 
     override fun onWindowFocusChanged(hasFocus: Boolean) {

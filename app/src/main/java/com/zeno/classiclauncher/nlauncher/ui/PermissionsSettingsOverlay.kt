@@ -9,8 +9,11 @@ import android.widget.Toast
 import androidx.activity.compose.BackHandler
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.focusable
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
@@ -62,15 +65,35 @@ import androidx.compose.ui.zIndex
 import androidx.core.content.ContextCompat
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleEventObserver
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.zeno.classiclauncher.nlauncher.prefs.LauncherPrefs
 import com.zeno.classiclauncher.nlauncher.power.SleepManager
+import com.zeno.classiclauncher.nlauncher.search.CaptureStatus
+import com.zeno.classiclauncher.nlauncher.search.SearchOverlayCaptureState
+import com.zeno.classiclauncher.nlauncher.search.SearchOverlayPermissions
 import com.zeno.classiclauncher.nlauncher.theme.LauncherThemePalette
+
+/** null when no key has been recorded yet. */
+@Composable
+private fun searchOverlayKeysLabel(customKey1: Int, customKey2: Int): String? = when {
+    customKey1 == 0 -> null
+    customKey2 != 0 -> stringResource(
+        R.string.perm_search_overlay_gesture_custom_hold,
+        keyCodeLabel(customKey1),
+        keyCodeLabel(customKey2),
+    )
+    else -> stringResource(R.string.perm_search_overlay_gesture_custom_tap, keyCodeLabel(customKey1))
+}
+
+private fun keyCodeLabel(code: Int): String =
+    AndroidKeyEvent.keyCodeToString(code).removePrefix("KEYCODE_")
 
 private data class RuntimePerms(
     val notificationAccess: Boolean,
     val lockAccessibility: Boolean,
     val location: Boolean,
     val calendar: Boolean,
+    val searchOverlayAccessibility: Boolean,
 )
 
 private fun computeRuntimePerms(context: android.content.Context): RuntimePerms =
@@ -85,6 +108,7 @@ private fun computeRuntimePerms(context: android.content.Context): RuntimePerms 
             context,
             Manifest.permission.READ_CALENDAR,
         ) == android.content.pm.PackageManager.PERMISSION_GRANTED,
+        searchOverlayAccessibility = SearchOverlayPermissions.isAccessibilityServiceEnabled(context),
     )
 
 /**
@@ -102,9 +126,12 @@ fun PermissionsSettingsOverlay(
     onAutoUnlockPinDigits: (Int) -> Unit,
     onGlanceEnabled: (Boolean) -> Unit,
     onGlanceShowCalendar: (Boolean) -> Unit,
+    onSearchOverlayEnabled: (Boolean) -> Unit,
+    onSearchOverlayCustomKeys: (Int, Int) -> Unit,
 ) {
     val context = LocalContext.current
     var runtime by remember { mutableStateOf(computeRuntimePerms(context)) }
+    var showCustomCapture by remember { mutableStateOf(false) }
     val lifecycleOwner = LocalLifecycleOwner.current
     DisposableEffect(lifecycleOwner) {
         val observer = LifecycleEventObserver { _, event ->
@@ -150,7 +177,7 @@ fun PermissionsSettingsOverlay(
                     nk?.keyCode == AndroidKeyEvent.KEYCODE_ENTER
                 when {
                     up    -> { focusedItem = (focusedItem - 1).coerceAtLeast(0); true }
-                    down  -> { focusedItem = (focusedItem + 1).coerceAtMost(3); true }
+                    down  -> { focusedItem = (focusedItem + 1).coerceAtMost(5); true }
                     enter -> {
                         when (focusedItem) {
                             0 -> onNotificationBadgesEnabled(!prefs.notificationBadgesEnabled)
@@ -160,6 +187,7 @@ fun PermissionsSettingsOverlay(
                             }
                             2 -> onGlanceEnabled(!prefs.glanceEnabled)
                             3 -> onGlanceShowCalendar(!prefs.glanceShowCalendar)
+                            5 -> onSearchOverlayEnabled(!prefs.searchOverlayEnabled)
                         }
                         true
                     }
@@ -376,7 +404,136 @@ fun PermissionsSettingsOverlay(
                         },
                 )
 
+                val searchOverlayKeys = searchOverlayKeysLabel(
+                    prefs.searchOverlayCustomKeyCode1,
+                    prefs.searchOverlayCustomKeyCode2,
+                )
+                val searchOverlayReady = searchOverlayKeys != null && runtime.searchOverlayAccessibility
+                PermissionSwitchCard(
+                    title = stringResource(R.string.perm_search_overlay_title),
+                    subtitleOff = stringResource(R.string.perm_search_overlay_off),
+                    subtitleOnOk = stringResource(R.string.perm_search_overlay_on_ok, searchOverlayKeys.orEmpty()),
+                    subtitleOnMissing = if (searchOverlayKeys == null) {
+                        stringResource(R.string.perm_search_overlay_on_ok_unset)
+                    } else {
+                        stringResource(R.string.perm_search_overlay_on_missing, searchOverlayKeys)
+                    },
+                    featureOn = prefs.searchOverlayEnabled,
+                    permissionOk = searchOverlayReady,
+                    focused = focusedItem == 5,
+                    themePalette = themePalette,
+                    onFeatureChange = onSearchOverlayEnabled,
+                    showGrant = prefs.searchOverlayEnabled && !searchOverlayReady,
+                    onGrant = {
+                        if (searchOverlayKeys == null) {
+                            showCustomCapture = true
+                        } else {
+                            runCatching {
+                                context.startActivity(
+                                    Intent(Settings.ACTION_ACCESSIBILITY_SETTINGS)
+                                        .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK),
+                                )
+                            }
+                        }
+                    },
+                    grantLabel = if (searchOverlayKeys == null) {
+                        stringResource(R.string.perm_search_overlay_set_combination)
+                    } else {
+                        stringResource(R.string.perm_search_overlay_grant_label)
+                    },
+                    openSystemSettingsWhenTurningOff = null,
+                )
+                if (prefs.searchOverlayEnabled && searchOverlayKeys != null) {
+                    TextButton(
+                        onClick = { showCustomCapture = true },
+                        modifier = Modifier.padding(start = 4.dp, top = 2.dp),
+                    ) {
+                        Text(stringResource(R.string.perm_search_overlay_change_combination), color = themePalette.settingsMenuBody)
+                    }
+                }
+
                 Spacer(Modifier.height(16.dp))
+            }
+        }
+    }
+
+    if (showCustomCapture) {
+        SearchOverlayCustomCaptureDialog(
+            onCaptured = { key1, key2 ->
+                onSearchOverlayCustomKeys(key1, key2)
+                showCustomCapture = false
+            },
+            onDismiss = { showCustomCapture = false },
+        )
+    }
+}
+
+/**
+ * Capture happens inside [SearchOverlayAccessibilityService], not this composable — bare Alt/Sym
+ * key-down events aren't reliably delivered to a normal focused View's key dispatch on this
+ * hardware (they're consumed as modifier state before reaching app-level input handling), but
+ * the accessibility service's key filter reliably sees them, since that's the same path the
+ * runtime trigger detection already relies on. This dialog just starts/stops recording and
+ * reflects [SearchOverlayCaptureState] back to the user.
+ */
+@Composable
+private fun SearchOverlayCustomCaptureDialog(
+    onCaptured: (Int, Int) -> Unit,
+    onDismiss: () -> Unit,
+) {
+    val status by SearchOverlayCaptureState.status.collectAsStateWithLifecycle()
+
+    DisposableEffect(Unit) {
+        SearchOverlayCaptureState.start()
+        onDispose { SearchOverlayCaptureState.stop() }
+    }
+
+    LaunchedEffect(status) {
+        val captured = status as? CaptureStatus.Captured ?: return@LaunchedEffect
+        onCaptured(captured.keyCode1, captured.keyCode2)
+    }
+
+    BackHandler(onBack = onDismiss)
+
+    Box(
+        modifier = Modifier
+            .fillMaxSize()
+            .zIndex(500f)
+            .background(Color(0xE6000000)),
+        contentAlignment = Alignment.Center,
+    ) {
+        Surface(
+            shape = RoundedCornerShape(16.dp),
+            color = Color(0xFF1E2430),
+            modifier = Modifier.padding(horizontal = 32.dp),
+        ) {
+            Column(
+                modifier = Modifier.padding(24.dp),
+                horizontalAlignment = Alignment.CenterHorizontally,
+            ) {
+                Text(
+                    stringResource(R.string.search_overlay_capture_title),
+                    color = Color(0xFFEAF2F8),
+                    style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.Medium),
+                )
+                Spacer(Modifier.height(10.dp))
+                Text(
+                    when (val s = status) {
+                        is CaptureStatus.WaitingForSecondTap ->
+                            stringResource(R.string.search_overlay_capture_waiting_second_tap, keyCodeLabel(s.keyCode))
+                        is CaptureStatus.Captured, CaptureStatus.Idle ->
+                            stringResource(R.string.search_overlay_capture_instructions)
+                        CaptureStatus.Listening ->
+                            stringResource(R.string.search_overlay_capture_instructions)
+                    },
+                    color = Color(0xFF9EADB8),
+                    fontSize = 13.sp,
+                    textAlign = androidx.compose.ui.text.style.TextAlign.Center,
+                )
+                Spacer(Modifier.height(16.dp))
+                TextButton(onClick = onDismiss) {
+                    Text(stringResource(R.string.action_cancel), color = Color(0xFF9EADB8))
+                }
             }
         }
     }
