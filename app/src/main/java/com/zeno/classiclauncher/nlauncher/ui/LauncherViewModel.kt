@@ -387,18 +387,16 @@ class LauncherViewModel(app: Application) : AndroidViewModel(app) {
 
     val filteredGridCells: StateFlow<List<DrawerGridCell>> =
         combine(_baseCells, usageStats, _drawerSortMode) { cells, usage, sortMode ->
-            pinInternalSettingsFirst(
-                if (sortMode == DrawerSortMode.MOST_USED && usage.isNotEmpty()) {
-                    cells.sortedByDescending { cell ->
-                        when (cell) {
-                            is DrawerGridCell.App -> usage[cell.entry.packageName] ?: 0L
-                            is DrawerGridCell.Folder -> cell.members.maxOfOrNull { usage[it.packageName] ?: 0L } ?: 0L
-                        }
+            if (sortMode == DrawerSortMode.MOST_USED && usage.isNotEmpty()) {
+                cells.sortedByDescending { cell ->
+                    when (cell) {
+                        is DrawerGridCell.App -> usage[cell.entry.packageName] ?: 0L
+                        is DrawerGridCell.Folder -> cell.members.maxOfOrNull { usage[it.packageName] ?: 0L } ?: 0L
                     }
-                } else {
-                    cells
-                },
-            )
+                }
+            } else {
+                cells
+            }
         }.stateIn(viewModelScope, VIEWMODEL_SHARING, emptyList())
 
     val hasUnreadMail: StateFlow<Boolean> = NotificationRepository.hasUnreadMail

@@ -1,7 +1,6 @@
 package com.zeno.classiclauncher.nlauncher.folders
 
 import com.zeno.classiclauncher.nlauncher.apps.AppEntry
-import com.zeno.classiclauncher.nlauncher.apps.AppsRepository
 import com.zeno.classiclauncher.nlauncher.search.HangulSearch
 
 private fun folderDisplayTitle(
@@ -159,8 +158,6 @@ fun buildDrawerGridCells(
 @Suppress("FunctionName")
 private fun TAIL_COMPARATOR(orderIndex: Map<String, Int>): Comparator<AppEntry> =
     compareBy<AppEntry> {
-        if (it.packageName == AppsRepository.INTERNAL_SETTINGS_PACKAGE) 0 else 1
-    }.thenBy {
         orderIndex[it.packageName] ?: Int.MAX_VALUE
     }.thenBy {
         it.label.lowercase()

@@ -273,7 +273,10 @@ class AppsRepository(private val context: Context, private val prefsRepository: 
         installed.sortWith(APP_LABEL_COMPARATOR)
 
 
-        val settingsIcon = runCatching { context.getDrawable(R.drawable.ic_dock_settings) }.getOrNull()
+        // User-set custom icon (see the app-drawer "Change Icon" menu, available for every app
+        // including this internal entry) takes priority over the default gear icon.
+        val settingsIcon = CustomIconStore.load(context, INTERNAL_SETTINGS_PACKAGE)
+            ?: runCatching { context.getDrawable(R.drawable.ic_dock_settings) }.getOrNull()
         installed.add(
             0,
             AppEntry(

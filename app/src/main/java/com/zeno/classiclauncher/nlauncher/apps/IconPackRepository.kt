@@ -18,10 +18,22 @@ data class IconPackEntry(
     val icon: Drawable?,
 )
 
+/** A pack's parsed appfilter.xml: static per-component icons, plus any `<calendar>` entries
+ *  (component → drawable-name prefix, e.g. "ic_calendar_") for packs that ship their own
+ *  day-of-month-aware calendar icon set. */
+private data class ParsedAppFilter(
+    val items: Map<ComponentName, String>,
+    val calendarPrefixes: Map<ComponentName, String>,
+)
+
 class IconPackRepository(private val context: Context) {
     private val pm = context.packageManager
-    private val parsedPacks = ConcurrentHashMap<String, Map<ComponentName, String>>()
+    private val parsedPacks = ConcurrentHashMap<String, ParsedAppFilter>()
     private val drawableCache = ConcurrentHashMap<String, Drawable>()
+    /** "$packageName:$prefix" → true only if all 31 numbered drawables actually resolve. An
+     *  incomplete set (missing even one day) is never trusted — falls back to our own
+     *  synthesized badge for every day rather than mixing pack icons with the badge per-day. */
+    private val completeCalendarSets = ConcurrentHashMap<String, Boolean>()
 
     @Volatile private var cachedIconPacks: List<IconPackEntry>? = null
 
@@ -69,21 +81,48 @@ class IconPackRepository(private val context: Context) {
     ): List<AppEntry> = withContext(Dispatchers.IO) {
         val pack = iconPackPackage.trim()
         if (pack.isEmpty()) return@withContext apps
-        val mappings = loadMappings(pack)
-        if (mappings.isEmpty()) return@withContext apps
+        val parsed = loadMappings(pack)
+        if (parsed.items.isEmpty() && parsed.calendarPrefixes.isEmpty()) return@withContext apps
+        val today = java.util.Calendar.getInstance().get(java.util.Calendar.DAY_OF_MONTH)
         apps.map { app ->
-            if (app.internal || app.packageName in customIconPackages || app.hasDynamicIcon) {
-                // Skip: internal app, user custom icon, or dynamic date alias (e.g. calendar) —
-                // the live PackageManager icon must not be replaced by a static icon pack icon.
+            if (app.packageName in customIconPackages) {
                 app
+            } else if (app.hasDynamicIcon) {
+                // Dynamic date alias (real OS per-day icon, or our own synthesized day badge) —
+                // a *static* icon-pack `<item>` icon must never replace it (would freeze the
+                // calendar icon at the wrong day forever). A pack's own `<calendar>` entry is
+                // itself day-aware though, so it's allowed to win over both the OS icon and our
+                // synthesized fallback — that's exactly what the pack author built it for. Only
+                // trusted if the pack's 31-day set is actually complete; an incomplete set falls
+                // back to whatever was already resolved (OS icon or our badge) for every day.
+                val prefix = app.componentName?.let { parsed.calendarPrefixes[it] }
+                    ?: parsed.calendarPrefixes.entries.firstOrNull { it.key.packageName == app.packageName }?.value
+                val dayIcon = if (prefix != null && hasComplete31DaySet(pack, prefix)) {
+                    loadPackDrawable(pack, "$prefix$today")
+                } else {
+                    null
+                }
+                if (dayIcon != null) app.copy(icon = dayIcon) else app
             } else {
-                val drawableName = app.componentName?.let { mappings[it] }
-                    ?: mappings.entries.firstOrNull { it.key.packageName == app.packageName }?.value
+                val drawableName = app.componentName?.let { parsed.items[it] }
+                    ?: parsed.items.entries.firstOrNull { it.key.packageName == app.packageName }?.value
                 val themedIcon = drawableName?.let { loadPackDrawable(pack, it) }
                 if (themedIcon != null) app.copy(icon = themedIcon) else app
             }
         }
     }
+
+    private fun hasComplete31DaySet(packageName: String, prefix: String): Boolean =
+        completeCalendarSets.getOrPut("$packageName:$prefix") {
+            runCatching {
+                val res = pm.getResourcesForApplication(packageName)
+                (1..31).all { day ->
+                    val name = "$prefix$day"
+                    res.getIdentifier(name, "drawable", packageName) != 0 ||
+                        res.getIdentifier(name, "mipmap", packageName) != 0
+                }
+            }.getOrDefault(false)
+        }
 
     private fun hasAppFilter(packageName: String): Boolean =
         runCatching {
@@ -91,14 +130,14 @@ class IconPackRepository(private val context: Context) {
             findAppFilterResourceId(res, packageName) != 0
         }.getOrDefault(false)
 
-    private fun loadMappings(packageName: String): Map<ComponentName, String> =
+    private fun loadMappings(packageName: String): ParsedAppFilter =
         parsedPacks.getOrPut(packageName) {
             runCatching {
                 val res = pm.getResourcesForApplication(packageName)
                 val appFilterId = findAppFilterResourceId(res, packageName)
-                if (appFilterId == 0) return@runCatching emptyMap()
+                if (appFilterId == 0) return@runCatching ParsedAppFilter(emptyMap(), emptyMap())
                 parseAppFilter(res.getXml(appFilterId))
-            }.getOrDefault(emptyMap())
+            }.getOrDefault(ParsedAppFilter(emptyMap(), emptyMap()))
         }
 
     private fun findAppFilterResourceId(res: Resources, packageName: String): Int {
@@ -110,21 +149,36 @@ class IconPackRepository(private val context: Context) {
         return 0
     }
 
-    private fun parseAppFilter(parser: XmlPullParser): Map<ComponentName, String> {
-        val out = LinkedHashMap<ComponentName, String>()
+    private fun parseAppFilter(parser: XmlPullParser): ParsedAppFilter {
+        val items = LinkedHashMap<ComponentName, String>()
+        val calendarPrefixes = LinkedHashMap<ComponentName, String>()
         var eventType = parser.eventType
         while (eventType != XmlPullParser.END_DOCUMENT) {
-            if (eventType == XmlPullParser.START_TAG && parser.name == "item") {
-                val componentRaw = parser.getAttributeValue(null, "component").orEmpty()
-                val drawableName = parser.getAttributeValue(null, "drawable").orEmpty()
-                val component = parseIconPackComponent(componentRaw)
-                if (component != null && drawableName.isNotBlank()) {
-                    out[component] = drawableName.trim()
+            if (eventType == XmlPullParser.START_TAG) {
+                when (parser.name) {
+                    "item" -> {
+                        val componentRaw = parser.getAttributeValue(null, "component").orEmpty()
+                        val drawableName = parser.getAttributeValue(null, "drawable").orEmpty()
+                        val component = parseIconPackComponent(componentRaw)
+                        if (component != null && drawableName.isNotBlank()) {
+                            items[component] = drawableName.trim()
+                        }
+                    }
+                    "calendar" -> {
+                        val componentRaw = parser.getAttributeValue(null, "component").orEmpty()
+                        // Some packs put a stray space before the value ("prefix= \"...\"") — the
+                        // attribute name itself is still exactly "prefix", so this parses fine.
+                        val prefix = parser.getAttributeValue(null, "prefix").orEmpty()
+                        val component = parseIconPackComponent(componentRaw)
+                        if (component != null && prefix.isNotBlank()) {
+                            calendarPrefixes[component] = prefix.trim()
+                        }
+                    }
                 }
             }
             eventType = parser.next()
         }
-        return out
+        return ParsedAppFilter(items, calendarPrefixes)
     }
 
     private fun parseIconPackComponent(raw: String): ComponentName? {

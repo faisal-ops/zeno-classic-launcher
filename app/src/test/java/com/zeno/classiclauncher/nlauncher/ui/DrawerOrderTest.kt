@@ -2,14 +2,15 @@ package com.zeno.classiclauncher.nlauncher.ui
 
 import com.zeno.classiclauncher.nlauncher.apps.AppEntry
 import com.zeno.classiclauncher.nlauncher.apps.AppsRepository
-import com.zeno.classiclauncher.nlauncher.folders.DrawerGridCell
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
 import org.junit.Test
 
 /**
- * Tests for drawer ordering algorithms: alphabetical sort, settings-pin, insert-index.
+ * Tests for drawer ordering algorithms: alphabetical sort, insert-index.
  * AppEntry.icon is null throughout — it is not used by any ordering logic.
+ * The internal Settings entry is deliberately NOT special-cased anywhere here — it sorts and
+ * inserts exactly like any other app, by its label.
  */
 class DrawerOrderTest {
 
@@ -31,16 +32,15 @@ class DrawerOrderTest {
     }
 
     @Test
-    fun alphabeticalOrder_internalSettings_alwaysFirst() {
+    fun alphabeticalOrder_internalSettings_sortsByLabelLikeAnyApp() {
         val installed = listOf(
             app("com.z", "Zebra"),
             app(SETTINGS, "Settings"),
             app("com.a", "Apple"),
         )
         val result = strictAlphabeticalDrawerOrder(installed, emptyMap(), emptyMap())
-        assertEquals(SETTINGS, result[0])
-        assertEquals("com.a", result[1])
-        assertEquals("com.z", result[2])
+        // "Settings" sorts between Apple and Zebra — no special pinning.
+        assertEquals(listOf("com.a", SETTINGS, "com.z"), result)
     }
 
     @Test
@@ -83,53 +83,6 @@ class DrawerOrderTest {
         val result = strictAlphabeticalDrawerOrder(installed, emptyMap(), emptyMap())
         assertEquals("com.a.app", result[0])
         assertEquals("com.z.app", result[1])
-    }
-
-    // ─── pinInternalSettingsFirst ────────────────────────────────────────────
-
-    @Test
-    fun pinSettingsFirst_settingsNotPresent_listUnchanged() {
-        val cells = listOf(
-            DrawerGridCell.App(app("com.a", "Apple")),
-            DrawerGridCell.App(app("com.b", "Banana")),
-        )
-        val result = pinInternalSettingsFirst(cells)
-        assertEquals(cells, result)
-    }
-
-    @Test
-    fun pinSettingsFirst_settingsAlreadyFirst_noChange() {
-        val cells = listOf(
-            DrawerGridCell.App(app(SETTINGS, "Settings")),
-            DrawerGridCell.App(app("com.a", "Apple")),
-        )
-        val result = pinInternalSettingsFirst(cells)
-        assertEquals(SETTINGS, (result[0] as DrawerGridCell.App).entry.packageName)
-    }
-
-    @Test
-    fun pinSettingsFirst_settingsInMiddle_movedToFront() {
-        val cells = listOf(
-            DrawerGridCell.App(app("com.a", "Apple")),
-            DrawerGridCell.App(app(SETTINGS, "Settings")),
-            DrawerGridCell.App(app("com.z", "Zebra")),
-        )
-        val result = pinInternalSettingsFirst(cells)
-        assertEquals(SETTINGS, (result[0] as DrawerGridCell.App).entry.packageName)
-        assertEquals("com.a", (result[1] as DrawerGridCell.App).entry.packageName)
-        assertEquals("com.z", (result[2] as DrawerGridCell.App).entry.packageName)
-    }
-
-    @Test
-    fun pinSettingsFirst_settingsLast_movedToFront() {
-        val cells = listOf(
-            DrawerGridCell.App(app("com.a", "Apple")),
-            DrawerGridCell.App(app("com.z", "Zebra")),
-            DrawerGridCell.App(app(SETTINGS, "Settings")),
-        )
-        val result = pinInternalSettingsFirst(cells)
-        assertEquals(SETTINGS, (result[0] as DrawerGridCell.App).entry.packageName)
-        assertEquals(3, result.size)
     }
 
     // ─── alphabeticalDrawerInsertIndex ───────────────────────────────────────

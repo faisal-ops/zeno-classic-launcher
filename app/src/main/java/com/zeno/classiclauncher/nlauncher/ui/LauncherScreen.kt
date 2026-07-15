@@ -1524,10 +1524,6 @@ fun LauncherScreen(
                             when (cell) {
                                 is DrawerGridCell.App -> {
                                     val app = cell.entry
-                            if (app.packageName == AppsRepository.INTERNAL_SETTINGS_PACKAGE) {
-                                showSettings = true
-                                return@AppDrawer
-                            }
                             if (reorderMode) {
                                 val m = moving
                                 if (m == null) vm.startMove(app.packageName)
@@ -1535,6 +1531,8 @@ fun LauncherScreen(
                                     vm.moveTo(app.packageName)
                                     vm.clearMove()
                                 }
+                            } else if (app.packageName == AppsRepository.INTERNAL_SETTINGS_PACKAGE) {
+                                showSettings = true
                             } else {
                                 if (searchQuery.isNotEmpty()) vm.setSearchQuery("")
                                 vm.launchApp(app.packageName)
@@ -1558,10 +1556,9 @@ fun LauncherScreen(
                         onCellLongPress = { cell ->
                             when (cell) {
                                 is DrawerGridCell.App -> {
-                                    if (cell.entry.packageName == AppsRepository.INTERNAL_SETTINGS_PACKAGE) {
-                                        showSettings = true
-                                    } else if (!reorderMode) {
-                                        // Normal mode: show context menu
+                                    if (!reorderMode) {
+                                        // Normal mode: show context menu (same for every app,
+                                        // including the internal Settings entry)
                                         drawerFolderMenu = null
                                         appMenuFromHomeShortcut = false
                                         homeShortcutMenuToken = null
@@ -1756,7 +1753,12 @@ fun LauncherScreen(
                 },
                 onLaunch = {
                     val t = homeShortcutMenuToken
-                    if (t != null) vm.launchHomeShortcutFromToken(t) else vm.launchApp(selectedApp.packageName)
+                    when {
+                        t != null -> vm.launchHomeShortcutFromToken(t)
+                        // Not a real installed package — vm.launchApp would silently fail to resolve it.
+                        selectedApp.packageName == AppsRepository.INTERNAL_SETTINGS_PACKAGE -> showSettings = true
+                        else -> vm.launchApp(selectedApp.packageName)
+                    }
                     showAppMenu = null
                     appMenuFromHomeShortcut = false
                     homeShortcutMenuToken = null
@@ -9140,18 +9142,19 @@ private fun AppContextMenu(
                     .verticalScroll(menuScrollState),
             ) {
                 MenuRow(Icons.AutoMirrored.Rounded.OpenInNew, stringResource(R.string.action_open), onLaunch)
-                MenuRow(Icons.Rounded.Info, stringResource(R.string.action_app_info), onInfo)
+                // No real installed-package App Info screen exists for the internal Settings entry.
+                if (!app.internal) {
+                    MenuRow(Icons.Rounded.Info, stringResource(R.string.action_app_info), onInfo)
+                }
                 MenuRow(
                     if (isHidden) Icons.Rounded.Visibility else Icons.Rounded.VisibilityOff,
                     if (isHidden) stringResource(R.string.action_unhide) else stringResource(R.string.action_hide),
                     onHideToggle,
                 )
                 MenuRow(Icons.Rounded.SwapVert, stringResource(R.string.action_arrange), onReorder)
-                if (!app.internal) {
-                    MenuRow(Icons.Rounded.Image, stringResource(R.string.action_change_icon), onChangeIcon)
-                    if (hasCustomIcon) {
-                        MenuRow(Icons.Rounded.SettingsBackupRestore, stringResource(R.string.action_reset_icon), onResetIcon)
-                    }
+                MenuRow(Icons.Rounded.Image, stringResource(R.string.action_change_icon), onChangeIcon)
+                if (hasCustomIcon) {
+                    MenuRow(Icons.Rounded.SettingsBackupRestore, stringResource(R.string.action_reset_icon), onResetIcon)
                 }
                 if (drawerFolderActionsEnabled) {
                     MenuRow(

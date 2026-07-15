@@ -1,7 +1,6 @@
 package com.zeno.classiclauncher.nlauncher.ui
 
 import com.zeno.classiclauncher.nlauncher.apps.AppEntry
-import com.zeno.classiclauncher.nlauncher.apps.AppsRepository
 import com.zeno.classiclauncher.nlauncher.folders.DrawerGridCell
 import com.zeno.classiclauncher.nlauncher.folders.buildDrawerGridCells
 import java.text.Collator
@@ -20,19 +19,12 @@ internal fun strictAlphabeticalDrawerOrder(
     data class TokenSortKey(
         val token: String,
         val label: String,
-        val settingsFirst: Int,
     )
 
     val topLevelApps = installed
         .asSequence()
         .filter { it.packageName !in folderMemberPkgs }
-        .map { app ->
-            TokenSortKey(
-                token = app.packageName,
-                label = app.label,
-                settingsFirst = if (app.packageName == AppsRepository.INTERNAL_SETTINGS_PACKAGE) 0 else 1,
-            )
-        }
+        .map { app -> TokenSortKey(token = app.packageName, label = app.label) }
         .toMutableList()
 
     val topLevelFolders = folderContents
@@ -41,34 +33,15 @@ internal fun strictAlphabeticalDrawerOrder(
         .map { (folderId, members) ->
             val custom = folderNames[folderId]?.trim()?.takeIf { it.isNotEmpty() }
             val fallback = members.firstNotNullOfOrNull { byPkg[it]?.label } ?: "Folder"
-            TokenSortKey(
-                token = folderId,
-                label = custom ?: fallback,
-                settingsFirst = 1,
-            )
+            TokenSortKey(token = folderId, label = custom ?: fallback)
         }.toList()
 
     val allTopLevel = (topLevelApps + topLevelFolders).toMutableList()
     allTopLevel.sortWith { a, b ->
-        when {
-            a.settingsFirst != b.settingsFirst -> a.settingsFirst - b.settingsFirst
-            else -> {
-                val c = collator.compare(a.label, b.label)
-                if (c != 0) c else a.token.compareTo(b.token)
-            }
-        }
+        val c = collator.compare(a.label, b.label)
+        if (c != 0) c else a.token.compareTo(b.token)
     }
     return allTopLevel.map { it.token }
-}
-
-/** Zeno Classic settings is always the first drawer tile when it appears in the grid. */
-internal fun pinInternalSettingsFirst(cells: List<DrawerGridCell>): List<DrawerGridCell> {
-    val idx = cells.indexOfFirst { cell ->
-        cell is DrawerGridCell.App && cell.entry.packageName == AppsRepository.INTERNAL_SETTINGS_PACKAGE
-    }
-    if (idx <= 0) return cells
-    val settingsCell = cells[idx]
-    return listOf(settingsCell) + cells.filterIndexed { i, _ -> i != idx }
 }
 
 /**
@@ -113,7 +86,7 @@ internal fun filteredDrawerCellsSnapshot(
     } else {
         cells
     }
-    return pinInternalSettingsFirst(sorted)
+    return sorted
 }
 
 /**
@@ -142,7 +115,7 @@ internal fun alphabeticalDrawerInsertIndex(
         privateQuery = "",
         normalQuery = "",
     )
-    val targetIdx = baseCells.appKeysExcludingSettings().count { e ->
+    val targetIdx = baseCells.appEntries().count { e ->
         val c = collator.compare(e.label, released.label)
         c < 0 || (c == 0 && e.packageName < released.packageName)
     }
@@ -158,18 +131,12 @@ internal fun alphabeticalDrawerInsertIndex(
             privateQuery = "",
             normalQuery = "",
         )
-        val idx = trialCells.appKeysExcludingSettings().indexOfFirst { it.packageName == packageName }
+        val idx = trialCells.appEntries().indexOfFirst { it.packageName == packageName }
         if (idx == targetIdx) return insertAt
     }
     return -1
 }
 
-private fun List<DrawerGridCell>.appKeysExcludingSettings(): List<AppEntry> = mapNotNull { cell ->
-    when (cell) {
-        is DrawerGridCell.App -> {
-            if (cell.entry.packageName == AppsRepository.INTERNAL_SETTINGS_PACKAGE) null
-            else cell.entry
-        }
-        is DrawerGridCell.Folder -> null
-    }
+private fun List<DrawerGridCell>.appEntries(): List<AppEntry> = mapNotNull { cell ->
+    (cell as? DrawerGridCell.App)?.entry
 }
