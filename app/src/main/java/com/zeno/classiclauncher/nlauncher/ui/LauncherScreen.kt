@@ -786,6 +786,7 @@ fun LauncherScreen(
             "com.android.email",
             "com.yahoo.mobile.client.android.mail",
             "com.samsung.android.email.provider",
+            "com.zeno.waypoint", // notification hub app; mail interaction is its main function
         )
         return p in knownMailPkgs || p.contains("mail") || p.contains("email") || p.contains("hub")
     }
