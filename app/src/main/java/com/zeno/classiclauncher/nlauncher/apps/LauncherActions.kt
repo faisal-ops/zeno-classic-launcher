@@ -71,6 +71,37 @@ fun resolveDefaultMailPackage(context: Context): String {
     return ""
 }
 
+/**
+ * Resolves the package that would actually handle a Messages dock tap when no app is explicitly
+ * pinned to that slot — same resolution [LauncherActions.launchMessages] uses. Used to scope the
+ * dock Messages notification badge to the app that will actually open. Returns "" if nothing
+ * resolves.
+ */
+fun resolveDefaultMessagesPackage(context: Context): String {
+    val pm = context.packageManager
+    val messaging = Intent(Intent.ACTION_MAIN).apply { addCategory(Intent.CATEGORY_APP_MESSAGING) }
+    val resolved = pm.resolveActivity(messaging, PackageManager.MATCH_DEFAULT_ONLY)
+    if (resolved != null) {
+        val pkg = resolved.activityInfo.packageName
+        if (!pkg.startsWith("android")) return pkg
+    }
+    val sms = Intent(Intent.ACTION_SENDTO, Uri.parse("smsto:"))
+    val resolvedSms = pm.resolveActivity(sms, PackageManager.MATCH_DEFAULT_ONLY)
+    if (resolvedSms != null) {
+        val pkg = resolvedSms.activityInfo.packageName
+        if (!pkg.startsWith("android")) return pkg
+    }
+    val messagingFallbacks = listOf(
+        "com.google.android.apps.messaging",
+        "com.samsung.android.messaging",
+        "com.whatsapp",
+    )
+    for (pkg in messagingFallbacks) {
+        if (pm.getLaunchIntentForPackage(pkg) != null) return pkg
+    }
+    return ""
+}
+
 class LauncherActions(private val context: Context) {
     private val pm: PackageManager = context.packageManager
     private val bitwardenPackage = "com.x8bit.bitwarden"

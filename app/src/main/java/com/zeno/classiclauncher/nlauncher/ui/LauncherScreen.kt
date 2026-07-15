@@ -306,6 +306,8 @@ import com.zeno.classiclauncher.nlauncher.apps.LauncherActions
 import com.zeno.classiclauncher.nlauncher.apps.SoundProfileMode
 import com.zeno.classiclauncher.nlauncher.apps.ToggleResult
 import com.zeno.classiclauncher.nlauncher.apps.parseHomeShortcutToken
+import com.zeno.classiclauncher.nlauncher.apps.resolveDefaultMailPackage
+import com.zeno.classiclauncher.nlauncher.apps.resolveDefaultMessagesPackage
 import com.zeno.classiclauncher.nlauncher.BuildConfig
 import com.zeno.classiclauncher.nlauncher.badges.AppIconWithBadge
 import com.zeno.classiclauncher.nlauncher.badges.NotificationBadgeDot
@@ -734,10 +736,21 @@ fun LauncherScreen(
     }
     val reorderMode by vm.isReorderMode.collectAsStateWithLifecycle()
     val moving by vm.moving.collectAsStateWithLifecycle()
-    val hasUnreadMail by vm.hasUnreadMail.collectAsStateWithLifecycle()
-    val hasUnreadSms by vm.hasUnreadSms.collectAsStateWithLifecycle()
-    val hasUnreadWhatsApp by vm.hasUnreadWhatsApp.collectAsStateWithLifecycle()
     val unreadPackages by vm.packagesWithUnread.collectAsStateWithLifecycle()
+    // Dock badges track whichever package the slot actually opens — same unread set every other
+    // app icon uses, no separate mail/SMS/WhatsApp-specific tracking.
+    val dockMailBadgePackage = remember(prefs.dockMailPackage) {
+        prefs.dockMailPackage.trim().ifEmpty { resolveDefaultMailPackage(context) }
+    }
+    val dockShortcutBadgePackage = remember(prefs.dockSecondPackage, prefs.secondShortcutTarget) {
+        prefs.dockSecondPackage.trim().ifEmpty {
+            if (prefs.secondShortcutTarget == SecondShortcutTarget.WHATSAPP) "com.whatsapp"
+            else resolveDefaultMessagesPackage(context)
+        }
+    }
+    // Camera has no meaningful "default app" badge target when unassigned — an explicitly
+    // pinned app still gets the same generic unread-package check as the other two slots.
+    val dockCameraBadgePackage = prefs.dockCameraPackage.trim()
     val drawerSortMode by vm.drawerSortMode.collectAsStateWithLifecycle()
     val newAppAddedToast by vm.newAppAddedToast.collectAsStateWithLifecycle()
     val themePalette = remember(prefs.themeJson) { LauncherThemePalette.fromJson(prefs.themeJson) }
@@ -1691,13 +1704,12 @@ fun LauncherScreen(
                         }
                     },
                     drawerPageCount = drawerPageCountForDock,
-                    mailHasUnread = hasUnreadMail && prefs.notificationBadgesEnabled,
-                    shortcutHasUnread = !classicMode && prefs.notificationBadgesEnabled && when {
-                        prefs.dockSecondPackage == "com.whatsapp" -> hasUnreadWhatsApp
-                        prefs.dockSecondPackage.isNotEmpty() -> prefs.dockSecondPackage in unreadPackages
-                        prefs.secondShortcutTarget == SecondShortcutTarget.WHATSAPP -> hasUnreadWhatsApp
-                        else -> hasUnreadSms
-                    },
+                    mailHasUnread = prefs.notificationBadgesEnabled &&
+                        dockMailBadgePackage.isNotEmpty() && dockMailBadgePackage in unreadPackages,
+                    shortcutHasUnread = !classicMode && prefs.notificationBadgesEnabled &&
+                        dockShortcutBadgePackage.isNotEmpty() && dockShortcutBadgePackage in unreadPackages,
+                    cameraHasUnread = prefs.notificationBadgesEnabled &&
+                        dockCameraBadgePackage.isNotEmpty() && dockCameraBadgePackage in unreadPackages,
                     showHomeButton = !classicMode,
                     showMessagesShortcut = !classicMode && prefs.dockSecondEnabled,
                     selectedTint = themePalette.dockSelected,
@@ -10304,6 +10316,7 @@ private fun Dock(
     drawerPageCount: Int,
     mailHasUnread: Boolean,
     shortcutHasUnread: Boolean,
+    cameraHasUnread: Boolean = false,
     /** When false, the centre home icon is omitted (drawer-only launcher). */
     showHomeButton: Boolean = true,
     /** When false, the Messages/WhatsApp dock icon is omitted (drawer-only launcher). */
@@ -10501,6 +10514,7 @@ private fun Dock(
                 selected = focused && focusedIndex == cameraFocusIdx,
                 selectedTint = selectedTint,
                 iconTint = dockIconTint,
+                hasUnread = cameraHasUnread,
             )
         }
 
@@ -10609,21 +10623,26 @@ private fun DockPng(
         animationSpec = tween(durationMillis = if (selected && trackpadActive) 120 else 500),
         label = "dockPngHighlight",
     )
-    Box(
-        contentAlignment = Alignment.Center,
-        modifier = modifier
-            .size(buttonSize)
-            .clip(androidx.compose.foundation.shape.RoundedCornerShape(8.dp))
-            .background(selectedTint.copy(alpha = selectedTint.alpha * highlightAlpha))
-            .combinedClickable(onClick = onClick, onLongClick = onLongPress),
-    ) {
-        AppIconWithBadge(hasUnread = hasUnread) {
-            Image(
-                painter = androidx.compose.ui.res.painterResource(resId),
-                contentDescription = null,
-                colorFilter = ColorFilter.tint(iconTint),
-                modifier = Modifier.size(iconSize),
-            )
+    // The badge overhangs the icon's corner, which can land inside the rounded-rect clip's
+    // corner arc and get sliced off. Keep the clip on a background-only layer and render the
+    // icon+badge as an unclipped sibling on top, centered the same way the clipped Box was.
+    Box(modifier = modifier.size(buttonSize)) {
+        Box(
+            modifier = Modifier
+                .fillMaxSize()
+                .clip(androidx.compose.foundation.shape.RoundedCornerShape(8.dp))
+                .background(selectedTint.copy(alpha = selectedTint.alpha * highlightAlpha))
+                .combinedClickable(onClick = onClick, onLongClick = onLongPress),
+        )
+        Box(contentAlignment = Alignment.Center, modifier = Modifier.fillMaxSize()) {
+            AppIconWithBadge(hasUnread = hasUnread) {
+                Image(
+                    painter = androidx.compose.ui.res.painterResource(resId),
+                    contentDescription = null,
+                    colorFilter = ColorFilter.tint(iconTint),
+                    modifier = Modifier.size(iconSize),
+                )
+            }
         }
     }
 }
@@ -10721,39 +10740,44 @@ private fun DockEndSlot(
         animationSpec = tween(durationMillis = if (selected && trackpadActive) 120 else 500),
         label = "dockSlotHighlight",
     )
-    Box(
-        contentAlignment = Alignment.Center,
-        modifier = modifier
-            .size(buttonSize)
-            .clip(androidx.compose.foundation.shape.RoundedCornerShape(8.dp))
-            .background(selectedTint.copy(alpha = selectedTint.alpha * highlightAlpha))
-            .combinedClickable(onClick = onClick, onLongClick = onLongPress),
-    ) {
-        AppIconWithBadge(hasUnread = hasUnread) {
-            if (iconModel != null) {
-                AsyncImage(
-                    model = iconModel,
-                    contentDescription = null,
-                    contentScale = ContentScale.Fit,
-                    modifier = Modifier
-                        .size(iconSize) // always full icon size; fallbackScale is only for built-in PNG assets
-                        .clip(iconMaskShape(appIconShape)),
-                )
-            } else if (fallbackResId != null) {
-                val fallbackResSize = iconSize * fallbackScale
-                Icon(
-                    painter = androidx.compose.ui.res.painterResource(fallbackResId),
-                    contentDescription = null,
-                    tint = iconTint,
-                    modifier = Modifier.size(fallbackResSize),
-                )
-            } else {
-                Icon(
-                    fallbackIcon,
-                    contentDescription = null,
-                    tint = iconTint,
-                    modifier = Modifier.size(iconSize),
-                )
+    // The badge overhangs the icon's corner, which can land inside the rounded-rect clip's
+    // corner arc and get sliced off. Keep the clip on a background-only layer and render the
+    // icon+badge as an unclipped sibling on top, centered the same way the clipped Box was.
+    Box(modifier = modifier.size(buttonSize)) {
+        Box(
+            modifier = Modifier
+                .fillMaxSize()
+                .clip(androidx.compose.foundation.shape.RoundedCornerShape(8.dp))
+                .background(selectedTint.copy(alpha = selectedTint.alpha * highlightAlpha))
+                .combinedClickable(onClick = onClick, onLongClick = onLongPress),
+        )
+        Box(contentAlignment = Alignment.Center, modifier = Modifier.fillMaxSize()) {
+            AppIconWithBadge(hasUnread = hasUnread) {
+                if (iconModel != null) {
+                    AsyncImage(
+                        model = iconModel,
+                        contentDescription = null,
+                        contentScale = ContentScale.Fit,
+                        modifier = Modifier
+                            .size(iconSize) // always full icon size; fallbackScale is only for built-in PNG assets
+                            .clip(iconMaskShape(appIconShape)),
+                    )
+                } else if (fallbackResId != null) {
+                    val fallbackResSize = iconSize * fallbackScale
+                    Icon(
+                        painter = androidx.compose.ui.res.painterResource(fallbackResId),
+                        contentDescription = null,
+                        tint = iconTint,
+                        modifier = Modifier.size(fallbackResSize),
+                    )
+                } else {
+                    Icon(
+                        fallbackIcon,
+                        contentDescription = null,
+                        tint = iconTint,
+                        modifier = Modifier.size(iconSize),
+                    )
+                }
             }
         }
     }
