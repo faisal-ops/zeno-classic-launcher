@@ -308,6 +308,7 @@ import com.zeno.classiclauncher.nlauncher.apps.ToggleResult
 import com.zeno.classiclauncher.nlauncher.apps.parseHomeShortcutToken
 import com.zeno.classiclauncher.nlauncher.BuildConfig
 import com.zeno.classiclauncher.nlauncher.badges.AppIconWithBadge
+import com.zeno.classiclauncher.nlauncher.badges.NotificationBadgeDot
 import com.zeno.classiclauncher.nlauncher.badges.BadgeNotificationListener
 import com.zeno.classiclauncher.nlauncher.power.SleepManager
 import com.zeno.classiclauncher.nlauncher.folders.DrawerGridCell
@@ -5082,6 +5083,7 @@ internal fun QuickSettingsOverlay(
                 title = quickSettingsAutoRotateTitle,
                 subtitle = if (autoRotateOn) quickSettingsOn else quickSettingsOff,
                 highlighted = autoRotateOn,
+                closeOnSuccess = false,
                 actionLabel = "Toggle",
                 onLongPress = actions::openDisplaySettings,
                 onTap = {
@@ -8086,26 +8088,12 @@ private fun FolderTile(
                     }
                 }
                 if (hasUnreadBadge) {
-                    Box(
+                    NotificationBadgeDot(
                         modifier = Modifier
                             .align(Alignment.TopEnd)
-                            .offset(x = 3.dp, y = (-3).dp)
-                            // sizeIn (not size) so circle grows with glyph at large font-scale
-                            .sizeIn(minWidth = 16.dp, minHeight = 16.dp)
-                            .clip(CircleShape)
-                            .background(Color(0xFFD32F2F)),
-                        contentAlignment = Alignment.Center,
-                    ) {
-                        Text(
-                            text = "✱",
-                            style = MaterialTheme.typography.labelSmall.copy(
-                                color = Color.White,
-                                fontSize = 9.sp,
-                                lineHeight = 9.sp,
-                                fontWeight = FontWeight.Bold,
-                            ),
-                        )
-                    }
+                            .offset(x = 3.dp, y = (-3).dp),
+                        diameter = 16.dp,
+                    )
                 }
             }
             Box(
@@ -8320,26 +8308,12 @@ private fun AppTile(
                         .align(Alignment.Center),
                 )
                 if (hasNotifBadge) {
-                    Box(
+                    NotificationBadgeDot(
                         modifier = Modifier
                             .align(Alignment.TopEnd)
-                            .offset(x = 3.dp, y = (-3).dp)
-                            // sizeIn (not size) so circle grows with glyph at large font-scale
-                            .sizeIn(minWidth = 16.dp, minHeight = 16.dp)
-                            .clip(CircleShape)
-                            .background(Color(0xFFD32F2F)),
-                        contentAlignment = Alignment.Center,
-                    ) {
-                        Text(
-                            text = "✱",
-                            style = MaterialTheme.typography.labelSmall.copy(
-                                color = Color.White,
-                                fontSize = 9.sp,
-                                lineHeight = 9.sp,
-                                fontWeight = FontWeight.Bold,
-                            ),
-                        )
-                    }
+                            .offset(x = 3.dp, y = (-3).dp),
+                        diameter = 16.dp,
+                    )
                 }
                 if (usageTimeMs >= 60_000L) {
                     val usageLabel = remember(usageTimeMs) {
@@ -9445,26 +9419,12 @@ private fun HomeGroupStripIcon(
             }
         }
         if (hasUnreadBadge) {
-            Box(
+            NotificationBadgeDot(
                 modifier = Modifier
                     .align(Alignment.TopEnd)
-                    .offset(x = 2.dp, y = (-2).dp)
-                    // sizeIn (not size) so circle grows with glyph at large font-scale
-                    .sizeIn(minWidth = 14.dp, minHeight = 14.dp)
-                    .clip(CircleShape)
-                    .background(Color(0xFFD32F2F)),
-                contentAlignment = Alignment.Center,
-            ) {
-                Text(
-                    text = "✱",
-                    style = MaterialTheme.typography.labelSmall.copy(
-                        color = Color.White,
-                        fontSize = 8.sp,
-                        lineHeight = 8.sp,
-                        fontWeight = FontWeight.Bold,
-                    ),
-                )
-            }
+                    .offset(x = 2.dp, y = (-2).dp),
+                diameter = 14.dp,
+            )
         }
     }
 }
@@ -12123,24 +12083,10 @@ private fun IconSettingsPreviewItem(
                     .clip(iconMaskShape(appIconShape)),
             )
             if (showBadge) {
-                Box(
-                    modifier = Modifier
-                        .align(Alignment.TopEnd)
-                        .size(14.dp)
-                        .clip(CircleShape)
-                        .background(Color(0xFFD32F2F)),
-                    contentAlignment = Alignment.Center,
-                ) {
-                    Text(
-                        text = "✱",
-                        style = MaterialTheme.typography.labelSmall.copy(
-                            color = Color.White,
-                            fontSize = 8.sp,
-                            lineHeight = 8.sp,
-                            fontWeight = FontWeight.Bold,
-                        ),
-                    )
-                }
+                NotificationBadgeDot(
+                    modifier = Modifier.align(Alignment.TopEnd),
+                    diameter = 14.dp,
+                )
             }
         }
         Spacer(Modifier.height(4.dp))

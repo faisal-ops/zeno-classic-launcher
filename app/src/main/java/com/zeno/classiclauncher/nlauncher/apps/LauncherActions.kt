@@ -859,8 +859,7 @@ class LauncherActions(private val context: Context) {
     /** Toggle auto-rotate when [Settings.System.canWrite] is true ([WRITE_SETTINGS]). */
     fun toggleAutoRotate(): ToggleResult {
         if (!Settings.System.canWrite(context)) return ToggleResult.PermissionRequired
-        val cur = isAutoRotateEnabled() ?: return ToggleResult.Unsupported
-        val next = !cur
+        val next = !isAutoRotateEnabled()
         val v = if (next) 1 else 0
         return try {
             Settings.System.putInt(context.contentResolver, Settings.System.ACCELEROMETER_ROTATION, v)
