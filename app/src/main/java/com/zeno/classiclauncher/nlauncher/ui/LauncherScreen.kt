@@ -7687,6 +7687,11 @@ private val SETTINGS_SEARCH_ENTRIES = listOf(
     SettingsSearchEntry("Multiple Users", listOf("users", "multiple users", "guest mode", "add user"), "android.settings.USER_SETTINGS"),
     SettingsSearchEntry("Ambient Display", listOf("ambient display", "always on display", "aod", "lift to wake"), Settings.ACTION_DISPLAY_SETTINGS),
     SettingsSearchEntry("Wallpaper", listOf("wallpaper", "background image", "lock screen wallpaper"), Intent.ACTION_SET_WALLPAPER),
+    SettingsSearchEntry(
+        "Colour and Motion",
+        listOf("colour and motion", "color and motion", "color correction", "color inversion", "remove animations", "dark theme"),
+        "android.settings.ACCESSIBILITY_COLOR_MOTION_SETTINGS",
+    ),
 )
 
 internal fun matchSettingsEntries(query: String): List<SettingsSearchEntry> {

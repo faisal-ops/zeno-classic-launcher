@@ -70,4 +70,16 @@ class SettingsSearchTest {
         val labels = matchSettingsEntries("aod").map { it.label }
         assertTrue(labels.contains("Ambient Display"))
     }
+
+    @Test
+    fun matchSettingsEntries_colourAndMotion_findsColorInversionKeyword() {
+        val labels = matchSettingsEntries("color inversion").map { it.label }
+        assertTrue(labels.contains("Colour and Motion"))
+    }
+
+    @Test
+    fun matchSettingsEntries_colourAndMotion_findsRemoveAnimationsKeyword() {
+        val labels = matchSettingsEntries("remove animations").map { it.label }
+        assertTrue(labels.contains("Colour and Motion"))
+    }
 }
