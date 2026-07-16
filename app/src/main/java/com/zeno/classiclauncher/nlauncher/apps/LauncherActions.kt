@@ -770,11 +770,15 @@ class LauncherActions(private val context: Context) {
     fun openLocationSettings(): Boolean =
         startActivityNewTask(Intent(Settings.ACTION_LOCATION_SOURCE_SETTINGS))
 
-    fun currentCarrierName(): String {
-        val tm = context.getSystemService(TelephonyManager::class.java)
-        val name = tm?.networkOperatorName?.trim().orEmpty()
-        return if (name.isNotEmpty()) name else "Mobile data"
-    }
+    /**
+     * Raw network operator name, or "" when there is no SIM / no service. Unlike
+     * [currentCarrierName] this never substitutes a generic label — the status bar shows
+     * nothing at all rather than a placeholder where BB10 would print the carrier.
+     */
+    fun networkOperatorNameOrEmpty(): String =
+        context.getSystemService(TelephonyManager::class.java)?.networkOperatorName?.trim().orEmpty()
+
+    fun currentCarrierName(): String = networkOperatorNameOrEmpty().ifEmpty { "Mobile data" }
 
     fun hasWifiNamePermission(): Boolean =
         ContextCompat.checkSelfPermission(context, Manifest.permission.ACCESS_COARSE_LOCATION) == PackageManager.PERMISSION_GRANTED ||

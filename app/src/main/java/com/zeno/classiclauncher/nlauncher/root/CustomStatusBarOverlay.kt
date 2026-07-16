@@ -57,7 +57,7 @@ private val timeFormatter24 = DateTimeFormatter.ofPattern("HH:mm", Locale.getDef
 private val amPmFormatter   = DateTimeFormatter.ofPattern("a", Locale.getDefault())
 
 // ── Public composable — inserted at the top of LauncherScreen ─────────────────
-// Styled to match MinimalModeTopBar exactly:
+// Styled to match ZenoStatusBar exactly:
 //   Left: BatteryPill  |  Centre: Clock  |  Right: Wifi icon
 
 @Composable
@@ -107,7 +107,7 @@ internal fun NormalModeTopBar(modifier: Modifier = Modifier) {
         onDispose { context.unregisterReceiver(receiver) }
     }
 
-    // 3-column Row — mirrors MinimalModeTopBar layout exactly
+    // 3-column Row — mirrors ZenoStatusBar layout exactly
     Row(
         modifier = modifier
             .fillMaxWidth()
