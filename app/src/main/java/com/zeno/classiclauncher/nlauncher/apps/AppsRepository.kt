@@ -67,6 +67,8 @@ class AppsRepository(private val context: Context, private val prefsRepository: 
          * Keep this a power-of-two multiple of 48dp so downscaling stays clean.
          */
         private const val ICON_SIZE_PX = 192
+
+        private const val CALENDAR_ICON_ARRAY_META_KEY = "com.teslacoilsw.launcher.calendarIconArray"
     }
 
     /**
@@ -191,6 +193,38 @@ class AppsRepository(private val context: Context, private val prefsRepository: 
         return buildCalendarBadgeIcon(day, month, currentIconShape).also { iconCache[pkg] = it }
     }
 
+    /**
+     * Third-party-launcher convention (originated by Nova Launcher, also honoured by Action
+     * Launcher/Lawnchair) for apps that don't use the AOSP 31-activity-alias trick: the
+     * launcher activity declares a `<meta-data>` pointing at an `<array>` resource of 31 (or
+     * 366, for day-of-year) drawable references, one per day, and the launcher itself is
+     * expected to pick the right one. BB Calendar ships this instead of per-day aliases.
+     */
+    private fun getCachedCalendarArrayIcon(pkg: String, metaData: android.os.Bundle?): Drawable? {
+        iconCache[pkg]?.let { return it }
+        val arrayResId = metaData?.getInt(CALENDAR_ICON_ARRAY_META_KEY, 0)?.takeIf { it != 0 } ?: return null
+        return runCatching {
+            val res = pm.getResourcesForApplication(pkg)
+            val typedArray = res.obtainTypedArray(arrayResId)
+            val count = typedArray.length()
+            val now = Calendar.getInstance()
+            val index = when (count) {
+                365, 366 -> now.get(Calendar.DAY_OF_YEAR) - 1
+                else -> now.get(Calendar.DAY_OF_MONTH) - 1
+            }.coerceIn(0, count - 1)
+            val dayResId = typedArray.getResourceId(index, 0)
+            typedArray.recycle()
+            if (dayResId == 0) null else {
+                val raw = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.LOLLIPOP) {
+                    res.getDrawable(dayResId, null)
+                } else {
+                    @Suppress("DEPRECATION") res.getDrawable(dayResId)
+                }
+                raw?.let { flattenAdaptiveIcon(it) }
+            }
+        }.getOrNull()?.also { iconCache[pkg] = it }
+    }
+
     @Suppress("NOTHING_TO_INLINE")
     private inline fun getCachedIcon(pkg: String, component: ComponentName? = null): Drawable? {
         iconCache[pkg]?.let { return it }
@@ -213,7 +247,9 @@ class AppsRepository(private val context: Context, private val prefsRepository: 
         val intent = Intent(Intent.ACTION_MAIN, null).apply {
             addCategory(Intent.CATEGORY_LAUNCHER)
         }
-        val resolveInfos = pm.queryIntentActivities(intent, 0)
+        // GET_META_DATA is required to see the calendarIconArray meta-data some calendar apps
+        // (e.g. BB Calendar) declare instead of the AOSP per-day-activity-alias trick.
+        val resolveInfos = pm.queryIntentActivities(intent, PackageManager.GET_META_DATA)
         // Standard Android signal an app uses to mark itself as a calendar app (same category
         // launchers use to find "the" calendar app for shortcuts) — no package names hardcoded.
         val calendarPackages = runCatching {
@@ -236,18 +272,25 @@ class AppsRepository(private val context: Context, private val prefsRepository: 
             // the Google Calendar / BB Hub+ Calendar pattern: 31 day aliases, one enabled per day.
             val activityHasOwnIcon = ri.activityInfo.icon != 0 &&
                 ri.activityInfo.icon != ri.activityInfo.applicationInfo.icon
+            // Nova/Teslacoil-style calendarIconArray meta-data: a single activity exposing a
+            // resource array of 31/366 day-specific drawables instead of per-day aliases (BB
+            // Calendar uses this).
+            val calendarArrayIcon = if (!activityHasOwnIcon && pkg in calendarPackages) {
+                getCachedCalendarArrayIcon(pkg, ri.activityInfo.metaData)
+            } else null
             // Declares itself a calendar app but its installed build has no per-day icon
             // resources of its own — synthesize a day-number badge instead.
-            val needsSynthesizedBadge = !activityHasOwnIcon && pkg in calendarPackages
+            val needsSynthesizedBadge = !activityHasOwnIcon && calendarArrayIcon == null && pkg in calendarPackages
+            val hasRealDynamicIcon = activityHasOwnIcon || calendarArrayIcon != null
 
             val existingIdx = seenPackages[pkg]
             if (existingIdx != null) {
                 // Duplicate package. Upgrade the stored entry only if this alias has a
                 // distinct icon and the stored entry did not (base activity came first).
-                if (activityHasOwnIcon) {
+                if (hasRealDynamicIcon) {
                     iconCache.remove(pkg)  // evict base-activity icon so we re-fetch the alias
                     installed[existingIdx] = installed[existingIdx].copy(
-                        icon = getCachedIcon(pkg, component),
+                        icon = if (activityHasOwnIcon) getCachedIcon(pkg, component) else calendarArrayIcon,
                         componentName = component,
                         hasDynamicIcon = true,
                     )
@@ -262,11 +305,12 @@ class AppsRepository(private val context: Context, private val prefsRepository: 
                 label = label,
                 icon = when {
                     activityHasOwnIcon -> getCachedIcon(pkg, component)
+                    calendarArrayIcon != null -> calendarArrayIcon
                     needsSynthesizedBadge -> getCachedCalendarBadgeIcon(pkg)
                     else -> getCachedIcon(pkg, null)
                 },
                 componentName = component,
-                hasDynamicIcon = activityHasOwnIcon || needsSynthesizedBadge,
+                hasDynamicIcon = hasRealDynamicIcon || needsSynthesizedBadge,
             ))
         }
 
