@@ -164,6 +164,7 @@
     <string name="settings_zeno_mode_subtitle">Стандартный режим лаунчера</string>
     <string name="settings_minimal_mode_title">Режимы</string>
     <string name="settings_minimal_mode_subtitle">Классический · Минимальный</string>
+    <string name="settings_custom_status_bar_title">Строка состояния Zeno</string>
     <string name="cd_qs_open_settings">Открыть настройки</string>
     <string name="minimal_mode_settings_title">Режимы</string>
     <string name="minimal_mode_enable">Минимальный режим</string>

@@ -164,6 +164,7 @@
     <string name="settings_zeno_mode_subtitle">デフォルトのランチャー体験</string>
     <string name="settings_minimal_mode_title">モード</string>
     <string name="settings_minimal_mode_subtitle">クラシック · ミニマル</string>
+    <string name="settings_custom_status_bar_title">Zenoステータスバー</string>
     <string name="cd_qs_open_settings">設定を開く</string>
     <string name="minimal_mode_settings_title">モード</string>
     <string name="minimal_mode_enable">ミニマルモード</string>

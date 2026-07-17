@@ -80,7 +80,7 @@ internal fun MinimalModeSettingsOverlay(
     val fr = remember { FocusRequester() }
     var focusedIndex by remember { mutableIntStateOf(0) }
 
-    val itemCount = if (prefs.minimalModeEnabled) 6 else 3
+    val itemCount = if (prefs.minimalModeEnabled) 6 else 4
     val bringers = remember { List(6) { BringIntoViewRequester() } }
     LaunchedEffect(focusedIndex) { bringers[focusedIndex].bringIntoView() }
 
@@ -280,6 +280,16 @@ internal fun MinimalModeSettingsOverlay(
                         checked = prefs.minimalModeGreyscale,
                         focused = focusedIndex == 5,
                         onCheckedChange = { vm.setMinimalModeGreyscale(it) },
+                    )
+                }
+            } else {
+                Spacer(Modifier.height(12.dp))
+
+                SettingsCard(focused = focusedIndex == 3, bringer = bringers[3]) {
+                    SettingsToggleRow(
+                        title = stringResource(R.string.settings_custom_status_bar_title),
+                        checked = prefs.customStatusBarEnabled,
+                        onCheckedChange = { vm.setCustomStatusBarEnabled(it) },
                     )
                 }
             }

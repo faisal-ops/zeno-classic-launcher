@@ -164,6 +164,7 @@
     <string name="settings_zeno_mode_subtitle">Standard-Launcher-Erlebnis</string>
     <string name="settings_minimal_mode_title">Modi</string>
     <string name="settings_minimal_mode_subtitle">Klassisch · Minimal</string>
+    <string name="settings_custom_status_bar_title">Zeno-Statusleiste</string>
     <string name="cd_qs_open_settings">Einstellungen öffnen</string>
     <string name="minimal_mode_settings_title">Modi</string>
     <string name="minimal_mode_enable">Minimal-Modus</string>

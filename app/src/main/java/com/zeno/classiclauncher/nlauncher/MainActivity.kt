@@ -11,11 +11,17 @@ import android.widget.Toast
 import androidx.appcompat.app.AppCompatActivity
 import androidx.activity.compose.setContent
 import androidx.activity.viewModels
+import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableIntStateOf
+import androidx.compose.runtime.setValue
 import android.os.Build
 import android.view.WindowInsets
 import android.view.WindowInsetsController
+import androidx.core.graphics.Insets
+import androidx.core.view.ViewCompat
 import androidx.core.view.WindowCompat
+import androidx.core.view.WindowInsetsCompat
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.lifecycleScope
@@ -26,6 +32,7 @@ import com.zeno.classiclauncher.nlauncher.minimalmode.MinimalModeScreen
 import com.zeno.classiclauncher.nlauncher.ui.BbTheme
 import com.zeno.classiclauncher.nlauncher.ui.LauncherScreen
 import com.zeno.classiclauncher.nlauncher.ui.LauncherViewModel
+import com.zeno.classiclauncher.nlauncher.ui.LocalReservedStatusBarHeightPx
 import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.launch
@@ -38,6 +45,14 @@ class MainActivity : AppCompatActivity() {
         super.attachBaseContext(LauncherLocale.apply(newBase))
     }
 
+    // Real status bar height in px, captured from the live WindowInsets the first time they're
+    // dispatched (before we ever hide the bar) — never hardcoded, so it's correct on any device/
+    // density. Confirmed on the Q25 via `adb shell dumpsys window displays`: InsetsSource
+    // type=statusBars frame=[0,0][720,31], i.e. exactly 31px at this device's 720x720/208dpi
+    // panel — this field reads that same 31px at runtime.
+    private var measuredStatusBarHeightPx = 0
+    private var reserveStatusBarSpace = false
+
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         // Allow content to extend into status-bar / navigation-bar areas.
@@ -46,13 +61,53 @@ class MainActivity : AppCompatActivity() {
         handlePinShortcutIntent(intent)
         window.addFlags(WindowManager.LayoutParams.FLAG_SHOW_WALLPAPER)
         window.setBackgroundDrawableResource(android.R.color.transparent)
+
+        // Freezes the statusBars inset at its real measured height whenever
+        // reserveStatusBarSpace is on, regardless of what hide()/show() reports — every existing
+        // `.statusBarsPadding()` consumer across the app keeps reserving exactly the same space
+        // whether or not the real bar is actually drawn, so ZenoStatusBar can occupy that exact
+        // strip without anything else in the layout shifting. Installed before setContent() so
+        // it intercepts insets before they ever reach the ComposeView.
+        var reservedHeightState by androidx.compose.runtime.mutableIntStateOf(0)
+        ViewCompat.setOnApplyWindowInsetsListener(window.decorView) { _, insets ->
+            val real = insets.getInsets(WindowInsetsCompat.Type.statusBars())
+            if (real.top > 0) measuredStatusBarHeightPx = real.top
+            reservedHeightState = if (reserveStatusBarSpace) measuredStatusBarHeightPx else 0
+
+            // Re-assert the hide whenever the system bar comes back while our own bar is active.
+            // ModalBottomSheet/AlertDialog each render in their OWN window, which has its own
+            // WindowInsetsController and does not inherit this Activity window's hidden state —
+            // so opening a folder, the home-actions sheet, or Zeno settings made the real bar
+            // reappear on top of ZenoStatusBar (two clocks, doubled icons). Confirmed on-device.
+            // Re-hiding centrally here fixes every sheet/dialog at once instead of patching each.
+            if (reserveStatusBarSpace &&
+                insets.isVisible(WindowInsetsCompat.Type.statusBars())
+            ) {
+                applyStatusBarVisibility(true)
+            }
+
+            if (reserveStatusBarSpace && measuredStatusBarHeightPx > 0) {
+                WindowInsetsCompat.Builder(insets)
+                    .setInsets(
+                        WindowInsetsCompat.Type.statusBars(),
+                        Insets.of(real.left, measuredStatusBarHeightPx, real.right, real.bottom),
+                    )
+                    .build()
+            } else {
+                insets
+            }
+        }
+        ViewCompat.requestApplyInsets(window.decorView)
+
         setContent {
             BbTheme {
-                val prefs by viewModel.prefs.collectAsStateWithLifecycle()
-                if (prefs.minimalModeEnabled) {
-                    MinimalModeScreen(vm = viewModel)
-                } else {
-                    LauncherScreen(vm = viewModel)
+                CompositionLocalProvider(LocalReservedStatusBarHeightPx provides reservedHeightState) {
+                    val prefs by viewModel.prefs.collectAsStateWithLifecycle()
+                    if (prefs.minimalModeEnabled) {
+                        MinimalModeScreen(vm = viewModel)
+                    } else {
+                        LauncherScreen(vm = viewModel)
+                    }
                 }
             }
         }
@@ -60,7 +115,9 @@ class MainActivity : AppCompatActivity() {
         lifecycleScope.launch {
             repeatOnLifecycle(Lifecycle.State.STARTED) {
                 viewModel.prefs.collect { prefs ->
-                    applyStatusBarVisibility(prefs.minimalModeEnabled)
+                    reserveStatusBarSpace = prefs.minimalModeEnabled || prefs.customStatusBarEnabled
+                    ViewCompat.requestApplyInsets(window.decorView)
+                    applyStatusBarVisibility(prefs.minimalModeEnabled || prefs.customStatusBarEnabled)
                     com.zeno.classiclauncher.nlauncher.badges.NotificationRepository
                         .minimalModeActive = prefs.minimalModeEnabled
                     com.zeno.classiclauncher.nlauncher.badges.NotificationRepository
@@ -91,7 +148,9 @@ class MainActivity : AppCompatActivity() {
     override fun onResume() {
         super.onResume()
         val currentPrefs = viewModel.prefs.value
-        applyStatusBarVisibility(currentPrefs.minimalModeEnabled)
+        reserveStatusBarSpace = currentPrefs.minimalModeEnabled || currentPrefs.customStatusBarEnabled
+        ViewCompat.requestApplyInsets(window.decorView)
+        applyStatusBarVisibility(currentPrefs.minimalModeEnabled || currentPrefs.customStatusBarEnabled)
         com.zeno.classiclauncher.nlauncher.badges.NotificationRepository
             .minimalModeActive = currentPrefs.minimalModeEnabled
         com.zeno.classiclauncher.nlauncher.badges.NotificationRepository
@@ -110,15 +169,29 @@ class MainActivity : AppCompatActivity() {
 
     override fun onWindowFocusChanged(hasFocus: Boolean) {
         super.onWindowFocusChanged(hasFocus)
-        if (hasFocus) applyStatusBarVisibility(viewModel.prefs.value.minimalModeEnabled)
+        if (hasFocus) {
+            val p = viewModel.prefs.value
+            reserveStatusBarSpace = p.minimalModeEnabled || p.customStatusBarEnabled
+            ViewCompat.requestApplyInsets(window.decorView)
+            applyStatusBarVisibility(p.minimalModeEnabled || p.customStatusBarEnabled)
+        }
     }
 
     /**
-     * Hides or shows only the status bar based on Minimal Mode state.
-     * Navigation bar is never touched.
+     * Hides or shows only the status bar — while Minimal Mode is on, or Zeno/Classic Mode's
+     * optional custom status bar is on. Navigation bar is never touched.
      * BEHAVIOR_SHOW_TRANSIENT_BARS_BY_SWIPING keeps the notification shade accessible
      * via a downward swipe even when the status bar is hidden.
      * Requires API 30+; no-op on older devices (minSdk=26, but target devices are API 34/36).
+     *
+     * Safe to extend to customStatusBarEnabled now that reserveStatusBarSpace freezes the
+     * statusBars inset at its real measured height (see the window-insets listener in
+     * onCreate()) — every other screen's `.statusBarsPadding()` keeps reserving the same space
+     * whether or not the real bar is actually drawn, so nothing else shifts or overlaps.
+     * (Confirmed the overlap on-device before this fix: MinimalModeSettingsOverlay's header and
+     * home-screen widgets both collapsed toward the hidden bar's now-zero inset and rendered on
+     * top of ZenoStatusBar. Freezing the inset — rather than auditing every affected call site —
+     * fixes all of them at once.)
      */
     private fun applyStatusBarVisibility(minimalModeActive: Boolean) {
         if (Build.VERSION.SDK_INT < Build.VERSION_CODES.R) return

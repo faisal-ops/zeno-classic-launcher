@@ -164,6 +164,7 @@
     <string name="settings_zeno_mode_subtitle">Expérience de lanceur par défaut</string>
     <string name="settings_minimal_mode_title">Modes</string>
     <string name="settings_minimal_mode_subtitle">Classique · Minimal</string>
+    <string name="settings_custom_status_bar_title">Barre d\'état Zeno</string>
     <string name="cd_qs_open_settings">Ouvrir les paramètres</string>
     <string name="minimal_mode_settings_title">Modes</string>
     <string name="minimal_mode_enable">Mode Minimal</string>

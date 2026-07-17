@@ -792,7 +792,19 @@ class LauncherActions(private val context: Context) {
         val cm = app.getSystemService(ConnectivityManager::class.java) ?: return false
         val active = cm.activeNetwork ?: return false
         val caps = cm.getNetworkCapabilities(active) ?: return false
-        return caps.hasTransport(NetworkCapabilities.TRANSPORT_WIFI)
+        return caps.hasTransport(NetworkCapabilities.TRANSPORT_WIFI) &&
+            caps.hasCapability(NetworkCapabilities.NET_CAPABILITY_VALIDATED)
+    }
+
+    /** True only when the active/default network's transport is cellular — mirrors
+     *  [isWifiConnected]'s "which transport is actually carrying traffic" semantics. */
+    fun isCellularActive(): Boolean {
+        val app = context.applicationContext
+        val cm = app.getSystemService(ConnectivityManager::class.java) ?: return false
+        val active = cm.activeNetwork ?: return false
+        val caps = cm.getNetworkCapabilities(active) ?: return false
+        return caps.hasTransport(NetworkCapabilities.TRANSPORT_CELLULAR) &&
+            caps.hasCapability(NetworkCapabilities.NET_CAPABILITY_VALIDATED)
     }
 
     fun currentWifiSsidLabel(): String {

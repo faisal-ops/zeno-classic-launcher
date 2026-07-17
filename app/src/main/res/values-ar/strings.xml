@@ -126,6 +126,7 @@
     <string name="settings_zeno_mode_subtitle">تجربة المُشغّل الافتراضية</string>
     <string name="settings_minimal_mode_title">الأوضاع</string>
     <string name="settings_minimal_mode_subtitle">كلاسيكي · بسيط</string>
+    <string name="settings_custom_status_bar_title">شريط حالة زينو</string>
     <string name="cd_qs_open_settings">فتح الإعدادات</string>
     <string name="minimal_mode_settings_title">الأوضاع</string>
     <string name="minimal_mode_enable">الوضع البسيط</string>

@@ -191,14 +191,6 @@ class LauncherViewModel(app: Application) : AndroidViewModel(app) {
     }
 
     init {
-        // Custom status bar was removed. Reset wm overscan once if the pref is still set from a
-        // previous install, so the system status bar is fully restored.
-        viewModelScope.launch {
-            if (prefsRepo.prefsFlow.first().customStatusBarEnabled) {
-                com.zeno.classiclauncher.nlauncher.root.RootManager.execute("wm overscan reset")
-                prefsRepo.setCustomStatusBarEnabled(false)
-            }
-        }
         // Weather: re-fetch on pref change; exponential backoff on failure (30s → 60s → … → 15min),
         // then refresh every 30 minutes on success.
         viewModelScope.launch {
@@ -403,6 +395,8 @@ class LauncherViewModel(app: Application) : AndroidViewModel(app) {
     val hasUnreadSms: StateFlow<Boolean> = NotificationRepository.hasUnreadSms
     val hasUnreadWhatsApp: StateFlow<Boolean> = NotificationRepository.hasUnreadWhatsApp
     val packagesWithUnread: StateFlow<Set<String>> = NotificationRepository.packagesWithUnread
+    val recentUnreadPackages: StateFlow<List<NotificationRepository.RecentNotifyIcon>> =
+        NotificationRepository.recentUnreadPackages
     private var lastPrunePackageSnapshot: Set<String>? = null
     private var lastObservedInstalledPackages: Set<String>? = null
 
@@ -1522,6 +1516,12 @@ class LauncherViewModel(app: Application) : AndroidViewModel(app) {
 
     fun setClassicMode(enabled: Boolean) {
         viewModelScope.launch { prefsRepo.setClassicMode(enabled) }
+    }
+
+    /** Shows ZenoStatusBar in place of the system status bar outside Minimal Mode (Zeno Mode
+     *  and Classic Mode both use this — they share LauncherScreen). */
+    fun setCustomStatusBarEnabled(enabled: Boolean) {
+        viewModelScope.launch { prefsRepo.setCustomStatusBarEnabled(enabled) }
     }
 
     fun setMinimalModeEnabled(enabled: Boolean) {

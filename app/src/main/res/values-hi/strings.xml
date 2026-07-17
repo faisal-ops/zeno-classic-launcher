@@ -164,6 +164,7 @@
     <string name="settings_zeno_mode_subtitle">डिफ़ॉल्ट लॉन्चर अनुभव</string>
     <string name="settings_minimal_mode_title">मोड</string>
     <string name="settings_minimal_mode_subtitle">क्लासिक · मिनिमल</string>
+    <string name="settings_custom_status_bar_title">ज़ेनो स्टेटस बार</string>
     <string name="cd_qs_open_settings">सेटिंग्स खोलें</string>
     <string name="minimal_mode_settings_title">मोड</string>
     <string name="minimal_mode_enable">मिनिमल मोड</string>

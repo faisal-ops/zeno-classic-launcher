@@ -164,6 +164,7 @@
     <string name="settings_zeno_mode_subtitle">Experiencia de launcher predeterminada</string>
     <string name="settings_minimal_mode_title">Modos</string>
     <string name="settings_minimal_mode_subtitle">Clásico · Minimal</string>
+    <string name="settings_custom_status_bar_title">Barra de estado Zeno</string>
     <string name="cd_qs_open_settings">Abrir ajustes</string>
     <string name="minimal_mode_settings_title">Modos</string>
     <string name="minimal_mode_enable">Modo Minimal</string>

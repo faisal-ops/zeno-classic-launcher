@@ -5,6 +5,7 @@ import android.content.Context
 import android.content.pm.PackageManager
 import android.os.Build
 import android.telephony.PhoneStateListener
+import android.telephony.ServiceState
 import android.telephony.SignalStrength
 import android.telephony.TelephonyCallback
 import android.telephony.TelephonyManager
@@ -26,8 +27,13 @@ internal fun hasPhoneStatePermission(context: Context): Boolean =
 
 /**
  * Live cellular signal level (0..[CELL_SIGNAL_MAX_LEVEL]), or null when it genuinely can't be
- * read — permission denied, no SIM, or airplane mode. Callers hide the bars on null rather than
- * drawing a fabricated level.
+ * read — permission denied, or no in-service radio (SIM off/removed, airplane mode, out of
+ * coverage). Callers hide the bars on null rather than drawing a fabricated level.
+ *
+ * [SignalStrength.getLevel] alone isn't enough: turning the SIM off doesn't stop the radio from
+ * reporting a last-known (or synthetic) strength, so bars kept showing with no SIM inserted.
+ * [ServiceState] is the actual "is there a working cellular service right now" signal — bars
+ * only render while [ServiceState.STATE_IN_SERVICE] holds.
  *
  * Event-driven, mirroring the BroadcastReceiver pattern the rest of Minimal Mode uses — the
  * platform pushes updates, we never poll. Re-registers when [permissionGranted] flips so the
@@ -39,21 +45,30 @@ internal fun hasPhoneStatePermission(context: Context): Boolean =
 internal fun rememberCellSignalLevel(permissionGranted: Boolean): Int? {
     val context = LocalContext.current
     var level by remember { mutableStateOf<Int?>(null) }
+    var inService by remember { mutableStateOf(false) }
 
     DisposableEffect(permissionGranted) {
         val tm = context.getSystemService(TelephonyManager::class.java)
         if (tm == null || !permissionGranted || !hasPhoneStatePermission(context)) {
             level = null
+            inService = false
             return@DisposableEffect onDispose { }
         }
-        val publish: (SignalStrength) -> Unit = { ss ->
+        val publishStrength: (SignalStrength) -> Unit = { ss ->
             level = ss.level.coerceIn(0, CELL_SIGNAL_MAX_LEVEL)
+        }
+        val publishService: (Int) -> Unit = { state ->
+            inService = state == ServiceState.STATE_IN_SERVICE
         }
 
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
-            val callback = object : TelephonyCallback(), TelephonyCallback.SignalStrengthsListener {
+            val callback = object : TelephonyCallback(),
+                TelephonyCallback.SignalStrengthsListener,
+                TelephonyCallback.ServiceStateListener {
                 override fun onSignalStrengthsChanged(signalStrength: SignalStrength) =
-                    publish(signalStrength)
+                    publishStrength(signalStrength)
+                override fun onServiceStateChanged(serviceState: ServiceState) =
+                    publishService(serviceState.state)
             }
             val registered = runCatching {
                 tm.registerTelephonyCallback(context.mainExecutor, callback)
@@ -65,11 +80,16 @@ internal fun rememberCellSignalLevel(permissionGranted: Boolean): Int? {
             @Suppress("DEPRECATION")
             val listener = object : PhoneStateListener() {
                 override fun onSignalStrengthsChanged(signalStrength: SignalStrength) =
-                    publish(signalStrength)
+                    publishStrength(signalStrength)
+                override fun onServiceStateChanged(serviceState: ServiceState) =
+                    publishService(serviceState.state)
             }
             @Suppress("DEPRECATION")
             val registered = runCatching {
-                tm.listen(listener, PhoneStateListener.LISTEN_SIGNAL_STRENGTHS)
+                tm.listen(
+                    listener,
+                    PhoneStateListener.LISTEN_SIGNAL_STRENGTHS or PhoneStateListener.LISTEN_SERVICE_STATE,
+                )
             }.isSuccess
             onDispose {
                 if (registered) {
@@ -79,5 +99,5 @@ internal fun rememberCellSignalLevel(permissionGranted: Boolean): Int? {
             }
         }
     }
-    return level
+    return if (inService) level else null
 }

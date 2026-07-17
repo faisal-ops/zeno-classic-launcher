@@ -164,6 +164,7 @@
     <string name="settings_zeno_mode_subtitle">기본 런처 경험</string>
     <string name="settings_minimal_mode_title">모드</string>
     <string name="settings_minimal_mode_subtitle">클래식 · 미니멀</string>
+    <string name="settings_custom_status_bar_title">Zeno 상태 표시줄</string>
     <string name="cd_qs_open_settings">설정 열기</string>
     <string name="minimal_mode_settings_title">모드</string>
     <string name="minimal_mode_enable">미니멀 모드</string>

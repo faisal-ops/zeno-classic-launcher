@@ -69,8 +69,6 @@ import androidx.compose.material.icons.rounded.Pause
 import androidx.compose.material.icons.rounded.Vibration
 import androidx.compose.material.icons.rounded.WaterDrop
 import androidx.compose.material.icons.rounded.WbSunny
-import androidx.compose.material.icons.rounded.Wifi
-import androidx.compose.material.icons.rounded.WifiOff
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.text.font.FontFamily
 import android.media.AudioDeviceCallback
@@ -105,9 +103,7 @@ import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.foundation.focusable
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
-import androidx.compose.ui.graphics.BlendMode
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.graphics.CompositingStrategy
 import androidx.compose.ui.graphics.Path
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.asImageBitmap
@@ -222,122 +218,9 @@ internal fun MinimalModeScreen(vm: LauncherViewModel) {
         mutableIntStateOf(0)
     }
 
-    var clockTime by remember { mutableStateOf(currentTimeString(is24h)) }
-    var clockAmPm by remember { mutableStateOf(if (is24h) "" else currentAmPmString()) }
+    val statusBar = rememberZenoStatusBarState()
     var clockDate by remember { mutableStateOf(currentDateString()) }
-    var batteryPct by remember { mutableIntStateOf(readBatteryPct(context)) }
-    var batteryCharging by remember { mutableStateOf(readBatteryCharging(context)) }
-    var wifiOn by remember { mutableStateOf(actions.isWifiEnabled() == true) }
-    var soundProfile by remember { mutableStateOf(actions.currentSoundProfile()) }
     var topBarBottomPx by remember { mutableIntStateOf(0) }
-
-    // ── BB10 status-bar indicators ────────────────────────────────────────────
-    // Each is shown only while actually active, matching BB10 (which omits inactive
-    // indicators rather than greying them out).
-    var locationOn by remember { mutableStateOf(actions.isLocationEnabled()) }
-    var nfcOn by remember { mutableStateOf(actions.isNfcEnabled()) }
-    val carrierName = remember { actions.networkOperatorNameOrEmpty() }
-    var phoneStateGranted by remember { mutableStateOf(hasPhoneStatePermission(context)) }
-    val signalLevel = rememberCellSignalLevel(permissionGranted = phoneStateGranted)
-
-    // Signal bars need READ_PHONE_STATE; without it signalLevel stays null and the bars are
-    // hidden rather than faked. Asked once on entry — Android stops prompting after two denials.
-    val phoneStatePermissionLauncher = rememberLauncherForActivityResult(
-        ActivityResultContracts.RequestPermission(),
-    ) { granted -> phoneStateGranted = granted }
-    LaunchedEffect(Unit) {
-        if (!phoneStateGranted) {
-            runCatching { phoneStatePermissionLauncher.launch(Manifest.permission.READ_PHONE_STATE) }
-        }
-    }
-
-
-    fun isHeadsetConnected(audioManager: AudioManager): Boolean {
-        val wiredTypes = intArrayOf(
-            AudioDeviceInfo.TYPE_WIRED_HEADSET,
-            AudioDeviceInfo.TYPE_WIRED_HEADPHONES,
-            AudioDeviceInfo.TYPE_USB_HEADSET,
-        )
-        return audioManager.getDevices(AudioManager.GET_DEVICES_OUTPUTS)
-            .any { it.type in wiredTypes }
-    }
-    val audioManager = remember { context.getSystemService(AudioManager::class.java) }
-    var headsetConnected by remember { mutableStateOf(isHeadsetConnected(audioManager)) }
-
-    // Battery: update immediately from the sticky broadcast, then listen for changes.
-    // BroadcastReceiver is far cheaper than polling — ACTION_BATTERY_CHANGED is a sticky
-    // broadcast so registerReceiver() returns the current state instantly on registration.
-    androidx.compose.runtime.DisposableEffect(Unit) {
-        val receiver = object : android.content.BroadcastReceiver() {
-            override fun onReceive(ctx: android.content.Context?, intent: Intent?) {
-                batteryPct = readBatteryPct(context)
-                batteryCharging = readBatteryCharging(context)
-            }
-        }
-        context.registerReceiver(receiver, IntentFilter(Intent.ACTION_BATTERY_CHANGED))
-        onDispose { runCatching { context.unregisterReceiver(receiver) } }
-    }
-
-    // Sound profile: react to ringer mode and DND filter changes instantly
-    androidx.compose.runtime.DisposableEffect(Unit) {
-        val receiver = object : android.content.BroadcastReceiver() {
-            override fun onReceive(ctx: android.content.Context?, intent: Intent?) {
-                soundProfile = actions.currentSoundProfile()
-            }
-        }
-        val filter = IntentFilter().apply {
-            addAction(android.media.AudioManager.RINGER_MODE_CHANGED_ACTION)
-            addAction(android.app.NotificationManager.ACTION_INTERRUPTION_FILTER_CHANGED)
-        }
-        androidx.core.content.ContextCompat.registerReceiver(context, receiver, filter, androidx.core.content.ContextCompat.RECEIVER_NOT_EXPORTED)
-        onDispose { runCatching { context.unregisterReceiver(receiver) } }
-    }
-
-    // Location + NFC: react to toggles instantly, same receiver pattern as battery/sound above.
-    androidx.compose.runtime.DisposableEffect(Unit) {
-        val receiver = object : android.content.BroadcastReceiver() {
-            override fun onReceive(ctx: android.content.Context?, intent: Intent?) {
-                locationOn = actions.isLocationEnabled()
-                nfcOn = actions.isNfcEnabled()
-            }
-        }
-        val filter = IntentFilter().apply {
-            addAction(android.location.LocationManager.MODE_CHANGED_ACTION)
-            addAction(android.nfc.NfcAdapter.ACTION_ADAPTER_STATE_CHANGED)
-        }
-        androidx.core.content.ContextCompat.registerReceiver(context, receiver, filter, androidx.core.content.ContextCompat.RECEIVER_NOT_EXPORTED)
-        onDispose { runCatching { context.unregisterReceiver(receiver) } }
-    }
-
-    // WiFi: react to enable/disable and connection changes instantly
-    androidx.compose.runtime.DisposableEffect(Unit) {
-        val receiver = object : android.content.BroadcastReceiver() {
-            override fun onReceive(ctx: android.content.Context?, intent: Intent?) {
-                wifiOn = actions.isWifiEnabled() == true
-            }
-        }
-        @Suppress("DEPRECATION")
-        val filter = IntentFilter().apply {
-            addAction(WifiManager.WIFI_STATE_CHANGED_ACTION)
-            addAction(WifiManager.NETWORK_STATE_CHANGED_ACTION)
-        }
-        androidx.core.content.ContextCompat.registerReceiver(context, receiver, filter, androidx.core.content.ContextCompat.RECEIVER_NOT_EXPORTED)
-        onDispose { runCatching { context.unregisterReceiver(receiver) } }
-    }
-
-    // Headset: react to wired headset/headphone plug and unplug events.
-    androidx.compose.runtime.DisposableEffect(Unit) {
-        val callback = object : AudioDeviceCallback() {
-            override fun onAudioDevicesAdded(addedDevices: Array<out AudioDeviceInfo>) {
-                headsetConnected = isHeadsetConnected(audioManager)
-            }
-            override fun onAudioDevicesRemoved(removedDevices: Array<out AudioDeviceInfo>) {
-                headsetConnected = isHeadsetConnected(audioManager)
-            }
-        }
-        audioManager.registerAudioDeviceCallback(callback, null)
-        onDispose { audioManager.unregisterAudioDeviceCallback(callback) }
-    }
 
     // System-wide greyscale via root (daltonizer monochromacy mode).
     // Only used when rootGranted — non-rooted devices fall back to Compose saturation filter below.
@@ -373,15 +256,14 @@ internal fun MinimalModeScreen(vm: LauncherViewModel) {
         }
     }
 
-    // Clock: tick every second while the screen is on. repeatOnLifecycle(RESUMED) automatically
-    // suspends the loop when the Activity moves to background or the screen turns off, preventing
-    // ~28 800 unnecessary wakeups per screen-off hour.
+    // Date: ticks every second while the screen is on (time/AM-PM tick inside
+    // rememberZenoStatusBarState). repeatOnLifecycle(RESUMED) suspends the loop when the
+    // Activity moves to background or the screen turns off, preventing ~28 800 unnecessary
+    // wakeups per screen-off hour.
     val lifecycleOwner = LocalLifecycleOwner.current
     LaunchedEffect(lifecycleOwner) {
         lifecycleOwner.repeatOnLifecycle(Lifecycle.State.RESUMED) {
             while (true) {
-                clockTime = currentTimeString(is24h)
-                clockAmPm = if (is24h) "" else currentAmPmString()
                 clockDate = currentDateString()
                 val now = System.currentTimeMillis()
                 delay(1_000L - (now % 1_000L))
@@ -555,31 +437,41 @@ internal fun MinimalModeScreen(vm: LauncherViewModel) {
         ) {
             // ── Header ────────────────────────────────────────────────────────
             MinimalModeHeader(
-                time = clockTime,
-                amPm = clockAmPm,
+                time = statusBar.time,
+                amPm = statusBar.amPm,
                 date = clockDate,
                 unreadApps = if (prefs.minimalModeShowNotifSummary) unreadApps else emptyList(),
                 conditionCode = forecast.firstOrNull()?.conditionCode,
                 currentTemp = forecast.firstOrNull()?.let {
                     formatTemp(it.tempMaxC, prefs.glanceWeatherUnit == GlanceWeatherUnit.CELSIUS)
                 },
-                batteryPct = if (batteryPct >= 0) batteryPct else null,
-                batteryCharging = batteryCharging,
-                wifiEnabled = wifiOn,
-                soundProfile = soundProfile,
-                headsetConnected = headsetConnected,
-                locationEnabled = locationOn,
-                nfcEnabled = nfcOn,
-                carrierName = carrierName,
-                signalLevel = signalLevel,
+                batteryPct = statusBar.batteryPct,
+                batteryCharging = statusBar.batteryCharging,
+                wifiConnected = statusBar.wifiConnected,
+                soundProfile = statusBar.soundProfile,
+                headsetConnected = statusBar.headsetConnected,
+                locationEnabled = statusBar.locationEnabled,
+                nfcEnabled = statusBar.nfcEnabled,
+                carrierName = statusBar.carrierName,
+                signalLevel = statusBar.signalLevel,
+                wifiEnabled = statusBar.wifiEnabled,
+                cellularActive = statusBar.cellularActive,
+                bluetoothEnabled = statusBar.bluetoothEnabled,
+                notifyIcons = statusBar.notifyIcons,
+                powerSaveActive = statusBar.powerSaveActive,
+                airplaneModeEnabled = statusBar.airplaneModeEnabled,
+                hotspotEnabled = statusBar.hotspotEnabled,
                 onClockTap = {
                     resolveClockPackage(context)?.let { vm.launchApp(it) }
                 },
                 onWeatherTap = {
                     resolveWeatherPackage(context)?.let { vm.launchApp(it) }
                 },
-                onWifiTap = { actions.openInternetPanel(); wifiOn = actions.isWifiEnabled() == true },
+                // The shared Wi-Fi broadcast receiver inside rememberZenoStatusBarState picks up
+                // the change as soon as the system fires it — no manual refresh needed here.
+                onWifiTap = { actions.openInternetPanel() },
                 onAppIconTap = { pkg -> vm.launchApp(pkg) },
+                onNotifyIconTap = { pkg -> vm.launchApp(pkg) },
                 onTopBarPositioned = { topBarBottomPx = it },
             )
 
@@ -796,7 +688,7 @@ internal fun ZenoStatusBar(
     amPm: String,
     batteryPct: Int?,
     batteryCharging: Boolean,
-    wifiEnabled: Boolean,
+    wifiConnected: Boolean,
     soundProfile: SoundProfileMode,
     headsetConnected: Boolean,
     onClockTap: () -> Unit,
@@ -805,6 +697,14 @@ internal fun ZenoStatusBar(
     nfcEnabled: Boolean = false,
     carrierName: String = "",
     signalLevel: Int? = null,
+    wifiEnabled: Boolean = wifiConnected,
+    cellularActive: Boolean = false,
+    bluetoothEnabled: Boolean = false,
+    notifyIcons: List<ZenoStatusBarNotifyIcon> = emptyList(),
+    powerSaveActive: Boolean = false,
+    onNotifyIconTap: (String) -> Unit = {},
+    airplaneModeEnabled: Boolean = false,
+    hotspotEnabled: Boolean = false,
 ) {
     // 3-column Row: weight(1f) on both sides guarantees clock is truly centered on the display
     // rather than centered between the icon clusters — BB10 centres on the display.
@@ -812,43 +712,83 @@ internal fun ZenoStatusBar(
         modifier = Modifier.fillMaxWidth(),
         verticalAlignment = Alignment.CenterVertically,
     ) {
-        // Left — battery, then only the indicators that are actually on. BB10 omits inactive
-        // indicators entirely rather than greying them out.
+        // Left — battery, then up to 2 notification icons (always shown — see below), then only
+        // system-state indicators, then the notification icons — grouping "device state" (battery
+        // + mute/Bluetooth/GPS/NFC) together right after battery, with the more time-sensitive
+        // "alerts" (notifications) as a visually separate cluster after it. BB10 omits inactive
+        // indicators entirely rather than greying them out; system icons are capped independently
+        // of notifications (fixed slot budgets below) rather than shrinking icons to fit.
+        //
+        // System-state icons fill their fixed budget in priority order — mute/DND (explains
+        // silence, most behaviourally relevant) > Bluetooth (usually a relied-on paired device) >
+        // GPS (already transient — only shown while actively in use) > NFC (momentary-use, least
+        // useful to see persistently) — dropping from the end of that list first when there isn't
+        // room for all four.
+        val systemIconCandidates = buildList {
+            if (soundProfile == SoundProfileMode.DND || soundProfile == SoundProfileMode.VIBRATE) add(SbSystemIcon.MUTE)
+            if (bluetoothEnabled) add(SbSystemIcon.BLUETOOTH)
+            if (locationEnabled) add(SbSystemIcon.GPS)
+            if (nfcEnabled) add(SbSystemIcon.NFC)
+        }
+        val shownSystemIcons = systemIconCandidates.take(SB_SYSTEM_ICON_SLOTS).toSet()
+        val shownNotifyIcons = notifyIcons.take(SB_NOTIFY_ICON_SLOTS)
+
         Row(
             modifier = Modifier.weight(1f),
             horizontalArrangement = Arrangement.spacedBy(SB_GAP_LEFT, Alignment.Start),
             verticalAlignment = Alignment.CenterVertically,
         ) {
             if (batteryPct != null) {
-                ZenoStatusBarBattery(pct = batteryPct, charging = batteryCharging)
+                ZenoStatusBarBattery(pct = batteryPct, charging = batteryCharging, powerSaveActive = powerSaveActive)
             }
-            when (soundProfile) {
-                SoundProfileMode.DND -> ZenoStatusBarGlyph(
-                    icon = Icons.Rounded.NotificationsOff,
-                    contentDescription = stringResource(R.string.quick_settings_dnd),
-                    size = SB_MUTE,
-                )
-                SoundProfileMode.VIBRATE -> ZenoStatusBarGlyph(
-                    icon = Icons.Rounded.Vibration,
-                    contentDescription = stringResource(R.string.sound_profile_vibrate),
-                    size = SB_MUTE,
-                )
-                else -> Unit
+            if (SbSystemIcon.MUTE in shownSystemIcons) {
+                when (soundProfile) {
+                    SoundProfileMode.DND -> ZenoStatusBarGlyph(
+                        icon = Icons.Rounded.NotificationsOff,
+                        contentDescription = stringResource(R.string.quick_settings_dnd),
+                        size = SB_MUTE,
+                    )
+                    SoundProfileMode.VIBRATE -> ZenoStatusBarGlyph(
+                        icon = Icons.Rounded.Vibration,
+                        contentDescription = stringResource(R.string.sound_profile_vibrate),
+                        size = SB_MUTE,
+                    )
+                    else -> Unit
+                }
             }
-            if (locationEnabled) {
+            if (SbSystemIcon.BLUETOOTH in shownSystemIcons) {
+                Icon(
+                    painter = painterResource(R.drawable.ic_sb_bluetooth),
+                    contentDescription = stringResource(R.string.quick_settings_bluetooth),
+                    tint = SB_ICON_TINT,
+                    modifier = Modifier.size(width = SB_BLUETOOTH_W, height = SB_GLYPH),
+                )
+            }
+            if (SbSystemIcon.GPS in shownSystemIcons) {
                 Icon(
                     painter = painterResource(R.drawable.ic_sb_gps),
                     contentDescription = stringResource(R.string.quick_settings_location),
                     tint = SB_ICON_TINT,
-                    modifier = Modifier.size(SB_GLYPH),
+                    modifier = Modifier.size(width = SB_GPS_W, height = SB_GLYPH),
                 )
             }
-            if (nfcEnabled) {
+            if (SbSystemIcon.NFC in shownSystemIcons) {
                 Icon(
                     painter = painterResource(R.drawable.ic_sb_nfc),
                     contentDescription = stringResource(R.string.quick_settings_nfc),
                     tint = SB_ICON_TINT,
-                    modifier = Modifier.size(SB_GLYPH),
+                    modifier = Modifier.size(width = SB_NFC_W, height = SB_GLYPH),
+                )
+            }
+            shownNotifyIcons.forEach { entry ->
+                androidx.compose.foundation.Image(
+                    painter = BitmapPainter(entry.bitmap.asImageBitmap()),
+                    contentDescription = stringResource(R.string.cd_notification_icon),
+                    modifier = Modifier
+                        .size(SB_GLYPH)
+                        .pointerInput(entry.packageName) {
+                            detectTapGestures(onTap = { onNotifyIconTap(entry.packageName) })
+                        },
                 )
             }
         }
@@ -891,10 +831,28 @@ internal fun ZenoStatusBar(
         ) {
             if (carrierName.isNotEmpty()) {
                 Text(
-                    text = carrierName,
+                    // BB10 title-cases the carrier name (e.g. "airtel" -> "Airtel") regardless
+                    // of how the SIM reports it.
+                    text = carrierName.replaceFirstChar { it.titlecase() },
                     fontSize = SB_CARRIER_SIZE,
                     fontWeight = FontWeight.W500,
                     color = NORMAL_TEXT,
+                )
+            }
+            if (airplaneModeEnabled) {
+                Icon(
+                    painter = painterResource(R.drawable.ic_sb_airplane),
+                    contentDescription = stringResource(R.string.quick_settings_aeroplane_mode),
+                    tint = SB_ICON_TINT,
+                    modifier = Modifier.size(SB_GLYPH),
+                )
+            }
+            if (hotspotEnabled) {
+                Icon(
+                    painter = painterResource(R.drawable.ic_sb_hotspot),
+                    contentDescription = stringResource(R.string.quick_settings_hotspot),
+                    tint = SB_ICON_TINT,
+                    modifier = Modifier.size(SB_GLYPH),
                 )
             }
             if (headsetConnected) {
@@ -904,14 +862,30 @@ internal fun ZenoStatusBar(
                     size = SB_GLYPH,
                 )
             }
-            Icon(
-                imageVector = if (wifiEnabled) Icons.Rounded.Wifi else Icons.Rounded.WifiOff,
-                contentDescription = if (wifiEnabled) "WiFi on" else "WiFi off",
-                tint = SB_ICON_TINT,
-                modifier = Modifier
-                    .size(SB_GLYPH)
-                    .pointerInput(Unit) { detectTapGestures(onTap = { onWifiTap() }) },
-            )
+            // 4GLTE: shown only while cellular is the active/default transport — i.e. mobile
+            // data is actually carrying traffic, not merely "mobile data enabled".
+            if (cellularActive) {
+                Text(
+                    text = "4GLTE",
+                    fontSize = SB_4GLTE_SIZE,
+                    fontWeight = FontWeight.Black,
+                    letterSpacing = (-0.3).sp,
+                    color = SB_ICON_TINT,
+                )
+            }
+            // Wi-Fi: hidden entirely when the radio is off. While on, full-tint means it's the
+            // active transport (real internet); dimmed means enabled but idle — e.g. cellular is
+            // carrying traffic instead. Never struck-through, matching the GPS/NFC/mute rule.
+            if (wifiEnabled) {
+                Icon(
+                    painter = painterResource(R.drawable.ic_sb_wifi),
+                    contentDescription = "WiFi on",
+                    tint = if (wifiConnected) SB_ICON_TINT else SB_ICON_TINT.copy(alpha = SB_WIFI_DIM_ALPHA),
+                    modifier = Modifier
+                        .size(SB_WIFI_SIZE)
+                        .pointerInput(Unit) { detectTapGestures(onTap = { onWifiTap() }) },
+                )
+            }
             Icon(
                 painter = painterResource(R.drawable.ic_sb_blackberry),
                 contentDescription = null,
@@ -972,22 +946,56 @@ private fun ZenoStatusBarSignalBars(level: Int) {
 // No horizontal padding here: MinimalModeHeader's outer Column already applies
 // `.padding(horizontal = 14.dp)`, shared with the date/weather row below — adding another
 // inset here would either double it or desync the status bar from that row.
-private val SB_GAP_LEFT     = 5.dp    // 7px
-private val SB_GAP_RIGHT    = 6.dp    // 8px
-private val SB_GLYPH        = 15.dp   // 20px — GPS / NFC / Wi-Fi / headset
-private val SB_MUTE         = 16.dp   // 21px
-private val SB_BB_MARK_W    = 18.dp   // 23px
-private val SB_BB_MARK_H    = 13.dp   // 17px
-private val SB_CLOCK_SIZE   = 20.sp   // 26px
-private val SB_AMPM_SIZE    = 10.sp   // 13px
-private val SB_CARRIER_SIZE = 11.sp   // 14px
+// Real system status bar measured at exactly 23.8dp (31px @ 208dpi/scale 1.3 — confirmed via
+// `adb shell dumpsys window displays`, InsetsSource type=statusBars frame=[0,0][720,31]). When
+// ZenoStatusBar replaces that bar (Zeno/Classic Mode's toggle) it renders inside that exact
+// height, so icons are sized to fill most of it — the reference photos show icons occupying
+// nearly the full row height, not floating in a mostly-empty strip. Minimal Mode's own row has
+// no fixed height and simply wraps this same content.
+// Left/right icon gaps tightened — the reference reads as tightly packed, not spaced out.
+private val SB_GAP_LEFT     = 4.dp
+private val SB_GAP_RIGHT    = 5.dp
+// Left-cluster crowding control (battery not counted — it never drops). System-state icons and
+// notifications each get their own fixed slot budget, independent of each other, priority order
+// mute > Bluetooth > GPS > NFC for system icons, most-recent-first for notifications — dropped
+// from the end of each list when there isn't room for everything active at once.
+private const val SB_SYSTEM_ICON_SLOTS = 2
+private const val SB_NOTIFY_ICON_SLOTS = 3
+private enum class SbSystemIcon { MUTE, BLUETOOTH, GPS, NFC }
+private val SB_GLYPH        = 19.dp   // Wi-Fi / headset / notification icons (square-ish source art)
+private val SB_MUTE         = 20.dp
+// Bluetooth/GPS/NFC assets are naturally tall/narrow (cropped bbox aspect, measured directly from
+// the pack's PNGs), NOT square like the other glyphs. Forcing them into a square SB_GLYPH box
+// left each one letterboxed by a different amount, so their actual glyph pixels ended up
+// different visual widths — reading as inconsistent gaps between icons despite uniform 4dp
+// Compose spacing between the (equal-size) boxes. Sized to each one's real aspect ratio at the
+// shared SB_GLYPH height instead: Bluetooth 48x86px, GPS 50x72px, NFC 39x69px post-crop.
+private val SB_BLUETOOTH_W  = 10.6.dp
+private val SB_GPS_W        = 13.2.dp
+private val SB_NFC_W        = 10.7.dp
+// Berry mark kept deliberately smaller than the other glyphs — at equal height its wide 1.404
+// aspect made it visually dominate the right cluster. Aspect preserved (20/14.2 ≈ 1.404).
+private val SB_BB_MARK_W    = 20.dp
+private val SB_BB_MARK_H    = 14.dp
+// Clock text was clipped against the 23.8dp reserved row at the previous, larger size (21sp
+// clock + 7dp AM/PM offset overflowed it) — pulled back down to fit with margin.
+private val SB_CLOCK_SIZE   = 18.sp
+private val SB_AMPM_SIZE    = 9.sp
+// Reference (AT&T screenshot) reads the carrier name notably larger than the other right-cluster
+// glyphs, and the Wi-Fi mark closer to the signal bars' height than the other 19dp glyphs.
+private val SB_CARRIER_SIZE = 15.sp
+private val SB_WIFI_SIZE    = 22.dp
 /** Nudges AM/PM down so its cap-height sits on the clock's baseline, as BB10 sets it. */
-private val SB_AMPM_BASELINE_OFFSET = 6.dp
+private val SB_AMPM_BASELINE_OFFSET = 3.dp
 private val SB_ICON_TINT = Color(0xFFEAF0F6)
+/** "4GLTE" network-type glyph — bold/condensed to read as a compact mark, not prose. */
+private val SB_4GLTE_SIZE = 11.sp
+/** Wi-Fi tint when the radio is on but not the active transport (enabled-but-idle). */
+private const val SB_WIFI_DIM_ALPHA = 0.45f
 
 // Signal bars — no asset exists for these (OS-rendered on real BB10), so they are drawn.
-private val SB_BARS_W = 18.dp   // 24px
-private val SB_BARS_H = 15.dp   // 20px
+private val SB_BARS_W = 22.dp
+private val SB_BARS_H = 19.dp
 private const val SB_BARS_COUNT = 5
 private const val SB_BARS_GAP_FRAC = 0.10f
 private const val SB_BARS_MIN_FRAC = 0.30f   // shortest bar, as a fraction of full height
@@ -998,10 +1006,17 @@ private const val SB_BARS_DIM_ALPHA = 0.30f
 // 74x40 inside a 96px canvas): total aspect 1.85, nub is 8.1% of total width and 60% of body
 // height. Drawn rather than blitted because the asset is a *static* glyph — using it would
 // throw away the live charge level.
-private val SB_BATTERY_W = 18.dp   // 23px
-private val SB_BATTERY_H = 10.dp   // 12.5px
-private const val SB_BATTERY_NUB_W_FRAC = 0.081f
+private val SB_BATTERY_W = 33.dp
+private val SB_BATTERY_H = 18.dp
+// Widened from the pack's literal 8.1%/1dp — read as too thin against the other status-bar
+// glyphs' stroke weights once placed next to them at this size.
+private const val SB_BATTERY_NUB_W_FRAC = 0.13f
 private const val SB_BATTERY_NUB_H_FRAC = 0.60f
+private val SB_CHARGE_COLOR = Color(0xFFFFC400)
+private val SB_BATTERY_LOW_COLOR = Color(0xFFEE3123)
+private val SB_BATTERY_SAVER_COLOR = Color(0xFFFFE9A6)
+private val SB_BATTERY_SAVER_PLUS_COLOR = Color(0xFF7A5A00)
+private const val SB_BATTERY_LOW_PCT = 15
 
 /** Lightning bolt in unit space, drawn inside the body while charging (BB10 does the same). */
 private val SB_BOLT_POINTS = listOf(
@@ -1010,48 +1025,86 @@ private val SB_BOLT_POINTS = listOf(
 )
 
 @Composable
-private fun ZenoStatusBarBattery(pct: Int, charging: Boolean) {
+private fun ZenoStatusBarBattery(pct: Int, charging: Boolean, powerSaveActive: Boolean = false) {
+    // Border/nub color: charging and battery saver both keep the neutral white outline (the
+    // yellow bolt / light-yellow fill already signal their states); a low, non-charging,
+    // non-saver battery reads as red.
+    val color = when {
+        charging -> SB_ICON_TINT
+        powerSaveActive -> SB_ICON_TINT
+        pct <= SB_BATTERY_LOW_PCT -> SB_BATTERY_LOW_COLOR
+        else -> SB_ICON_TINT
+    }
     Canvas(
-        // Offscreen so the charging bolt's BlendMode.Clear knocks through only this battery's
-        // own pixels instead of punching a hole in the wallpaper behind the status bar.
-        modifier = Modifier
-            .size(width = SB_BATTERY_W, height = SB_BATTERY_H)
-            .graphicsLayer { compositingStrategy = CompositingStrategy.Offscreen },
+        modifier = Modifier.size(width = SB_BATTERY_W, height = SB_BATTERY_H),
     ) {
         val nubW = size.width * SB_BATTERY_NUB_W_FRAC
         val bodyW = size.width - nubW
         val bodyH = size.height
-        val stroke = 1.dp.toPx()
+        // Widened from 1dp — the outline nearly vanished against the icon cluster around it.
+        val stroke = 1.6.dp.toPx()
         val radius = CornerRadius(1.5.dp.toPx())
 
         drawRoundRect(
-            color = SB_ICON_TINT,
+            color = color,
             size = Size(bodyW, bodyH),
             cornerRadius = radius,
             style = Stroke(width = stroke),
         )
 
         val inset = stroke * 1.6f
-        val fillW = (bodyW - inset * 2) * (pct.coerceIn(0, 100) / 100f)
-        if (fillW > 0f) {
+        if (powerSaveActive && !charging) {
+            // Battery saver: same body/nub silhouette and white border as the normal gauge (per
+            // the user's reference) — only the interior differs. Full light-yellow fill (not
+            // proportional to charge — saver is a mode, not a level) with a "+" mark matching
+            // Android's own battery-saver iconography since Lollipop. The "+" is a SOLID
+            // contrasting fill, not a clear-blend cutout — a cutout on this light fill would
+            // nearly vanish on light wallpapers, the same legibility bug the charging bolt above
+            // already hit once with its old clear-cutout approach.
             drawRoundRect(
-                color = SB_ICON_TINT,
+                color = SB_BATTERY_SAVER_COLOR,
                 topLeft = Offset(inset, inset),
-                size = Size(fillW, bodyH - inset * 2),
+                size = Size(bodyW - inset * 2, bodyH - inset * 2),
                 cornerRadius = CornerRadius(0.5.dp.toPx()),
             )
+            val plusLen = (bodyH - inset * 2) * 0.55f
+            val plusThickness = plusLen * 0.28f
+            val pcx = inset + (bodyW - inset * 2) / 2f
+            val pcy = inset + (bodyH - inset * 2) / 2f
+            val plusRadius = CornerRadius(plusThickness / 4f)
+            drawRoundRect(
+                color = SB_BATTERY_SAVER_PLUS_COLOR,
+                topLeft = Offset(pcx - plusThickness / 2f, pcy - plusLen / 2f),
+                size = Size(plusThickness, plusLen),
+                cornerRadius = plusRadius,
+            )
+            drawRoundRect(
+                color = SB_BATTERY_SAVER_PLUS_COLOR,
+                topLeft = Offset(pcx - plusLen / 2f, pcy - plusThickness / 2f),
+                size = Size(plusLen, plusThickness),
+                cornerRadius = plusRadius,
+            )
+        } else {
+            val fillW = (bodyW - inset * 2) * (pct.coerceIn(0, 100) / 100f)
+            if (fillW > 0f) {
+                drawRoundRect(
+                    color = color,
+                    topLeft = Offset(inset, inset),
+                    size = Size(fillW, bodyH - inset * 2),
+                    cornerRadius = CornerRadius(0.5.dp.toPx()),
+                )
+            }
         }
 
         val nubH = bodyH * SB_BATTERY_NUB_H_FRAC
         drawRoundRect(
-            color = SB_ICON_TINT,
+            color = color,
             topLeft = Offset(bodyW, (bodyH - nubH) / 2f),
             size = Size(nubW, nubH),
             cornerRadius = CornerRadius(0.5.dp.toPx()),
         )
 
         if (charging) {
-            // Knock the bolt out of the fill so it reads at any charge level.
             val boltH = bodyH * 0.82f
             val boltW = boltH * 0.55f
             val left = (bodyW - boltW) / 2f
@@ -1064,8 +1117,9 @@ private fun ZenoStatusBarBattery(pct: Int, charging: Boolean) {
                 }
                 close()
             }
-            drawPath(path, color = NORMAL_TEXT, blendMode = BlendMode.Clear)
-            drawPath(path, color = SB_ICON_TINT, style = Stroke(width = 0.6.dp.toPx()))
+            // Solid yellow fill (BB10's charging color) reads clearly at any charge level or
+            // background — the previous clear-cutout + thin white outline nearly disappeared.
+            drawPath(path, color = SB_CHARGE_COLOR)
         }
     }
 }
@@ -1080,7 +1134,7 @@ private fun MinimalModeHeader(
     currentTemp: String?,
     batteryPct: Int?,
     batteryCharging: Boolean,
-    wifiEnabled: Boolean,
+    wifiConnected: Boolean,
     soundProfile: SoundProfileMode,
     headsetConnected: Boolean,
     onClockTap: () -> Unit,
@@ -1092,6 +1146,14 @@ private fun MinimalModeHeader(
     nfcEnabled: Boolean = false,
     carrierName: String = "",
     signalLevel: Int? = null,
+    wifiEnabled: Boolean = wifiConnected,
+    cellularActive: Boolean = false,
+    bluetoothEnabled: Boolean = false,
+    notifyIcons: List<ZenoStatusBarNotifyIcon> = emptyList(),
+    powerSaveActive: Boolean = false,
+    onNotifyIconTap: (String) -> Unit = {},
+    airplaneModeEnabled: Boolean = false,
+    hotspotEnabled: Boolean = false,
 ) {
     Column(modifier = Modifier.fillMaxWidth()) {
 
@@ -1103,7 +1165,7 @@ private fun MinimalModeHeader(
             amPm = amPm,
             batteryPct = batteryPct,
             batteryCharging = batteryCharging,
-            wifiEnabled = wifiEnabled,
+            wifiConnected = wifiConnected,
             soundProfile = soundProfile,
             headsetConnected = headsetConnected,
             onClockTap = onClockTap,
@@ -1112,6 +1174,14 @@ private fun MinimalModeHeader(
             nfcEnabled = nfcEnabled,
             carrierName = carrierName,
             signalLevel = signalLevel,
+            wifiEnabled = wifiEnabled,
+            cellularActive = cellularActive,
+            bluetoothEnabled = bluetoothEnabled,
+            notifyIcons = notifyIcons,
+            powerSaveActive = powerSaveActive,
+            onNotifyIconTap = onNotifyIconTap,
+            airplaneModeEnabled = airplaneModeEnabled,
+            hotspotEnabled = hotspotEnabled,
         )
         } // end measurement Box
 
@@ -1521,14 +1591,14 @@ private fun MinimalModeNowPlayingBar(
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
-private fun readBatteryPct(context: android.content.Context): Int {
+internal fun readBatteryPct(context: android.content.Context): Int {
     val intent = context.registerReceiver(null, IntentFilter(Intent.ACTION_BATTERY_CHANGED))
     val level = intent?.getIntExtra(BatteryManager.EXTRA_LEVEL, -1) ?: return -1
     val scale = intent?.getIntExtra(BatteryManager.EXTRA_SCALE, -1) ?: return -1
     return if (scale > 0) level * 100 / scale else -1
 }
 
-private fun readBatteryCharging(context: android.content.Context): Boolean {
+internal fun readBatteryCharging(context: android.content.Context): Boolean {
     val intent = context.registerReceiver(null, IntentFilter(Intent.ACTION_BATTERY_CHANGED))
     val status = intent?.getIntExtra(BatteryManager.EXTRA_STATUS, -1) ?: return false
     return status == BatteryManager.BATTERY_STATUS_CHARGING ||
@@ -1716,10 +1786,10 @@ private val timeFormatter24 = DateTimeFormatter.ofPattern("HH:mm", Locale.getDef
 private val dateFormatter = DateTimeFormatter.ofPattern("EEE, d MMM", Locale.getDefault())
 private val amPmFormatter = DateTimeFormatter.ofPattern("a", Locale.getDefault())
 
-private fun currentTimeString(is24h: Boolean = false): String =
+internal fun currentTimeString(is24h: Boolean = false): String =
     LocalDateTime.now().format(if (is24h) timeFormatter24 else timeFormatter12)
 private fun currentDateString(): String = LocalDateTime.now().format(dateFormatter)
-private fun currentAmPmString(): String = LocalDateTime.now().format(amPmFormatter)
+internal fun currentAmPmString(): String = LocalDateTime.now().format(amPmFormatter)
 
 
 internal fun resolveMinimalModeApps(

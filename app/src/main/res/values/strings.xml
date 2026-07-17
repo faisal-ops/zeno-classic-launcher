@@ -128,6 +128,7 @@
     <string name="settings_zeno_mode_subtitle">Default launcher experience</string>
     <string name="settings_minimal_mode_title">Modes</string>
     <string name="settings_minimal_mode_subtitle">Classic · Minimal</string>
+    <string name="settings_custom_status_bar_title">Zeno Status Bar</string>
     <string name="cd_qs_open_settings">Open settings</string>
     <string name="minimal_mode_settings_title">Modes</string>
     <string name="minimal_mode_enable">Minimal Mode</string>
@@ -322,6 +323,7 @@
     <string name="language_system_default_subtitle">Use your Android language</string>
     <string name="folder_default_name">Folder</string>
     <string name="cd_headset_connected">Headset connected</string>
+    <string name="cd_notification_icon">New notification</string>
     <string name="weather_clear">Clear</string>
     <string name="weather_mainly_clear">Mainly clear</string>
     <string name="weather_partly_cloudy">Partly cloudy</string>

@@ -240,6 +240,7 @@ import androidx.compose.ui.layout.layout
 import androidx.compose.ui.layout.onGloballyPositioned
 import androidx.compose.ui.zIndex
 import androidx.compose.ui.draw.alpha
+import androidx.compose.ui.draw.clipToBounds
 import androidx.compose.ui.draw.drawWithContent
 import androidx.compose.ui.draw.rotate
 import androidx.compose.ui.draw.shadow
@@ -410,6 +411,14 @@ private fun Modifier.expandHorizontally(amount: Dp): Modifier = this.layout { me
         placeable.placeRelative(-extraPx, 0)
     }
 }
+
+/**
+ * Draw order for ZenoStatusBar among LauncherScreen's Box children. Must stay above every
+ * sibling overlay's own zIndex — currently ZenoSetupOverlay 700f, HomeWidgetPickerSheet 560f,
+ * QuickSettingsOverlay 520f, AppSpotlightOverlay 500f — so the status bar is never covered,
+ * matching the real system status bar it replaces.
+ */
+private const val SB_Z_INDEX = 1000f
 
 private const val HOME_WIDGET_HOST_ID = 7777
 private const val HOME_GRID_COLS = 4
@@ -2698,6 +2707,7 @@ fun LauncherScreen(
                 textContentColor = Color(0xFFB7C2CF),
                 shape = RoundedCornerShape(16.dp),
                 title = {
+                    HideSystemStatusBarInDialog()
                     Text(
                         stringResource(R.string.dialog_remove_widget_title),
                         style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.SemiBold),
@@ -2747,7 +2757,10 @@ fun LauncherScreen(
                 containerColor = themePalette.settingsBg,
                 titleContentColor = themePalette.settingsMenuTitle,
                 textContentColor = themePalette.settingsMenuBody,
-                title = { Text(stringResource(R.string.dialog_new_group_title), color = themePalette.settingsMenuTitle) },
+                title = {
+                    HideSystemStatusBarInDialog()
+                    Text(stringResource(R.string.dialog_new_group_title), color = themePalette.settingsMenuTitle)
+                },
                 text = {
                     OutlinedTextField(
                         value = newHomeGroupName,
@@ -2795,6 +2808,64 @@ fun LauncherScreen(
                 .padding(horizontal = 12.dp, vertical = 8.dp)
                 .navigationBarsPadding(),
         )
+
+        // Zeno/Classic Mode's opt-in BB10-style status bar — Minimal Mode always shows its own
+        // via MinimalModeScreen, so this only applies here. Shares ZenoStatusBar and its state
+        // source with Minimal Mode rather than duplicating either.
+        //
+        // Always on top, like the real system status bar (which draws above app content, QS
+        // panel included). Declaration order alone is NOT enough: sibling overlays in this Box
+        // set explicit zIndex values that override paint order — ZenoSetupOverlay 700f,
+        // HomeWidgetPickerSheet 560f, QuickSettingsOverlay 520f, AppSpotlightOverlay 500f — so
+        // a default 0f status bar was drawn under them. SB_Z_INDEX sits above all of them.
+        //
+        // Renders at a FIXED height (the real status bar's measured height, frozen by the
+        // window-insets override installed in MainActivity — see LocalReservedStatusBarHeightPx)
+        // rather than using .statusBarsPadding(), which would push it below that reserved strip
+        // instead of into it. Every other screen's own .statusBarsPadding() keeps reserving the
+        // same space regardless, so this occupies exactly the area the real bar used to draw in
+        // without anything else in the layout shifting.
+        if (prefs.customStatusBarEnabled) {
+            val statusBarActions = remember(context) { LauncherActions(context) }
+            val zenoStatusBarState = com.zeno.classiclauncher.nlauncher.minimalmode.rememberZenoStatusBarState()
+            val reservedHeightPx = com.zeno.classiclauncher.nlauncher.ui.LocalReservedStatusBarHeightPx.current
+            val reservedHeightDp = with(LocalDensity.current) { reservedHeightPx.toDp() }
+            Box(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .height(reservedHeightDp)
+                    .align(Alignment.TopStart)
+                    .zIndex(SB_Z_INDEX)
+                    // Defensive: icon sizing is tuned to fit this exact height, but clip anyway
+                    // so any future sizing tweak can never spill into the content below again
+                    // (that's exactly the overlap bug this whole reserved-height approach fixed).
+                    .clipToBounds(),
+            ) {
+                com.zeno.classiclauncher.nlauncher.minimalmode.ZenoStatusBar(
+                    time = zenoStatusBarState.time,
+                    amPm = zenoStatusBarState.amPm,
+                    batteryPct = zenoStatusBarState.batteryPct,
+                    batteryCharging = zenoStatusBarState.batteryCharging,
+                    wifiConnected = zenoStatusBarState.wifiConnected,
+                    soundProfile = zenoStatusBarState.soundProfile,
+                    headsetConnected = zenoStatusBarState.headsetConnected,
+                    locationEnabled = zenoStatusBarState.locationEnabled,
+                    nfcEnabled = zenoStatusBarState.nfcEnabled,
+                    carrierName = zenoStatusBarState.carrierName,
+                    signalLevel = zenoStatusBarState.signalLevel,
+                    wifiEnabled = zenoStatusBarState.wifiEnabled,
+                    cellularActive = zenoStatusBarState.cellularActive,
+                    bluetoothEnabled = zenoStatusBarState.bluetoothEnabled,
+                    notifyIcons = zenoStatusBarState.notifyIcons,
+                    powerSaveActive = zenoStatusBarState.powerSaveActive,
+                    airplaneModeEnabled = zenoStatusBarState.airplaneModeEnabled,
+                    hotspotEnabled = zenoStatusBarState.hotspotEnabled,
+                    onClockTap = {},
+                    onWifiTap = { statusBarActions.openInternetPanel() },
+                    onNotifyIconTap = { pkg -> vm.launchApp(pkg) },
+                )
+            }
+        }
     }
     } // end CompositionLocalProvider(LocalTrackpadActive)
 }
@@ -5629,7 +5700,6 @@ internal fun QuickSettingsOverlay(
 
 }
 
-
 @Composable
 private fun QuickSettingsTileEditorOverlay(
     tiles: List<QuickTile>,
@@ -5977,6 +6047,7 @@ private fun AddAppToContainerSheet(
         containerColor = themePalette.settingsBg,
         contentColor = themePalette.settingsMenuTitle,
     ) {
+        HideSystemStatusBarInDialog()
         Column(
             modifier = Modifier
                 .fillMaxWidth()
@@ -6660,6 +6731,7 @@ private fun HomeActionsSheet(
         containerColor = themePalette.settingsBg,
         contentColor = labelColor,
     ) {
+        HideSystemStatusBarInDialog()
         Column(
             modifier = Modifier
                 .fillMaxWidth()
@@ -8510,6 +8582,7 @@ private fun HomeGroupFolderOverlay(
             )
         },
     ) {
+        HideSystemStatusBarInDialog()
         Column(
             modifier = Modifier
                 .fillMaxWidth()
@@ -8745,7 +8818,10 @@ private fun HomeGroupFolderOverlay(
             containerColor = themePalette.settingsBg,
             titleContentColor = themePalette.settingsMenuTitle,
             textContentColor = themePalette.settingsMenuBody,
-            title = { Text(renameDialogTitle, color = themePalette.settingsMenuTitle) },
+            title = {
+                HideSystemStatusBarInDialog()
+                Text(renameDialogTitle, color = themePalette.settingsMenuTitle)
+            },
             text = {
                 OutlinedTextField(
                     value = renameText,
@@ -8815,6 +8891,7 @@ private fun HomeGroupContextMenu(
         containerColor = themePalette.settingsBg,
         contentColor = labelColor,
     ) {
+        HideSystemStatusBarInDialog()
         Column(
             modifier = Modifier
                 .fillMaxWidth()
@@ -8867,7 +8944,10 @@ private fun HomeGroupContextMenu(
             containerColor = themePalette.settingsBg,
             titleContentColor = themePalette.settingsMenuTitle,
             textContentColor = themePalette.settingsMenuBody,
-            title = { Text(stringResource(R.string.dialog_rename_group_title), color = themePalette.settingsMenuTitle) },
+            title = {
+                HideSystemStatusBarInDialog()
+                Text(stringResource(R.string.dialog_rename_group_title), color = themePalette.settingsMenuTitle)
+            },
             text = {
                 OutlinedTextField(
                     value = renameText,
@@ -8936,6 +9016,7 @@ private fun FolderDrawerContextMenu(
         containerColor = themePalette.settingsBg,
         contentColor = labelColor,
     ) {
+        HideSystemStatusBarInDialog()
         Column(
             modifier = Modifier
                 .fillMaxWidth()
@@ -8997,7 +9078,10 @@ private fun FolderDrawerContextMenu(
             containerColor = themePalette.settingsBg,
             titleContentColor = themePalette.settingsMenuTitle,
             textContentColor = themePalette.settingsMenuBody,
-            title = { Text(stringResource(R.string.dialog_rename_folder_title), color = themePalette.settingsMenuTitle) },
+            title = {
+                HideSystemStatusBarInDialog()
+                Text(stringResource(R.string.dialog_rename_folder_title), color = themePalette.settingsMenuTitle)
+            },
             text = {
                 OutlinedTextField(
                     value = renameText,
@@ -9083,6 +9167,7 @@ private fun AppContextMenu(
         containerColor = themePalette.settingsBg,
         contentColor = labelColor,
     ) {
+        HideSystemStatusBarInDialog()
         Column(
             modifier = Modifier
                 .fillMaxWidth()
@@ -9201,7 +9286,10 @@ private fun AppContextMenu(
             containerColor = themePalette.settingsBg,
             titleContentColor = themePalette.settingsMenuTitle,
             textContentColor = themePalette.settingsMenuBody,
-            title = { Text(stringResource(R.string.action_new_group), color = themePalette.settingsMenuTitle) },
+            title = {
+                HideSystemStatusBarInDialog()
+                Text(stringResource(R.string.action_new_group), color = themePalette.settingsMenuTitle)
+            },
             text = {
                 OutlinedTextField(
                     value = newDrawerFolderName,
@@ -11180,6 +11268,7 @@ private fun WeatherLocationDialog(
         onDismissRequest = onDismiss,
         containerColor = Color(0xFF1A2035),
         title = {
+            HideSystemStatusBarInDialog()
             Text(
                 stringResource(R.string.weather_location_dialog_title),
                 color = themePalette.settingsMenuTitle,
@@ -13146,7 +13235,10 @@ private fun SettingsScreenOverlay(
     if (showGpsExportWarn) {
         androidx.compose.material3.AlertDialog(
             onDismissRequest = { showGpsExportWarn = false },
-            title = { Text(stringResource(R.string.backup_gps_warning_title)) },
+            title = {
+                HideSystemStatusBarInDialog()
+                Text(stringResource(R.string.backup_gps_warning_title))
+            },
             text = { Text(stringResource(R.string.backup_gps_warning_body)) },
             confirmButton = {
                 androidx.compose.material3.TextButton(onClick = {

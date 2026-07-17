@@ -81,8 +81,14 @@ object NotificationRepository {
 
     /** Spec: map of active, filtered notifications by system key. */
     private val activeByKey = HashMap<String, StatusBarNotification>()
+
+    /** The bits of a [StatusBarNotification] the icon-dot badges and status-bar notification
+     *  glyph need — [smallIcon] is the app-supplied monochrome glyph built for exactly this
+     *  context (matches what the real Android status bar shows), not the full launcher icon. */
+    private data class IconBadgeEntry(val packageName: String, val postTime: Long, val smallIcon: android.graphics.drawable.Icon?)
+
     /** All active notifications used for icon-dot badges (broader scope than dock badge buckets). */
-    private val iconBadgePackagesByKey = HashMap<String, String>()
+    private val iconBadgeEntryByKey = HashMap<String, IconBadgeEntry>()
 
     private val mailKeys = HashSet<String>()
     private val smsKeys = HashSet<String>()
@@ -101,6 +107,16 @@ object NotificationRepository {
     private val _packagesWithUnread = MutableStateFlow<Set<String>>(emptySet())
     val packagesWithUnread: StateFlow<Set<String>> = _packagesWithUnread.asStateFlow()
 
+    /** Up to 3 most-recently-posted unread packages (most recent first), for the status bar's
+     *  reserved notification-icon slots — empty when there are none. Capped to 3 distinct
+     *  packages; a package with several active notifications only occupies one slot.
+     *  [smallIcon] is that package's most recent notification's own status-bar glyph — the
+     *  same one Android's own status bar shows — used in preference to the app's launcher icon. */
+    data class RecentNotifyIcon(val packageName: String, val smallIcon: android.graphics.drawable.Icon?)
+
+    private val _recentUnreadPackages = MutableStateFlow<List<RecentNotifyIcon>>(emptyList())
+    val recentUnreadPackages: StateFlow<List<RecentNotifyIcon>> = _recentUnreadPackages.asStateFlow()
+
     fun snapshotActiveMap(): Map<String, StatusBarNotification> =
         synchronized(lock) { HashMap(activeByKey) }
 
@@ -109,14 +125,15 @@ object NotificationRepository {
         scope.launch {
             synchronized(lock) {
                 activeByKey.clear()
-                iconBadgePackagesByKey.clear()
+                iconBadgeEntryByKey.clear()
                 mailKeys.clear()
                 smsKeys.clear()
                 waKeys.clear()
                 val list = active ?: emptyArray()
                 for (sbn in list) {
                     if (shouldTrackIconBadge(sbn)) {
-                        iconBadgePackagesByKey[sbn.key] = sbn.packageName
+                        iconBadgeEntryByKey[sbn.key] =
+                            IconBadgeEntry(sbn.packageName, sbn.postTime, sbn.notification.smallIcon)
                     }
                     if (!shouldTrack(sbn)) continue
                     val key = sbn.key
@@ -139,9 +156,10 @@ object NotificationRepository {
                         removeKeyFromAllBuckets(key)
                     }
                     if (shouldTrackIconBadge(sbn)) {
-                        iconBadgePackagesByKey[key] = sbn.packageName
+                        iconBadgeEntryByKey[key] =
+                            IconBadgeEntry(sbn.packageName, sbn.postTime, sbn.notification.smallIcon)
                     } else {
-                        iconBadgePackagesByKey.remove(key)
+                        iconBadgeEntryByKey.remove(key)
                     }
                     publishAll()
                     return@synchronized
@@ -149,9 +167,10 @@ object NotificationRepository {
                 val key = sbn.key
                 activeByKey[key] = sbn
                 if (shouldTrackIconBadge(sbn)) {
-                    iconBadgePackagesByKey[key] = sbn.packageName
+                    iconBadgeEntryByKey[key] =
+                        IconBadgeEntry(sbn.packageName, sbn.postTime, sbn.notification.smallIcon)
                 } else {
-                    iconBadgePackagesByKey.remove(key)
+                    iconBadgeEntryByKey.remove(key)
                 }
                 removeKeyFromAllBuckets(key)
                 addKeyToBucket(key, sbn.packageName)
@@ -167,12 +186,12 @@ object NotificationRepository {
     fun clearForPackage(pkg: String) {
         scope.launch {
             synchronized(lock) {
-                val keysToRemove = iconBadgePackagesByKey.entries
-                    .filter { it.value == pkg }
+                val keysToRemove = iconBadgeEntryByKey.entries
+                    .filter { it.value.packageName == pkg }
                     .map { it.key }
                 if (keysToRemove.isEmpty()) return@synchronized
                 for (key in keysToRemove) {
-                    iconBadgePackagesByKey.remove(key)
+                    iconBadgeEntryByKey.remove(key)
                     activeByKey.remove(key)
                     removeKeyFromAllBuckets(key)
                 }
@@ -187,7 +206,7 @@ object NotificationRepository {
             synchronized(lock) {
                 val key = sbn.key
                 activeByKey.remove(key)
-                iconBadgePackagesByKey.remove(key)
+                iconBadgeEntryByKey.remove(key)
                 removeKeyFromAllBuckets(key)
                 publishAll()
             }
@@ -254,8 +273,15 @@ object NotificationRepository {
         if (_hasUnreadMail.value != mail) _hasUnreadMail.value = mail
         if (_hasUnreadSms.value != sms) _hasUnreadSms.value = sms
         if (_hasUnreadWhatsApp.value != wa) _hasUnreadWhatsApp.value = wa
-        val pkgs = iconBadgePackagesByKey.values.toSet()
+        val pkgs = iconBadgeEntryByKey.values.map { it.packageName }.toSet()
         if (_packagesWithUnread.value != pkgs) _packagesWithUnread.value = pkgs
+        val recentIcons = iconBadgeEntryByKey.values
+            .groupBy { it.packageName }
+            .map { (_, entries) -> entries.maxBy { it.postTime } }
+            .sortedByDescending { it.postTime }
+            .take(3)
+            .map { RecentNotifyIcon(it.packageName, it.smallIcon) }
+        if (_recentUnreadPackages.value != recentIcons) _recentUnreadPackages.value = recentIcons
     }
 
     private fun shouldTrackIconBadge(sbn: StatusBarNotification): Boolean {
