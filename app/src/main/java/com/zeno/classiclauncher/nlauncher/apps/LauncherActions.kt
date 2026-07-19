@@ -72,6 +72,28 @@ fun resolveDefaultMailPackage(context: Context): String {
 }
 
 /**
+ * Classic Mode's mail resolution, deliberately different from [resolveDefaultMailPackage]:
+ * always prefers BlackBerry Hub, then Zeno Waypoint, over whatever the user's actual Android
+ * default mail app is set to — matching the BB10-authentic idea that Hub is the mail experience,
+ * not a plain mailto: handoff. Falls through to [resolveDefaultMailPackage]'s own OS-default/
+ * Gmail/Outlook/Yahoo resolution as the final "any other installed mail app" catch-all. Used by
+ * both the Mail and Envelope dock slots in Classic Mode — Zeno Mode is untouched and keeps using
+ * [resolveDefaultMailPackage] via [LauncherActions.launchMail] as before.
+ */
+fun resolveClassicModeMailPackage(context: Context): String {
+    val pm = context.packageManager
+    val priorityOrder = listOf(
+        "com.blackberry.hub",
+        "com.zeno.waypoint",
+        "com.google.android.gm",
+    )
+    for (pkg in priorityOrder) {
+        if (pm.getLaunchIntentForPackage(pkg) != null) return pkg
+    }
+    return resolveDefaultMailPackage(context)
+}
+
+/**
  * Resolves the package that would actually handle a Messages dock tap when no app is explicitly
  * pinned to that slot — same resolution [LauncherActions.launchMessages] uses. Used to scope the
  * dock Messages notification badge to the app that will actually open. Returns "" if nothing
@@ -206,6 +228,14 @@ class LauncherActions(private val context: Context) {
             if (launchApp(pkg)) return true
         }
         return false
+    }
+
+    /** Classic Mode's mail launch — see [resolveClassicModeMailPackage] for why this differs
+     *  from [launchMail]. */
+    fun launchClassicModeMail(): Boolean {
+        val pkg = resolveClassicModeMailPackage(context)
+        if (pkg.isNotEmpty() && launchApp(pkg)) return true
+        return launchMail()
     }
 
     fun launchMessages(): Boolean {

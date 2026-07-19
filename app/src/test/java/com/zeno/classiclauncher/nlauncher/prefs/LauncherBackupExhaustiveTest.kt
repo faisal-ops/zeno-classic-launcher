@@ -31,6 +31,24 @@ class LauncherBackupExhaustiveTest {
     }
 
     @Test
+    fun roundTrip_dockMailPackageClassic_preserved() {
+        val prefs = LauncherPrefs(dockMailPackageClassic = "com.blackberry.hub")
+        assertEquals("com.blackberry.hub", roundTrip(prefs).dockMailPackageClassic)
+    }
+
+    @Test
+    fun roundTrip_dockSecondPackageClassic_preserved() {
+        val prefs = LauncherPrefs(dockSecondPackageClassic = "com.zeno.waypoint")
+        assertEquals("com.zeno.waypoint", roundTrip(prefs).dockSecondPackageClassic)
+    }
+
+    @Test
+    fun roundTrip_dockMailPackageClassicDefault_isEmptyString() {
+        val prefs = LauncherPrefs(dockMailPackageClassic = "")
+        assertEquals("", roundTrip(prefs).dockMailPackageClassic)
+    }
+
+    @Test
     fun roundTrip_iconPackPackage_preserved() {
         val prefs = LauncherPrefs(iconPackPackage = "com.example.icons")
         assertEquals("com.example.icons", roundTrip(prefs).iconPackPackage)

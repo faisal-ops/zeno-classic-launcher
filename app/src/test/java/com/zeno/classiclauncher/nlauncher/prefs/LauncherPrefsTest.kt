@@ -10,6 +10,39 @@ import org.junit.Test
 
 class LauncherPrefsTest {
     @Test
+    fun resolveDockSecondPackage_zenoModeWhatsappTarget_autoFillsWhatsapp() {
+        val pkg = resolveDockSecondPackage(
+            stored = null,
+            shortcut = SecondShortcutTarget.WHATSAPP,
+            classicMode = false,
+        )
+
+        assertEquals("com.whatsapp", pkg)
+    }
+
+    @Test
+    fun resolveDockSecondPackage_classicModeWhatsappTarget_neverAutoFillsWhatsapp() {
+        val pkg = resolveDockSecondPackage(
+            stored = null,
+            shortcut = SecondShortcutTarget.WHATSAPP,
+            classicMode = true,
+        )
+
+        assertEquals("", pkg)
+    }
+
+    @Test
+    fun resolveDockSecondPackage_explicitPackageWins_regardlessOfMode() {
+        val pkg = resolveDockSecondPackage(
+            stored = "com.example.custom",
+            shortcut = SecondShortcutTarget.WHATSAPP,
+            classicMode = true,
+        )
+
+        assertEquals("com.example.custom", pkg)
+    }
+
+    @Test
     fun moveHomeStripSlot_shiftsItemsForward() {
         val slots = mutableListOf<String?>("mail", "tools", "browser", null, "music")
 

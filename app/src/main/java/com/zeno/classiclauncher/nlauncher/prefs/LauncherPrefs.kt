@@ -101,12 +101,16 @@ data class LauncherPrefs(
     val dockSecondPackage: String = "",
     /** Empty = default [android.provider.MediaStore.ACTION_IMAGE_CAPTURE] resolution; else launch this package. */
     val dockCameraPackage: String = "",
+    /** Classic Mode's Mail dock slot override — separate storage from [dockMailPackage] so a
+     *  Zeno Mode pick never leaks into Classic Mode's fixed BB-Hub-priority-chain default. */
+    val dockMailPackageClassic: String = "",
+    /** Classic Mode's Envelope dock slot override — separate storage from [dockSecondPackage]
+     *  for the same reason as [dockMailPackageClassic]. */
+    val dockSecondPackageClassic: String = "",
     /** Custom labels for dock shortcuts shown in settings/accessibility. */
     val dockMailTitle: String = "Mail",
     val dockSecondTitle: String = "Messages",
     val dockThirdTitle: String = "Camera",
-    /** When false, the second dock shortcut is hidden from the dock. */
-    val dockSecondEnabled: Boolean = true,
     val drawerSortMode: String = "ALPHABETICAL",
     val orderedPackages: List<String> = emptyList(),
     /** Folder slot id → member package names (order preserved). */
@@ -246,6 +250,16 @@ val DEFAULT_THEME_JSON: String =
 
 private val DEFAULT_PREFS = LauncherPrefs()
 
+/**
+ * Resolves the Second/Envelope dock slot's target package. Classic Mode's Envelope slot
+ * always falls back to the mail chain when unassigned — it never auto-fills WhatsApp, even
+ * if [SecondShortcutTarget.WHATSAPP] (a Zeno-Mode-only pref) is set.
+ */
+internal fun resolveDockSecondPackage(stored: String?, shortcut: SecondShortcutTarget, classicMode: Boolean): String =
+    (stored?.trim() ?: "").ifEmpty {
+        if (!classicMode && shortcut == SecondShortcutTarget.WHATSAPP) "com.whatsapp" else ""
+    }
+
 class LauncherPrefsRepository(private val context: Context) {
     private object Keys {
         val GRID = stringPreferencesKey("gridPreset")
@@ -254,10 +268,11 @@ class LauncherPrefsRepository(private val context: Context) {
         val DOCK_MAIL = stringPreferencesKey("dockMailPackage")
         val DOCK_SECOND = stringPreferencesKey("dockSecondPackage")
         val DOCK_CAMERA = stringPreferencesKey("dockCameraPackage")
+        val DOCK_MAIL_CLASSIC = stringPreferencesKey("dockMailPackageClassic")
+        val DOCK_SECOND_CLASSIC = stringPreferencesKey("dockSecondPackageClassic")
         val DOCK_MAIL_TITLE = stringPreferencesKey("dockMailTitle")
         val DOCK_SECOND_TITLE = stringPreferencesKey("dockSecondTitle")
         val DOCK_THIRD_TITLE = stringPreferencesKey("dockThirdTitle")
-        val DOCK_SECOND_ENABLED = booleanPreferencesKey("dockSecondEnabled")
         val ORDER = stringPreferencesKey("orderedPackagesCsv")
         val DRAWER_SORT_MODE = stringPreferencesKey("drawerSortMode")
         val FOLDERS = stringPreferencesKey("folderContentsJson")
@@ -344,14 +359,14 @@ class LauncherPrefsRepository(private val context: Context) {
         val shortcut =
             p[Keys.SHORTCUT]?.let { v -> SecondShortcutTarget.entries.firstOrNull { it.name == v } } ?: DEFAULT_PREFS.secondShortcutTarget
         val dockMail = p[Keys.DOCK_MAIL]?.trim() ?: ""
-        val dockSecond = (p[Keys.DOCK_SECOND]?.trim() ?: "").ifEmpty {
-            if (shortcut == SecondShortcutTarget.WHATSAPP) "com.whatsapp" else ""
-        }
+        val isClassicModeForDock = p[Keys.CLASSIC_MODE] ?: p[Keys.CLASSIC_MODE_LEGACY] ?: DEFAULT_PREFS.classicMode
+        val dockSecond = resolveDockSecondPackage(p[Keys.DOCK_SECOND], shortcut, isClassicModeForDock)
         val dockCamera = p[Keys.DOCK_CAMERA]?.trim() ?: ""
+        val dockMailClassic = p[Keys.DOCK_MAIL_CLASSIC]?.trim() ?: ""
+        val dockSecondClassic = p[Keys.DOCK_SECOND_CLASSIC]?.trim() ?: ""
         val dockMailTitle = p[Keys.DOCK_MAIL_TITLE]?.trim().orEmpty().ifEmpty { DEFAULT_PREFS.dockMailTitle }
         val dockSecondTitle = p[Keys.DOCK_SECOND_TITLE]?.trim().orEmpty().ifEmpty { DEFAULT_PREFS.dockSecondTitle }
         val dockThirdTitle = p[Keys.DOCK_THIRD_TITLE]?.trim().orEmpty().ifEmpty { DEFAULT_PREFS.dockThirdTitle }
-        val dockSecondEnabled = p[Keys.DOCK_SECOND_ENABLED] ?: DEFAULT_PREFS.dockSecondEnabled
         val drawerSortMode = p[Keys.DRAWER_SORT_MODE] ?: "ALPHABETICAL"
         val order = parseCsvList(p[Keys.ORDER])
         val folders = parseFolderContentsJson(p[Keys.FOLDERS])
@@ -461,10 +476,11 @@ class LauncherPrefsRepository(private val context: Context) {
             dockMailPackage = dockMail,
             dockSecondPackage = dockSecond,
             dockCameraPackage = dockCamera,
+            dockMailPackageClassic = dockMailClassic,
+            dockSecondPackageClassic = dockSecondClassic,
             dockMailTitle = dockMailTitle,
             dockSecondTitle = dockSecondTitle,
             dockThirdTitle = dockThirdTitle,
-            dockSecondEnabled = dockSecondEnabled,
             drawerSortMode = drawerSortMode,
             orderedPackages = order,
             folderContents = folders,
@@ -561,6 +577,14 @@ class LauncherPrefsRepository(private val context: Context) {
         context.dataStore.edit { it[Keys.DOCK_CAMERA] = packageName.trim() }
     }
 
+    suspend fun setDockMailPackageClassic(packageName: String) {
+        context.dataStore.edit { it[Keys.DOCK_MAIL_CLASSIC] = packageName.trim() }
+    }
+
+    suspend fun setDockSecondPackageClassic(packageName: String) {
+        context.dataStore.edit { it[Keys.DOCK_SECOND_CLASSIC] = packageName.trim() }
+    }
+
     suspend fun setDockMailTitle(title: String) {
         context.dataStore.edit { it[Keys.DOCK_MAIL_TITLE] = title.trim().ifEmpty { DEFAULT_PREFS.dockMailTitle } }
     }
@@ -572,11 +596,6 @@ class LauncherPrefsRepository(private val context: Context) {
     suspend fun setDockThirdTitle(title: String) {
         context.dataStore.edit { it[Keys.DOCK_THIRD_TITLE] = title.trim().ifEmpty { DEFAULT_PREFS.dockThirdTitle } }
     }
-
-    suspend fun setDockSecondEnabled(enabled: Boolean) {
-        context.dataStore.edit { it[Keys.DOCK_SECOND_ENABLED] = enabled }
-    }
-
 
     suspend fun setHomeStripOrder(order: List<String>) {
         context.dataStore.edit { it[Keys.HOME_STRIP_ORDER] = order.joinToString(",") }
@@ -937,6 +956,8 @@ class LauncherPrefsRepository(private val context: Context) {
             s[Keys.DOCK_MAIL] = prefs.dockMailPackage.trim()
             s[Keys.DOCK_SECOND] = prefs.dockSecondPackage.trim()
             s[Keys.DOCK_CAMERA] = prefs.dockCameraPackage.trim()
+            s[Keys.DOCK_MAIL_CLASSIC] = prefs.dockMailPackageClassic.trim()
+            s[Keys.DOCK_SECOND_CLASSIC] = prefs.dockSecondPackageClassic.trim()
             s[Keys.DOCK_MAIL_TITLE] = prefs.dockMailTitle.trim().ifEmpty { DEFAULT_PREFS.dockMailTitle }
             s[Keys.DOCK_SECOND_TITLE] = prefs.dockSecondTitle.trim().ifEmpty { DEFAULT_PREFS.dockSecondTitle }
             s[Keys.DOCK_THIRD_TITLE] = prefs.dockThirdTitle.trim().ifEmpty { DEFAULT_PREFS.dockThirdTitle }
@@ -989,7 +1010,6 @@ class LauncherPrefsRepository(private val context: Context) {
             s.remove(Keys.CLASSIC_MODE_LEGACY)
             s[Keys.APP_ICON_SHAPE] = prefs.appIconShape.name
             s[Keys.ICON_PACK_PACKAGE] = prefs.iconPackPackage.trim()
-            s[Keys.DOCK_SECOND_ENABLED] = prefs.dockSecondEnabled
             s[Keys.HOME_STRIP_SLOTS] = prefs.homeStripSlots.joinToString(",") { it ?: "" }
             s[Keys.SHOW_APP_CARD_BG] = prefs.showAppCardBackground
             s[Keys.SWIPE_DOWN_SPOTLIGHT] = prefs.swipeDownAppSpotlight

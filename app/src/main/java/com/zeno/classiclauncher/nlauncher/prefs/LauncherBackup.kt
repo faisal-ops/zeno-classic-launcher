@@ -32,10 +32,11 @@ object LauncherBackup {
         p.put("dockMailPackage", prefs.dockMailPackage)
         p.put("dockSecondPackage", prefs.dockSecondPackage)
         p.put("dockCameraPackage", prefs.dockCameraPackage)
+        p.put("dockMailPackageClassic", prefs.dockMailPackageClassic)
+        p.put("dockSecondPackageClassic", prefs.dockSecondPackageClassic)
         p.put("dockMailTitle", prefs.dockMailTitle)
         p.put("dockSecondTitle", prefs.dockSecondTitle)
         p.put("dockThirdTitle", prefs.dockThirdTitle)
-        p.put("dockSecondEnabled", prefs.dockSecondEnabled)
         p.put("orderedPackages", JSONArray(prefs.orderedPackages))
         val folders = JSONObject()
         prefs.folderContents.forEach { (id, pkgs) ->
@@ -150,10 +151,11 @@ object LauncherBackup {
         val dockMail = p.optString("dockMailPackage", "").trim()
         val dockSecond = p.optString("dockSecondPackage", "").trim()
         val dockCam = p.optString("dockCameraPackage", "").trim()
+        val dockMailClassic = p.optString("dockMailPackageClassic", "").trim()
+        val dockSecondClassic = p.optString("dockSecondPackageClassic", "").trim()
         val dockMailTitle = p.optString("dockMailTitle", "Mail").trim().ifEmpty { "Mail" }
         val dockSecondTitle = p.optString("dockSecondTitle", "Messages").trim().ifEmpty { "Messages" }
         val dockThirdTitle = p.optString("dockThirdTitle", "Camera").trim().ifEmpty { "Camera" }
-        val dockSecondEnabled = p.optBoolean("dockSecondEnabled", true)
         val orderArr = p.getJSONArray("orderedPackages")
         val ordered = buildList {
             for (i in 0 until orderArr.length()) add(orderArr.getString(i).trim())
@@ -345,10 +347,11 @@ object LauncherBackup {
             dockMailPackage = dockMail,
             dockSecondPackage = dockSecond,
             dockCameraPackage = dockCam,
+            dockMailPackageClassic = dockMailClassic,
+            dockSecondPackageClassic = dockSecondClassic,
             dockMailTitle = dockMailTitle,
             dockSecondTitle = dockSecondTitle,
             dockThirdTitle = dockThirdTitle,
-            dockSecondEnabled = dockSecondEnabled,
             orderedPackages = ordered,
             folderContents = folderContents,
             folderNames = folderNames.filterKeys { folderContents.containsKey(it) },
