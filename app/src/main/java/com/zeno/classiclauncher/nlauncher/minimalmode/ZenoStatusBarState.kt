@@ -42,10 +42,14 @@ import androidx.core.graphics.drawable.toBitmap
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.repeatOnLifecycle
+import androidx.compose.runtime.rememberCoroutineScope
 import com.zeno.classiclauncher.nlauncher.apps.LauncherActions
 import com.zeno.classiclauncher.nlauncher.apps.SoundProfileMode
 import com.zeno.classiclauncher.nlauncher.badges.NotificationRepository
+import com.zeno.classiclauncher.nlauncher.root.RootManager
+import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.launch
 
 /** Everything [ZenoStatusBar] needs to render, gathered from platform receivers rather than
  *  polling — see [rememberZenoStatusBarState]. */
@@ -93,6 +97,7 @@ internal fun rememberZenoStatusBarState(): ZenoStatusBarState {
     val context = LocalContext.current
     val actions = remember(context) { LauncherActions(context) }
     val is24h = remember { DateFormat.is24HourFormat(context) }
+    val scope = rememberCoroutineScope()
 
     var time by remember { mutableStateOf(currentTimeString(is24h)) }
     var amPm by remember { mutableStateOf(if (is24h) "" else currentAmPmString()) }
@@ -208,8 +213,43 @@ internal fun rememberZenoStatusBarState(): ZenoStatusBarState {
     // A ContentObserver on the Settings.Global keys isHotspotEnabled() itself reads
     // ("tethering_on"/"hotspot_on") is kept as a fallback for ROMs that flip those without
     // broadcasting, mirroring the NFC nfc_on precedent.
+    //
+    // isHotspotEnabled()'s own NetworkInterface/Settings checks were confirmed (via the QS
+    // tile's toggle-success verification, which already needed a root `ip link show` fallback
+    // for this exact same detection) to not reliably see the ap/softap interface at plain
+    // app-level on this device/ROM — a rooted `cmd wifi start-softap` hotspot showed as enabled
+    // to the QS tile's own root check but not to this composable's app-level one. Root-verifying
+    // here too when the quick check says "off" catches that case; a no-op (silent failure) on
+    // non-rooted devices since RootManager itself fails gracefully without root access.
     DisposableEffect(Unit) {
-        val refresh = { hotspotEnabled = actions.isHotspotEnabled() }
+        // WIFI_AP_STATE_CHANGED fires more than once per toggle (ENABLING then ENABLED), each
+        // dispatching a fresh refresh(). A naive cancel-and-restart debounce (cancel any pending
+        // check, start a new one with its own delay) can starve entirely if events keep arriving
+        // faster than the settle delay — confirmed on-device: the "on" case stopped showing the
+        // icon at all after adding that debounce, exactly the symptom of the check never
+        // surviving long enough to complete. This coalescing version never cancels a check that's
+        // already running — it lets it finish, then loops once more only if another refresh()
+        // arrived while it was checking — so it always eventually completes and settles on the
+        // true final state, however many events arrive in the meantime.
+        var hotspotCheckJob: Job? = null
+        var hotspotRecheckPending = false
+        val refresh: () -> Unit = {
+            val quick = actions.isHotspotEnabled()
+            if (quick) {
+                hotspotEnabled = true
+            } else if (hotspotCheckJob?.isActive == true) {
+                hotspotRecheckPending = true
+            } else {
+                hotspotCheckJob = scope.launch {
+                    do {
+                        hotspotRecheckPending = false
+                        delay(250L)
+                        val link = RootManager.readLine("ip link show | grep -E 'ap[0-9]|softap' | grep 'state UP'")
+                        hotspotEnabled = !link.isNullOrBlank()
+                    } while (hotspotRecheckPending)
+                }
+            }
+        }
         val receiver = object : BroadcastReceiver() {
             override fun onReceive(ctx: Context?, intent: Intent?) = refresh()
         }
@@ -227,7 +267,12 @@ internal fun rememberZenoStatusBarState(): ZenoStatusBarState {
             resolver.registerContentObserver(Settings.Global.getUriFor("tethering_on"), false, observer)
             resolver.registerContentObserver(Settings.Global.getUriFor("hotspot_on"), false, observer)
         }
+        // Root-verify the initial seed too — it's just the same quick, potentially-unreliable
+        // check the state was first initialized with, and hotspot may already be on if this
+        // composable mounts fresh while it's running (e.g. app restart).
+        refresh()
         onDispose {
+            hotspotCheckJob?.cancel()
             runCatching { context.unregisterReceiver(receiver) }
             runCatching { resolver.unregisterContentObserver(observer) }
         }

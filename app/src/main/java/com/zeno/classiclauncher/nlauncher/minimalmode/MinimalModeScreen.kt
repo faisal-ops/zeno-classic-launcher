@@ -52,6 +52,7 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.navigationBarsPadding
+import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.statusBarsPadding
@@ -705,6 +706,8 @@ internal fun ZenoStatusBar(
     onNotifyIconTap: (String) -> Unit = {},
     airplaneModeEnabled: Boolean = false,
     hotspotEnabled: Boolean = false,
+    /** Classic Mode only — a moderately larger clock, since it's the only home-screen clock there. */
+    bigClock: Boolean = false,
 ) {
     // 3-column Row: weight(1f) on both sides guarantees clock is truly centered on the display
     // rather than centered between the icon clusters — BB10 centres on the display.
@@ -806,8 +809,8 @@ internal fun ZenoStatusBar(
         ) {
             Text(
                 text = time,
-                fontSize = SB_CLOCK_SIZE,
-                fontWeight = FontWeight.W300,
+                fontSize = if (bigClock) SB_CLOCK_SIZE_BIG else SB_CLOCK_SIZE,
+                fontWeight = FontWeight.W400, // TEST: was W300 (reference spec) — trying W400
                 color = NORMAL_TEXT,
                 letterSpacing = (-0.5).sp,
             )
@@ -816,9 +819,9 @@ internal fun ZenoStatusBar(
                     // BB10 always renders AM/PM uppercase; the shared formatter is
                     // locale-cased (lowercase under e.g. en_IN), so uppercase only here.
                     text = amPm.uppercase(),
-                    fontSize = SB_AMPM_SIZE,
+                    fontSize = if (bigClock) SB_AMPM_SIZE_BIG else SB_AMPM_SIZE,
                     fontWeight = FontWeight.W400,
-                    color = MUTED_TEXT,
+                    color = NORMAL_TEXT,
                     modifier = Modifier.padding(top = SB_AMPM_BASELINE_OFFSET, start = 1.dp),
                 )
             }
@@ -844,7 +847,9 @@ internal fun ZenoStatusBar(
                     painter = painterResource(R.drawable.ic_sb_airplane),
                     contentDescription = stringResource(R.string.quick_settings_aeroplane_mode),
                     tint = SB_ICON_TINT,
-                    modifier = Modifier.size(SB_GLYPH),
+                    modifier = Modifier
+                        .size(SB_AIRPLANE_SIZE)
+                        .offset(y = SB_RIGHT_ICON_VISUAL_OFFSET),
                 )
             }
             if (hotspotEnabled) {
@@ -852,15 +857,19 @@ internal fun ZenoStatusBar(
                     painter = painterResource(R.drawable.ic_sb_hotspot),
                     contentDescription = stringResource(R.string.quick_settings_hotspot),
                     tint = SB_ICON_TINT,
-                    modifier = Modifier.size(SB_GLYPH),
+                    modifier = Modifier
+                        .size(SB_GLYPH)
+                        .offset(y = SB_RIGHT_ICON_VISUAL_OFFSET),
                 )
             }
             if (headsetConnected) {
-                ZenoStatusBarGlyph(
-                    icon = Icons.Rounded.Headset,
-                    contentDescription = stringResource(R.string.cd_headset_connected),
-                    size = SB_GLYPH,
-                )
+                Box(modifier = Modifier.offset(y = SB_RIGHT_ICON_VISUAL_OFFSET)) {
+                    ZenoStatusBarGlyph(
+                        icon = Icons.Rounded.Headset,
+                        contentDescription = stringResource(R.string.cd_headset_connected),
+                        size = SB_GLYPH,
+                    )
+                }
             }
             // 4GLTE: shown only while cellular is the active/default transport — i.e. mobile
             // data is actually carrying traffic, not merely "mobile data enabled".
@@ -868,7 +877,7 @@ internal fun ZenoStatusBar(
                 Text(
                     text = "4GLTE",
                     fontSize = SB_4GLTE_SIZE,
-                    fontWeight = FontWeight.Black,
+                    fontWeight = FontWeight.W400,
                     letterSpacing = (-0.3).sp,
                     color = SB_ICON_TINT,
                 )
@@ -883,6 +892,7 @@ internal fun ZenoStatusBar(
                     tint = if (wifiConnected) SB_ICON_TINT else SB_ICON_TINT.copy(alpha = SB_WIFI_DIM_ALPHA),
                     modifier = Modifier
                         .size(SB_WIFI_SIZE)
+                        .offset(y = SB_RIGHT_ICON_VISUAL_OFFSET)
                         .pointerInput(Unit) { detectTapGestures(onTap = { onWifiTap() }) },
                 )
             }
@@ -890,10 +900,14 @@ internal fun ZenoStatusBar(
                 painter = painterResource(R.drawable.ic_sb_blackberry),
                 contentDescription = null,
                 tint = SB_ICON_TINT,
-                modifier = Modifier.size(width = SB_BB_MARK_W, height = SB_BB_MARK_H),
+                modifier = Modifier
+                    .size(width = SB_BB_MARK_W, height = SB_BB_MARK_H)
+                    .offset(y = SB_RIGHT_ICON_VISUAL_OFFSET),
             )
             if (signalLevel != null) {
-                ZenoStatusBarSignalBars(level = signalLevel)
+                Box(modifier = Modifier.offset(y = SB_RIGHT_ICON_VISUAL_OFFSET)) {
+                    ZenoStatusBarSignalBars(level = signalLevel)
+                }
             }
         }
     }
@@ -955,6 +969,12 @@ private fun ZenoStatusBarSignalBars(level: Int) {
 // Left/right icon gaps tightened — the reference reads as tightly packed, not spaced out.
 private val SB_GAP_LEFT     = 4.dp
 private val SB_GAP_RIGHT    = 5.dp
+// The right cluster mixes Icon/Canvas glyphs (edge-to-edge within their own box) with Text
+// (carrier name, 4GLTE — has built-in font-metric padding above the visible glyph). Centering
+// both kinds via the same CenterVertically centers their boxes, not their visible pixels, so
+// the icons/bars read as floating higher than the text. Nudges the non-text elements down to
+// match the text's visual glyph center instead.
+private val SB_RIGHT_ICON_VISUAL_OFFSET = 2.dp
 // Left-cluster crowding control (battery not counted — it never drops). System-state icons and
 // notifications each get their own fixed slot budget, independent of each other, priority order
 // mute > Bluetooth > GPS > NFC for system icons, most-recent-first for notifications — dropped
@@ -964,6 +984,10 @@ private const val SB_NOTIFY_ICON_SLOTS = 3
 private enum class SbSystemIcon { MUTE, BLUETOOTH, GPS, NFC }
 private val SB_GLYPH        = 19.dp   // Wi-Fi / headset / notification icons (square-ish source art)
 private val SB_MUTE         = 20.dp
+// ic_sb_airplane.png is tightly cropped (near-zero internal padding), unlike Material's Headset
+// vector or Wi-Fi's own crop, both of which carry more built-in margin — at the same nominal
+// SB_GLYPH box it read as visibly larger than its neighbors. Sized down to compensate.
+private val SB_AIRPLANE_SIZE = 15.dp
 // Bluetooth/GPS/NFC assets are naturally tall/narrow (cropped bbox aspect, measured directly from
 // the pack's PNGs), NOT square like the other glyphs. Forcing them into a square SB_GLYPH box
 // left each one letterboxed by a different amount, so their actual glyph pixels ended up
@@ -980,13 +1004,19 @@ private val SB_BB_MARK_H    = 14.dp
 // Clock text was clipped against the 23.8dp reserved row at the previous, larger size (21sp
 // clock + 7dp AM/PM offset overflowed it) — pulled back down to fit with margin.
 private val SB_CLOCK_SIZE   = 18.sp
-private val SB_AMPM_SIZE    = 9.sp
+private val SB_CLOCK_SIZE_BIG = 22.sp
+private val SB_AMPM_SIZE_BIG = 13.sp
+// Reference (real BB10 device photo, "11:35AM") reads AM/PM at nearly the same weight/brightness
+// as the time digits, not as a small dimmed subscript — bumped up from 9sp/MUTED_TEXT to match.
+private val SB_AMPM_SIZE    = 12.sp
 // Reference (AT&T screenshot) reads the carrier name notably larger than the other right-cluster
 // glyphs, and the Wi-Fi mark closer to the signal bars' height than the other 19dp glyphs.
 private val SB_CARRIER_SIZE = 15.sp
 private val SB_WIFI_SIZE    = 22.dp
+// Tuned for the previous 9sp size — at the current 12sp, that much downward push sinks PM
+// below the clock's own baseline instead of sitting on it. Reduced to compensate.
 /** Nudges AM/PM down so its cap-height sits on the clock's baseline, as BB10 sets it. */
-private val SB_AMPM_BASELINE_OFFSET = 3.dp
+private val SB_AMPM_BASELINE_OFFSET = 1.dp
 private val SB_ICON_TINT = Color(0xFFEAF0F6)
 /** "4GLTE" network-type glyph — bold/condensed to read as a compact mark, not prose. */
 private val SB_4GLTE_SIZE = 11.sp
