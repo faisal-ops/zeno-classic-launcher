@@ -117,21 +117,11 @@ private fun computeRuntimePerms(context: android.content.Context): RuntimePerms 
  */
 @Composable
 fun PermissionsSettingsOverlay(
-    prefs: LauncherPrefs,
     themePalette: LauncherThemePalette,
     onDismiss: () -> Unit,
-    onNotificationBadgesEnabled: (Boolean) -> Unit,
-    onDoubleTapSleepEnabled: (Boolean) -> Unit,
-    onAutoUnlockEnabled: (Boolean) -> Unit,
-    onAutoUnlockPinDigits: (Int) -> Unit,
-    onGlanceEnabled: (Boolean) -> Unit,
-    onGlanceShowCalendar: (Boolean) -> Unit,
-    onSearchOverlayEnabled: (Boolean) -> Unit,
-    onSearchOverlayCustomKeys: (Int, Int) -> Unit,
 ) {
     val context = LocalContext.current
     var runtime by remember { mutableStateOf(computeRuntimePerms(context)) }
-    var showCustomCapture by remember { mutableStateOf(false) }
     val lifecycleOwner = LocalLifecycleOwner.current
     DisposableEffect(lifecycleOwner) {
         val observer = LifecycleEventObserver { _, event ->
@@ -177,17 +167,42 @@ fun PermissionsSettingsOverlay(
                     nk?.keyCode == AndroidKeyEvent.KEYCODE_ENTER
                 when {
                     up    -> { focusedItem = (focusedItem - 1).coerceAtLeast(0); true }
-                    down  -> { focusedItem = (focusedItem + 1).coerceAtMost(5); true }
+                    down  -> { focusedItem = (focusedItem + 1).coerceAtMost(4); true }
                     enter -> {
+                        // Every row here is now a permission status/grant link (no feature
+                        // toggles) — Enter opens the same exact permission screen tapping the
+                        // row would, only when that permission isn't already granted.
                         when (focusedItem) {
-                            0 -> onNotificationBadgesEnabled(!prefs.notificationBadgesEnabled)
-                            1 -> {
-                                onDoubleTapSleepEnabled(!prefs.doubleTapToSleepEnabled)
-                                runtime = computeRuntimePerms(context)
+                            0 -> if (!runtime.notificationAccess) {
+                                runCatching {
+                                    context.startActivity(
+                                        Intent(Settings.ACTION_NOTIFICATION_LISTENER_SETTINGS)
+                                            .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK),
+                                    )
+                                }
                             }
-                            2 -> onGlanceEnabled(!prefs.glanceEnabled)
-                            3 -> onGlanceShowCalendar(!prefs.glanceShowCalendar)
-                            5 -> onSearchOverlayEnabled(!prefs.searchOverlayEnabled)
+                            1 -> if (!runtime.lockAccessibility) {
+                                runCatching {
+                                    context.startActivity(
+                                        Intent(Settings.ACTION_ACCESSIBILITY_SETTINGS)
+                                            .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK),
+                                    )
+                                }
+                            }
+                            2 -> if (!runtime.location) {
+                                locationLauncher.launch(Manifest.permission.ACCESS_COARSE_LOCATION)
+                            }
+                            3 -> if (!runtime.calendar) {
+                                calendarLauncher.launch(Manifest.permission.READ_CALENDAR)
+                            }
+                            4 -> if (!runtime.searchOverlayAccessibility) {
+                                runCatching {
+                                    context.startActivity(
+                                        Intent(Settings.ACTION_ACCESSIBILITY_SETTINGS)
+                                            .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK),
+                                    )
+                                }
+                            }
                         }
                         true
                     }
@@ -238,17 +253,20 @@ fun PermissionsSettingsOverlay(
                     color = subtitleMuted,
                 )
 
+                // Notification badges: the actual on/off toggle lives in Icon Layout's app icon
+                // badge setting now — this row is just the underlying Notification Access grant.
                 PermissionSwitchCard(
                     title = stringResource(R.string.perm_badges_title),
                     subtitleOff = stringResource(R.string.perm_badges_off),
                     subtitleOnOk = stringResource(R.string.perm_badges_on_ok),
                     subtitleOnMissing = stringResource(R.string.perm_badges_on_missing),
-                    featureOn = prefs.notificationBadgesEnabled,
+                    featureOn = true,
                     permissionOk = runtime.notificationAccess,
                     focused = focusedItem == 0,
                     themePalette = themePalette,
-                    onFeatureChange = onNotificationBadgesEnabled,
-                    showGrant = prefs.notificationBadgesEnabled && !runtime.notificationAccess,
+                    onFeatureChange = {},
+                    showSwitch = false,
+                    showGrant = !runtime.notificationAccess,
                     onGrant = {
                         runCatching {
                             context.startActivity(
@@ -258,43 +276,23 @@ fun PermissionsSettingsOverlay(
                         }
                     },
                     grantLabel = stringResource(R.string.perm_badges_grant_label),
-                    openSystemSettingsWhenTurningOff =
-                        if (prefs.notificationBadgesEnabled && runtime.notificationAccess) {
-                            {
-                                runCatching {
-                                    context.startActivity(
-                                        Intent(Settings.ACTION_NOTIFICATION_LISTENER_SETTINGS)
-                                            .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK),
-                                    )
-                                }
-                                Toast.makeText(
-                                    context,
-                                    context.getString(R.string.perm_badges_turn_off_toast),
-                                    Toast.LENGTH_LONG,
-                                ).show()
-                            }
-                        } else {
-                            null
-                        },
+                    openSystemSettingsWhenTurningOff = null,
                 )
 
+                // Double Tap to Lock's own on/off toggle lives in Home Gestures now — this row is
+                // just the optional Accessibility helper grant (built-in path works without it).
                 PermissionSwitchCard(
                     title = stringResource(R.string.perm_lock_title),
                     subtitleOff = stringResource(R.string.perm_lock_off),
-                    subtitleOnOk = when {
-                        runtime.lockAccessibility -> stringResource(R.string.perm_lock_on_helper)
-                        else -> stringResource(R.string.perm_lock_on_builtin)
-                    },
+                    subtitleOnOk = stringResource(R.string.perm_lock_on_helper),
                     subtitleOnMissing = stringResource(R.string.perm_lock_on_builtin),
-                    featureOn = prefs.doubleTapToSleepEnabled,
-                    permissionOk = true,
+                    featureOn = true,
+                    permissionOk = runtime.lockAccessibility,
                     focused = focusedItem == 1,
                     themePalette = themePalette,
-                    onFeatureChange = { on ->
-                        onDoubleTapSleepEnabled(on)
-                        runtime = computeRuntimePerms(context)
-                    },
-                    showGrant = false,
+                    onFeatureChange = {},
+                    showSwitch = false,
+                    showGrant = !runtime.lockAccessibility,
                     onGrant = {
                         runCatching {
                             context.startActivity(
@@ -307,108 +305,264 @@ fun PermissionsSettingsOverlay(
                     openSystemSettingsWhenTurningOff = null,
                 )
 
-                PermissionSwitchCard(
-                    title = stringResource(R.string.perm_auto_unlock_title),
-                    subtitleOff = stringResource(R.string.perm_auto_unlock_off),
-                    subtitleOnOk = stringResource(R.string.perm_auto_unlock_on, prefs.autoUnlockPinDigits),
-                    subtitleOnMissing = stringResource(R.string.perm_auto_unlock_on, prefs.autoUnlockPinDigits),
-                    featureOn = prefs.autoUnlockEnabled,
-                    permissionOk = true,
-                    focused = focusedItem == 2,
-                    themePalette = themePalette,
-                    onFeatureChange = { on -> onAutoUnlockEnabled(on) },
-                    showGrant = prefs.autoUnlockEnabled,
-                    onGrant = {
-                        onAutoUnlockPinDigits(if (prefs.autoUnlockPinDigits == 4) 6 else 4)
-                    },
-                    grantLabel = stringResource(
-                        if (prefs.autoUnlockPinDigits == 4) R.string.perm_auto_unlock_switch_to_6 else R.string.perm_auto_unlock_switch_to_4,
-                    ),
-                )
-
+                // Glance Strip's own on/off toggle lives in its own Settings screen now — this
+                // row is just the underlying Location permission grant.
                 PermissionSwitchCard(
                     title = stringResource(R.string.perm_glance_title),
                     subtitleOff = stringResource(R.string.perm_glance_off),
                     subtitleOnOk = stringResource(R.string.perm_glance_on_ok),
                     subtitleOnMissing = stringResource(R.string.perm_glance_on_missing),
-                    featureOn = prefs.glanceEnabled,
+                    featureOn = true,
                     permissionOk = runtime.location,
-                    focused = focusedItem == 3,
+                    focused = focusedItem == 2,
                     themePalette = themePalette,
-                    onFeatureChange = onGlanceEnabled,
-                    showGrant = prefs.glanceEnabled && !runtime.location,
+                    onFeatureChange = {},
+                    showSwitch = false,
+                    showGrant = !runtime.location,
                     onGrant = {
                         locationLauncher.launch(Manifest.permission.ACCESS_COARSE_LOCATION)
                     },
                     grantLabel = stringResource(R.string.perm_glance_grant_label),
-                    openSystemSettingsWhenTurningOff =
-                        if (prefs.glanceEnabled && runtime.location) {
-                            {
-                                runCatching {
-                                    context.startActivity(
-                                        Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS).apply {
-                                            data = Uri.fromParts("package", context.packageName, null)
-                                            addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
-                                        },
-                                    )
-                                }
-                                Toast.makeText(
-                                    context,
-                                    context.getString(R.string.perm_glance_turn_off_toast),
-                                    Toast.LENGTH_LONG,
-                                ).show()
-                            }
-                        } else {
-                            null
-                        },
+                    openSystemSettingsWhenTurningOff = null,
                 )
 
+                // Calendar-on-glance's own on/off toggle lives in the Glance Strip screen now —
+                // this row is just the underlying Calendar permission grant.
                 PermissionSwitchCard(
                     title = stringResource(R.string.perm_calendar_title),
                     subtitleOff = stringResource(R.string.perm_calendar_off),
                     subtitleOnOk = stringResource(R.string.perm_calendar_on_ok),
-                    subtitleOnMissing = when {
-                        !prefs.glanceEnabled -> stringResource(R.string.perm_calendar_on_missing_glance_off)
-                        else -> stringResource(R.string.perm_calendar_on_missing)
-                    },
-                    featureOn = prefs.glanceShowCalendar,
+                    subtitleOnMissing = stringResource(R.string.perm_calendar_on_missing),
+                    featureOn = true,
                     permissionOk = runtime.calendar,
-                    focused = focusedItem == 4,
+                    focused = focusedItem == 3,
                     themePalette = themePalette,
-                    enabled = true,
-                    onFeatureChange = onGlanceShowCalendar,
-                    showGrant = prefs.glanceEnabled && prefs.glanceShowCalendar && !runtime.calendar,
+                    onFeatureChange = {},
+                    showSwitch = false,
+                    showGrant = !runtime.calendar,
                     onGrant = {
                         calendarLauncher.launch(Manifest.permission.READ_CALENDAR)
                     },
                     grantLabel = stringResource(R.string.perm_calendar_grant_label),
-                    openSystemSettingsWhenTurningOff =
-                        if (prefs.glanceEnabled && prefs.glanceShowCalendar && runtime.calendar) {
-                            {
-                                runCatching {
-                                    context.startActivity(
-                                        Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS).apply {
-                                            data = Uri.fromParts("package", context.packageName, null)
-                                            addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
-                                        },
-                                    )
-                                }
-                                Toast.makeText(
-                                    context,
-                                    context.getString(R.string.perm_calendar_turn_off_toast),
-                                    Toast.LENGTH_LONG,
-                                ).show()
-                            }
-                        } else {
-                            null
-                        },
+                    openSystemSettingsWhenTurningOff = null,
                 )
 
+                // Quick Switch (Any App)'s feature toggle lives in its own screen (main Settings
+                // menu) now — this is just the underlying Accessibility Service grant, since
+                // that's a genuine OS permission and belongs here like the others.
+                PermissionSwitchCard(
+                    title = stringResource(R.string.perm_search_overlay_title),
+                    subtitleOff = stringResource(R.string.perm_search_overlay_accessibility_granted),
+                    subtitleOnOk = stringResource(R.string.perm_search_overlay_accessibility_granted),
+                    subtitleOnMissing = stringResource(R.string.perm_search_overlay_accessibility_not_granted),
+                    featureOn = true,
+                    permissionOk = runtime.searchOverlayAccessibility,
+                    focused = focusedItem == 4,
+                    themePalette = themePalette,
+                    onFeatureChange = {},
+                    showSwitch = false,
+                    showGrant = !runtime.searchOverlayAccessibility,
+                    onGrant = {
+                        runCatching {
+                            context.startActivity(
+                                Intent(Settings.ACTION_ACCESSIBILITY_SETTINGS)
+                                    .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK),
+                            )
+                        }
+                    },
+                    grantLabel = stringResource(R.string.perm_search_overlay_grant_label),
+                    openSystemSettingsWhenTurningOff = null,
+                )
+
+                Spacer(Modifier.height(16.dp))
+            }
+        }
+    }
+}
+
+/** Standalone screen for the Auto Unlock toggle — moved out of Permissions into the main Settings menu. */
+@Composable
+fun AutoUnlockSettingsOverlay(
+    autoUnlockEnabled: Boolean,
+    autoUnlockPinDigits: Int,
+    themePalette: LauncherThemePalette,
+    onDismiss: () -> Unit,
+    onAutoUnlockEnabled: (Boolean) -> Unit,
+    onAutoUnlockPinDigits: (Int) -> Unit,
+) {
+    val focusRequester = remember { FocusRequester() }
+
+    BackHandler(enabled = true, onBack = onDismiss)
+
+    Surface(
+        modifier = Modifier
+            .fillMaxSize()
+            .zIndex(406f)
+            .focusRequester(focusRequester)
+            .focusable()
+            .onPreviewKeyEvent { ev ->
+                if (ev.type != KeyEventType.KeyDown) return@onPreviewKeyEvent false
+                val nk = ev.nativeKeyEvent
+                val enter = ev.key == Key.Enter || ev.key == Key.NumPadEnter ||
+                    nk?.keyCode == AndroidKeyEvent.KEYCODE_DPAD_CENTER ||
+                    nk?.keyCode == AndroidKeyEvent.KEYCODE_ENTER
+                if (enter) {
+                    onAutoUnlockEnabled(!autoUnlockEnabled)
+                    true
+                } else {
+                    false
+                }
+            },
+        color = themePalette.settingsBg,
+    ) {
+        LaunchedEffect(Unit) { focusRequester.requestFocus() }
+        Column(
+            modifier = Modifier
+                .fillMaxSize()
+                .statusBarsPadding()
+                .navigationBarsPadding(),
+        ) {
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(start = 4.dp, end = 16.dp, top = 8.dp, bottom = 4.dp),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                IconButton(onClick = onDismiss) {
+                    Icon(
+                        Icons.AutoMirrored.Rounded.ArrowBack,
+                        contentDescription = stringResource(R.string.action_back),
+                        tint = themePalette.settingsMenuTitle,
+                    )
+                }
+                Text(
+                    stringResource(R.string.perm_auto_unlock_title),
+                    style = MaterialTheme.typography.headlineMedium.copy(
+                        color = themePalette.settingsMenuTitle,
+                        fontWeight = FontWeight.Normal,
+                    ),
+                )
+            }
+            Column(
+                modifier = Modifier
+                    .weight(1f)
+                    .verticalScroll(rememberScrollState())
+                    .padding(horizontal = 16.dp, vertical = 8.dp),
+                verticalArrangement = Arrangement.spacedBy(14.dp),
+            ) {
+                PermissionSwitchCard(
+                    title = stringResource(R.string.perm_auto_unlock_title),
+                    subtitleOff = stringResource(R.string.perm_auto_unlock_off),
+                    subtitleOnOk = stringResource(R.string.perm_auto_unlock_on, autoUnlockPinDigits),
+                    subtitleOnMissing = stringResource(R.string.perm_auto_unlock_on, autoUnlockPinDigits),
+                    featureOn = autoUnlockEnabled,
+                    permissionOk = true,
+                    focused = true,
+                    themePalette = themePalette,
+                    onFeatureChange = onAutoUnlockEnabled,
+                    showGrant = autoUnlockEnabled,
+                    onGrant = {
+                        onAutoUnlockPinDigits(if (autoUnlockPinDigits == 4) 6 else 4)
+                    },
+                    grantLabel = stringResource(
+                        if (autoUnlockPinDigits == 4) R.string.perm_auto_unlock_switch_to_6 else R.string.perm_auto_unlock_switch_to_4,
+                    ),
+                )
+            }
+        }
+    }
+}
+
+/** Standalone screen for the Quick Switch (Any App) toggle — moved out of Permissions into the main Settings menu. */
+@Composable
+fun QuickSwitchSettingsOverlay(
+    prefs: LauncherPrefs,
+    themePalette: LauncherThemePalette,
+    onDismiss: () -> Unit,
+    onSearchOverlayEnabled: (Boolean) -> Unit,
+    onSearchOverlayCustomKeys: (Int, Int) -> Unit,
+) {
+    val context = LocalContext.current
+    var searchOverlayAccessibilityGranted by remember {
+        mutableStateOf(SearchOverlayPermissions.isAccessibilityServiceEnabled(context))
+    }
+    var showCustomCapture by remember { mutableStateOf(false) }
+    val lifecycleOwner = LocalLifecycleOwner.current
+    DisposableEffect(lifecycleOwner) {
+        val observer = LifecycleEventObserver { _, event ->
+            if (event == Lifecycle.Event.ON_RESUME) {
+                searchOverlayAccessibilityGranted = SearchOverlayPermissions.isAccessibilityServiceEnabled(context)
+            }
+        }
+        lifecycleOwner.lifecycle.addObserver(observer)
+        onDispose { lifecycleOwner.lifecycle.removeObserver(observer) }
+    }
+
+    val focusRequester = remember { FocusRequester() }
+
+    BackHandler(enabled = true, onBack = onDismiss)
+
+    Surface(
+        modifier = Modifier
+            .fillMaxSize()
+            .zIndex(406f)
+            .focusRequester(focusRequester)
+            .focusable()
+            .onPreviewKeyEvent { ev ->
+                if (ev.type != KeyEventType.KeyDown) return@onPreviewKeyEvent false
+                val nk = ev.nativeKeyEvent
+                val enter = ev.key == Key.Enter || ev.key == Key.NumPadEnter ||
+                    nk?.keyCode == AndroidKeyEvent.KEYCODE_DPAD_CENTER ||
+                    nk?.keyCode == AndroidKeyEvent.KEYCODE_ENTER
+                if (enter) {
+                    onSearchOverlayEnabled(!prefs.searchOverlayEnabled)
+                    true
+                } else {
+                    false
+                }
+            },
+        color = themePalette.settingsBg,
+    ) {
+        LaunchedEffect(Unit) { focusRequester.requestFocus() }
+        Column(
+            modifier = Modifier
+                .fillMaxSize()
+                .statusBarsPadding()
+                .navigationBarsPadding(),
+        ) {
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(start = 4.dp, end = 16.dp, top = 8.dp, bottom = 4.dp),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                IconButton(onClick = onDismiss) {
+                    Icon(
+                        Icons.AutoMirrored.Rounded.ArrowBack,
+                        contentDescription = stringResource(R.string.action_back),
+                        tint = themePalette.settingsMenuTitle,
+                    )
+                }
+                Text(
+                    stringResource(R.string.perm_search_overlay_title),
+                    style = MaterialTheme.typography.headlineMedium.copy(
+                        color = themePalette.settingsMenuTitle,
+                        fontWeight = FontWeight.Normal,
+                    ),
+                )
+            }
+            Column(
+                modifier = Modifier
+                    .weight(1f)
+                    .verticalScroll(rememberScrollState())
+                    .padding(horizontal = 16.dp, vertical = 8.dp),
+                verticalArrangement = Arrangement.spacedBy(14.dp),
+            ) {
                 val searchOverlayKeys = searchOverlayKeysLabel(
                     prefs.searchOverlayCustomKeyCode1,
                     prefs.searchOverlayCustomKeyCode2,
                 )
-                val searchOverlayReady = searchOverlayKeys != null && runtime.searchOverlayAccessibility
+                val searchOverlayReady = searchOverlayKeys != null && searchOverlayAccessibilityGranted
                 PermissionSwitchCard(
                     title = stringResource(R.string.perm_search_overlay_title),
                     subtitleOff = stringResource(R.string.perm_search_overlay_off),
@@ -420,27 +574,15 @@ fun PermissionsSettingsOverlay(
                     },
                     featureOn = prefs.searchOverlayEnabled,
                     permissionOk = searchOverlayReady,
-                    focused = focusedItem == 5,
+                    focused = true,
                     themePalette = themePalette,
                     onFeatureChange = onSearchOverlayEnabled,
-                    showGrant = prefs.searchOverlayEnabled && !searchOverlayReady,
-                    onGrant = {
-                        if (searchOverlayKeys == null) {
-                            showCustomCapture = true
-                        } else {
-                            runCatching {
-                                context.startActivity(
-                                    Intent(Settings.ACTION_ACCESSIBILITY_SETTINGS)
-                                        .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK),
-                                )
-                            }
-                        }
-                    },
-                    grantLabel = if (searchOverlayKeys == null) {
-                        stringResource(R.string.perm_search_overlay_set_combination)
-                    } else {
-                        stringResource(R.string.perm_search_overlay_grant_label)
-                    },
+                    // The Accessibility Service grant itself lives in Permissions now (it's a
+                    // genuine OS permission) — this screen only offers the feature toggle and its
+                    // own key-combination setting, not a duplicate "Open Accessibility settings" link.
+                    showGrant = prefs.searchOverlayEnabled && searchOverlayKeys == null,
+                    onGrant = { showCustomCapture = true },
+                    grantLabel = stringResource(R.string.perm_search_overlay_set_combination),
                     openSystemSettingsWhenTurningOff = null,
                 )
                 if (prefs.searchOverlayEnabled && searchOverlayKeys != null) {
@@ -451,8 +593,6 @@ fun PermissionsSettingsOverlay(
                         Text(stringResource(R.string.perm_search_overlay_change_combination), color = themePalette.settingsMenuBody)
                     }
                 }
-
-                Spacer(Modifier.height(16.dp))
             }
         }
     }
@@ -551,6 +691,8 @@ private fun PermissionSwitchCard(
     themePalette: LauncherThemePalette,
     enabled: Boolean = true,
     onFeatureChange: (Boolean) -> Unit,
+    /** When false, this row is a plain OS-permission status/grant row — no feature on/off switch. */
+    showSwitch: Boolean = true,
     showGrant: Boolean,
     onGrant: () -> Unit,
     grantLabel: String,
@@ -564,10 +706,15 @@ private fun PermissionSwitchCard(
         permissionOk -> subtitleOnOk
         else -> subtitleOnMissing
     }
+    // Permission-only rows (showSwitch = false) are entirely OS-permission status/grant links now
+    // — the whole card opens the exact system permission screen, rather than a separate button
+    // below a feature toggle.
     Surface(
         shape = RoundedCornerShape(16.dp),
         color = if (focused) Color(0xFF28303F) else Color(0xFF1E2430),
-        modifier = Modifier.fillMaxWidth(),
+        modifier = Modifier
+            .fillMaxWidth()
+            .then(if (!showSwitch) Modifier.clickable(onClick = onGrant) else Modifier),
     ) {
         Column(Modifier.padding(horizontal = 16.dp, vertical = 12.dp)) {
             Row(
@@ -590,35 +737,39 @@ private fun PermissionSwitchCard(
                         ),
                     )
                 }
-                Switch(
-                    checked = featureOn,
-                    onCheckedChange = if (enabled) {
-                        { checked ->
-                            if (!checked && featureOn && openSystemSettingsWhenTurningOff != null) {
-                                openSystemSettingsWhenTurningOff()
+                if (showSwitch) {
+                    Switch(
+                        checked = featureOn,
+                        onCheckedChange = if (enabled) {
+                            { checked ->
+                                if (!checked && featureOn && openSystemSettingsWhenTurningOff != null) {
+                                    openSystemSettingsWhenTurningOff()
+                                }
+                                onFeatureChange(checked)
                             }
-                            onFeatureChange(checked)
-                        }
-                    } else {
-                        null
-                    },
-                    enabled = enabled,
-                    colors = SwitchDefaults.colors(
-                        checkedThumbColor = Color.White,
-                        checkedTrackColor = Color(0xFF4A90D9),
-                        uncheckedThumbColor = Color(0xFF9AA0A8),
-                        uncheckedTrackColor = Color(0xFF3A3F4A),
-                    ),
-                )
-            }
-            if (showGrant && grantLabel.isNotEmpty()) {
-                TextButton(onClick = onGrant, modifier = Modifier.padding(top = 4.dp)) {
-                    Text(grantLabel, color = themePalette.settingsMenuBody)
+                        } else {
+                            null
+                        },
+                        enabled = enabled,
+                        colors = SwitchDefaults.colors(
+                            checkedThumbColor = Color.White,
+                            checkedTrackColor = Color(0xFF4A90D9),
+                            uncheckedThumbColor = Color(0xFF9AA0A8),
+                            uncheckedTrackColor = Color(0xFF3A3F4A),
+                        ),
+                    )
                 }
             }
-            if (showGrant && secondaryGrantLabel != null && onSecondaryGrant != null) {
-                TextButton(onClick = onSecondaryGrant, modifier = Modifier.padding(top = 0.dp)) {
-                    Text(secondaryGrantLabel, color = themePalette.settingsMenuBody)
+            if (showSwitch) {
+                if (showGrant && grantLabel.isNotEmpty()) {
+                    TextButton(onClick = onGrant, modifier = Modifier.padding(top = 4.dp)) {
+                        Text(grantLabel, color = themePalette.settingsMenuBody)
+                    }
+                }
+                if (showGrant && secondaryGrantLabel != null && onSecondaryGrant != null) {
+                    TextButton(onClick = onSecondaryGrant, modifier = Modifier.padding(top = 0.dp)) {
+                        Text(secondaryGrantLabel, color = themePalette.settingsMenuBody)
+                    }
                 }
             }
         }
