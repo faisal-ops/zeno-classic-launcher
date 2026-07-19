@@ -115,9 +115,9 @@ class MainActivity : AppCompatActivity() {
         lifecycleScope.launch {
             repeatOnLifecycle(Lifecycle.State.STARTED) {
                 viewModel.prefs.collect { prefs ->
-                    reserveStatusBarSpace = prefs.minimalModeEnabled || prefs.customStatusBarEnabled
+                    reserveStatusBarSpace = prefs.minimalModeEnabled || prefs.customStatusBarEnabled || prefs.classicMode
                     ViewCompat.requestApplyInsets(window.decorView)
-                    applyStatusBarVisibility(prefs.minimalModeEnabled || prefs.customStatusBarEnabled)
+                    applyStatusBarVisibility(prefs.minimalModeEnabled || prefs.customStatusBarEnabled || prefs.classicMode)
                     com.zeno.classiclauncher.nlauncher.badges.NotificationRepository
                         .minimalModeActive = prefs.minimalModeEnabled
                     com.zeno.classiclauncher.nlauncher.badges.NotificationRepository
@@ -148,9 +148,9 @@ class MainActivity : AppCompatActivity() {
     override fun onResume() {
         super.onResume()
         val currentPrefs = viewModel.prefs.value
-        reserveStatusBarSpace = currentPrefs.minimalModeEnabled || currentPrefs.customStatusBarEnabled
+        reserveStatusBarSpace = currentPrefs.minimalModeEnabled || currentPrefs.customStatusBarEnabled || currentPrefs.classicMode
         ViewCompat.requestApplyInsets(window.decorView)
-        applyStatusBarVisibility(currentPrefs.minimalModeEnabled || currentPrefs.customStatusBarEnabled)
+        applyStatusBarVisibility(currentPrefs.minimalModeEnabled || currentPrefs.customStatusBarEnabled || currentPrefs.classicMode)
         com.zeno.classiclauncher.nlauncher.badges.NotificationRepository
             .minimalModeActive = currentPrefs.minimalModeEnabled
         com.zeno.classiclauncher.nlauncher.badges.NotificationRepository
@@ -171,9 +171,9 @@ class MainActivity : AppCompatActivity() {
         super.onWindowFocusChanged(hasFocus)
         if (hasFocus) {
             val p = viewModel.prefs.value
-            reserveStatusBarSpace = p.minimalModeEnabled || p.customStatusBarEnabled
+            reserveStatusBarSpace = p.minimalModeEnabled || p.customStatusBarEnabled || p.classicMode
             ViewCompat.requestApplyInsets(window.decorView)
-            applyStatusBarVisibility(p.minimalModeEnabled || p.customStatusBarEnabled)
+            applyStatusBarVisibility(p.minimalModeEnabled || p.customStatusBarEnabled || p.classicMode)
         }
     }
 
@@ -251,6 +251,9 @@ class MainActivity : AppCompatActivity() {
             lifecycle.currentState.isAtLeast(androidx.lifecycle.Lifecycle.State.RESUMED)
         ) {
             viewModel.requestNavigateHome()
+        }
+        if (intent.action == com.zeno.classiclauncher.nlauncher.search.SearchOverlayActions.ACTION_SHOW_HIDDEN_APPS) {
+            viewModel.requestShowHiddenApps()
         }
     }
 

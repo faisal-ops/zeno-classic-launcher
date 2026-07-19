@@ -26,6 +26,16 @@
     <string name="dock_messages">Messages</string>
     <string name="dock_camera">Camera</string>
     <string name="hidden_apps_hint">Hidden apps: type to filter.</string>
+    <string name="universal_search_hint">Search apps, settings &amp; web</string>
+    <string name="search_show_hidden_apps">Show Hidden Apps</string>
+    <string name="search_the_internet">Search \"%1$s\" on the Internet</string>
+    <string name="cd_search_voice">Voice search</string>
+    <string name="cd_search_help">Search help</string>
+    <string name="search_help_title">Universal Search</string>
+    <string name="search_help_body_usage">Type an app name, a setting, or a contact to search everywhere at once. Results update as you type.</string>
+    <string name="search_help_body_voice">Tap the microphone to speak your search instead of typing.</string>
+    <string name="search_help_body_hidden">Type \"private\" to reveal a shortcut for your hidden apps.</string>
+    <string name="search_help_body_fallback">Nothing found? Search the Play Store or the Internet from the bottom of the results.</string>
     <string name="gesture_swipe_up_app">Swipe-up app</string>
     <string name="gesture_double_tap_action">Double-tap action</string>
     <string name="gesture_none_disabled">None</string>
@@ -128,6 +138,9 @@
     <string name="settings_zeno_mode_subtitle">Default launcher experience</string>
     <string name="settings_minimal_mode_title">Modes</string>
     <string name="settings_minimal_mode_subtitle">Classic · Minimal</string>
+    <string name="settings_mode_active_zeno">Zeno</string>
+    <string name="settings_mode_active_classic">Classic</string>
+    <string name="settings_mode_active_minimal">Minimal</string>
     <string name="settings_custom_status_bar_title">Zeno Status Bar</string>
     <string name="cd_qs_open_settings">Open settings</string>
     <string name="minimal_mode_settings_title">Modes</string>
@@ -336,7 +349,7 @@
     <string name="weather_thunderstorm">Thunderstorm</string>
     <string name="weather_storm">Storm</string>
     <string name="permissions_title">Permissions</string>
-    <string name="permissions_intro">Turn off a feature if you do not need it — then the system does not need that access. When a feature is on, use Grant to approve the permission. If access is already granted, turning off opens the right Settings screen so you can remove it.</string>
+    <string name="permissions_intro">Tap a permission to open its system settings and grant it.</string>
     <string name="perm_badges_title">Unread badges (mail &amp; shortcuts)</string>
     <string name="perm_badges_off">Off — notification access not required</string>
     <string name="perm_badges_on_ok">On — notification access granted</string>
@@ -349,6 +362,8 @@
     <string name="perm_search_overlay_on_ok_unset">On — set your key combination below</string>
     <string name="perm_search_overlay_on_missing">On — allow accessibility access to detect %1$s</string>
     <string name="perm_search_overlay_grant_label">Open Accessibility settings</string>
+    <string name="perm_search_overlay_accessibility_granted">Granted</string>
+    <string name="perm_search_overlay_accessibility_not_granted">Not granted — required for Quick Switch to detect the key combination from any app</string>
     <string name="perm_search_overlay_set_combination">Set combination</string>
     <string name="perm_search_overlay_change_combination">Change combination</string>
     <string name="perm_search_overlay_gesture_custom_hold">%1$s+%2$s</string>

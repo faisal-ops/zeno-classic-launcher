@@ -108,6 +108,13 @@ class LauncherViewModel(app: Application) : AndroidViewModel(app) {
 
     fun requestNavigateHome() { _navigateHomeEvent.value++ }
 
+    /** Universal Search's "Show Hidden Apps" row — UI observes, navigates to the drawer, and
+     *  sets the search query to "private" so the existing hidden-apps grid filter kicks in. */
+    private val _showHiddenAppsEvent = MutableStateFlow(0)
+    val showHiddenAppsEvent: StateFlow<Int> = _showHiddenAppsEvent.asStateFlow()
+
+    fun requestShowHiddenApps() { _showHiddenAppsEvent.value++ }
+
     /** Window lost focus (e.g. system notification / QS shade) — UI closes launcher quick settings overlay. */
     private val _dismissLauncherQsEvent = MutableStateFlow(0)
     val dismissLauncherQsEvent: StateFlow<Int> = _dismissLauncherQsEvent.asStateFlow()
@@ -1126,26 +1133,51 @@ class LauncherViewModel(app: Application) : AndroidViewModel(app) {
     }
 
     fun launchFromDock(slot: DockSlot) {
+        val classicMode = prefs.value.classicMode
         when (slot) {
             DockSlot.Mail -> {
-                val pkg = prefs.value.dockMailPackage.trim()
-                if (pkg.isEmpty()) {
-                    actions.launchMail()
+                // Classic Mode's Mail slot uses its own separate override (dockMailPackageClassic)
+                // rather than dockMailPackage — that's shared storage with Zeno Mode's customizable
+                // slot, and a prior Zeno Mode pick must never leak into Classic Mode's slot.
+                if (classicMode) {
+                    val pkg = prefs.value.dockMailPackageClassic.trim()
+                    if (pkg.isEmpty()) {
+                        actions.launchClassicModeMail()
+                    } else {
+                        if (!actions.launchApp(pkg)) actions.launchClassicModeMail()
+                    }
                 } else {
-                    if (!actions.launchApp(pkg)) actions.launchMail()
+                    val pkg = prefs.value.dockMailPackage.trim()
+                    if (pkg.isEmpty()) {
+                        actions.launchMail()
+                    } else {
+                        if (!actions.launchApp(pkg)) actions.launchMail()
+                    }
                 }
             }
             DockSlot.Shortcut -> {
-                val pkg = prefs.value.dockSecondPackage.trim()
-                if (pkg.isEmpty()) {
-                    val target = prefs.value.secondShortcutTarget
-                    if (target == SecondShortcutTarget.WHATSAPP) {
-                        if (!actions.launchApp("com.whatsapp")) actions.launchMessages()
+                // Classic Mode's Envelope slot: same reasoning as Mail above — its own separate
+                // override (dockSecondPackageClassic), defaulting to the BB-Hub-priority mail
+                // chain, not Zeno Mode's Messages/WhatsApp shortcut.
+                if (classicMode) {
+                    val pkg = prefs.value.dockSecondPackageClassic.trim()
+                    if (pkg.isEmpty()) {
+                        actions.launchClassicModeMail()
                     } else {
-                        actions.launchMessages()
+                        if (!actions.launchApp(pkg)) actions.launchClassicModeMail()
                     }
                 } else {
-                    if (!actions.launchApp(pkg)) actions.launchMessages()
+                    val pkg = prefs.value.dockSecondPackage.trim()
+                    if (pkg.isEmpty()) {
+                        val target = prefs.value.secondShortcutTarget
+                        if (target == SecondShortcutTarget.WHATSAPP) {
+                            if (!actions.launchApp("com.whatsapp")) actions.launchMessages()
+                        } else {
+                            actions.launchMessages()
+                        }
+                    } else {
+                        if (!actions.launchApp(pkg)) actions.launchMessages()
+                    }
                 }
             }
             DockSlot.Camera -> {
@@ -1171,8 +1203,12 @@ class LauncherViewModel(app: Application) : AndroidViewModel(app) {
         viewModelScope.launch { prefsRepo.setDockSecondPackage(packageName.trim()) }
     }
 
-    fun setDockSecondEnabled(enabled: Boolean) {
-        viewModelScope.launch { prefsRepo.setDockSecondEnabled(enabled) }
+    fun setDockMailPackageClassic(packageName: String) {
+        viewModelScope.launch { prefsRepo.setDockMailPackageClassic(packageName.trim()) }
+    }
+
+    fun setDockSecondPackageClassic(packageName: String) {
+        viewModelScope.launch { prefsRepo.setDockSecondPackageClassic(packageName.trim()) }
     }
 
     fun setDockSlotTitle(slot: DockSlot, title: String) {

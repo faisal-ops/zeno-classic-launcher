@@ -134,6 +134,7 @@ import androidx.compose.material.icons.rounded.Image
 import androidx.compose.material.icons.rounded.GridView
 import androidx.compose.material.icons.rounded.Apps
 import androidx.compose.material.icons.rounded.Wallpaper
+import androidx.compose.material.icons.rounded.ViewAgenda
 import androidx.compose.material.icons.rounded.WbSunny
 import androidx.compose.material.icons.rounded.SettingsBackupRestore
 import androidx.compose.material.icons.rounded.Palette
@@ -143,6 +144,7 @@ import androidx.compose.material.icons.rounded.Place
 import androidx.compose.material.icons.rounded.TouchApp
 import androidx.compose.material.icons.rounded.Info
 import androidx.compose.material.icons.rounded.SwapVert
+import androidx.compose.material.icons.rounded.LockOpen
 import androidx.compose.material.icons.rounded.Visibility
 import androidx.compose.material.icons.rounded.VisibilityOff
 import androidx.compose.material.icons.rounded.Add
@@ -238,6 +240,7 @@ import androidx.compose.ui.layout.LayoutCoordinates
 import androidx.compose.ui.layout.boundsInRoot
 import androidx.compose.ui.layout.layout
 import androidx.compose.ui.layout.onGloballyPositioned
+import androidx.compose.ui.layout.positionInParent
 import androidx.compose.ui.zIndex
 import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.draw.clipToBounds
@@ -255,6 +258,7 @@ import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.input.key.Key
 import androidx.compose.ui.input.key.KeyEvent
 import androidx.compose.ui.input.key.KeyEventType
+import androidx.compose.ui.input.key.onKeyEvent
 import androidx.compose.ui.input.key.onPreviewKeyEvent
 import androidx.compose.ui.input.key.type
 import androidx.compose.ui.input.key.key
@@ -307,6 +311,7 @@ import com.zeno.classiclauncher.nlauncher.apps.LauncherActions
 import com.zeno.classiclauncher.nlauncher.apps.SoundProfileMode
 import com.zeno.classiclauncher.nlauncher.apps.ToggleResult
 import com.zeno.classiclauncher.nlauncher.apps.parseHomeShortcutToken
+import com.zeno.classiclauncher.nlauncher.apps.resolveClassicModeMailPackage
 import com.zeno.classiclauncher.nlauncher.apps.resolveDefaultMailPackage
 import com.zeno.classiclauncher.nlauncher.apps.resolveDefaultMessagesPackage
 import com.zeno.classiclauncher.nlauncher.BuildConfig
@@ -318,6 +323,7 @@ import com.zeno.classiclauncher.nlauncher.folders.DrawerGridCell
 import com.zeno.classiclauncher.nlauncher.folders.FolderIds
 import com.zeno.classiclauncher.nlauncher.locale.LauncherLocale
 import com.zeno.classiclauncher.nlauncher.search.HangulSearch
+import androidx.compose.ui.BiasAlignment
 import com.zeno.classiclauncher.nlauncher.theme.LauncherThemePalette
 import com.zeno.classiclauncher.nlauncher.usage.UsageStatsRepository
 import com.zeno.classiclauncher.nlauncher.prefs.GridPreset
@@ -748,13 +754,26 @@ fun LauncherScreen(
     val unreadPackages by vm.packagesWithUnread.collectAsStateWithLifecycle()
     // Dock badges track whichever package the slot actually opens — same unread set every other
     // app icon uses, no separate mail/SMS/WhatsApp-specific tracking.
-    val dockMailBadgePackage = remember(prefs.dockMailPackage) {
-        prefs.dockMailPackage.trim().ifEmpty { resolveDefaultMailPackage(context) }
+    // Classic Mode's Mail/Envelope dock slots have their own override storage
+    // (dockMailPackageClassic/dockSecondPackageClassic) — separate from Zeno Mode's
+    // dockMailPackage/dockSecondPackage — so a prior Zeno Mode pick (e.g. pinning WhatsApp)
+    // never leaks in, while still supporting the same long-press "Change shortcut" picker.
+    val dockMailBadgePackage = remember(prefs.dockMailPackage, prefs.dockMailPackageClassic, prefs.classicMode) {
+        if (prefs.classicMode) prefs.dockMailPackageClassic.trim().ifEmpty { resolveClassicModeMailPackage(context) }
+        else prefs.dockMailPackage.trim().ifEmpty { resolveDefaultMailPackage(context) }
     }
-    val dockShortcutBadgePackage = remember(prefs.dockSecondPackage, prefs.secondShortcutTarget) {
-        prefs.dockSecondPackage.trim().ifEmpty {
-            if (prefs.secondShortcutTarget == SecondShortcutTarget.WHATSAPP) "com.whatsapp"
-            else resolveDefaultMessagesPackage(context)
+    val dockShortcutBadgePackage = remember(
+        prefs.dockSecondPackage,
+        prefs.dockSecondPackageClassic,
+        prefs.secondShortcutTarget,
+        prefs.classicMode,
+    ) {
+        if (prefs.classicMode) {
+            prefs.dockSecondPackageClassic.trim().ifEmpty { resolveClassicModeMailPackage(context) }
+        } else {
+            prefs.dockSecondPackage.trim().ifEmpty {
+                if (prefs.secondShortcutTarget == SecondShortcutTarget.WHATSAPP) "com.whatsapp" else resolveDefaultMessagesPackage(context)
+            }
         }
     }
     // Camera has no meaningful "default app" badge target when unassigned — an explicitly
@@ -808,27 +827,38 @@ fun LauncherScreen(
             p.contains("sms") ||
             p.contains("mms")
     }
-    val dockStartIconModel = remember(prefs.dockMailPackage, prefs.customIconPackages, allApps) {
+    val dockStartIconModel = remember(prefs.dockMailPackage, prefs.dockMailPackageClassic, prefs.customIconPackages, allApps, prefs.classicMode) {
         com.zeno.classiclauncher.nlauncher.apps.CustomIconStore.load(context, com.zeno.classiclauncher.nlauncher.apps.CustomIconStore.DOCK_MAIL_KEY)
             ?: run {
-                val pkg = prefs.dockMailPackage.trim()
+                val pkg = if (prefs.classicMode) prefs.dockMailPackageClassic.trim() else prefs.dockMailPackage.trim()
                 if (keepEnvelopeForMail(pkg)) null else appIconFor(pkg)
             }
     }
-    val dockMiddleIconModel = remember(prefs.dockSecondPackage, prefs.customIconPackages, allApps) {
+    val dockMiddleIconModel = remember(prefs.dockSecondPackage, prefs.customIconPackages, allApps, prefs.classicMode) {
         com.zeno.classiclauncher.nlauncher.apps.CustomIconStore.load(context, com.zeno.classiclauncher.nlauncher.apps.CustomIconStore.DOCK_SHORTCUT_KEY)
             ?: run {
+                // Classic Mode's Envelope slot always shows the envelope glyph — picking an app
+                // via "Change shortcut" only changes what it launches, never its icon. Only the
+                // explicit "Change icon" action (the CustomIconStore lookup above) can change it.
+                if (prefs.classicMode) return@run null
                 val pkg = prefs.dockSecondPackage.trim()
                 if (keepEnvelopeForSecondShortcut(pkg) || pkg == "com.apple.android.music" || pkg == "com.zeno.pulse") null else appIconFor(pkg)
             }
     }
-    val secondDockFallbackResId = remember(prefs.dockSecondPackage, prefs.secondShortcutTarget) {
-        val pkg = prefs.dockSecondPackage.trim()
-        when {
-            pkg == "com.apple.android.music" -> R.drawable.ic_dock_apple_music
-            pkg == "com.zeno.pulse" -> R.drawable.ic_dock_pulse
-            pkg == "com.whatsapp" || (pkg.isEmpty() && prefs.secondShortcutTarget == SecondShortcutTarget.WHATSAPP) -> R.drawable.ic_dock_whatsapp
-            else -> null
+    val secondDockFallbackResId = remember(prefs.dockSecondPackage, prefs.secondShortcutTarget, prefs.classicMode) {
+        if (prefs.classicMode) {
+            // Classic Mode's Envelope slot: always the dedicated small envelope glyph, distinct
+            // from the Hub-style Mail slot icon — never changes based on which app is assigned.
+            R.drawable.ic_dock_envelope
+        } else {
+            val pkg = prefs.dockSecondPackage.trim()
+            when {
+                pkg == "com.apple.android.music" -> R.drawable.ic_dock_apple_music
+                pkg == "com.zeno.pulse" -> R.drawable.ic_dock_pulse
+                pkg == "com.whatsapp" -> R.drawable.ic_dock_whatsapp
+                pkg.isEmpty() && prefs.secondShortcutTarget == SecondShortcutTarget.WHATSAPP -> R.drawable.ic_dock_whatsapp
+                else -> null
+            }
         }
     }
     val thirdDockFallbackResId = remember(prefs.dockCameraPackage) {
@@ -852,9 +882,14 @@ fun LauncherScreen(
         (prefs.showHomeGroups && prefs.homeGroups.isNotEmpty()) ||
             (prefs.showShortcutApps && prefs.homeShortcutPackages.isNotEmpty())
         )
-    val pagerState = rememberPagerState(initialPage = 0, pageCount = { if (classicMode) 1 else 2 })
+    // Classic Mode now has 2 pages too (page 0 = clean home with the big clock, page 1 = the
+    // app drawer), mirroring Zeno Mode's own page 0 = HomePage / page 1 = AppDrawer split —
+    // previously Classic Mode had only 1 page (the drawer, at index 0, with no home page at all).
+    val pagerState = rememberPagerState(initialPage = 0, pageCount = { 2 })
     var showSettings by remember { mutableStateOf(false) }
     var showPermissionsSettings by remember { mutableStateOf(false) }
+    var showAutoUnlockSettings by remember { mutableStateOf(false) }
+    var showQuickSwitchSettings by remember { mutableStateOf(false) }
     var showDockSlotPicker by remember { mutableStateOf<DockSlot?>(null) }
     var dockQuickActionSlot by remember { mutableStateOf<DockSlot?>(null) }
     var showGlanceSettings by remember { mutableStateOf(false) }
@@ -879,6 +914,9 @@ fun LauncherScreen(
     var newHomeGroupName by remember { mutableStateOf("") }
     val newHomeGroupFocusRequester = remember { FocusRequester() }
     var showQuickSettingsOverlay by remember { mutableStateOf(false) }
+    // See QuickSettingsOverlay's registerQsKeyHandler param doc for why this direct-call
+    // bypass exists instead of relying on Compose's normal focus-based key dispatch.
+    val qsKeyHandlerRef = remember { mutableStateOf<((androidx.compose.ui.input.key.KeyEvent) -> Boolean)?>(null) }
     var showSpotlightOverlay by remember { mutableStateOf(false) }
     var spotlightInitialQuery by remember { mutableStateOf("") }
     val appWidgetHost = remember(context) { AppWidgetHost(context, HOME_WIDGET_HOST_ID) }
@@ -1152,6 +1190,8 @@ fun LauncherScreen(
             showDockSlotPicker != null -> showDockSlotPicker = null
             showRootSettings -> showRootSettings = false
             showPermissionsSettings -> showPermissionsSettings = false
+            showAutoUnlockSettings -> showAutoUnlockSettings = false
+            showQuickSwitchSettings -> showQuickSwitchSettings = false
             showGestureSettings -> showGestureSettings = false
             showAppDrawerBadges -> showAppDrawerBadges = false
             showIconAppearanceSettings -> showIconAppearanceSettings = false
@@ -1167,7 +1207,7 @@ fun LauncherScreen(
             configModeWidgetId != null -> configModeWidgetId = null
             reorderMode -> vm.toggleReorderMode()
             searchQuery.isNotEmpty() -> vm.setSearchQuery("")
-            !classicMode && pagerState.currentPage != 0 -> scope.launch { pagerState.animateScrollToPage(0) }
+            pagerState.currentPage != 0 -> scope.launch { pagerState.animateScrollToPage(0) }
             else -> Unit
         }
     }
@@ -1180,6 +1220,16 @@ fun LauncherScreen(
         }
     }
 
+    // Universal Search's "Show Hidden Apps" row: navigate to the drawer and reuse the
+    // existing "private" query grid-filter.
+    val showHiddenAppsEvent by vm.showHiddenAppsEvent.collectAsStateWithLifecycle()
+    androidx.compose.runtime.LaunchedEffect(showHiddenAppsEvent) {
+        if (showHiddenAppsEvent > 0) {
+            vm.setSearchQuery("private")
+            scope.launch { pagerState.animateScrollToPage(1) }
+        }
+    }
+
     // End-call / red button: navigated via Activity dispatchKeyEvent → ViewModel → here.
     val navigateHomeEvent by vm.navigateHomeEvent.collectAsStateWithLifecycle()
     androidx.compose.runtime.LaunchedEffect(navigateHomeEvent) {
@@ -1188,6 +1238,8 @@ fun LauncherScreen(
             showSettings = false
             showRootSettings = false
             showPermissionsSettings = false
+            showAutoUnlockSettings = false
+            showQuickSwitchSettings = false
             showGlanceSettings = false
             showHomeGroupsSettings = false
             showGestureSettings = false
@@ -1236,9 +1288,9 @@ fun LauncherScreen(
             ((gridCells.size + n - 1) / n).coerceAtLeast(1)
         }
     }
-    val dockPageIndexForDisplay by remember(classicMode) {
+    val dockPageIndexForDisplay by remember {
         derivedStateOf {
-            if (!classicMode && pagerState.currentPage == 0) 0
+            if (pagerState.currentPage == 0) 0
             else drawerPageIndex.coerceIn(0, (drawerPageCountForDock - 1).coerceAtLeast(0))
         }
     }
@@ -1265,12 +1317,6 @@ fun LauncherScreen(
                 nk?.keyCode == android.view.KeyEvent.KEYCODE_DPAD_DOWN ||
                 nk?.keyCode == android.view.KeyEvent.KEYCODE_DPAD_LEFT ||
                 nk?.keyCode == android.view.KeyEvent.KEYCODE_DPAD_RIGHT
-            // While the QS overlay is open, swallow D-pad/trackpad keys here — as the outermost
-            // ancestor this preview pass sees them first regardless of which node currently holds
-            // focus, which is what actually stops the pager underneath from paging to the drawer
-            // (clearing/blocking focus alone did not: something below still reacted to the raw
-            // key independent of Compose's own focus-ownership state).
-            if (isDpad && showQuickSettingsOverlay) return@onPreviewKeyEvent true
             if (ev.type != KeyEventType.KeyDown) return@onPreviewKeyEvent false
             if (isDpad) {
                 // Set trackpadActive synchronously so the focus highlight appears on the SAME frame
@@ -1279,7 +1325,23 @@ fun LauncherScreen(
                 trackpadActive = true
                 lastTrackpadEventMs = (System.currentTimeMillis() % Int.MAX_VALUE).toInt()
             }
-            false // never consume — just observe
+            // While the QS overlay is open, swallow D-pad/trackpad keys here — as the outermost
+            // ancestor this preview pass sees them first regardless of which node currently holds
+            // focus, which is what actually stops the pager underneath from paging to the drawer
+            // (clearing/blocking focus alone did not: something below still reacted to the raw
+            // key independent of Compose's own focus-ownership state).
+            //
+            // NOTE: direct-dispatch-to-QS's-own-handler (qsKeyHandlerRef/registerQsKeyHandler in
+            // QuickSettingsOverlay, and the qsHandleKey local fun there) was added to make
+            // trackpad Left/Right page-switching work inside the QS tile grid, since Compose's
+            // normal focus-based dispatch to QS's own onPreviewKeyEvent proved unreliable on this
+            // hardware (confirmed via on-device logging: Compose reports the QS focus target as
+            // focused, yet its onPreviewKeyEvent is never invoked for subsequent keys). Calling
+            // qsKeyHandlerRef.value?.invoke(ev) here still didn't fix it in practice, so that call
+            // is removed — but the registration plumbing is left in place (unused) in case this is
+            // revisited later.
+            if (isDpad && showQuickSettingsOverlay) return@onPreviewKeyEvent true
+            false
         }
     ) {
         Column(modifier = Modifier
@@ -1338,6 +1400,34 @@ fun LauncherScreen(
                 beyondViewportPageCount = 1,
             ) { page ->
                 when {
+                    classicMode && page == 0 -> ClassicCleanHomePage(
+                        focusRequester = homeFocusRequester,
+                        homeActive = pagerState.currentPage == 0,
+                        onHomeDockFocusChanged = { focused, idx ->
+                            dockFocused = focused
+                            dockFocusIndex = idx
+                        },
+                        onHomeDockActivate = { idx ->
+                            // Classic Mode dock order: Mail, Envelope, Home, Camera.
+                            when (idx) {
+                                0 -> vm.launchFromDock(DockSlot.Mail)
+                                1 -> vm.launchFromDock(DockSlot.Shortcut)
+                                2 -> scope.launch { pagerState.animateScrollToPage(0) }
+                                3 -> vm.launchFromDock(DockSlot.Camera)
+                            }
+                        },
+                        onOpenAppDrawer = { scope.launch { pagerState.animateScrollToPage(1) } },
+                        onOpenQuickSettings = {
+                            // Classic Mode's Quick Settings access is fixed to trackpad-down —
+                            // no gesture-settings toggle needed here (that toggle only exists for
+                            // Zeno Mode's swipe-based Home Gestures screen).
+                            focusManager.clearFocus(force = true)
+                            showQuickSettingsOverlay = true
+                        },
+                        onSwipeRight = { vm.launchFromDock(DockSlot.Shortcut) },
+                        hapticsEnabled = prefs.hapticsEnabled,
+                        hapticIntensity = prefs.hapticIntensity,
+                    )
                     !classicMode && page == 0 -> HomePage(
                         focusRequester = homeFocusRequester,
                         homeActive = pagerState.currentPage == 0,
@@ -1407,18 +1497,11 @@ fun LauncherScreen(
                             }
                         },
                         onHomeDockActivate = { idx ->
-                            if (classicMode) {
-                                when (idx) {
-                                    0 -> vm.launchFromDock(DockSlot.Mail)
-                                    1 -> vm.launchFromDock(DockSlot.Camera)
-                                }
-                            } else {
-                                when (idx) {
-                                    0 -> vm.launchFromDock(DockSlot.Mail)
-                                    1 -> scope.launch { pagerState.animateScrollToPage(0) }
-                                    2 -> vm.launchFromDock(DockSlot.Shortcut)
-                                    3 -> vm.launchFromDock(DockSlot.Camera)
-                                }
+                            when (idx) {
+                                0 -> vm.launchFromDock(DockSlot.Mail)
+                                1 -> scope.launch { pagerState.animateScrollToPage(0) }
+                                2 -> vm.launchFromDock(DockSlot.Shortcut)
+                                3 -> vm.launchFromDock(DockSlot.Camera)
                             }
                         },
                         classicMode = classicMode,
@@ -1489,8 +1572,8 @@ fun LauncherScreen(
                         removeDropBounds = homeStripRemoveBounds,
                         onRequestWeatherLocationDialog = { showWeatherLocationDialog = true },
                     )
-                    (classicMode && page == 0) || page == 1 -> AppDrawer(
-                        isActive = if (classicMode) pagerState.currentPage == 0 else pagerState.currentPage == 1,
+                    page == 1 -> AppDrawer(
+                        isActive = pagerState.currentPage == 1,
                         classicDock = classicMode,
                         hapticsEnabled = prefs.hapticsEnabled,
                         hapticIntensity = prefs.hapticIntensity,
@@ -1531,9 +1614,12 @@ fun LauncherScreen(
                         },
                         onDockActivate = { idx ->
                             if (classicMode) {
+                                // Classic Mode dock order: Mail, Envelope, Home, Camera.
                                 when (idx) {
                                     0 -> vm.launchFromDock(DockSlot.Mail)
-                                    1 -> vm.launchFromDock(DockSlot.Camera)
+                                    1 -> vm.launchFromDock(DockSlot.Shortcut)
+                                    2 -> scope.launch { pagerState.animateScrollToPage(0) }
+                                    3 -> vm.launchFromDock(DockSlot.Camera)
                                 }
                             } else {
                                 when (idx) {
@@ -1696,32 +1782,27 @@ fun LauncherScreen(
                 }
                 Dock(
                     pageIndex = dockPageIndexForDisplay,
-                    homeActive = !classicMode && pagerState.currentPage == 0,
+                    homeActive = pagerState.currentPage == 0,
                     onMail = { vm.launchFromDock(DockSlot.Mail) },
                     onShortcut = { vm.launchFromDock(DockSlot.Shortcut) },
                     onCamera = { vm.launchFromDock(DockSlot.Camera) },
                     onLongPressMail = { dockQuickActionSlot = DockSlot.Mail },
                     onLongPressShortcut = { dockQuickActionSlot = DockSlot.Shortcut },
                     onLongPressCamera = { dockQuickActionSlot = DockSlot.Camera },
-                    onHome = {
-                        if (!classicMode) scope.launch { pagerState.animateScrollToPage(0) }
-                    },
+                    onHome = { scope.launch { pagerState.animateScrollToPage(0) } },
                     onScrubPage = { targetPage ->
                         requestedDrawerPage = targetPage
-                        scope.launch {
-                            if (classicMode) pagerState.animateScrollToPage(0)
-                            else pagerState.animateScrollToPage(1)
-                        }
+                        scope.launch { pagerState.animateScrollToPage(1) }
                     },
                     drawerPageCount = drawerPageCountForDock,
                     mailHasUnread = prefs.notificationBadgesEnabled &&
                         dockMailBadgePackage.isNotEmpty() && dockMailBadgePackage in unreadPackages,
-                    shortcutHasUnread = !classicMode && prefs.notificationBadgesEnabled &&
+                    shortcutHasUnread = prefs.notificationBadgesEnabled &&
                         dockShortcutBadgePackage.isNotEmpty() && dockShortcutBadgePackage in unreadPackages,
                     cameraHasUnread = prefs.notificationBadgesEnabled &&
                         dockCameraBadgePackage.isNotEmpty() && dockCameraBadgePackage in unreadPackages,
-                    showHomeButton = !classicMode,
-                    showMessagesShortcut = !classicMode && prefs.dockSecondEnabled,
+                    showHomeButton = true,
+                    showMessagesShortcut = true,
                     selectedTint = themePalette.dockSelected,
                     themePalette = themePalette,
                     dockStartIconModel = dockStartIconModel,
@@ -1730,8 +1811,9 @@ fun LauncherScreen(
                     thirdDockFallbackResId = thirdDockFallbackResId,
                     dockEndIconModel = dockEndIconModel,
                     appIconShape = prefs.appIconShape,
-                    focused = dockFocused && (classicMode || pagerState.currentPage == 1 || pagerState.currentPage == 0),
+                    focused = dockFocused && (pagerState.currentPage == 1 || pagerState.currentPage == 0),
                     focusedIndex = dockFocusIndex,
+                    classicDockOrder = classicMode,
                 )
             }
         }
@@ -2049,14 +2131,13 @@ fun LauncherScreen(
         // Settings keeps keyboard/trackpad focus; Key.Back on that node dismisses settings. When a sub-screen
         // is composed on top (permissions, glance, etc.), do not consume Back there — let BackHandler close the top overlay.
         val settingsStackedOverlayOpen =
-            showPermissionsSettings || showGlanceSettings || showHapticSettings ||
+            showPermissionsSettings || showAutoUnlockSettings || showQuickSwitchSettings || showGlanceSettings || showHapticSettings ||
                 showHomeGroupsSettings || showDockSlotPicker != null ||
                 showGestureSettings || showLanguageSettings || showAppDrawerBadges || showIconAppearanceSettings || showMinimalModeSettings || showRootSettings
         val settingsOn = stringResource(R.string.settings_on)
         val settingsOff = stringResource(R.string.settings_off)
         val settingsConfigured = stringResource(R.string.settings_configured)
         val settingsNotConfigured = stringResource(R.string.settings_not_configured)
-        val settingsDefaultApp = stringResource(R.string.settings_default_app)
         val settingsHidden = stringResource(R.string.settings_hidden)
         val settingsHiddenClassic = stringResource(R.string.settings_hidden_classic)
         val settingsPermissionsReady = stringResource(R.string.settings_permissions_ready)
@@ -2064,9 +2145,6 @@ fun LauncherScreen(
         val settingsPermissionsMissingMany = stringResource(R.string.settings_permissions_missing_many)
         val settingsAllOff = stringResource(R.string.settings_all_off)
         val settingsNotifications = stringResource(R.string.settings_notifications)
-        val dockMailDefaultTitle = stringResource(R.string.dock_mail)
-        val dockMessagesDefaultTitle = stringResource(R.string.dock_messages)
-        val dockCameraDefaultTitle = stringResource(R.string.dock_camera)
 
         AnimatedVisibility(
             visible = showSettings,
@@ -2077,33 +2155,7 @@ fun LauncherScreen(
                 stackedChildOverlayOpen = settingsStackedOverlayOpen,
                 gridPreset = prefs.gridPreset,
                 hapticsEnabled = prefs.hapticsEnabled,
-                dockMailBody = remember(prefs.dockMailPackage, allApps, settingsDefaultApp) {
-                    if (prefs.dockMailPackage.isEmpty()) {
-                        settingsDefaultApp
-                    } else {
-                        allApps.find { it.packageName == prefs.dockMailPackage }?.label ?: prefs.dockMailPackage
-                    }
-                },
-                dockSecondBody = remember(prefs.dockSecondPackage, allApps, settingsDefaultApp) {
-                    if (prefs.dockSecondPackage.isEmpty()) {
-                        settingsDefaultApp
-                    } else {
-                        allApps.find { it.packageName == prefs.dockSecondPackage }?.label ?: prefs.dockSecondPackage
-                    }
-                },
-                dockThirdBody = remember(prefs.dockCameraPackage, allApps, settingsDefaultApp) {
-                    if (prefs.dockCameraPackage.isEmpty()) {
-                        settingsDefaultApp
-                    } else {
-                        val label = allApps.find { it.packageName == prefs.dockCameraPackage }?.label
-                        label ?: prefs.dockCameraPackage
-                    }
-                },
                 onGridPreset = vm::setGridPreset,
-                dockMailTitle = if (prefs.dockMailTitle == "Mail") dockMailDefaultTitle else prefs.dockMailTitle,
-                dockSecondTitle = if (prefs.dockSecondTitle == "Messages") dockMessagesDefaultTitle else prefs.dockSecondTitle,
-                dockThirdTitle = if (prefs.dockThirdTitle == "Camera") dockCameraDefaultTitle else prefs.dockThirdTitle,
-                onOpenDockSlotPicker = { showDockSlotPicker = it },
                 glanceSubtitle = remember(
                     prefs.glanceEnabled,
                     settingsOn,
@@ -2131,6 +2183,12 @@ fun LauncherScreen(
                     }
                 },
                 onOpenPermissionsSettings = { showPermissionsSettings = true },
+                autoUnlockSubtitle = if (prefs.autoUnlockEnabled) settingsOn else settingsOff,
+                onOpenAutoUnlockSettings = { showAutoUnlockSettings = true },
+                quickSwitchSubtitle = if (prefs.searchOverlayEnabled) settingsOn else settingsOff,
+                onOpenQuickSwitchSettings = { showQuickSwitchSettings = true },
+                zenoStatusBarEnabled = prefs.customStatusBarEnabled,
+                onToggleZenoStatusBar = { vm.setCustomStatusBarEnabled(!prefs.customStatusBarEnabled) },
                 languageSubtitle = remember(context, prefs.languageCode) {
                     LauncherLocale.languageTitle(LauncherLocale.currentLanguageCode(context))
                 },
@@ -2192,11 +2250,10 @@ fun LauncherScreen(
                 onSetAppIconShape = vm::setAppIconShape,
                 onOpenAppearanceSettings = { showIconAppearanceSettings = true },
                 minimalModeEnabled = prefs.minimalModeEnabled,
+                classicMode = classicMode,
                 onOpenMinimalModeSettings = { showMinimalModeSettings = true },
                 homeStripEnabled = prefs.homeStripEnabled,
                 onToggleHomeStrip = { vm.setHomeStripEnabled(!prefs.homeStripEnabled) },
-                dockSecondEnabled = prefs.dockSecondEnabled,
-                onToggleDockSecond = { vm.setDockSecondEnabled(!prefs.dockSecondEnabled) },
                 childContent = {
                     // All settings sub-overlays rendered INSIDE SettingsScreenOverlay's Box
                     // so their BackHandlers are always deepest in the composition tree.
@@ -2362,8 +2419,8 @@ fun LauncherScreen(
                 apps = allApps,
                 themePalette = themePalette,
                 selectedPackage = when (activeDockSlot) {
-                    DockSlot.Mail -> prefs.dockMailPackage
-                    DockSlot.Shortcut -> prefs.dockSecondPackage
+                    DockSlot.Mail -> if (classicMode) prefs.dockMailPackageClassic else prefs.dockMailPackage
+                    DockSlot.Shortcut -> if (classicMode) prefs.dockSecondPackageClassic else prefs.dockSecondPackage
                     DockSlot.Camera -> prefs.dockCameraPackage
                 },
                 unsetLabel = when (activeDockSlot) {
@@ -2373,25 +2430,13 @@ fun LauncherScreen(
                 },
                 onSelect = { pkg ->
                     when (activeDockSlot) {
-                        DockSlot.Mail -> vm.setDockMailPackage(pkg)
-                        DockSlot.Shortcut -> vm.setDockSecondPackage(pkg)
+                        DockSlot.Mail -> if (classicMode) vm.setDockMailPackageClassic(pkg) else vm.setDockMailPackage(pkg)
+                        DockSlot.Shortcut -> if (classicMode) vm.setDockSecondPackageClassic(pkg) else vm.setDockSecondPackage(pkg)
                         DockSlot.Camera -> vm.setDockCameraPackage(pkg)
                     }
                     showDockSlotPicker = null
                 },
                 onDismiss = { showDockSlotPicker = null },
-                topToggle = if (activeDockSlot == DockSlot.Shortcut) {
-                    {
-                        AppSelectorToggleRow(
-                            label = stringResource(R.string.dock_show_in_dock),
-                            checked = prefs.dockSecondEnabled,
-                            onToggle = { vm.setDockSecondEnabled(!prefs.dockSecondEnabled) },
-                            themePalette = themePalette,
-                        )
-                    }
-                } else {
-                    null
-                },
             )
         }
 
@@ -2454,18 +2499,30 @@ fun LauncherScreen(
 
         if (showPermissionsSettings) {
             PermissionsSettingsOverlay(
-                prefs = prefs,
                 themePalette = themePalette,
                 onDismiss = {
                     showPermissionsSettings = false
                     permRuntime = computePermRuntime(context)
                 },
-                onNotificationBadgesEnabled = vm::setNotificationBadgesEnabled,
-                onDoubleTapSleepEnabled = vm::setDoubleTapToSleepEnabled,
+            )
+        }
+
+        if (showAutoUnlockSettings) {
+            AutoUnlockSettingsOverlay(
+                autoUnlockEnabled = prefs.autoUnlockEnabled,
+                autoUnlockPinDigits = prefs.autoUnlockPinDigits,
+                themePalette = themePalette,
+                onDismiss = { showAutoUnlockSettings = false },
                 onAutoUnlockEnabled = vm::setAutoUnlockEnabled,
                 onAutoUnlockPinDigits = vm::setAutoUnlockPinDigits,
-                onGlanceEnabled = vm::setGlanceEnabled,
-                onGlanceShowCalendar = vm::setGlanceShowCalendar,
+            )
+        }
+
+        if (showQuickSwitchSettings) {
+            QuickSwitchSettingsOverlay(
+                prefs = prefs,
+                themePalette = themePalette,
+                onDismiss = { showQuickSwitchSettings = false },
                 onSearchOverlayEnabled = vm::setSearchOverlayEnabled,
                 onSearchOverlayCustomKeys = vm::setSearchOverlayCustomKeys,
             )
@@ -2562,41 +2619,25 @@ fun LauncherScreen(
                             }
                         }
                         HorizontalDivider(color = Color(0x22FFFFFF))
-                        // Remove / hide
-                        if (activeQuickSlot == DockSlot.Shortcut) {
-                            Row(
-                                modifier = Modifier
-                                    .fillMaxWidth()
-                                    .clickable {
-                                        vm.setDockSecondEnabled(false)
-                                        dockQuickActionSlot = null
+                        // Reset to default — every dock slot is a fixed, always-present dock
+                        // role now (no more hideable slots), so this is the only "remove" action.
+                        Row(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .clickable {
+                                    when (activeQuickSlot) {
+                                        DockSlot.Mail -> if (classicMode) vm.setDockMailPackageClassic("") else vm.setDockMailPackage("")
+                                        DockSlot.Shortcut -> if (classicMode) vm.setDockSecondPackageClassic("") else vm.setDockSecondPackage("")
+                                        DockSlot.Camera -> vm.setDockCameraPackage("")
                                     }
-                                    .padding(horizontal = 20.dp, vertical = 16.dp),
-                                verticalAlignment = Alignment.CenterVertically,
-                            ) {
-                                Icon(Icons.Rounded.VisibilityOff, contentDescription = null, tint = Color(0xFFFF6B6B), modifier = Modifier.size(20.dp))
-                                Spacer(Modifier.width(14.dp))
-                                Text(stringResource(R.string.action_hide_from_dock), color = Color(0xFFFF6B6B), fontSize = 15.sp)
-                            }
-                        } else {
-                            Row(
-                                modifier = Modifier
-                                    .fillMaxWidth()
-                                    .clickable {
-                                        when (activeQuickSlot) {
-                                            DockSlot.Mail -> vm.setDockMailPackage("")
-                                            DockSlot.Camera -> vm.setDockCameraPackage("")
-                                            else -> Unit
-                                        }
-                                        dockQuickActionSlot = null
-                                    }
-                                    .padding(horizontal = 20.dp, vertical = 16.dp),
-                                verticalAlignment = Alignment.CenterVertically,
-                            ) {
-                                Icon(Icons.Rounded.VisibilityOff, contentDescription = null, tint = Color(0xFFFF6B6B), modifier = Modifier.size(20.dp))
-                                Spacer(Modifier.width(14.dp))
-                                Text(stringResource(R.string.action_reset_to_default), color = Color(0xFFFF6B6B), fontSize = 15.sp)
-                            }
+                                    dockQuickActionSlot = null
+                                }
+                                .padding(horizontal = 20.dp, vertical = 16.dp),
+                            verticalAlignment = Alignment.CenterVertically,
+                        ) {
+                            Icon(Icons.Rounded.VisibilityOff, contentDescription = null, tint = Color(0xFFFF6B6B), modifier = Modifier.size(20.dp))
+                            Spacer(Modifier.width(14.dp))
+                            Text(stringResource(R.string.action_reset_to_default), color = Color(0xFFFF6B6B), fontSize = 15.sp)
                         }
                     }
                 }
@@ -2619,6 +2660,7 @@ fun LauncherScreen(
                 onSetQrScannerPackage = vm::setQuickSettingsQrScannerPackage,
                 onSetTileOrder = vm::setQuickSettingsTileOrder,
                 onToggleGreyscale = { vm.setMinimalModeGreyscale(!prefs.minimalModeGreyscale) },
+                registerQsKeyHandler = { qsKeyHandlerRef.value = it },
             )
         }
         AnimatedVisibility(
@@ -2825,7 +2867,7 @@ fun LauncherScreen(
         // instead of into it. Every other screen's own .statusBarsPadding() keeps reserving the
         // same space regardless, so this occupies exactly the area the real bar used to draw in
         // without anything else in the layout shifting.
-        if (prefs.customStatusBarEnabled) {
+        if (prefs.customStatusBarEnabled || classicMode) {
             val statusBarActions = remember(context) { LauncherActions(context) }
             val zenoStatusBarState = com.zeno.classiclauncher.nlauncher.minimalmode.rememberZenoStatusBarState()
             val reservedHeightPx = com.zeno.classiclauncher.nlauncher.ui.LocalReservedStatusBarHeightPx.current
@@ -2836,6 +2878,10 @@ fun LauncherScreen(
                     .height(reservedHeightDp)
                     .align(Alignment.TopStart)
                     .zIndex(SB_Z_INDEX)
+                    // Independent of the 14dp margin the dock/app grid below use — the status bar
+                    // still wants some margin (not flush at the true screen edge, per the earlier
+                    // fix), but the full 14dp read as too much once actually seen on-device.
+                    .padding(horizontal = 8.dp)
                     // Defensive: icon sizing is tuned to fit this exact height, but clip anyway
                     // so any future sizing tweak can never spill into the content below again
                     // (that's exactly the overlap bug this whole reserved-height approach fixed).
@@ -2860,6 +2906,7 @@ fun LauncherScreen(
                     powerSaveActive = zenoStatusBarState.powerSaveActive,
                     airplaneModeEnabled = zenoStatusBarState.airplaneModeEnabled,
                     hotspotEnabled = zenoStatusBarState.hotspotEnabled,
+                    bigClock = classicMode,
                     onClockTap = {},
                     onWifiTap = { statusBarActions.openInternetPanel() },
                     onNotifyIconTap = { pkg -> vm.launchApp(pkg) },
@@ -4396,6 +4443,138 @@ private data class QuickTile(
     val onTap: () -> Boolean,
 )
 
+/**
+ * Classic Mode's page-0 home: blank wallpaper, no app grid/shortcuts. The clock/date already
+ * live in the always-on ZenoStatusBar (rendered bigger for Classic Mode — see `bigClock`), so
+ * this page doesn't duplicate them. The 4-slot dock (Mail/Envelope/Home/Camera) is rendered
+ * separately, outside the pager.
+ */
+@Composable
+private fun ClassicCleanHomePage(
+    focusRequester: FocusRequester,
+    homeActive: Boolean,
+    onHomeDockFocusChanged: (Boolean, Int) -> Unit,
+    onHomeDockActivate: (Int) -> Unit,
+    onOpenAppDrawer: () -> Unit,
+    onOpenQuickSettings: () -> Unit,
+    onSwipeRight: () -> Unit,
+    hapticsEnabled: Boolean,
+    hapticIntensity: Int,
+) {
+    val view = LocalView.current
+    var dockIndex by remember { mutableStateOf(0) }
+    LaunchedEffect(homeActive) {
+        if (homeActive) focusRequester.requestFocus()
+    }
+    val dateFormatter = remember {
+        // Locale-correct field order — never hardcode "EEE d MMM".
+        val pattern = android.text.format.DateFormat.getBestDateTimePattern(Locale.getDefault(), "EEEdMMM")
+        SimpleDateFormat(pattern, Locale.getDefault())
+    }
+    var dateText by remember { mutableStateOf(dateFormatter.format(Date())) }
+    LaunchedEffect(Unit) {
+        while (true) {
+            dateText = dateFormatter.format(Date())
+            delay(30_000L)
+        }
+    }
+    Box(
+        modifier = Modifier
+            .fillMaxSize()
+            .focusRequester(focusRequester)
+            .focusable()
+            .onKeyEvent { ev ->
+                if (ev.type != KeyEventType.KeyDown) return@onKeyEvent false
+                when (ev.key) {
+                    Key.Enter, Key.NumPadEnter -> {
+                        onHomeDockActivate(dockIndex)
+                        true
+                    }
+                    Key.DirectionLeft -> {
+                        val next = (dockIndex - 1).coerceAtLeast(0)
+                        if (next != dockIndex) {
+                            dockIndex = next
+                            onHomeDockFocusChanged(true, dockIndex)
+                            doNavFeedback(view, hapticsEnabled, hapticIntensity)
+                        }
+                        true
+                    }
+                    Key.DirectionRight -> {
+                        val longPressRight = (ev.nativeKeyEvent?.repeatCount ?: 0) > 0
+                        if (dockIndex >= 3) {
+                            if (longPressRight) {
+                                onHomeDockFocusChanged(false, -1)
+                                doNavFeedback(view, hapticsEnabled, hapticIntensity)
+                                onOpenAppDrawer()
+                            }
+                        } else {
+                            val next = (dockIndex + 1).coerceAtMost(3)
+                            if (next != dockIndex) {
+                                dockIndex = next
+                                onHomeDockFocusChanged(true, dockIndex)
+                                doNavFeedback(view, hapticsEnabled, hapticIntensity)
+                            }
+                        }
+                        true
+                    }
+                    Key.DirectionDown -> {
+                        doNavFeedback(view, hapticsEnabled, hapticIntensity)
+                        onOpenQuickSettings()
+                        true
+                    }
+                    Key.DirectionUp -> {
+                        doNavFeedback(view, hapticsEnabled, hapticIntensity)
+                        onOpenAppDrawer()
+                        true
+                    }
+                    else -> false
+                }
+            }
+            .pointerInput(onSwipeRight) {
+                // Deliberately stricter than the generic swipeRightPackage gesture elsewhere:
+                // this fires an app launch with no confirmation, so a bigger threshold, tighter
+                // horizontal-dominance ratio, and a speed cap all guard against an incidental
+                // drag (e.g. repositioning a finger) opening an app unintentionally.
+                val threshold = 120.dp.toPx()
+                val maxDurationMs = 400L
+                awaitPointerEventScope {
+                    while (true) {
+                        val down = awaitFirstDown(requireUnconsumed = false, pass = PointerEventPass.Final)
+                        val startX = down.position.x
+                        val startY = down.position.y
+                        val startMs = down.uptimeMillis
+                        var triggered = false
+                        var abandoned = false
+                        while (!triggered && !abandoned) {
+                            val event = awaitPointerEvent(PointerEventPass.Final)
+                            val change = event.changes.firstOrNull() ?: break
+                            if (!change.pressed) break
+                            val dx = change.position.x - startX
+                            val dy = change.position.y - startY
+                            val elapsedMs = change.uptimeMillis - startMs
+                            if (elapsedMs > maxDurationMs) {
+                                // Too slow to be a deliberate swipe — stop evaluating this gesture,
+                                // but keep waiting for the finger to lift before starting a new one.
+                                abandoned = true
+                            } else if (dx > threshold && dx > kotlin.math.abs(dy) * 2.5f) {
+                                triggered = true
+                                onSwipeRight()
+                            }
+                        }
+                    }
+                }
+            }
+    ) {
+        Text(
+            text = dateText,
+            color = Color(0xFFB8D4E8),
+            fontSize = 40.sp,
+            fontWeight = FontWeight.W300,
+            modifier = Modifier.align(BiasAlignment(0f, -0.62f)),
+        )
+    }
+}
+
 @Composable
 private fun SoundProfileHeaderIcon(
     profile: SoundProfileMode,
@@ -4458,6 +4637,13 @@ internal fun QuickSettingsOverlay(
     onSetQrScannerPackage: (String) -> Unit,
     onSetTileOrder: (List<String>) -> Unit,
     onToggleGreyscale: () -> Unit,
+    /** Registers this overlay's key handler with the caller so it can be invoked directly —
+     *  Compose's own focus-based dispatch to this overlay's onPreviewKeyEvent proved unreliable
+     *  for hardware trackpad input on this device (confirmed via on-device logging: Compose
+     *  reports isFocused=true on this overlay's focus target, yet its onPreviewKeyEvent is never
+     *  invoked for subsequent key events — focus state and key dispatch routing diverge). Calling
+     *  the handler directly from the root's key handler sidesteps that divergence entirely. */
+    registerQsKeyHandler: (((androidx.compose.ui.input.key.KeyEvent) -> Boolean)?) -> Unit = {},
 ) {
     val context = LocalContext.current
     val view = LocalView.current
@@ -5340,7 +5526,6 @@ internal fun QuickSettingsOverlay(
     var qsGridIndex by remember { mutableIntStateOf(0) }
     /** Focus on the tune row below the pager (like dock below drawer grid). */
     var qsOnEdit by remember { mutableStateOf(false) }
-    val lastDirectionalRef = remember { longArrayOf(0L) }
     val lastMoveRef = remember { longArrayOf(0L) }
     val qsKeyFocusRequester = remember { FocusRequester() }
     LaunchedEffect(allQuickTiles.size, pages.size) {
@@ -5435,6 +5620,128 @@ internal fun QuickSettingsOverlay(
                     ),
                 ),
         )
+        val qsHandleKey = fun(ev: androidx.compose.ui.input.key.KeyEvent): Boolean {
+            if (showTileEditor) return false
+            if (ev.type != KeyEventType.KeyDown) return false
+            if (ev.isVolumePanelKey()) return false
+            val n = allQuickTiles.size
+            if (ev.key == Key.Back) {
+                onDismiss()
+                return true
+            }
+            if (ev.isEndCallKey()) {
+                onDismiss()
+                return true
+            }
+            val directional =
+                ev.key == Key.DirectionLeft ||
+                    ev.key == Key.DirectionRight ||
+                    ev.key == Key.DirectionUp ||
+                    ev.key == Key.DirectionDown
+            val now = SystemClock.uptimeMillis()
+            val cols = 2
+            val lastPageIdx = pages.lastIndex.coerceAtLeast(0)
+
+            return when (ev.key) {
+                Key.Enter,
+                Key.NumPadEnter,
+                -> {
+                    if (n == 0) return true
+                    val shift = ev.nativeKeyEvent?.isShiftPressed == true
+                    if (qsOnEdit) {
+                        if (!shift) showTileEditor = true
+                        return true
+                    }
+                    val page = pagerState.currentPage.coerceIn(0, lastPageIdx)
+                    val pageList = pages.getOrNull(page) ?: emptyList()
+                    val sc = pageList.size
+                    if (sc <= 0) return true
+                    val idx = qsGridIndex.coerceIn(0, sc - 1)
+                    val tile = pageList[idx]
+                    if (shift) runQsTileLongPress(tile) else runQsTileTap(tile)
+                    true
+                }
+                Key.DirectionLeft,
+                Key.DirectionRight,
+                Key.DirectionUp,
+                Key.DirectionDown,
+                -> {
+                    if (n == 0 || pages.isEmpty()) return true
+                    if (qsOnEdit) {
+                        if (ev.key == Key.DirectionUp) {
+                            qsOnEdit = false
+                            val page = pagerState.currentPage.coerceIn(0, lastPageIdx)
+                            val sc = pages.getOrNull(page)?.size ?: 0
+                            if (sc > 0) {
+                                val lastTile = sc - 1
+                                qsGridIndex = (lastTile / cols) * cols
+                            }
+                            doNavFeedback(view, hapticsEnabled, hapticIntensity)
+                        }
+                        return true
+                    }
+                    val page = pagerState.currentPage.coerceIn(0, lastPageIdx)
+                    val pageList = pages.getOrNull(page) ?: emptyList()
+                    val sliceCount = pageList.size
+                    if (sliceCount <= 0) return true
+
+                    val currentIndex = qsGridIndex.coerceIn(0, sliceCount - 1)
+                    val currentRow = currentIndex / cols
+                    val currentCol = currentIndex % cols
+                    val isFirstCol = currentCol == 0
+                    val isLastCol = currentCol == cols - 1 || currentIndex == sliceCount - 1
+
+                    if (ev.key == Key.DirectionLeft && isFirstCol && page > 0 &&
+                        !pagerState.isScrollInProgress
+                    ) {
+                        val prevCount = pages[page - 1].size
+                        val rowStart = currentRow * cols
+                        val target = (rowStart + cols - 1).coerceAtMost(prevCount - 1).coerceAtLeast(0)
+                        qsGridIndex = target
+                        scope.launch {
+                            pagerState.animateScrollToPage(page - 1)
+                            doNavFeedback(view, hapticsEnabled, hapticIntensity)
+                        }
+                        return true
+                    }
+                    if (ev.key == Key.DirectionRight && isLastCol && page < lastPageIdx &&
+                        !pagerState.isScrollInProgress
+                    ) {
+                        val nextCount = pages[page + 1].size
+                        val target = (currentRow * cols).coerceAtMost(nextCount - 1).coerceAtLeast(0)
+                        qsGridIndex = target
+                        scope.launch {
+                            pagerState.animateScrollToPage(page + 1)
+                            doNavFeedback(view, hapticsEnabled, hapticIntensity)
+                        }
+                        return true
+                    }
+
+                    if (directional && (now - lastMoveRef[0]) < NAV_MOVE_MIN_MS) {
+                        return true
+                    }
+                    lastMoveRef[0] = now
+
+                    val beforeGrid = qsGridIndex
+                    val afterGrid = NavState(gridIndex = currentIndex).onGridKey(ev.key, cols, sliceCount)
+                    if (afterGrid.area == FocusArea.Dock) {
+                        qsOnEdit = true
+                        doNavFeedback(view, hapticsEnabled, hapticIntensity)
+                    } else {
+                        qsGridIndex = afterGrid.gridIndex
+                        if (qsGridIndex != beforeGrid) {
+                            doNavFeedback(view, hapticsEnabled, hapticIntensity)
+                        }
+                    }
+                    true
+                }
+                else -> false
+            }
+        }
+        DisposableEffect(Unit) {
+            registerQsKeyHandler(qsHandleKey)
+            onDispose { registerQsKeyHandler(null) }
+        }
         if (!showTileEditor) {
             Column(
                 modifier = Modifier
@@ -5445,135 +5752,7 @@ internal fun QuickSettingsOverlay(
                     .focusRequester(qsKeyFocusRequester)
                     .focusable()
                     .clickable(interactionSource = remember { MutableInteractionSource() }, indication = null, onClick = onDismiss)
-                    .onPreviewKeyEvent { ev ->
-                    if (showTileEditor) return@onPreviewKeyEvent false
-                    if (ev.type != KeyEventType.KeyDown) return@onPreviewKeyEvent false
-                    if (ev.isVolumePanelKey()) return@onPreviewKeyEvent false
-                    val n = allQuickTiles.size
-                    if (ev.key == Key.Back) {
-                        onDismiss()
-                        return@onPreviewKeyEvent true
-                    }
-                    if (ev.isEndCallKey()) {
-                        onDismiss()
-                        return@onPreviewKeyEvent true
-                    }
-                    val directional =
-                        ev.key == Key.DirectionLeft ||
-                            ev.key == Key.DirectionRight ||
-                            ev.key == Key.DirectionUp ||
-                            ev.key == Key.DirectionDown
-                    if (!directional) {
-                        lastDirectionalRef[0] = 0L
-                    }
-                    val now = SystemClock.uptimeMillis()
-                    val repeatHeavy = (ev.nativeKeyEvent?.repeatCount ?: 0) > 0
-                    val isHard = if (directional) {
-                        val quickPair = lastDirectionalRef[0] != 0L && (now - lastDirectionalRef[0]) < NAV_FRAME_MS
-                        lastDirectionalRef[0] = now
-                        repeatHeavy || quickPair
-                    } else {
-                        false
-                    }
-                    val cols = 2
-                    val lastPageIdx = pages.lastIndex.coerceAtLeast(0)
-
-                    when (ev.key) {
-                        Key.Enter,
-                        Key.NumPadEnter,
-                        -> {
-                            if (n == 0) return@onPreviewKeyEvent true
-                            val shift = ev.nativeKeyEvent?.isShiftPressed == true
-                            if (qsOnEdit) {
-                                if (!shift) showTileEditor = true
-                                return@onPreviewKeyEvent true
-                            }
-                            val page = pagerState.currentPage.coerceIn(0, lastPageIdx)
-                            val pageList = pages.getOrNull(page) ?: emptyList()
-                            val sc = pageList.size
-                            if (sc <= 0) return@onPreviewKeyEvent true
-                            val idx = qsGridIndex.coerceIn(0, sc - 1)
-                            val tile = pageList[idx]
-                            if (shift) runQsTileLongPress(tile) else runQsTileTap(tile)
-                            true
-                        }
-                        Key.DirectionLeft,
-                        Key.DirectionRight,
-                        Key.DirectionUp,
-                        Key.DirectionDown,
-                        -> {
-                            if (n == 0 || pages.isEmpty()) return@onPreviewKeyEvent true
-                            if (qsOnEdit) {
-                                if (ev.key == Key.DirectionUp) {
-                                    qsOnEdit = false
-                                    val page = pagerState.currentPage.coerceIn(0, lastPageIdx)
-                                    val sc = pages.getOrNull(page)?.size ?: 0
-                                    if (sc > 0) {
-                                        val lastTile = sc - 1
-                                        qsGridIndex = (lastTile / cols) * cols
-                                    }
-                                    doNavFeedback(view, hapticsEnabled, hapticIntensity)
-                                }
-                                return@onPreviewKeyEvent true
-                            }
-                            val page = pagerState.currentPage.coerceIn(0, lastPageIdx)
-                            val pageList = pages.getOrNull(page) ?: emptyList()
-                            val sliceCount = pageList.size
-                            if (sliceCount <= 0) return@onPreviewKeyEvent true
-
-                            val currentIndex = qsGridIndex.coerceIn(0, sliceCount - 1)
-                            val currentRow = currentIndex / cols
-                            val currentCol = currentIndex % cols
-                            val isFirstCol = currentCol == 0
-                            val isLastCol = currentCol == cols - 1 || currentIndex == sliceCount - 1
-
-                            if (ev.key == Key.DirectionLeft && isFirstCol && page > 0 && isHard &&
-                                !pagerState.isScrollInProgress
-                            ) {
-                                val prevCount = pages[page - 1].size
-                                val rowStart = currentRow * cols
-                                val target = (rowStart + cols - 1).coerceAtMost(prevCount - 1).coerceAtLeast(0)
-                                qsGridIndex = target
-                                scope.launch {
-                                    pagerState.animateScrollToPage(page - 1)
-                                    doNavFeedback(view, hapticsEnabled, hapticIntensity)
-                                }
-                                return@onPreviewKeyEvent true
-                            }
-                            if (ev.key == Key.DirectionRight && isLastCol && page < lastPageIdx && isHard &&
-                                !pagerState.isScrollInProgress
-                            ) {
-                                val nextCount = pages[page + 1].size
-                                val target = (currentRow * cols).coerceAtMost(nextCount - 1).coerceAtLeast(0)
-                                qsGridIndex = target
-                                scope.launch {
-                                    pagerState.animateScrollToPage(page + 1)
-                                    doNavFeedback(view, hapticsEnabled, hapticIntensity)
-                                }
-                                return@onPreviewKeyEvent true
-                            }
-
-                            if (directional && (now - lastMoveRef[0]) < NAV_MOVE_MIN_MS) {
-                                return@onPreviewKeyEvent true
-                            }
-                            lastMoveRef[0] = now
-
-                            val beforeGrid = qsGridIndex
-                            val afterGrid = NavState(gridIndex = currentIndex).onGridKey(ev.key, cols, sliceCount)
-                            if (afterGrid.area == FocusArea.Dock) {
-                                qsOnEdit = true
-                                doNavFeedback(view, hapticsEnabled, hapticIntensity)
-                            } else {
-                                qsGridIndex = afterGrid.gridIndex
-                                if (qsGridIndex != beforeGrid) {
-                                    doNavFeedback(view, hapticsEnabled, hapticIntensity)
-                                }
-                            }
-                            true
-                        }
-                        else -> false
-                    }
-                    },
+                    .onPreviewKeyEvent { ev -> qsHandleKey(ev) },
             ) {
                 Row(
                     modifier = Modifier
@@ -6918,7 +7097,9 @@ private fun AppDrawer(
     var pendingDropMoving by remember { mutableStateOf<String?>(null) }
     var pendingDropTarget by remember { mutableStateOf<String?>(null) }
     val drawerContext = LocalContext.current
-    val dockKeyNavSize = if (classicDock) 2 else 4
+    // Classic Mode's dock grew from 2 slots (Mail, Camera) to the same 4 as Zeno Mode
+    // (Mail, Envelope, Home, Camera) — both now use the same key-nav size.
+    val dockKeyNavSize = 4
 
     DisposableEffect(Unit) {
         onDispose {
@@ -10421,12 +10602,16 @@ private fun Dock(
     themePalette: LauncherThemePalette,
     /** True when DPAD focus is inside the dock (from AppDrawer key handler). */
     focused: Boolean = false,
-    /** Which dock slot is focused: 0=Mail, 1=Home, 2=Shortcut, 3=Camera (or 0=Mail, 1=Camera when compact). */
+    /** Which dock slot is focused: 0=Mail, 1=Home, 2=Shortcut, 3=Camera (or 0=Mail, 1=Camera when compact;
+     *  0=Mail, 1=Shortcut, 2=Home, 3=Camera when [classicDockOrder]). */
     focusedIndex: Int = 0,
+    /** Classic Mode's requested order: Mail, Envelope(Shortcut), Home, …, Camera — Envelope sits
+     *  right after Mail instead of after Home. Zeno Mode's order is untouched (default false). */
+    classicDockOrder: Boolean = false,
 ) {
-    val homeFocusIdx = if (showHomeButton) 1 else -1
+    val homeFocusIdx = if (showHomeButton) (if (classicDockOrder) 2 else 1) else -1
     val shortcutFocusIdx = when {
-        showHomeButton && showMessagesShortcut -> 2
+        showHomeButton && showMessagesShortcut -> if (classicDockOrder) 1 else 2
         !showHomeButton && showMessagesShortcut -> 1
         else -> -1
     }
@@ -10450,6 +10635,7 @@ private fun Dock(
         label = "scrubOverlayAlpha",
     )
     var dotsWidthPx by remember { mutableStateOf(1f) }
+    var dotsXpx by remember { mutableStateOf(0f) }
     var fingerXpx by remember { mutableStateOf(0f) }
 
     fun xToPage(x: Float): Int {
@@ -10506,86 +10692,120 @@ private fun Dock(
             }
             Spacer(Modifier.weight(1f))
 
-            if (showHomeButton) {
-                DockIcon(
-                    icon = Icons.Rounded.Home,
-                    onClick = onHome,
-                    buttonSize = 56.dp,
-                    iconSize = navIconSize,
-                    selected = focused && focusedIndex == homeFocusIdx,
-                    selectedTint = selectedTint,
-                    iconTint = dockIconTint,
-                )
-                Spacer(Modifier.width(navMidSpacing))
+            val homeBlock: @Composable () -> Unit = {
+                if (showHomeButton) {
+                    DockIcon(
+                        icon = Icons.Rounded.Home,
+                        onClick = onHome,
+                        buttonSize = 56.dp,
+                        iconSize = navIconSize,
+                        selected = focused && focusedIndex == homeFocusIdx,
+                        selectedTint = selectedTint,
+                        iconTint = dockIconTint,
+                    )
+                    Spacer(Modifier.width(navMidSpacing))
+                }
             }
-            Box(
-                modifier = Modifier
-                    .onSizeChanged { dotsWidthPx = it.width.toFloat() }
-                    .pointerInput(drawerPageCount) {
-                        awaitEachGesture {
-                            val down = awaitFirstDown(pass = PointerEventPass.Main)
-                            fingerXpx = down.position.x
-                            val startMs = SystemClock.uptimeMillis()
-                            var activated = false
-                            while (true) {
-                                val remaining = (250L - (SystemClock.uptimeMillis() - startMs)).coerceAtLeast(0L)
-                                val event = if (!activated && remaining > 0L) {
-                                    withTimeoutOrNull(remaining) { awaitPointerEvent(pass = PointerEventPass.Main) }
-                                } else {
-                                    awaitPointerEvent(pass = PointerEventPass.Main)
-                                }
-                                if (event == null) {
-                                    activated = true
-                                    scrubbing = true
-                                    val page = xToPage(fingerXpx)
-                                    hoveredPage = page
-                                    onScrubPage(page)
-                                    continue
-                                }
-                                val change = event.changes.firstOrNull() ?: break
-                                if (change.changedToUp()) { scrubbing = false; break }
-                                if (change.positionChanged()) {
-                                    fingerXpx = change.position.x
-                                    if (activated) {
+            val dotsBlock: @Composable () -> Unit = {
+                Box(
+                    modifier = Modifier
+                        .onSizeChanged { dotsWidthPx = it.width.toFloat() }
+                        .onGloballyPositioned { coords -> dotsXpx = coords.positionInParent().x }
+                        .pointerInput(drawerPageCount) {
+                            awaitEachGesture {
+                                val down = awaitFirstDown(pass = PointerEventPass.Main)
+                                fingerXpx = down.position.x
+                                val startMs = SystemClock.uptimeMillis()
+                                var activated = false
+                                while (true) {
+                                    val remaining = (250L - (SystemClock.uptimeMillis() - startMs)).coerceAtLeast(0L)
+                                    val event = if (!activated && remaining > 0L) {
+                                        withTimeoutOrNull(remaining) { awaitPointerEvent(pass = PointerEventPass.Main) }
+                                    } else {
+                                        awaitPointerEvent(pass = PointerEventPass.Main)
+                                    }
+                                    if (event == null) {
+                                        activated = true
+                                        scrubbing = true
                                         val page = xToPage(fingerXpx)
-                                        if (page != hoveredPage) { hoveredPage = page; onScrubPage(page) }
+                                        hoveredPage = page
+                                        onScrubPage(page)
+                                        continue
+                                    }
+                                    val change = event.changes.firstOrNull() ?: break
+                                    if (change.changedToUp()) { scrubbing = false; break }
+                                    if (change.positionChanged()) {
+                                        fingerXpx = change.position.x
+                                        if (activated) {
+                                            val page = xToPage(fingerXpx)
+                                            if (page != hoveredPage) { hoveredPage = page; onScrubPage(page) }
+                                        }
                                     }
                                 }
                             }
                         }
+                ) {
+                    // Fades out as the full-width scrub bar (with its own, larger Dots) fades in
+                    // underneath — otherwise this small row stays visible on top of it the whole
+                    // time, rendering as duplicated/overlapping dots and page numbers.
+                    Box(
+                        modifier = Modifier
+                            .padding(horizontal = 6.dp, vertical = 5.dp)
+                            .alpha(1f - scrubOverlayAlpha),
+                    ) {
+                        Dots(
+                            current = if (scrubbing) hoveredPage else pageIndex.coerceIn(0, drawerPageCount - 1),
+                            count = drawerPageCount,
+                            themePalette = themePalette,
+                            emphasize = false,
+                            hideFirstPageLabel = homeActive,
+                        )
                     }
-            ) {
-                Box(modifier = Modifier.padding(horizontal = 6.dp, vertical = 5.dp)) {
-                    Dots(
-                        current = if (scrubbing) hoveredPage else pageIndex.coerceIn(0, drawerPageCount - 1),
-                        count = drawerPageCount,
-                        themePalette = themePalette,
-                        emphasize = false,
-                        hideFirstPageLabel = homeActive,
-                    )
                 }
             }
-            if (showMessagesShortcut) {
-                Spacer(Modifier.width(navMidSpacing))
+            val shortcutIcon: @Composable () -> Unit = {
                 DockEndSlot(
                     iconModel = dockMiddleIconModel,
                     fallbackIcon = if (secondDockFallbackResId != null) Icons.Rounded.Apps else Icons.Outlined.MailOutline,
                     fallbackResId = secondDockFallbackResId,
-                    fallbackScale = when (secondDockFallbackResId) {
-                        R.drawable.ic_dock_whatsapp -> 0.76f
-                        R.drawable.ic_dock_pulse -> 1.06f
+                    fallbackScale = when {
+                        secondDockFallbackResId == R.drawable.ic_dock_whatsapp -> 0.76f
+                        secondDockFallbackResId == R.drawable.ic_dock_pulse -> 1.06f
+                        // Reference BB10 layout: the Envelope glyph reads smaller than the Home
+                        // icon it sits beside, not just a smaller button — scale the glyph down
+                        // within its (also-reduced) button too.
+                        classicDockOrder && secondDockFallbackResId == R.drawable.ic_dock_envelope -> 0.9f
                         else -> 0.84f
                     },
                     appIconShape = appIconShape,
                     onClick = onShortcut,
                     onLongPress = onLongPressShortcut,
                     hasUnread = shortcutHasUnread,
-                    buttonSize = 56.dp,
-                    iconSize = navIconSize,
+                    // Classic Mode's Envelope slot is deliberately smaller than the Home icon
+                    // beside it (reference BB10 dock layout), unlike Zeno Mode's Shortcut slot
+                    // which matches Home's size exactly.
+                    buttonSize = if (classicDockOrder) 32.dp else 56.dp,
+                    iconSize = if (classicDockOrder) 21.dp else navIconSize,
                     selected = focused && focusedIndex == shortcutFocusIdx,
                     selectedTint = selectedTint,
                     iconTint = dockIconTint,
                 )
+            }
+            if (classicDockOrder) {
+                // Mail, Envelope, Home, dots, Camera — Envelope sits right after Mail.
+                if (showMessagesShortcut) {
+                    shortcutIcon()
+                    Spacer(Modifier.width(navMidSpacing))
+                }
+                homeBlock()
+                dotsBlock()
+            } else {
+                homeBlock()
+                dotsBlock()
+                if (showMessagesShortcut) {
+                    Spacer(Modifier.width(navMidSpacing))
+                    shortcutIcon()
+                }
             }
 
             Spacer(Modifier.weight(1f))
@@ -10618,15 +10838,28 @@ private fun Dock(
                     .height(navBarHeight)
                     .alpha(scrubOverlayAlpha)
                     .background(Color.Black),
-                contentAlignment = Alignment.Center
             ) {
-                Dots(
-                    current = hoveredPage,
-                    count = drawerPageCount,
-                    themePalette = themePalette,
-                    emphasize = true,
-                    hideFirstPageLabel = homeActive,
-                )
+                // Align to the inline dots' own measured position (not screen-center) — the
+                // dock's fixed-width content isn't symmetric left/right of the dots (e.g.
+                // Classic Mode's Envelope+Home on the left vs just Camera on the right), so a
+                // screen-centered bar lands the dots in a different spot than the static row,
+                // overlapping neighboring icons.
+                Box(
+                    modifier = Modifier
+                        .align(Alignment.CenterStart)
+                        // dotsXpx is measured on the outer dotsBlock Box; the inline Dots sit
+                        // inside a further 6.dp horizontal padding — match it so the emphasized
+                        // dots line up exactly with where the small dots were.
+                        .offset(x = with(density) { dotsXpx.toDp() } + 6.dp),
+                ) {
+                    Dots(
+                        current = hoveredPage,
+                        count = drawerPageCount,
+                        themePalette = themePalette,
+                        emphasize = true,
+                        hideFirstPageLabel = homeActive,
+                    )
+                }
             }
 
             val xDp = with(density) { fingerXpx.toDp() }
@@ -13086,22 +13319,22 @@ private fun SettingsScreenOverlay(
     /** When true, a full-screen settings sub-overlay is shown above this list — Back must not dismiss settings. */
     stackedChildOverlayOpen: Boolean,
     gridPreset: GridPreset,
-    dockMailTitle: String,
-    dockSecondTitle: String,
-    dockThirdTitle: String,
-    dockMailBody: String,
-    dockSecondBody: String,
-    dockThirdBody: String,
     glanceSubtitle: String,
     homeGroupsSubtitle: String,
     hapticsEnabled: Boolean,
     hapticIntensity: Int,
     onSetHapticIntensity: (Int) -> Unit,
     onGridPreset: (GridPreset) -> Unit,
-    onOpenDockSlotPicker: (DockSlot) -> Unit,
     onOpenGlanceSettings: () -> Unit,
     permissionsSubtitle: String,
     onOpenPermissionsSettings: () -> Unit,
+    autoUnlockSubtitle: String,
+    onOpenAutoUnlockSettings: () -> Unit,
+    quickSwitchSubtitle: String,
+    onOpenQuickSwitchSettings: () -> Unit,
+    /** Zeno Status Bar toggle — only meaningful (and only shown) in Zeno Mode. */
+    zenoStatusBarEnabled: Boolean,
+    onToggleZenoStatusBar: () -> Unit,
     languageSubtitle: String,
     onOpenLanguageSettings: () -> Unit,
     rootGranted: Boolean,
@@ -13119,11 +13352,11 @@ private fun SettingsScreenOverlay(
     onOpenScreenSaverSettings: () -> Unit,
     drawerBadgesSubtitle: String,
     minimalModeEnabled: Boolean,
+    /** Which mode is currently active — shown as the "Modes" row's subtitle. */
+    classicMode: Boolean,
     onOpenMinimalModeSettings: () -> Unit,
     homeStripEnabled: Boolean,
     onToggleHomeStrip: () -> Unit,
-    dockSecondEnabled: Boolean,
-    onToggleDockSecond: () -> Unit,
     appIconShape: AppIconShape,
     onSetAppIconShape: (AppIconShape) -> Unit,
     onOpenAppearanceSettings: () -> Unit,
@@ -13142,6 +13375,12 @@ private fun SettingsScreenOverlay(
     // 7-tap counter for developer diagnostics easter egg on the title.
     var diagTapCount by remember { mutableIntStateOf(0) }
     val itemCount = 17
+    // Home Strip (2), Home Gestures (3), Glance Strip (4), and Zeno Status Bar (5) are all
+    // Zeno-Mode-only features — dead in Classic Mode (Classic's clean home page has no strip, no
+    // swipe gestures, no glance strip, and its ZenoStatusBar is mandatory/always-on with no
+    // toggle needed). Row numbering stays fixed either way; these indices are just skipped during
+    // navigation and never rendered, rather than renumbering everything after them.
+    val hiddenIndices = if (classicMode) setOf(2, 3, 4, 8) else emptySet()
     var showGpsExportWarn by remember { mutableStateOf(false) }
     var pendingExportFilename by remember { mutableStateOf("") }
 
@@ -13178,11 +13417,12 @@ private fun SettingsScreenOverlay(
     }
 
     fun activate(index: Int) {
+        if (index in hiddenIndices) return
         // Actions that open a full-screen sub-overlay: do NOT steal focus back to the
         // settings list — the sub-overlay's own LaunchedEffect will request focus.
         // Actions that stay on the settings list (toggles, resets, backups): reclaim
         // focus so trackpad DPAD navigation continues to work.
-        val opensSubOverlay = index in setOf(0, 1, 3, 4, 8, 9, 10, 11, 12, 13, 14)
+        val opensSubOverlay = index in setOf(0, 1, 3, 4, 9, 10, 11, 12, 13, 14)
         when (index) {
             // HOME SCREEN
             0 -> onOpenAppearanceSettings()
@@ -13194,14 +13434,14 @@ private fun SettingsScreenOverlay(
             5 -> onSetWallpaper()
             6 -> onOpenScreenSaverSettings()
             7 -> onResetTheme()
-            // DOCK
-            8 -> onOpenDockSlotPicker(DockSlot.Mail)
-            9 -> onOpenDockSlotPicker(DockSlot.Shortcut)
-            10 -> onOpenDockSlotPicker(DockSlot.Camera)
-            // SYSTEM
-            11 -> onOpenHapticSettings()
-            12 -> onOpenLanguageSettings()
-            13 -> onOpenPermissionsSettings()
+            // SYSTEM (Dock section removed — Mail/Envelope/Camera are all reachable via
+            // long-press on the dock icon itself, which offers the same picker.)
+            8 -> onToggleZenoStatusBar()
+            9 -> onOpenHapticSettings()
+            10 -> onOpenLanguageSettings()
+            11 -> onOpenPermissionsSettings()
+            12 -> onOpenAutoUnlockSettings()
+            13 -> onOpenQuickSwitchSettings()
             14 -> onOpenRootSettings()
             // BACKUP
             15 -> {
@@ -13344,7 +13584,9 @@ private fun SettingsScreenOverlay(
                                 true
                             }
                             ev.key == Key.DirectionUp || nk?.keyCode == AndroidKeyEvent.KEYCODE_DPAD_UP -> {
-                                val next = (selectedIndex - 1).coerceAtLeast(0)
+                                var next = selectedIndex - 1
+                                while (next in hiddenIndices) next--
+                                next = next.coerceAtLeast(0)
                                 if (next != selectedIndex) {
                                     selectedIndex = next
                                     doNavFeedback(view, hapticsEnabled, hapticIntensity)
@@ -13352,7 +13594,9 @@ private fun SettingsScreenOverlay(
                                 true
                             }
                             ev.key == Key.DirectionDown || nk?.keyCode == AndroidKeyEvent.KEYCODE_DPAD_DOWN -> {
-                                val next = (selectedIndex + 1).coerceAtMost(itemCount - 1)
+                                var next = selectedIndex + 1
+                                while (next in hiddenIndices) next++
+                                next = next.coerceAtMost(itemCount - 1)
                                 if (next != selectedIndex) {
                                     selectedIndex = next
                                     doNavFeedback(view, hapticsEnabled, hapticIntensity)
@@ -13403,10 +13647,10 @@ private fun SettingsScreenOverlay(
                         SettingsRow(
                             icon = Icons.Outlined.ViewList,
                             title = stringResource(R.string.settings_minimal_mode_title),
-                            subtitle = if (minimalModeEnabled) {
-                                stringResource(R.string.settings_on)
-                            } else {
-                                stringResource(R.string.settings_minimal_mode_subtitle)
+                            subtitle = when {
+                                minimalModeEnabled -> stringResource(R.string.settings_mode_active_minimal)
+                                classicMode -> stringResource(R.string.settings_mode_active_classic)
+                                else -> stringResource(R.string.settings_mode_active_zeno)
                             },
                             selected = selectedIndex == 1,
                             themePalette = themePalette,
@@ -13422,6 +13666,7 @@ private fun SettingsScreenOverlay(
                         )
                     }
                 }
+                if (!classicMode) {
                 Spacer(Modifier.height(8.dp))
                 Column(Modifier.bringIntoViewRequester(rowBringers[2])) {
                     SettingsCategoryCard(cardBg = cardBg, cardShape = cardShape, selected = selectedIndex == 2) {
@@ -13469,6 +13714,7 @@ private fun SettingsScreenOverlay(
                         )
                     }
                 }
+                }
                 Spacer(Modifier.height(8.dp))
                 Spacer(Modifier.height(12.dp))
                 HorizontalDivider(color = Color(0xFF2A3040), thickness = 0.5.dp)
@@ -13481,6 +13727,7 @@ private fun SettingsScreenOverlay(
                     color = subtitleColor,
                     modifier = Modifier.padding(start = 4.dp, bottom = 6.dp),
                 )
+                if (!classicMode) {
                 Column(Modifier.bringIntoViewRequester(rowBringers[4])) {
                     SettingsCategoryCard(cardBg = cardBg, cardShape = cardShape, selected = selectedIndex == 4) {
                         SettingsRow(
@@ -13500,6 +13747,7 @@ private fun SettingsScreenOverlay(
                             },
                         )
                     }
+                }
                 }
                 Spacer(Modifier.height(8.dp))
                 Column(Modifier.bringIntoViewRequester(rowBringers[5])) {
@@ -13548,48 +13796,54 @@ private fun SettingsScreenOverlay(
                 HorizontalDivider(color = Color(0xFF2A3040), thickness = 0.5.dp)
                 Spacer(Modifier.height(12.dp))
 
-                // ── DOCK ─────────────────────────────────────────────────
+                // Dock section removed — Mail/Envelope/Camera dock shortcuts are all reachable
+                // via long-press on the dock icon itself, which offers the same picker.
+
+                // ── SYSTEM ───────────────────────────────────────────────
                 Text(
-                    stringResource(R.string.settings_dock),
+                    stringResource(R.string.settings_system),
                     style = MaterialTheme.typography.labelSmall,
                     color = subtitleColor,
                     modifier = Modifier.padding(start = 4.dp, bottom = 6.dp),
                 )
+                if (!classicMode) {
                 Column(Modifier.bringIntoViewRequester(rowBringers[8])) {
                     SettingsCategoryCard(cardBg = cardBg, cardShape = cardShape, selected = selectedIndex == 8) {
                         SettingsRow(
-                            icon = Icons.Rounded.MailOutline,
-                            title = dockMailTitle,
-                            subtitle = dockMailBody,
+                            icon = Icons.Rounded.ViewAgenda,
+                            title = stringResource(R.string.settings_custom_status_bar_title),
+                            subtitle = if (zenoStatusBarEnabled) stringResource(R.string.settings_on) else stringResource(R.string.settings_off),
                             selected = selectedIndex == 8,
                             themePalette = themePalette,
                             subtitleColor = subtitleColor,
                             onClick = { activate(8) },
                             trailingContent = {
-                                Text(
-                                    text = "›",
-                                    fontSize = 20.sp,
-                                    color = if (selectedIndex == 8) Color(0xFF84D5F6) else Color(0xFF7A8290),
+                                Switch(
+                                    checked = zenoStatusBarEnabled,
+                                    onCheckedChange = { onToggleZenoStatusBar() },
+                                    colors = SwitchDefaults.colors(
+                                        checkedThumbColor = Color.White,
+                                        checkedTrackColor = Color(0xFF4A90D9),
+                                        uncheckedThumbColor = Color(0xFF9AA0A8),
+                                        uncheckedTrackColor = Color(0xFF3A3F4A),
+                                    ),
                                 )
                             },
                         )
                     }
                 }
                 Spacer(Modifier.height(8.dp))
+                }
                 Column(Modifier.bringIntoViewRequester(rowBringers[9])) {
                     SettingsCategoryCard(cardBg = cardBg, cardShape = cardShape, selected = selectedIndex == 9) {
                         SettingsRow(
-                            icon = Icons.Rounded.TouchApp,
-                            title = dockSecondTitle,
-                            subtitle = if (!dockSecondEnabled) {
-                                stringResource(R.string.settings_hidden)
-                            } else {
-                                dockSecondBody
-                            },
+                            icon = Icons.Outlined.Vibration,
+                            title = stringResource(R.string.settings_haptics_title),
+                            subtitle = if (hapticsEnabled) stringResource(R.string.settings_on) else stringResource(R.string.settings_off),
                             selected = selectedIndex == 9,
                             themePalette = themePalette,
                             subtitleColor = subtitleColor,
-                            onClick = { selectedIndex = 9; activate(9) },
+                            onClick = { activate(9) },
                             trailingContent = {
                                 Text(
                                     text = "›",
@@ -13604,9 +13858,9 @@ private fun SettingsScreenOverlay(
                 Column(Modifier.bringIntoViewRequester(rowBringers[10])) {
                     SettingsCategoryCard(cardBg = cardBg, cardShape = cardShape, selected = selectedIndex == 10) {
                         SettingsRow(
-                            icon = Icons.Rounded.Apps,
-                            title = dockThirdTitle,
-                            subtitle = dockThirdBody,
+                            icon = Icons.Rounded.Language,
+                            title = stringResource(R.string.settings_language_title),
+                            subtitle = languageSubtitle,
                             selected = selectedIndex == 10,
                             themePalette = themePalette,
                             subtitleColor = subtitleColor,
@@ -13621,24 +13875,13 @@ private fun SettingsScreenOverlay(
                         )
                     }
                 }
-
-                Spacer(Modifier.height(12.dp))
-                HorizontalDivider(color = Color(0xFF2A3040), thickness = 0.5.dp)
-                Spacer(Modifier.height(12.dp))
-
-                // ── SYSTEM ───────────────────────────────────────────────
-                Text(
-                    stringResource(R.string.settings_system),
-                    style = MaterialTheme.typography.labelSmall,
-                    color = subtitleColor,
-                    modifier = Modifier.padding(start = 4.dp, bottom = 6.dp),
-                )
+                Spacer(Modifier.height(8.dp))
                 Column(Modifier.bringIntoViewRequester(rowBringers[11])) {
                     SettingsCategoryCard(cardBg = cardBg, cardShape = cardShape, selected = selectedIndex == 11) {
                         SettingsRow(
-                            icon = Icons.Outlined.Vibration,
-                            title = stringResource(R.string.settings_haptics_title),
-                            subtitle = if (hapticsEnabled) stringResource(R.string.settings_on) else stringResource(R.string.settings_off),
+                            icon = Icons.Rounded.Security,
+                            title = stringResource(R.string.settings_permissions_title),
+                            subtitle = permissionsSubtitle,
                             selected = selectedIndex == 11,
                             themePalette = themePalette,
                             subtitleColor = subtitleColor,
@@ -13657,9 +13900,9 @@ private fun SettingsScreenOverlay(
                 Column(Modifier.bringIntoViewRequester(rowBringers[12])) {
                     SettingsCategoryCard(cardBg = cardBg, cardShape = cardShape, selected = selectedIndex == 12) {
                         SettingsRow(
-                            icon = Icons.Rounded.Language,
-                            title = stringResource(R.string.settings_language_title),
-                            subtitle = languageSubtitle,
+                            icon = Icons.Rounded.LockOpen,
+                            title = stringResource(R.string.perm_auto_unlock_title),
+                            subtitle = autoUnlockSubtitle,
                             selected = selectedIndex == 12,
                             themePalette = themePalette,
                             subtitleColor = subtitleColor,
@@ -13678,9 +13921,9 @@ private fun SettingsScreenOverlay(
                 Column(Modifier.bringIntoViewRequester(rowBringers[13])) {
                     SettingsCategoryCard(cardBg = cardBg, cardShape = cardShape, selected = selectedIndex == 13) {
                         SettingsRow(
-                            icon = Icons.Rounded.Security,
-                            title = stringResource(R.string.settings_permissions_title),
-                            subtitle = permissionsSubtitle,
+                            icon = Icons.Rounded.SwapVert,
+                            title = stringResource(R.string.perm_search_overlay_title),
+                            subtitle = quickSwitchSubtitle,
                             selected = selectedIndex == 13,
                             themePalette = themePalette,
                             subtitleColor = subtitleColor,

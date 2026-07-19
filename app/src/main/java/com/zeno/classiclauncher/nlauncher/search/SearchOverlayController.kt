@@ -4,6 +4,10 @@ import android.content.Context
 import android.graphics.PixelFormat
 import android.util.Log
 import android.view.WindowManager
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.platform.ComposeView
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleOwner
@@ -16,6 +20,10 @@ import androidx.savedstate.SavedStateRegistry
 import androidx.savedstate.SavedStateRegistryController
 import androidx.savedstate.SavedStateRegistryOwner
 import androidx.savedstate.setViewTreeSavedStateRegistryOwner
+import com.zeno.classiclauncher.nlauncher.apps.AppEntry
+import com.zeno.classiclauncher.nlauncher.apps.AppsRepository
+import com.zeno.classiclauncher.nlauncher.prefs.LauncherPrefsRepository
+import kotlinx.coroutines.flow.first
 
 /**
  * Owns the floating search overlay window — a single [ComposeView] added directly to the
@@ -64,14 +72,32 @@ internal object SearchOverlayController {
             setViewTreeViewModelStoreOwner(owner)
             setViewTreeSavedStateRegistryOwner(owner)
             setContent {
-                SearchOverlayContent(
+                var query by remember { mutableStateOf("") }
+                var allApps by remember { mutableStateOf<List<AppEntry>>(emptyList()) }
+                var hiddenPackages by remember { mutableStateOf<Set<String>>(emptySet()) }
+
+                androidx.compose.runtime.LaunchedEffect(Unit) {
+                    val prefsRepo = LauncherPrefsRepository(appContext)
+                    hiddenPackages = prefsRepo.prefsFlow.first().hiddenPackages
+                    allApps = AppsRepository(appContext, prefsRepo).appsFlow().first()
+                }
+
+                UniversalSearchOverlay(
+                    query = query,
+                    onQueryChange = { query = it },
                     onDismiss = ::hide,
-                    onLaunchApp = { pkg ->
-                        SearchOverlayActions.launchAndHide(appContext, pkg)
-                    },
+                    allApps = allApps,
+                    hiddenPackages = hiddenPackages,
+                    onLaunchApp = { pkg -> SearchOverlayActions.launchAndHide(appContext, pkg) },
                     onLaunchSettings = { action, fallbackAction ->
                         SearchOverlayActions.openSettingsAndHide(appContext, action, fallbackAction)
                     },
+                    onShowHiddenApps = { SearchOverlayActions.showHiddenAppsAndHide(appContext) },
+                    // Quick Switch has no hosting Activity for the system speech-recognizer
+                    // result callback, so the mic button is omitted here (see home/drawer).
+                    showMic = false,
+                    onOpenPlayStore = { q -> SearchOverlayActions.openPlayStoreSearchAndHide(appContext, q) },
+                    onOpenWebSearch = { q -> SearchOverlayActions.openWebSearchAndHide(appContext, q) },
                 )
             }
         }
