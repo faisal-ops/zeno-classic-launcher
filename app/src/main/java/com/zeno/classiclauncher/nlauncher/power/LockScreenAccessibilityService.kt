@@ -112,6 +112,7 @@ class LockScreenAccessibilityService : AccessibilityService() {
                 searchOverlayEnabled = prefs.searchOverlayEnabled
                 searchOverlayKeyCode1 = prefs.searchOverlayCustomKeyCode1
                 searchOverlayKeyCode2 = prefs.searchOverlayCustomKeyCode2
+                minimalModeActive = prefs.minimalModeEnabled
                 Log.d(TAG, "prefs updated — autoUnlockEnabled=$autoUnlockEnabled pinLength=$pinLength")
             }
         }
@@ -146,6 +147,11 @@ class LockScreenAccessibilityService : AccessibilityService() {
     /** Mirrors prefs.searchOverlayEnabled — lets the user turn off just the trigger without
      *  disabling the whole accessibility service. */
     @Volatile private var searchOverlayEnabled = true
+
+    /** Mirrors prefs.minimalModeEnabled — Universal Search (Quick Switch included) is a
+     *  Zeno/Classic-mode feature; Minimal Mode has its own separate, simpler screen with no
+     *  search UI, so the overlay must not appear on top of it or any other app while it's active. */
+    @Volatile private var minimalModeActive = false
 
     /** Mirrors prefs.searchOverlayCustomKeyCode1/2. */
     @Volatile private var searchOverlayKeyCode1 = 0
@@ -251,6 +257,7 @@ class LockScreenAccessibilityService : AccessibilityService() {
 
     private fun fireSearchOverlayTrigger() {
         if (!searchOverlayEnabled) return
+        if (minimalModeActive) return
         if (LauncherForegroundState.isForeground) return
         SearchOverlayController.toggle(this)
     }

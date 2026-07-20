@@ -255,6 +255,10 @@ class MainActivity : AppCompatActivity() {
         if (intent.action == com.zeno.classiclauncher.nlauncher.search.SearchOverlayActions.ACTION_SHOW_HIDDEN_APPS) {
             viewModel.requestShowHiddenApps()
         }
+        if (intent.action == com.zeno.classiclauncher.nlauncher.search.SearchOverlayActions.ACTION_SHOW_APP_MENU) {
+            intent.getStringExtra(com.zeno.classiclauncher.nlauncher.search.SearchOverlayActions.EXTRA_APP_MENU_PACKAGE)
+                ?.let { viewModel.requestShowAppMenu(it) }
+        }
     }
 
     private fun handlePinShortcutIntent(intent: Intent) {

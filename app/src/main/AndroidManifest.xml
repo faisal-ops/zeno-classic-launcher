@@ -8,6 +8,8 @@
     <uses-permission android:name="android.permission.ACCESS_FINE_LOCATION" />
     <uses-permission android:name="android.permission.ACCESS_COARSE_LOCATION" />
     <uses-permission android:name="android.permission.READ_CALENDAR" />
+    <uses-permission android:name="android.permission.READ_CONTACTS" />
+    <uses-permission android:name="android.permission.CALL_PHONE" />
     <!-- Cellular signal bars in the Minimal Mode status bar (ZenoStatusBar). Without this the
          signal level reads as unavailable and the bars are simply hidden — never faked. -->
     <uses-permission android:name="android.permission.READ_PHONE_STATE" />
@@ -143,6 +145,16 @@
             android:exported="false"
             android:showWhenLocked="true"
             android:turnScreenOn="true"
+            android:theme="@android:style/Theme.Translucent.NoTitleBar"
+            android:launchMode="singleInstance"
+            android:noHistory="true"
+            android:taskAffinity="" />
+
+        <!-- Invisible proxy so Quick Switch's tokenless overlay window can still use the system
+             speech recognizer's ActivityResultLauncher-style callback (see VoiceSearchProxyActivity). -->
+        <activity
+            android:name=".search.VoiceSearchProxyActivity"
+            android:exported="false"
             android:theme="@android:style/Theme.Translucent.NoTitleBar"
             android:launchMode="singleInstance"
             android:noHistory="true"

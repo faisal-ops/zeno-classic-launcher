@@ -31,6 +31,8 @@
     <string name="search_the_internet">Search \"%1$s\" on the Internet</string>
     <string name="cd_search_voice">Voice search</string>
     <string name="cd_search_help">Search help</string>
+    <string name="cd_search_call_contact">Call contact</string>
+    <string name="cd_search_app_options">App options</string>
     <string name="search_help_title">Universal Search</string>
     <string name="search_help_body_usage">Type an app name, a setting, or a contact to search everywhere at once. Results update as you type.</string>
     <string name="search_help_body_voice">Tap the microphone to speak your search instead of typing.</string>
@@ -393,6 +395,11 @@
     <string name="perm_calendar_on_missing_glance_off">Turn on Glance above to show events on home</string>
     <string name="perm_calendar_on_missing">On — grant calendar to show events</string>
     <string name="perm_calendar_grant_label">Grant calendar</string>
+    <string name="perm_contacts_title">Contacts in Universal Search</string>
+    <string name="perm_contacts_off">Off — contacts permission not required</string>
+    <string name="perm_contacts_on_ok">On — contacts access granted</string>
+    <string name="perm_contacts_on_missing">On — grant contacts to search them</string>
+    <string name="perm_contacts_grant_label">Grant contacts</string>
     <string name="perm_calendar_turn_off_toast">In App info → Permissions, turn off Calendar if you want.</string>
     <string name="gesture_swipe_right_app">Swipe right app</string>
     <string name="app_selector_type_to_search">Type to search</string>

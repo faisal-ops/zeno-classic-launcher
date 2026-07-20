@@ -77,7 +77,6 @@ import java.text.Collator
 import java.util.Locale
 import kotlin.math.abs
 
-private val PRIVATE_PREFIX_REGEX = Regex("^private\\s+", RegexOption.IGNORE_CASE)
 private const val HOME_STRIP_DND_TAG = "HomeStripDnD"
 private val VIEWMODEL_SHARING = SharingStarted.WhileSubscribed(stopTimeoutMillis = 5_000)
 internal const val HOME_STRIP_REMOVE_DROP_KEY = "__home_strip_remove__"
@@ -108,12 +107,29 @@ class LauncherViewModel(app: Application) : AndroidViewModel(app) {
 
     fun requestNavigateHome() { _navigateHomeEvent.value++ }
 
-    /** Universal Search's "Show Hidden Apps" row — UI observes, navigates to the drawer, and
-     *  sets the search query to "private" so the existing hidden-apps grid filter kicks in. */
+    /** Universal Search's "Show Hidden Apps" row. [_showHiddenAppsEvent] is observed by the UI
+     *  to navigate to the drawer page (needed when triggered from outside the launcher, e.g.
+     *  Quick Switch's cross-Activity intent); [_viewingHiddenApps] drives the dedicated hidden-
+     *  apps grid the drawer shows once there. */
     private val _showHiddenAppsEvent = MutableStateFlow(0)
     val showHiddenAppsEvent: StateFlow<Int> = _showHiddenAppsEvent.asStateFlow()
+    private val _viewingHiddenApps = MutableStateFlow(false)
+    val viewingHiddenApps: StateFlow<Boolean> = _viewingHiddenApps.asStateFlow()
 
-    fun requestShowHiddenApps() { _showHiddenAppsEvent.value++ }
+    fun requestShowHiddenApps() {
+        _viewingHiddenApps.value = true
+        _showHiddenAppsEvent.value++
+    }
+    fun dismissHiddenApps() { _viewingHiddenApps.value = false }
+
+    /** Quick Switch's "⋮" app-row action: rather than a stripped-down substitute menu, it brings
+     *  the launcher to the foreground and opens this exact same [AppContextMenu] — the one used by
+     *  home/drawer search — for the requested package, so every mode gets identical behavior. */
+    private val _pendingAppMenuPackage = MutableStateFlow<String?>(null)
+    val pendingAppMenuPackage: StateFlow<String?> = _pendingAppMenuPackage.asStateFlow()
+
+    fun requestShowAppMenu(packageName: String) { _pendingAppMenuPackage.value = packageName }
+    fun consumePendingAppMenuPackage() { _pendingAppMenuPackage.value = null }
 
     /** Window lost focus (e.g. system notification / QS shade) — UI closes launcher quick settings overlay. */
     private val _dismissLauncherQsEvent = MutableStateFlow(0)
@@ -351,15 +367,10 @@ class LauncherViewModel(app: Application) : AndroidViewModel(app) {
         }
     }
 
-    private val _baseCells = combine(apps, prefs, _searchQuery, _drawerSortMode) { list, pr, q, sortMode ->
-        val query = q.trim()
-        val ql = query.lowercase()
-        val (privateMode, privateQuery) = when {
-            ql == "private" -> true to ""
-            PRIVATE_PREFIX_REGEX.containsMatchIn(query) -> true to PRIVATE_PREFIX_REGEX.replaceFirst(query, "").trim()
-            else -> false to ""
-        }
-        val normalQuery = if (privateMode) "" else query
+    // Search no longer filters the drawer grid in place — Universal Search is a full-screen
+    // overlay drawn on top instead (see UniversalSearchOverlay), so this always builds the
+    // normal/unfiltered grid regardless of the current search query.
+    private val _baseCells = combine(apps, prefs, _drawerSortMode) { list, pr, sortMode ->
         val orderedPackages = if (sortMode == DrawerSortMode.ALPHABETICAL) {
             strictAlphabeticalDrawerOrder(
                 installed = list,
@@ -375,9 +386,9 @@ class LauncherViewModel(app: Application) : AndroidViewModel(app) {
             folderContents = pr.folderContents,
             folderNames = pr.folderNames,
             hiddenPackages = pr.hiddenPackages,
-            privateMode = privateMode,
-            privateQuery = privateQuery,
-            normalQuery = normalQuery,
+            privateMode = false,
+            privateQuery = "",
+            normalQuery = "",
             // Application context ignores the in-app language picker; wrap it so the
             // fallback folder title follows the launcher language.
             folderFallbackName = LauncherLocale.apply(getApplication()).getString(R.string.folder_default_name),

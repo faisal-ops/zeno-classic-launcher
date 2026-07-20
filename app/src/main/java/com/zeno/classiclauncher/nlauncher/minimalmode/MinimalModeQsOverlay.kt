@@ -243,10 +243,10 @@ internal fun MinimalModeQsOverlay(
             .clickable(onClick = onDismiss),
         contentAlignment = Alignment.TopCenter,
     ) {
-        // Content column — transparent spacer on top, dark only over tiles area
+        // Content column — transparent spacer on top, dark scrim for everything below it.
         Column(
             modifier = Modifier
-                .fillMaxWidth()
+                .fillMaxSize()
                 .clickable(
                     interactionSource = remember { MutableInteractionSource() },
                     indication = null,
@@ -256,10 +256,13 @@ internal fun MinimalModeQsOverlay(
             // Transparent spacer — real top bar from main screen shows through unobstructed
             Spacer(modifier = Modifier.height(with(density) { topBarBottomPx.toDp() }))
 
-            // Dark background wraps only the QS content (date row + tiles)
+            // Dark scrim fills the rest of the screen (not just the tiles' own intrinsic
+            // height) — otherwise the home screen's app list shows through, undimmed, in the
+            // gap below the last tile row.
             Column(
                 modifier = Modifier
                     .fillMaxWidth()
+                    .weight(1f)
                     .background(Color(0xFF000000)),
             ) {
 

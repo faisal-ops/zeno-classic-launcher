@@ -1091,6 +1091,45 @@ fun LauncherScreen(
     }
 
     var showAppMenu by remember { mutableStateOf<AppEntry?>(null) }
+
+    // Universal Search — ONE shared instance for the whole launcher (home + drawer, both modes,
+    // both hardware key capture and the overlay render). Previously each surface (HomePage,
+    // ClassicCleanHomePage, AppDrawer) had its own near-identical copy of this state and its own
+    // render of UniversalSearchOverlay nested inside its own bounded content Box — which is why
+    // it never actually covered the dock (a separate sibling below the pager, outside any single
+    // page's bounds) and why Classic home's copy silently failed to lay out at all. Owning it here
+    // at the root, as a sibling over the whole screen, fixes both and guarantees identical
+    // behavior everywhere since there is only one implementation left.
+    var rootSearchFocusIndex by remember { mutableStateOf(-1) }
+    val rootSearchResults = remember(searchQuery, allApps, prefs.hiddenPackages) {
+        rankHomeSearchApps(query = searchQuery, allApps = allApps, hiddenPackages = prefs.hiddenPackages).take(8)
+    }
+    val rootSettingsResults = remember(searchQuery) { matchSettingsEntries(searchQuery) }
+    val rootContactsGranted = remember { com.zeno.classiclauncher.nlauncher.search.contactsPermissionGranted(context) }
+    var rootContactResults by remember { mutableStateOf(emptyList<com.zeno.classiclauncher.nlauncher.search.ContactResult>()) }
+    LaunchedEffect(searchQuery, rootContactsGranted) {
+        rootContactResults = if (rootContactsGranted) {
+            com.zeno.classiclauncher.nlauncher.search.matchContacts(context, searchQuery)
+        } else {
+            emptyList()
+        }
+    }
+    LaunchedEffect(searchQuery, rootSearchResults, rootContactResults, rootSettingsResults) {
+        rootSearchFocusIndex = when {
+            searchQuery.isEmpty() -> -1
+            rootSearchResults.isNotEmpty() || rootContactResults.isNotEmpty() || rootSettingsResults.isNotEmpty() -> 0
+            else -> -1
+        }
+    }
+    val rootVoiceSearchLauncher = rememberLauncherForActivityResult(
+        ActivityResultContracts.StartActivityForResult(),
+    ) { result ->
+        val heard = result.data
+            ?.getStringArrayListExtra(android.speech.RecognizerIntent.EXTRA_RESULTS)
+            ?.firstOrNull()
+        if (!heard.isNullOrBlank()) vm.setSearchQuery(heard)
+    }
+    val rootCallContactHandler = com.zeno.classiclauncher.nlauncher.search.rememberCallContactHandler(context)
     // rememberSaveable survives activity recreation (e.g. gallery picker kills launcher on low RAM)
     var pendingIconChangePkg: String? by rememberSaveable { mutableStateOf(null) }
     val iconPickerLauncher = rememberLauncherForActivityResult(
@@ -1212,21 +1251,40 @@ fun LauncherScreen(
         }
     }
 
-    androidx.compose.runtime.LaunchedEffect(pagerState.currentPage, classicMode) {
-        if (!classicMode && pagerState.currentPage == 0) {
+    // Root-level home-focus restoration whenever the pager lands on page 0. Applies to BOTH
+    // modes now: the `!classicMode` guard here was a leftover from when Classic Mode had no home
+    // page and page 0 WAS the app drawer (so restoring "home" focus would have been wrong). Classic
+    // Mode now has a real blank home page at page 0 (ClassicCleanHomePage), wired to this same
+    // homeFocusRequester — without this restoration it never reliably held focus after returning
+    // from the drawer, so typed keys never reached its search handler and the pager auto-scrolled
+    // to whichever page (the drawer) actually owned focus, i.e. "search opened in the drawer".
+    androidx.compose.runtime.LaunchedEffect(pagerState.currentPage) {
+        if (pagerState.currentPage == 0) {
             homeFocusRequester.requestFocus()
             // Avoid stale drawer page scrub requests when coming back to home.
             requestedDrawerPage = -1
         }
     }
 
-    // Universal Search's "Show Hidden Apps" row: navigate to the drawer and reuse the
-    // existing "private" query grid-filter.
+    // Universal Search's "Show Hidden Apps" row: navigate to the drawer, which shows the
+    // dedicated hidden-apps grid whenever vm.viewingHiddenApps is true (see AppDrawer).
+    val viewingHiddenApps by vm.viewingHiddenApps.collectAsStateWithLifecycle()
     val showHiddenAppsEvent by vm.showHiddenAppsEvent.collectAsStateWithLifecycle()
     androidx.compose.runtime.LaunchedEffect(showHiddenAppsEvent) {
         if (showHiddenAppsEvent > 0) {
-            vm.setSearchQuery("private")
             scope.launch { pagerState.animateScrollToPage(1) }
+        }
+    }
+
+    // Quick Switch's "⋮" app-row action lands here once MainActivity is brought to the
+    // foreground — opens the exact same AppContextMenu as home/drawer search, for the package
+    // Quick Switch requested.
+    val pendingAppMenuPackage by vm.pendingAppMenuPackage.collectAsStateWithLifecycle()
+    androidx.compose.runtime.LaunchedEffect(pendingAppMenuPackage, allApps) {
+        val pkg = pendingAppMenuPackage ?: return@LaunchedEffect
+        allApps.find { it.packageName == pkg }?.let { app ->
+            showAppMenu = app
+            vm.consumePendingAppMenuPackage()
         }
     }
 
@@ -1341,6 +1399,62 @@ fun LauncherScreen(
             // is removed — but the registration plumbing is left in place (unused) in case this is
             // revisited later.
             if (isDpad && showQuickSettingsOverlay) return@onPreviewKeyEvent true
+
+            // Universal Search owns ALL typing + D-pad-through-results from here, the outermost
+            // ancestor, so no page underneath (home in either mode, or the drawer) ever sees a
+            // key event while search is active — that's what guarantees identical behavior on
+            // every surface instead of three near-identical copies of this logic diverging.
+            val searchUpdate = tryConsumeSearchKey(ev, searchQuery, koreanSearchInput)
+            if (searchUpdate != null) {
+                vm.setSearchQuery(searchUpdate)
+                return@onPreviewKeyEvent true
+            }
+            if (searchQuery.isNotEmpty()) {
+                val totalRootSearchItems = rootSearchResults.size + rootContactResults.size + rootSettingsResults.size
+                if (totalRootSearchItems > 0) {
+                    when {
+                        ev.key == Key.DirectionDown || nk?.keyCode == android.view.KeyEvent.KEYCODE_DPAD_DOWN -> {
+                            rootSearchFocusIndex = (rootSearchFocusIndex + 1).coerceAtMost(totalRootSearchItems - 1)
+                            return@onPreviewKeyEvent true
+                        }
+                        ev.key == Key.DirectionUp || nk?.keyCode == android.view.KeyEvent.KEYCODE_DPAD_UP -> {
+                            rootSearchFocusIndex = if (rootSearchFocusIndex > 0) rootSearchFocusIndex - 1 else -1
+                            return@onPreviewKeyEvent true
+                        }
+                        ev.key == Key.Enter || ev.key == Key.NumPadEnter ||
+                            nk?.keyCode == android.view.KeyEvent.KEYCODE_DPAD_CENTER ||
+                            nk?.keyCode == android.view.KeyEvent.KEYCODE_ENTER -> {
+                            val idx = if (rootSearchFocusIndex >= 0) rootSearchFocusIndex else 0
+                            when {
+                                idx < rootSearchResults.size ->
+                                    rootSearchResults.getOrNull(idx)?.let {
+                                        vm.setSearchQuery("")
+                                        vm.launchApp(it.packageName)
+                                    }
+                                idx < rootSearchResults.size + rootContactResults.size ->
+                                    rootContactResults.getOrNull(idx - rootSearchResults.size)?.let { contact ->
+                                        vm.setSearchQuery("")
+                                        com.zeno.classiclauncher.nlauncher.search.openContact(context, contact)
+                                    }
+                                else ->
+                                    rootSettingsResults.getOrNull(idx - rootSearchResults.size - rootContactResults.size)?.let { entry ->
+                                        vm.setSearchQuery("")
+                                        val intent = Intent(entry.action).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                                        runCatching { context.startActivity(intent) }.onFailure {
+                                            runCatching {
+                                                context.startActivity(Intent(entry.fallbackAction).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK))
+                                            }
+                                        }
+                                    }
+                            }
+                            return@onPreviewKeyEvent true
+                        }
+                    }
+                }
+                // Any other key (Left/Right, etc.) while searching must not leak through to
+                // page-level dock/strip/grid navigation underneath the overlay.
+                return@onPreviewKeyEvent true
+            }
             false
         }
     ) {
@@ -1427,6 +1541,16 @@ fun LauncherScreen(
                         onSwipeRight = { vm.launchFromDock(DockSlot.Shortcut) },
                         hapticsEnabled = prefs.hapticsEnabled,
                         hapticIntensity = prefs.hapticIntensity,
+                        searchQuery = searchQuery,
+                        onSearchQueryChange = vm::setSearchQuery,
+                        onShowHiddenApps = vm::requestShowHiddenApps,
+                        koreanSearchInput = koreanSearchInput,
+                        showKoreanSearchToggle = showKoreanSearchToggle,
+                        onToggleKoreanSearchInput = { koreanSearchInput = !koreanSearchInput },
+                        allApps = allApps,
+                        hiddenPackages = prefs.hiddenPackages,
+                        onLaunchApp = { pkg -> vm.launchApp(pkg) },
+                        onLongPressSearchApp = { app -> showAppMenu = app },
                     )
                     !classicMode && page == 0 -> HomePage(
                         focusRequester = homeFocusRequester,
@@ -1508,6 +1632,7 @@ fun LauncherScreen(
                         allApps = allApps,
                         hiddenPackages = prefs.hiddenPackages,
                         onLaunchApp = { pkg -> vm.launchApp(pkg) },
+                        onLongPressSearchApp = { app -> showAppMenu = app },
                         swipeUpPackage = prefs.swipeUpPackage,
                         swipeRightPackage = prefs.swipeRightPackage,
                         onOpenGestureSettings = { showGestureSettings = true },
@@ -1530,6 +1655,7 @@ fun LauncherScreen(
                         doubleTapToSleepEnabled = prefs.doubleTapToSleepEnabled,
                         searchQuery = searchQuery,
                         onSearchQueryChange = vm::setSearchQuery,
+                        onShowHiddenApps = vm::requestShowHiddenApps,
                         koreanSearchInput = koreanSearchInput,
                         showKoreanSearchToggle = showKoreanSearchToggle,
                         onToggleKoreanSearchInput = { koreanSearchInput = !koreanSearchInput },
@@ -1602,6 +1728,14 @@ fun LauncherScreen(
                         searchQuery = searchQuery,
                         onSearchQueryChange = vm::setSearchQuery,
                         koreanSearchInput = koreanSearchInput,
+                        showKoreanSearchToggle = showKoreanSearchToggle,
+                        onToggleKoreanSearchInput = { koreanSearchInput = !koreanSearchInput },
+                        allApps = allApps,
+                        hiddenPackages = prefs.hiddenPackages,
+                        onShowHiddenApps = vm::requestShowHiddenApps,
+                        viewingHiddenApps = viewingHiddenApps,
+                        onDismissHiddenApps = vm::dismissHiddenApps,
+                        onLongPressSearchApp = { app -> showAppMenu = app },
                         appIconShape = prefs.appIconShape,
                         showAppCardBackground = prefs.showAppCardBackground,
                         reorderMode = reorderMode,
@@ -1701,16 +1835,9 @@ fun LauncherScreen(
                 }
             }
 
-            // Flutter main.dart: search replaces the nav bar when typing (drawer page only; home page has its own overlay).
-            if (searchQuery.isNotEmpty() && (classicMode || pagerState.currentPage != 0)) {
-                DrawerSearchBar(
-                    query = searchQuery,
-                    onClear = { vm.setSearchQuery("") },
-                    showLanguageToggle = showKoreanSearchToggle,
-                    isKoreanMode = koreanSearchInput,
-                    onToggleLanguage = { koreanSearchInput = !koreanSearchInput },
-                )
-            } else {
+            // The drawer's search now uses the full-screen UniversalSearchOverlay (drawn on top
+            // inside AppDrawer itself) instead of replacing this strip with a search bar.
+            run {
                 if (pagerState.currentPage == 0 && homeStripNavEligible) {
                     val homeStripSlotTokens = remember(
                         prefs.homeStripSlots,
@@ -1780,7 +1907,10 @@ fun LauncherScreen(
                         color = Color(0x553D4B60),
                     )
                 }
-                Dock(
+                // Hidden while Universal Search is up — it sits at the exact same spot as the
+                // search overlay's own bottom back/mic/info row, and any transparency there let
+                // its bright icons and page dots show through underneath, clashing with it.
+                if (searchQuery.isEmpty()) Dock(
                     pageIndex = dockPageIndexForDisplay,
                     homeActive = pagerState.currentPage == 0,
                     onMail = { vm.launchFromDock(DockSlot.Mail) },
@@ -1816,6 +1946,52 @@ fun LauncherScreen(
                     classicDockOrder = classicMode,
                 )
             }
+        }
+
+        // Universal Search overlay — rendered once, here, as a sibling over the whole screen
+        // (pager + dock together), not nested inside any one page. See the state block above and
+        // the key handling in this Box's own onPreviewKeyEvent for the rest of the story.
+        if (searchQuery.isNotEmpty()) {
+            com.zeno.classiclauncher.nlauncher.search.UniversalSearchOverlay(
+                query = searchQuery,
+                onQueryChange = vm::setSearchQuery,
+                onDismiss = { vm.setSearchQuery("") },
+                allApps = allApps,
+                hiddenPackages = prefs.hiddenPackages,
+                onLaunchApp = { pkg -> vm.setSearchQuery(""); vm.launchApp(pkg) },
+                onLongPressApp = { app -> showAppMenu = app },
+                onLaunchSettings = { action, fallbackAction ->
+                    vm.setSearchQuery("")
+                    val intent = Intent(action).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                    runCatching { context.startActivity(intent) }.onFailure {
+                        runCatching {
+                            context.startActivity(Intent(fallbackAction).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK))
+                        }
+                    }
+                },
+                onShowHiddenApps = { vm.setSearchQuery(""); vm.requestShowHiddenApps() },
+                onLaunchContact = { contact ->
+                    vm.setSearchQuery("")
+                    com.zeno.classiclauncher.nlauncher.search.openContact(context, contact)
+                },
+                onCallContact = rootCallContactHandler,
+                koreanInput = koreanSearchInput,
+                showKoreanToggle = showKoreanSearchToggle,
+                onToggleKoreanInput = { koreanSearchInput = !koreanSearchInput },
+                showMic = true,
+                onVoiceSearch = {
+                    val intent = Intent(android.speech.RecognizerIntent.ACTION_RECOGNIZE_SPEECH).apply {
+                        putExtra(
+                            android.speech.RecognizerIntent.EXTRA_LANGUAGE_MODEL,
+                            android.speech.RecognizerIntent.LANGUAGE_MODEL_FREE_FORM,
+                        )
+                    }
+                    runCatching { rootVoiceSearchLauncher.launch(intent) }
+                },
+                captureKeys = false,
+                focusedIndex = rootSearchFocusIndex,
+                maxAppResults = 8,
+            )
         }
 
         val selectedApp = showAppMenu
@@ -3405,6 +3581,7 @@ private fun HomePage(
     allApps: List<AppEntry>,
     hiddenPackages: Set<String>,
     onLaunchApp: (String) -> Unit,
+    onLongPressSearchApp: (AppEntry) -> Unit,
     swipeUpPackage: String,
     swipeRightPackage: String,
     doubleTapPackage: String,
@@ -3421,6 +3598,7 @@ private fun HomePage(
     doubleTapToSleepEnabled: Boolean,
     searchQuery: String,
     onSearchQueryChange: (String) -> Unit,
+    onShowHiddenApps: () -> Unit,
     koreanSearchInput: Boolean,
     showKoreanSearchToggle: Boolean,
     onToggleKoreanSearchInput: () -> Unit,
@@ -3467,8 +3645,8 @@ private fun HomePage(
             onHomeStripFocusChanged(false, -1)
         }
     }
-    LaunchedEffect(homeActive, navArea, stripIndex, homeStripCount) {
-        if (!homeActive || navArea != HomeNavArea.Strip || homeStripCount <= 0) {
+    LaunchedEffect(homeActive, navArea, stripIndex, homeStripCount, searchQuery) {
+        if (!homeActive || navArea != HomeNavArea.Strip || homeStripCount <= 0 || searchQuery.isNotEmpty()) {
             onHomeStripFocusChanged(false, -1)
         } else {
             onHomeStripFocusChanged(true, stripIndex.coerceIn(0, homeStripCount - 1))
@@ -3482,7 +3660,6 @@ private fun HomePage(
     val actions = remember(context) { LauncherActions(context) }
     var soundProfile by remember { mutableStateOf(actions.currentSoundProfile()) }
     var showSoundMenu by remember { mutableStateOf(false) }
-
     DisposableEffect(Unit) {
         onDispose { glanceRef.value?.dispose() }
     }
@@ -3532,22 +3709,8 @@ private fun HomePage(
         }?.key
     }
 
-    var searchFocusIndex by remember { mutableStateOf(-1) }
-    val searchResults = remember(searchQuery, allApps, hiddenPackages) {
-        rankHomeSearchApps(
-            query = searchQuery,
-            allApps = allApps,
-            hiddenPackages = hiddenPackages,
-        ).take(4)
-    }
-    val settingsResults = remember(searchQuery) { matchSettingsEntries(searchQuery) }
-    LaunchedEffect(searchQuery, searchResults, settingsResults) {
-        searchFocusIndex = when {
-            searchQuery.isEmpty() -> -1
-            searchResults.isNotEmpty() || settingsResults.isNotEmpty() -> 0
-            else -> -1
-        }
-    }
+    // Universal Search's own state/key-handling/rendering all live at the root now (one shared
+    // implementation for the whole launcher) — this page no longer owns any of it.
 
     Box(
         modifier = Modifier
@@ -3589,51 +3752,11 @@ private fun HomePage(
             .onPreviewKeyEvent { ev ->
                 if (!homeActive) return@onPreviewKeyEvent false
                 if (ev.type != KeyEventType.KeyDown) return@onPreviewKeyEvent false
-                val newQuery = tryConsumeSearchKey(ev, searchQuery, koreanSearchInput)
-                if (newQuery != null) {
-                    onSearchQueryChange(newQuery)
-                    return@onPreviewKeyEvent true
-                }
-
-                // When search overlay is active, D-pad navigates app + settings results
-                val totalSearchItems = searchResults.size + settingsResults.size
-                if (searchQuery.isNotEmpty() && totalSearchItems > 0) {
-                    val nk = ev.nativeKeyEvent
-                    when {
-                        ev.key == Key.DirectionDown || nk?.keyCode == android.view.KeyEvent.KEYCODE_DPAD_DOWN -> {
-                            searchFocusIndex = (searchFocusIndex + 1).coerceAtMost(totalSearchItems - 1)
-                            doNavFeedback(view, hapticsEnabled, hapticIntensity)
-                            return@onPreviewKeyEvent true
-                        }
-                        ev.key == Key.DirectionUp || nk?.keyCode == android.view.KeyEvent.KEYCODE_DPAD_UP -> {
-                            if (searchFocusIndex > 0) searchFocusIndex -= 1 else searchFocusIndex = -1
-                            doNavFeedback(view, hapticsEnabled, hapticIntensity)
-                            return@onPreviewKeyEvent true
-                        }
-                        (ev.key == Key.Enter || ev.key == Key.NumPadEnter ||
-                            nk?.keyCode == android.view.KeyEvent.KEYCODE_DPAD_CENTER ||
-                            nk?.keyCode == android.view.KeyEvent.KEYCODE_ENTER) -> {
-                            val effectiveSearchIndex =
-                                if (searchFocusIndex >= 0) searchFocusIndex else 0
-                            if (effectiveSearchIndex < searchResults.size) {
-                                val app = searchResults.getOrNull(effectiveSearchIndex)
-                                if (app != null) { onSearchQueryChange(""); onLaunchApp(app.packageName) }
-                            } else {
-                                val entry = settingsResults.getOrNull(effectiveSearchIndex - searchResults.size)
-                                if (entry != null) {
-                                    onSearchQueryChange("")
-                                    val intent = Intent(entry.action).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
-                                    runCatching { context.startActivity(intent) }.onFailure {
-                                        runCatching {
-                                            context.startActivity(Intent(entry.fallbackAction).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK))
-                                        }
-                                    }
-                                }
-                            }
-                            return@onPreviewKeyEvent true
-                        }
-                    }
-                }
+                // Universal Search (typing, D-pad-through-results) is fully owned by the root's
+                // own onPreviewKeyEvent now, which runs before this page ever sees the event —
+                // this check is just a defensive backstop against dock/strip nav running
+                // underneath the overlay if that ever changes.
+                if (searchQuery.isNotEmpty()) return@onPreviewKeyEvent false
 
                 when (ev.key) {
                     Key.Enter, Key.NumPadEnter -> {
@@ -4166,266 +4289,8 @@ private fun HomePage(
             }
         }
 
-        // Home search overlay — compact top card, wallpaper visible below
-        if (homeActive && searchQuery.isNotEmpty()) {
-            val toggleLanguageDescription = stringResource(R.string.cd_toggle_korean_input)
-            val allFiltered = remember(searchQuery, allApps, hiddenPackages) {
-                allApps.filter {
-                    it.packageName !in hiddenPackages &&
-                        (it.label.contains(searchQuery, ignoreCase = true) ||
-                            HangulSearch.matches(it.label.lowercase(), searchQuery.lowercase()))
-                }
-            }
-            val extra = allFiltered.size - searchResults.size
-            BackHandler { onSearchQueryChange("") }
-            val totalSearchItems = searchResults.size + settingsResults.size
-            val searchRowBringers = remember(totalSearchItems) { List(totalSearchItems) { BringIntoViewRequester() } }
-            val searchScrollScope = rememberCoroutineScope()
-            LaunchedEffect(searchFocusIndex) {
-                if (searchFocusIndex in 0 until totalSearchItems) {
-                    searchScrollScope.launch { searchRowBringers[searchFocusIndex].bringIntoView() }
-                }
-            }
-            Column(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .statusBarsPadding()
-                    .padding(horizontal = 12.dp)
-                    .padding(top = 8.dp)
-                    .clip(RoundedCornerShape(18.dp))
-                    .background(Color(0xF01A1F28)),
-            ) {
-                // Search bar row — fixed, never scrolls away
-                Row(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .padding(horizontal = 14.dp, vertical = 10.dp),
-                    verticalAlignment = Alignment.CenterVertically,
-                ) {
-                    Icon(
-                        Icons.Outlined.Search,
-                        contentDescription = null,
-                        tint = Color(0xFF8E95A3),
-                        modifier = Modifier.size(18.dp),
-                    )
-                    Spacer(Modifier.width(10.dp))
-                    Text(
-                        text = searchQuery,
-                        color = Color.White,
-                        fontSize = 16.sp,
-                        modifier = Modifier.weight(1f),
-                    )
-                    if (showKoreanSearchToggle) {
-                        Box(
-                            modifier = Modifier
-                                .padding(end = 6.dp)
-                                .clip(RoundedCornerShape(6.dp))
-                                .background(Color(0xFF3A3F4A))
-                                .clickable { onToggleKoreanSearchInput() }
-                                .padding(horizontal = 7.dp, vertical = 3.dp),
-                        ) {
-                            Text(
-                                text = if (koreanSearchInput) "한" else "EN",
-                                color = Color.White,
-                                fontSize = 11.sp,
-                                fontWeight = FontWeight.SemiBold,
-                                modifier = Modifier.semantics {
-                                    contentDescription = toggleLanguageDescription
-                                },
-                            )
-                        }
-                    }
-                    Box(
-                        modifier = Modifier
-                            .size(24.dp)
-                            .clip(CircleShape)
-                            .background(Color(0xFF3A3F4A))
-                            .clickable { onSearchQueryChange("") },
-                        contentAlignment = Alignment.Center,
-                    ) {
-                        Icon(
-                            Icons.Outlined.Close,
-                            contentDescription = stringResource(R.string.action_clear),
-                            tint = Color.White,
-                            modifier = Modifier.size(13.dp),
-                        )
-                    }
-                }
-                // Scrollable results — capped so it never goes behind the dock.
-                // Driven by AdaptiveLayout so the cap responds to screen size/rotation/fold.
-                val searchResultsMaxHeight = adaptiveLayout.homeSearchResultsMaxHeightDp
-                Column(
-                    modifier = Modifier
-                        .heightIn(max = searchResultsMaxHeight)
-                        .verticalScroll(rememberScrollState()),
-                ) {
-                // Divider
-                if (searchResults.isNotEmpty()) {
-                    Box(modifier = Modifier.fillMaxWidth().height(0.5.dp).background(Color(0x33FFFFFF)))
-                }
-                // Results list — top 4, with D-pad focus highlight
-                searchResults.forEachIndexed { idx, app ->
-                    val isFocused = idx == searchFocusIndex
-                    Row(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .bringIntoViewRequester(searchRowBringers[idx])
-                            .background(if (isFocused && LocalTrackpadActive.current) Color(0x336EA8D8) else Color.Transparent)
-                            .clickable {
-                                onSearchQueryChange("")
-                                onLaunchApp(app.packageName)
-                            }
-                            .padding(horizontal = 14.dp, vertical = 7.dp),
-                        verticalAlignment = Alignment.CenterVertically,
-                    ) {
-                        AsyncImage(
-                            model = app.icon,
-                            contentDescription = app.label,
-                            contentScale = ContentScale.Fit,
-                            modifier = Modifier.size(42.dp).clip(iconMaskShape(appIconShape)),
-                        )
-                        Spacer(Modifier.width(12.dp))
-                        val baseColor = if (isFocused && LocalTrackpadActive.current) Color(0xFF84D5F6) else HOME_STRIP_LABEL_COLOR
-                        val highlightColor = Color(0xFF84D5F6)
-                        val label = app.label
-                        val matchStart = label.indexOf(searchQuery, ignoreCase = true)
-                        val annotated = remember(label, searchQuery, isFocused) {
-                            androidx.compose.ui.text.buildAnnotatedString {
-                                if (matchStart >= 0) {
-                                    val matchEnd = matchStart + searchQuery.length
-                                    append(label.substring(0, matchStart))
-                                    withStyle(
-                                        androidx.compose.ui.text.SpanStyle(
-                                            color = highlightColor,
-                                            fontWeight = FontWeight.Bold,
-                                        )
-                                    ) { append(label.substring(matchStart, matchEnd)) }
-                                    append(label.substring(matchEnd))
-                                } else {
-                                    append(label)
-                                }
-                            }
-                        }
-                        Text(
-                            text = annotated,
-                            color = baseColor,
-                            fontSize = 14.sp,
-                            maxLines = 1,
-                            overflow = TextOverflow.Ellipsis,
-                        )
-                    }
-                }
-                // Settings results
-                if (settingsResults.isNotEmpty()) {
-                    Box(modifier = Modifier.fillMaxWidth().height(0.5.dp).background(Color(0x22FFFFFF)))
-                    Row(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .padding(start = 14.dp, end = 14.dp, top = 7.dp, bottom = 2.dp),
-                        verticalAlignment = Alignment.CenterVertically,
-                    ) {
-                        Icon(
-                            Icons.Rounded.Settings,
-                            contentDescription = null,
-                            tint = Color(0xFF8E95A3),
-                            modifier = Modifier.size(11.dp),
-                        )
-                        Spacer(Modifier.width(5.dp))
-                        Text(stringResource(R.string.action_settings_label), color = Color(0xFF8E95A3), fontSize = 11.sp, fontWeight = FontWeight.Medium)
-                    }
-                    settingsResults.forEachIndexed { settingsIdx, entry ->
-                        val absoluteIdx = searchResults.size + settingsIdx
-                        val isFocused = absoluteIdx == searchFocusIndex
-                        Row(
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .bringIntoViewRequester(searchRowBringers[absoluteIdx])
-                                .background(if (isFocused && LocalTrackpadActive.current) Color(0x336EA8D8) else Color.Transparent)
-                                .clickable {
-                                    onSearchQueryChange("")
-                                    val intent = Intent(entry.action).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
-                                    runCatching { context.startActivity(intent) }.onFailure {
-                                        runCatching {
-                                            context.startActivity(
-                                                Intent(entry.fallbackAction).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
-                                            )
-                                        }
-                                    }
-                                }
-                                .padding(horizontal = 14.dp, vertical = 7.dp),
-                            verticalAlignment = Alignment.CenterVertically,
-                        ) {
-                            Box(
-                                modifier = Modifier
-                                    .size(32.dp)
-                                    .background(Color(0xFF2C3547), RoundedCornerShape(8.dp)),
-                                contentAlignment = Alignment.Center,
-                            ) {
-                                Icon(
-                                    Icons.Rounded.Settings,
-                                    contentDescription = null,
-                                    tint = if (isFocused && LocalTrackpadActive.current) Color(0xFF84D5F6) else Color(0xFF8E95A3),
-                                    modifier = Modifier.size(18.dp),
-                                )
-                            }
-                            Spacer(Modifier.width(12.dp))
-                            Text(
-                                text = entry.label,
-                                color = if (isFocused && LocalTrackpadActive.current) Color(0xFF84D5F6) else HOME_STRIP_LABEL_COLOR,
-                                fontSize = 14.sp,
-                                fontWeight = if (isFocused) FontWeight.SemiBold else FontWeight.Normal,
-                                maxLines = 1,
-                                overflow = TextOverflow.Ellipsis,
-                            )
-                        }
-                    }
-                }
-                // No results text
-                if (searchResults.isEmpty() && settingsResults.isEmpty()) {
-                    Text(
-                        text = stringResource(R.string.drawer_no_apps_found),
-                        color = Color(0xFF8E95A3),
-                        fontSize = 14.sp,
-                        modifier = Modifier.padding(horizontal = 14.dp, vertical = 8.dp),
-                    )
-                }
-                // Play Store row — only when no app results found
-                if (searchResults.isEmpty()) {
-                Box(modifier = Modifier.fillMaxWidth().height(0.5.dp).background(Color(0x22FFFFFF)))
-                Row(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .clickable { openPlayStoreSearch(context, searchQuery) }
-                        .padding(horizontal = 14.dp, vertical = 9.dp),
-                    verticalAlignment = Alignment.CenterVertically,
-                ) {
-                    Box(
-                        modifier = Modifier
-                            .size(32.dp)
-                            .background(Color(0xFF2C3547), RoundedCornerShape(8.dp)),
-                        contentAlignment = Alignment.Center,
-                    ) {
-                        Icon(
-                            Icons.Rounded.Apps,
-                            contentDescription = null,
-                            tint = Color(0xFF4A90D9),
-                            modifier = Modifier.size(18.dp),
-                        )
-                    }
-                    Spacer(Modifier.width(12.dp))
-                    Text(
-                        text = stringResource(R.string.search_play_store, searchQuery),
-                        color = Color(0xFF84D5F6),
-                        fontSize = 14.sp,
-                        maxLines = 1,
-                        overflow = TextOverflow.Ellipsis,
-                    )
-                }
-                } // end Play Store row
-                Spacer(Modifier.height(8.dp))
-                } // end scrollable results column
-            }
-        }
+        // Universal Search's overlay itself now renders once at the root, covering the whole
+        // screen (pager + dock) — see there for the single shared implementation.
 
     }
 }
@@ -4460,8 +4325,19 @@ private fun ClassicCleanHomePage(
     onSwipeRight: () -> Unit,
     hapticsEnabled: Boolean,
     hapticIntensity: Int,
+    searchQuery: String,
+    onSearchQueryChange: (String) -> Unit,
+    onShowHiddenApps: () -> Unit,
+    koreanSearchInput: Boolean,
+    showKoreanSearchToggle: Boolean,
+    onToggleKoreanSearchInput: () -> Unit,
+    allApps: List<AppEntry>,
+    hiddenPackages: Set<String>,
+    onLaunchApp: (String) -> Unit,
+    onLongPressSearchApp: (AppEntry) -> Unit,
 ) {
     val view = LocalView.current
+    val context = LocalContext.current
     var dockIndex by remember { mutableStateOf(0) }
     LaunchedEffect(homeActive) {
         if (homeActive) focusRequester.requestFocus()
@@ -4478,13 +4354,20 @@ private fun ClassicCleanHomePage(
             delay(30_000L)
         }
     }
+    // Universal Search's own state/key-handling/rendering all live at the root now (one shared
+    // implementation for the whole launcher) — this page no longer owns any of it.
     Box(
         modifier = Modifier
             .fillMaxSize()
             .focusRequester(focusRequester)
             .focusable()
-            .onKeyEvent { ev ->
-                if (ev.type != KeyEventType.KeyDown) return@onKeyEvent false
+            .onPreviewKeyEvent { ev ->
+                if (ev.type != KeyEventType.KeyDown) return@onPreviewKeyEvent false
+                // Universal Search (typing, D-pad-through-results) is fully owned by the root's
+                // own onPreviewKeyEvent now, which runs before this page ever sees the event —
+                // this check is just a defensive backstop against dock nav running underneath
+                // the overlay if that ever changes.
+                if (searchQuery.isNotEmpty()) return@onPreviewKeyEvent false
                 when (ev.key) {
                     Key.Enter, Key.NumPadEnter -> {
                         onHomeDockActivate(dockIndex)
@@ -4572,6 +4455,8 @@ private fun ClassicCleanHomePage(
             fontWeight = FontWeight.W300,
             modifier = Modifier.align(BiasAlignment(0f, -0.62f)),
         )
+        // Universal Search's own state/key-handling/rendering all live at the root now (one
+        // shared implementation for the whole launcher) — this page no longer renders it.
     }
 }
 
@@ -7025,6 +6910,14 @@ private fun AppDrawer(
     searchQuery: String,
     onSearchQueryChange: (String) -> Unit,
     koreanSearchInput: Boolean,
+    showKoreanSearchToggle: Boolean,
+    onToggleKoreanSearchInput: () -> Unit,
+    allApps: List<AppEntry>,
+    hiddenPackages: Set<String>,
+    onShowHiddenApps: () -> Unit,
+    viewingHiddenApps: Boolean,
+    onDismissHiddenApps: () -> Unit,
+    onLongPressSearchApp: (AppEntry) -> Unit,
     appIconShape: AppIconShape,
     showAppCardBackground: Boolean,
     reorderMode: Boolean,
@@ -7048,7 +6941,6 @@ private fun AppDrawer(
     val rowSpacing = themePalette.appGridRowSpacingDp.dp
     val iconSize = themePalette.appGridIconSizeDp.dp
     val labelSizeSp = themePalette.appCardFontSp.toInt()
-
     val appsPerPage = gridPreset.rows * gridPreset.cols
     val pages = (gridCells.size + appsPerPage - 1) / appsPerPage
     val drawerPager = rememberPagerState(initialPage = 0, pageCount = { pages.coerceAtLeast(1) })
@@ -7096,10 +6988,12 @@ private fun AppDrawer(
     // doesn't revert to the old order before gridCells reflects the committed new order.
     var pendingDropMoving by remember { mutableStateOf<String?>(null) }
     var pendingDropTarget by remember { mutableStateOf<String?>(null) }
-    val drawerContext = LocalContext.current
     // Classic Mode's dock grew from 2 slots (Mail, Camera) to the same 4 as Zeno Mode
     // (Mail, Envelope, Home, Camera) — both now use the same key-nav size.
     val dockKeyNavSize = 4
+
+    // Universal Search's own state/key-handling/rendering all live at the root now (one shared
+    // implementation for the whole launcher) — this page no longer owns any of it.
 
     DisposableEffect(Unit) {
         onDispose {
@@ -7188,6 +7082,7 @@ private fun AppDrawer(
     // Sort row is ~32dp tall; when searching that row is hidden — reserve the same height so the grid
     // does not jump up under the status bar.
     val drawerSortHeaderHeight = 22.dp
+    Box(modifier = Modifier.fillMaxSize()) {
     Column(
         modifier = Modifier
             .fillMaxSize()
@@ -7206,12 +7101,11 @@ private fun AppDrawer(
                 if (ev.isVolumePanelKey()) return@onPreviewKeyEvent false
                 // BB Classic red button: always go home from anywhere in the drawer.
                 if (ev.isEndCallKey()) { onExitToHome(); return@onPreviewKeyEvent true }
-                val searchUpdate = tryConsumeSearchKey(ev, searchQuery, koreanSearchInput)
-                if (searchUpdate != null) {
-                    onSearchQueryChange(searchUpdate)
-                    nav = nav.copy(area = FocusArea.DrawerGrid)
-                    return@onPreviewKeyEvent true
-                }
+                // Universal Search (typing, D-pad-through-results) is fully owned by the root's
+                // own onPreviewKeyEvent now, which runs before this page ever sees the event —
+                // this check is just a defensive backstop against grid/dock nav running
+                // underneath the overlay if that ever changes.
+                if (searchQuery.isNotEmpty()) return@onPreviewKeyEvent false
                 val directional = ev.key == Key.DirectionLeft || ev.key == Key.DirectionRight || ev.key == Key.DirectionUp || ev.key == Key.DirectionDown
                 if (!directional) {
                     lastDirectionalRef[0] = 0L
@@ -7353,73 +7247,6 @@ private fun AppDrawer(
                 }
             }
     ) {
-        if (searchQuery.isNotEmpty()) {
-            val extras = remember(searchQuery) {
-                buildSearchExtras(drawerContext, searchQuery) {
-                    Toast.makeText(drawerContext, drawerContext.getString(R.string.could_not_open_screen), Toast.LENGTH_SHORT).show()
-                }
-            }
-            if (extras.isNotEmpty()) {
-                Column(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        // 132dp ≈ 3 extras rows at default scale; use adaptive % so it doesn't
-                        // overflow on small BB-keyboard screens (500dp height → ~130dp safe).
-                        .heightIn(max = (adaptiveLayout.screenHeightDp * 0.26f).toInt().dp)
-                        .verticalScroll(rememberScrollState()),
-                ) {
-                    extras.forEach { ex ->
-                        TextButton(
-                            onClick = ex.onOpen,
-                            modifier = Modifier.fillMaxWidth(),
-                        ) {
-                            Column(Modifier.fillMaxWidth()) {
-                                Text(ex.title, color = themePalette.settingsMenuTitle)
-                                Text(
-                                    ex.subtitle,
-                                    style = MaterialTheme.typography.bodySmall,
-                                    color = themePalette.settingsMenuBody,
-                                )
-                            }
-                        }
-                    }
-                }
-            }
-            val pq = searchQuery.trim().lowercase()
-            if (pq == "private" || pq.startsWith("private ")) {
-                Text(
-                    text = stringResource(R.string.hidden_apps_hint),
-                    style = MaterialTheme.typography.bodySmall,
-                    color = privateSearchHintColor(themePalette),
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .padding(bottom = 6.dp),
-                )
-            }
-            if (gridCells.isEmpty()) {
-                Text(
-                    text = stringResource(R.string.drawer_no_apps_found),
-                    color = themePalette.settingsMenuBody,
-                    style = MaterialTheme.typography.bodyLarge,
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .padding(horizontal = 8.dp, vertical = 4.dp),
-                )
-                TextButton(
-                    onClick = { openPlayStoreSearch(drawerContext, searchQuery) },
-                    modifier = Modifier.fillMaxWidth(),
-                    contentPadding = PaddingValues(horizontal = 8.dp, vertical = 0.dp),
-                ) {
-                    Text(
-                        text = stringResource(R.string.search_play_store, searchQuery),
-                        color = Color(0xFF84D5F6),
-                        maxLines = 1,
-                        overflow = TextOverflow.Ellipsis,
-                        modifier = Modifier.fillMaxWidth(),
-                    )
-                }
-            }
-        }
         // Sort menu — hidden while searching, but keep the same vertical slot so the grid stays put.
         if (searchQuery.isEmpty()) {
             Row(
@@ -7890,6 +7717,26 @@ private fun AppDrawer(
             }
         }
     }
+    // isActive gates all of this: the outer home↔drawer pager keeps both pages composed
+    // (beyondViewportPageCount = 1), so without this check, typing on the home page — which
+    // writes to the same shared searchQuery — would also trigger this (off-screen) drawer's own
+    // overlay, whose captureKeys=true steals keyboard focus out from under the home page.
+    if (isActive && viewingHiddenApps) {
+        BackHandler { onDismissHiddenApps() }
+        com.zeno.classiclauncher.nlauncher.search.HiddenAppsOverlay(
+            allApps = allApps,
+            hiddenPackages = hiddenPackages,
+            onDismiss = onDismissHiddenApps,
+            onLaunchApp = { pkg ->
+                onDismissHiddenApps()
+                if (searchQuery.isNotEmpty()) onSearchQueryChange("")
+                allApps.find { it.packageName == pkg }?.let { onCellTap(DrawerGridCell.App(it)) }
+            },
+        )
+    }
+    // Universal Search's own state/key-handling/rendering all live at the root now (one shared
+    // implementation for the whole launcher) — this page no longer renders it.
+    } // end outer Box (hidden-apps overlay drawn on top of the grid Column)
 }
 
 internal data class SettingsSearchEntry(
@@ -10484,88 +10331,6 @@ private fun HomeShortcutStrip(
                         )
                     }
                 }
-            }
-        }
-    }
-}
-
-/** Flutter `TextFieldTheme`: solid #202020. LOCKED baseline — height ~45dp, 16sp query; do not widen without UX ask. */
-@Composable
-private fun DrawerSearchBar(
-    query: String,
-    onClear: () -> Unit,
-    showLanguageToggle: Boolean = false,
-    isKoreanMode: Boolean = false,
-    onToggleLanguage: () -> Unit = {},
-) {
-    val languageToggleDescription = stringResource(R.string.cd_toggle_korean_input)
-    val scroll = rememberScrollState()
-    LaunchedEffect(query) {
-        scroll.scrollTo(scroll.maxValue)
-    }
-    // Min height from AdaptiveLayout — grows at large font-scale instead of clipping 16sp text.
-    val searchBarMinHeight = rememberAdaptiveLayout().searchBarMinHeightDp
-    val fieldBg = Color(0xFF202020)
-    val horizontalInset = 7.dp
-    val clearIcon = 22.dp
-    val clearPad = 5.dp
-    Box(
-        modifier = Modifier
-            .fillMaxWidth()
-            .heightIn(min = searchBarMinHeight)
-            .background(fieldBg),
-    ) {
-        Row(
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(horizontal = horizontalInset, vertical = 3.dp),
-            verticalAlignment = Alignment.CenterVertically,
-        ) {
-            Text(
-                text = query,
-                color = Color.White,
-                fontSize = 16.sp,
-                maxLines = 1,
-                style = MaterialTheme.typography.bodyLarge,
-                modifier = Modifier
-                    .weight(1f)
-                    .horizontalScroll(scroll),
-            )
-            if (showLanguageToggle) {
-                Box(
-                    modifier = Modifier
-                        .padding(end = 6.dp)
-                        .clip(RoundedCornerShape(6.dp))
-                        .background(Color(0xFF3A3F4A))
-                        .clickable { onToggleLanguage() }
-                        .padding(horizontal = 7.dp, vertical = 3.dp),
-                ) {
-                    Text(
-                        text = if (isKoreanMode) "한" else "EN",
-                        color = Color.White,
-                        fontSize = 11.sp,
-                        fontWeight = FontWeight.SemiBold,
-                        modifier = Modifier.semantics {
-                            contentDescription = languageToggleDescription
-                        },
-                    )
-                }
-            }
-            Box(
-                modifier = Modifier
-                    .padding(clearPad)
-                    .size(clearIcon)
-                    .clip(CircleShape)
-                    .border(1.2.dp, Color.White, CircleShape)
-                    .clickable(onClick = onClear),
-                contentAlignment = Alignment.Center,
-            ) {
-                Icon(
-                    Icons.Outlined.Close,
-                    contentDescription = stringResource(R.string.action_clear_search),
-                    tint = Color.White,
-                    modifier = Modifier.size(14.dp),
-                )
             }
         }
     }

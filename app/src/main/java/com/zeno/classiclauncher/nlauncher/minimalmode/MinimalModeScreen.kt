@@ -1045,7 +1045,6 @@ private const val SB_BATTERY_NUB_H_FRAC = 0.60f
 private val SB_CHARGE_COLOR = Color(0xFFFFC400)
 private val SB_BATTERY_LOW_COLOR = Color(0xFFEE3123)
 private val SB_BATTERY_SAVER_COLOR = Color(0xFFFFE9A6)
-private val SB_BATTERY_SAVER_PLUS_COLOR = Color(0xFF7A5A00)
 private const val SB_BATTERY_LOW_PCT = 15
 
 /** Lightning bolt in unit space, drawn inside the body while charging (BB10 does the same). */
@@ -1084,32 +1083,36 @@ private fun ZenoStatusBarBattery(pct: Int, charging: Boolean, powerSaveActive: B
 
         val inset = stroke * 1.6f
         if (powerSaveActive && !charging) {
-            // Battery saver: same body/nub silhouette and white border as the normal gauge (per
-            // the user's reference) — only the interior differs. Full light-yellow fill (not
-            // proportional to charge — saver is a mode, not a level) with a "+" mark matching
-            // Android's own battery-saver iconography since Lollipop. The "+" is a SOLID
-            // contrasting fill, not a clear-blend cutout — a cutout on this light fill would
-            // nearly vanish on light wallpapers, the same legibility bug the charging bolt above
-            // already hit once with its old clear-cutout approach.
-            drawRoundRect(
-                color = SB_BATTERY_SAVER_COLOR,
-                topLeft = Offset(inset, inset),
-                size = Size(bodyW - inset * 2, bodyH - inset * 2),
-                cornerRadius = CornerRadius(0.5.dp.toPx()),
-            )
+            // Battery saver: same body/nub silhouette and white border as the normal gauge, with
+            // a "+" mark matching Android's own battery-saver iconography since Lollipop — but
+            // the yellow fill is proportional to the actual charge level, same as the normal
+            // gauge below. It was previously always drawn full regardless of charge, which read
+            // as "always full" even well below 50%.
+            val fillW = (bodyW - inset * 2) * (pct.coerceIn(0, 100) / 100f)
+            if (fillW > 0f) {
+                drawRoundRect(
+                    color = SB_BATTERY_SAVER_COLOR,
+                    topLeft = Offset(inset, inset),
+                    size = Size(fillW, bodyH - inset * 2),
+                    cornerRadius = CornerRadius(0.5.dp.toPx()),
+                )
+            }
+            // Centered on the whole body (not the fill) and drawn in the icon tint rather than
+            // the fill-contrast color — it needs to read clearly whether it lands over the
+            // yellow fill (low charge) or the plain dark background (high charge) behind it.
             val plusLen = (bodyH - inset * 2) * 0.55f
             val plusThickness = plusLen * 0.28f
             val pcx = inset + (bodyW - inset * 2) / 2f
             val pcy = inset + (bodyH - inset * 2) / 2f
             val plusRadius = CornerRadius(plusThickness / 4f)
             drawRoundRect(
-                color = SB_BATTERY_SAVER_PLUS_COLOR,
+                color = SB_ICON_TINT,
                 topLeft = Offset(pcx - plusThickness / 2f, pcy - plusLen / 2f),
                 size = Size(plusThickness, plusLen),
                 cornerRadius = plusRadius,
             )
             drawRoundRect(
-                color = SB_BATTERY_SAVER_PLUS_COLOR,
+                color = SB_ICON_TINT,
                 topLeft = Offset(pcx - plusLen / 2f, pcy - plusThickness / 2f),
                 size = Size(plusLen, plusThickness),
                 cornerRadius = plusRadius,
@@ -1233,36 +1236,39 @@ private fun MinimalModeHeader(
                 }
             }
 
-            Spacer(Modifier.height(6.dp))
-            Box(modifier = Modifier.height(30.dp), contentAlignment = Alignment.Center) {
+            // Reserves space only while there's actually something to show — previously this was
+            // a fixed 30dp Box regardless of unreadApps, so once notifications were read the row
+            // left behind a dead blank gap between the date and the app list below it.
             if (unreadApps.isNotEmpty()) {
-                Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                    unreadApps.forEach { app ->
-                        val bmp = remember(app.packageName) {
-                            val src = app.icon?.toBitmap(48, 48) ?: return@remember null
-                            val grey = android.graphics.Bitmap.createBitmap(src.width, src.height, src.config ?: android.graphics.Bitmap.Config.ARGB_8888)
-                            val paint = AndroidPaint().apply {
-                                colorFilter = ColorMatrixColorFilter(ColorMatrix().also { it.setSaturation(0f) })
+                Spacer(Modifier.height(6.dp))
+                Box(modifier = Modifier.height(30.dp), contentAlignment = Alignment.Center) {
+                    Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                        unreadApps.forEach { app ->
+                            val bmp = remember(app.packageName) {
+                                val src = app.icon?.toBitmap(48, 48) ?: return@remember null
+                                val grey = android.graphics.Bitmap.createBitmap(src.width, src.height, src.config ?: android.graphics.Bitmap.Config.ARGB_8888)
+                                val paint = AndroidPaint().apply {
+                                    colorFilter = ColorMatrixColorFilter(ColorMatrix().also { it.setSaturation(0f) })
+                                }
+                                Canvas(grey).drawBitmap(src, 0f, 0f, paint)
+                                grey
                             }
-                            Canvas(grey).drawBitmap(src, 0f, 0f, paint)
-                            grey
-                        }
-                        if (bmp != null) {
-                            androidx.compose.foundation.Image(
-                                painter = BitmapPainter(bmp.asImageBitmap()),
-                                contentDescription = app.label,
-                                modifier = Modifier
-                                    .size(18.dp)
-                                    .clip(RoundedCornerShape(4.dp))
-                                    .pointerInput(app.packageName) {
-                                        detectTapGestures(onTap = { onAppIconTap(app.packageName) })
-                                    },
-                            )
+                            if (bmp != null) {
+                                androidx.compose.foundation.Image(
+                                    painter = BitmapPainter(bmp.asImageBitmap()),
+                                    contentDescription = app.label,
+                                    modifier = Modifier
+                                        .size(18.dp)
+                                        .clip(RoundedCornerShape(4.dp))
+                                        .pointerInput(app.packageName) {
+                                            detectTapGestures(onTap = { onAppIconTap(app.packageName) })
+                                        },
+                                )
+                            }
                         }
                     }
                 }
             }
-            } // end fixed-height Box
         }
     }
 }

@@ -148,7 +148,7 @@ class AppsRepository(private val context: Context, private val prefsRepository: 
      * evicted at midnight by the same [appsFlow] date-change listener that clears real
      * dynamic icons, and whenever the icon shape preference changes.
      */
-    private fun buildCalendarBadgeIcon(day: Int, month: String, shape: AppIconShape): Drawable {
+    private fun buildCalendarBadgeIcon(day: Int, dayOfWeek: String, shape: AppIconShape): Drawable {
         val size = ICON_SIZE_PX
         val bitmap = Bitmap.createBitmap(size, size, Bitmap.Config.ARGB_8888)
         val canvas = Canvas(bitmap)
@@ -160,14 +160,29 @@ class AppsRepository(private val context: Context, private val prefsRepository: 
         val headerPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply { color = Color.parseColor("#EA4335") }
         canvas.drawRect(0f, 0f, size.toFloat(), headerHeight, headerPaint)
 
-        val monthPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+        // Full day-of-week names ("Wednesday") vary a lot in width vs. the old fixed 3-letter
+        // month abbreviation — shrink-to-fit so longer names (Wednesday/Saturday) don't overflow
+        // the header while short ones (Sunday) still read at a decent size. Uses getTextBounds
+        // (actual rendered glyph width) rather than measureText, which over-reports width when
+        // combined with a custom letterSpacing and was shrinking every name — even short ones —
+        // down toward the floor.
+        val headerMaxWidth = size * 0.9f
+        val dayPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
             color = Color.WHITE
             textAlign = Paint.Align.CENTER
-            textSize = size * 0.11f
             typeface = Typeface.create(Typeface.DEFAULT, Typeface.BOLD)
-            letterSpacing = 0.08f
         }
-        canvas.drawText(month, size / 2f, headerHeight * 0.66f, monthPaint)
+        var dayTextSize = size * 0.135f
+        val minDayTextSize = size * 0.09f
+        val dayBounds = Rect()
+        dayPaint.textSize = dayTextSize
+        dayPaint.getTextBounds(dayOfWeek, 0, dayOfWeek.length, dayBounds)
+        while (dayBounds.width() > headerMaxWidth && dayTextSize > minDayTextSize) {
+            dayTextSize -= size * 0.004f
+            dayPaint.textSize = dayTextSize
+            dayPaint.getTextBounds(dayOfWeek, 0, dayOfWeek.length, dayBounds)
+        }
+        canvas.drawText(dayOfWeek, size / 2f, headerHeight * 0.68f, dayPaint)
 
         val numberPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
             color = Color.parseColor("#3C4043")
@@ -189,8 +204,8 @@ class AppsRepository(private val context: Context, private val prefsRepository: 
         iconCache[pkg]?.let { return it }
         val now = Calendar.getInstance()
         val day = now.get(Calendar.DAY_OF_MONTH)
-        val month = SimpleDateFormat("MMM", Locale.getDefault()).format(now.time).uppercase(Locale.getDefault())
-        return buildCalendarBadgeIcon(day, month, currentIconShape).also { iconCache[pkg] = it }
+        val dayOfWeek = SimpleDateFormat("EEEE", Locale.getDefault()).format(now.time)
+        return buildCalendarBadgeIcon(day, dayOfWeek, currentIconShape).also { iconCache[pkg] = it }
     }
 
     /**

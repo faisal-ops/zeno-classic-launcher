@@ -48,6 +48,10 @@ internal object SearchOverlayController {
     private var windowManager: WindowManager? = null
     private var rootView: ComposeView? = null
     private var lifecycleOwner: OverlayLifecycleOwner? = null
+    // Retained across a hide()/show() cycle so startVoiceSearch can re-show the overlay after the
+    // proxy activity returns — TYPE_ACCESSIBILITY_OVERLAY requires the accessibility service's own
+    // Context (not applicationContext), and that service instance outlives the overlay itself.
+    private var lastServiceContext: Context? = null
 
     val isVisible: Boolean get() = rootView != null
 
@@ -55,8 +59,9 @@ internal object SearchOverlayController {
         if (isVisible) hide() else show(serviceContext)
     }
 
-    fun show(serviceContext: Context) {
+    fun show(serviceContext: Context, initialQuery: String = "") {
         if (isVisible) return
+        lastServiceContext = serviceContext
         val appContext = serviceContext.applicationContext
         val wm = serviceContext.getSystemService(Context.WINDOW_SERVICE) as? WindowManager ?: return
 
@@ -72,7 +77,7 @@ internal object SearchOverlayController {
             setViewTreeViewModelStoreOwner(owner)
             setViewTreeSavedStateRegistryOwner(owner)
             setContent {
-                var query by remember { mutableStateOf("") }
+                var query by remember { mutableStateOf(initialQuery) }
                 var allApps by remember { mutableStateOf<List<AppEntry>>(emptyList()) }
                 var hiddenPackages by remember { mutableStateOf<Set<String>>(emptySet()) }
 
@@ -89,13 +94,17 @@ internal object SearchOverlayController {
                     allApps = allApps,
                     hiddenPackages = hiddenPackages,
                     onLaunchApp = { pkg -> SearchOverlayActions.launchAndHide(appContext, pkg) },
+                    onLongPressApp = { app -> SearchOverlayActions.openAppMenuAndHide(appContext, app.packageName) },
                     onLaunchSettings = { action, fallbackAction ->
                         SearchOverlayActions.openSettingsAndHide(appContext, action, fallbackAction)
                     },
                     onShowHiddenApps = { SearchOverlayActions.showHiddenAppsAndHide(appContext) },
-                    // Quick Switch has no hosting Activity for the system speech-recognizer
-                    // result callback, so the mic button is omitted here (see home/drawer).
-                    showMic = false,
+                    onLaunchContact = { contact -> SearchOverlayActions.openContactAndHide(appContext, contact) },
+                    // Quick Switch now gets voice search too, via a tiny invisible proxy Activity
+                    // that hosts the system speech-recognizer's result callback on this window's
+                    // behalf (see VoiceSearchProxyActivity / startVoiceSearch below).
+                    showMic = true,
+                    onVoiceSearch = { startVoiceSearch(query) },
                     onOpenPlayStore = { q -> SearchOverlayActions.openPlayStoreSearchAndHide(appContext, q) },
                     onOpenWebSearch = { q -> SearchOverlayActions.openWebSearchAndHide(appContext, q) },
                 )
@@ -135,6 +144,22 @@ internal object SearchOverlayController {
         windowManager = null
         rootView = null
         lifecycleOwner = null
+    }
+
+    /**
+     * Hides the overlay, launches [VoiceSearchProxyActivity] to run the system speech
+     * recognizer, then re-shows the overlay with the recognized text once it returns (or the
+     * original [currentQuery] if the user cancelled or no recognizer is available). The overlay
+     * must be hidden first — its accessibility-overlay window would otherwise sit visually above
+     * the recognizer's own UI, which is a normal task window.
+     */
+    fun startVoiceSearch(currentQuery: String) {
+        val serviceContext = lastServiceContext ?: return
+        val appContext = serviceContext.applicationContext
+        hide()
+        VoiceSearchProxyActivity.launch(appContext) { heard ->
+            show(serviceContext, heard?.takeIf { it.isNotBlank() } ?: currentQuery)
+        }
     }
 }
 

@@ -93,6 +93,7 @@ private data class RuntimePerms(
     val lockAccessibility: Boolean,
     val location: Boolean,
     val calendar: Boolean,
+    val contacts: Boolean,
     val searchOverlayAccessibility: Boolean,
 )
 
@@ -107,6 +108,10 @@ private fun computeRuntimePerms(context: android.content.Context): RuntimePerms 
         calendar = ContextCompat.checkSelfPermission(
             context,
             Manifest.permission.READ_CALENDAR,
+        ) == android.content.pm.PackageManager.PERMISSION_GRANTED,
+        contacts = ContextCompat.checkSelfPermission(
+            context,
+            Manifest.permission.READ_CONTACTS,
         ) == android.content.pm.PackageManager.PERMISSION_GRANTED,
         searchOverlayAccessibility = SearchOverlayPermissions.isAccessibilityServiceEnabled(context),
     )
@@ -145,6 +150,12 @@ fun PermissionsSettingsOverlay(
         runtime = computeRuntimePerms(context)
     }
 
+    val contactsLauncher = rememberLauncherForActivityResult(
+        ActivityResultContracts.RequestPermission(),
+    ) {
+        runtime = computeRuntimePerms(context)
+    }
+
     val subtitleMuted = Color(0xFF8E95A3)
     val focusRequester = remember { FocusRequester() }
     var focusedItem by remember { mutableIntStateOf(0) }
@@ -167,7 +178,7 @@ fun PermissionsSettingsOverlay(
                     nk?.keyCode == AndroidKeyEvent.KEYCODE_ENTER
                 when {
                     up    -> { focusedItem = (focusedItem - 1).coerceAtLeast(0); true }
-                    down  -> { focusedItem = (focusedItem + 1).coerceAtMost(4); true }
+                    down  -> { focusedItem = (focusedItem + 1).coerceAtMost(5); true }
                     enter -> {
                         // Every row here is now a permission status/grant link (no feature
                         // toggles) — Enter opens the same exact permission screen tapping the
@@ -195,7 +206,10 @@ fun PermissionsSettingsOverlay(
                             3 -> if (!runtime.calendar) {
                                 calendarLauncher.launch(Manifest.permission.READ_CALENDAR)
                             }
-                            4 -> if (!runtime.searchOverlayAccessibility) {
+                            4 -> if (!runtime.contacts) {
+                                contactsLauncher.launch(Manifest.permission.READ_CONTACTS)
+                            }
+                            5 -> if (!runtime.searchOverlayAccessibility) {
                                 runCatching {
                                     context.startActivity(
                                         Intent(Settings.ACTION_ACCESSIBILITY_SETTINGS)
@@ -347,6 +361,28 @@ fun PermissionsSettingsOverlay(
                     openSystemSettingsWhenTurningOff = null,
                 )
 
+                // Universal Search's Contacts results — this is just the underlying READ_CONTACTS
+                // grant; there's no separate feature toggle since contacts search is always on
+                // once granted (same as apps/settings search).
+                PermissionSwitchCard(
+                    title = stringResource(R.string.perm_contacts_title),
+                    subtitleOff = stringResource(R.string.perm_contacts_off),
+                    subtitleOnOk = stringResource(R.string.perm_contacts_on_ok),
+                    subtitleOnMissing = stringResource(R.string.perm_contacts_on_missing),
+                    featureOn = true,
+                    permissionOk = runtime.contacts,
+                    focused = focusedItem == 4,
+                    themePalette = themePalette,
+                    onFeatureChange = {},
+                    showSwitch = false,
+                    showGrant = !runtime.contacts,
+                    onGrant = {
+                        contactsLauncher.launch(Manifest.permission.READ_CONTACTS)
+                    },
+                    grantLabel = stringResource(R.string.perm_contacts_grant_label),
+                    openSystemSettingsWhenTurningOff = null,
+                )
+
                 // Quick Switch (Any App)'s feature toggle lives in its own screen (main Settings
                 // menu) now — this is just the underlying Accessibility Service grant, since
                 // that's a genuine OS permission and belongs here like the others.
@@ -357,7 +393,7 @@ fun PermissionsSettingsOverlay(
                     subtitleOnMissing = stringResource(R.string.perm_search_overlay_accessibility_not_granted),
                     featureOn = true,
                     permissionOk = runtime.searchOverlayAccessibility,
-                    focused = focusedItem == 4,
+                    focused = focusedItem == 5,
                     themePalette = themePalette,
                     onFeatureChange = {},
                     showSwitch = false,
