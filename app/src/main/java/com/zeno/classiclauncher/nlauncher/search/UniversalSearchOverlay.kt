@@ -17,6 +17,7 @@ import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
@@ -31,20 +32,31 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.rounded.ArrowBack
+import androidx.compose.material.icons.automirrored.rounded.OpenInNew
 import androidx.compose.material.icons.outlined.Close
 import androidx.compose.material.icons.outlined.Search
 import androidx.compose.material.icons.rounded.Apps
+import androidx.compose.material.icons.rounded.BookmarkAdd
 import androidx.compose.material.icons.rounded.Call
+import androidx.compose.material.icons.rounded.Check
+import androidx.compose.material.icons.rounded.Folder
+import androidx.compose.material.icons.rounded.Image
 import androidx.compose.material.icons.rounded.Info
 import androidx.compose.material.icons.rounded.Language
 import androidx.compose.material.icons.rounded.Lock
 import androidx.compose.material.icons.rounded.Mic
 import androidx.compose.material.icons.rounded.MoreVert
 import androidx.compose.material.icons.rounded.Settings
+import androidx.compose.material.icons.rounded.SettingsBackupRestore
+import androidx.compose.material.icons.rounded.SwapVert
+import androidx.compose.material.icons.rounded.Visibility
+import androidx.compose.material.icons.rounded.VisibilityOff
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.OutlinedTextField
+import androidx.compose.material3.OutlinedTextFieldDefaults
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
@@ -61,10 +73,13 @@ import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.input.key.Key
+import androidx.compose.ui.input.key.KeyEventType
 import androidx.compose.ui.input.key.key
 import androidx.compose.ui.input.key.onPreviewKeyEvent
+import androidx.compose.ui.input.key.type
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -125,10 +140,16 @@ internal fun UniversalSearchOverlay(
     /** Must match the host's own app-result truncation (see [captureKeys]) so [focusedIndex]
      *  lines up with the same row the host computed it against. */
     maxAppResults: Int = 8,
+    /** Bumped by hosts (Quick Switch) whenever a homemade overlay drawn on top of this one — e.g.
+     *  [QuickSwitchAppMenu] — steals focus for itself and then closes. This composable's own
+     *  focus request only fires once, on first mount, so without an explicit signal to re-request
+     *  it, focus is simply lost once that covering overlay's focusable node is disposed — leaving
+     *  nothing to receive Back (or any other key) afterward. */
+    regainFocusKey: Any = Unit,
 ) {
     val context = LocalContext.current
     val focusRequester = remember { FocusRequester() }
-    LaunchedEffect(Unit) { if (captureKeys) focusRequester.requestFocus() }
+    LaunchedEffect(regainFocusKey) { if (captureKeys) focusRequester.requestFocus() }
 
     val appResults = remember(query, allApps, hiddenPackages, maxAppResults) {
         rankHomeSearchApps(query, allApps, hiddenPackages).take(maxAppResults)
@@ -167,6 +188,13 @@ internal fun UniversalSearchOverlay(
                         .focusRequester(focusRequester)
                         .focusable()
                         .onPreviewKeyEvent { ev ->
+                            // Without this, a single physical Back press that also causes a focus
+                            // hand-off mid-gesture (e.g. QuickSwitchAppMenu closing, returning
+                            // focus here — see regainFocusKey) delivers BOTH its KeyDown and KeyUp
+                            // to this handler once this composable is the one holding focus again,
+                            // and this Back branch used to fire on either — dismissing this overlay
+                            // in the very same press that only meant to close the menu on top of it.
+                            if (ev.type != KeyEventType.KeyDown) return@onPreviewKeyEvent false
                             if (ev.key == Key.Back) {
                                 onDismiss()
                                 return@onPreviewKeyEvent true
@@ -554,6 +582,180 @@ private fun ThinDivider() {
             .height(0.5.dp)
             .background(Color(0x22FFFFFF)),
     )
+}
+
+/**
+ * Quick Switch's "⋮" app-row menu. Visually matches the drawer/home AppContextMenu (same rows,
+ * same bottom-sheet-style layout), but is NOT a real Compose `ModalBottomSheet` — that creates its
+ * own Android Dialog window, which needs an Activity window token that Quick Switch's raw
+ * WindowManager overlay doesn't have (same BadTokenException class of problem as [SearchHelpPanel]
+ * below). This renders in-place inside the same window instead.
+ *
+ * Open/App info/Hide/Change icon all stay on top of whatever app Quick Switch was triggered from —
+ * none of them need the launcher's own UI. Arrange is the one exception: it means dragging tiles
+ * in the actual home/drawer grid, which only exists on the launcher, so [onArrange] switches to it.
+ */
+@Composable
+internal fun QuickSwitchAppMenu(
+    app: AppEntry,
+    isHidden: Boolean,
+    hasCustomIcon: Boolean,
+    /** (folderId, label) pairs — same data `foldersForAddMenu()` returns for home/drawer's own menu. */
+    folderChoices: List<Pair<String, String>>,
+    onDismiss: () -> Unit,
+    onOpen: () -> Unit,
+    onInfo: () -> Unit,
+    onHideToggle: () -> Unit,
+    onArrange: () -> Unit,
+    onChangeIcon: () -> Unit,
+    onResetIcon: () -> Unit,
+    onCreateFolder: (String) -> Unit,
+    onAddToFolder: (String) -> Unit,
+) {
+    // Grabs its own focus and consumes Back itself — otherwise the key event falls through to
+    // UniversalSearchOverlay's own onPreviewKeyEvent underneath (still focused, since this menu
+    // is just drawn on top of it, not a separate focus scope), whose own Back handling closes the
+    // whole search overlay instead of just this menu.
+    val menuFocusRequester = remember { FocusRequester() }
+    LaunchedEffect(Unit) { menuFocusRequester.requestFocus() }
+    var newGroupInputOpen by remember { mutableStateOf(false) }
+    var newGroupName by remember { mutableStateOf("") }
+    val nameFieldFocusRequester = remember { FocusRequester() }
+    LaunchedEffect(newGroupInputOpen) { if (newGroupInputOpen) nameFieldFocusRequester.requestFocus() }
+
+    fun confirmNewGroup() {
+        if (newGroupName.isNotBlank()) onCreateFolder(newGroupName)
+        newGroupInputOpen = false
+        newGroupName = ""
+    }
+
+    Box(
+        modifier = Modifier
+            .fillMaxSize()
+            .background(Color(0xB3000000))
+            .clickable(onClick = onDismiss)
+            .focusRequester(menuFocusRequester)
+            .focusable()
+            .onPreviewKeyEvent { ev ->
+                if (ev.type != KeyEventType.KeyDown) return@onPreviewKeyEvent true
+                if (ev.key == Key.Back) {
+                    if (newGroupInputOpen) newGroupInputOpen = false else onDismiss()
+                    return@onPreviewKeyEvent true
+                }
+                if (newGroupInputOpen && (ev.key == Key.Enter || ev.key == Key.NumPadEnter)) {
+                    confirmNewGroup()
+                    return@onPreviewKeyEvent true
+                }
+                // Everything else — including normal typing while naming a new group — falls
+                // through to whatever's actually focused underneath (e.g. the name TextField);
+                // sibling composables elsewhere in the tree (the search overlay this menu sits on
+                // top of) never see it, since key events only tunnel down the currently-focused
+                // subtree, not unrelated siblings.
+                false
+            },
+        contentAlignment = Alignment.BottomCenter,
+    ) {
+        Column(
+            modifier = Modifier
+                .fillMaxWidth()
+                .clip(RoundedCornerShape(topStart = 20.dp, topEnd = 20.dp))
+                .background(Color(0xFF12161C))
+                .clickable(enabled = false) {}
+                .navigationBarsPadding()
+                .padding(horizontal = 16.dp, vertical = 8.dp),
+        ) {
+            Box(
+                modifier = Modifier
+                    .align(Alignment.CenterHorizontally)
+                    .padding(top = 6.dp, bottom = 10.dp)
+                    .width(36.dp)
+                    .height(4.dp)
+                    .clip(RoundedCornerShape(2.dp))
+                    .background(Color(0x33FFFFFF)),
+            )
+            Text(
+                app.label,
+                style = MaterialTheme.typography.titleLarge.copy(fontWeight = FontWeight.SemiBold),
+                color = Color(0xFFEAF2F8),
+                modifier = Modifier.fillMaxWidth(),
+            )
+            Spacer(Modifier.height(8.dp))
+            ThinDivider()
+            Spacer(Modifier.height(4.dp))
+
+            @Composable
+            fun MenuRow(icon: ImageVector, label: String, onClick: () -> Unit) {
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .clip(RoundedCornerShape(10.dp))
+                        .clickable(onClick = onClick)
+                        .padding(horizontal = 12.dp, vertical = 14.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    Icon(icon, contentDescription = null, tint = Color(0xFF8E95A3), modifier = Modifier.size(22.dp))
+                    Spacer(Modifier.width(16.dp))
+                    Text(label, style = MaterialTheme.typography.bodyLarge, color = Color(0xFFEAF2F8))
+                }
+            }
+
+            if (newGroupInputOpen) {
+                // In-place name entry — a real AlertDialog would need an Activity window token
+                // this overlay doesn't have (same class of problem as SearchHelpPanel below).
+                Row(
+                    modifier = Modifier.fillMaxWidth().padding(vertical = 8.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    OutlinedTextField(
+                        value = newGroupName,
+                        onValueChange = { newGroupName = it },
+                        singleLine = true,
+                        placeholder = { Text(stringResource(R.string.dialog_group_name_hint), color = Color(0xFF7A8899)) },
+                        modifier = Modifier.weight(1f).focusRequester(nameFieldFocusRequester),
+                        colors = OutlinedTextFieldDefaults.colors(
+                            focusedTextColor = Color(0xFFEAF2F8),
+                            unfocusedTextColor = Color(0xFFEAF2F8),
+                            focusedBorderColor = Color(0xFF00B7FF),
+                            unfocusedBorderColor = Color(0xFF2E3A4A),
+                        ),
+                    )
+                    Spacer(Modifier.width(8.dp))
+                    CircleIconButton(onClick = ::confirmNewGroup) {
+                        Icon(Icons.Rounded.Check, contentDescription = stringResource(R.string.action_new_group), tint = Color.White, modifier = Modifier.size(20.dp))
+                    }
+                }
+            } else {
+                Column(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .heightIn(max = 320.dp)
+                        .verticalScroll(rememberScrollState()),
+                ) {
+                    MenuRow(Icons.AutoMirrored.Rounded.OpenInNew, stringResource(R.string.action_open), onOpen)
+                    if (!app.internal) {
+                        MenuRow(Icons.Rounded.Info, stringResource(R.string.action_app_info), onInfo)
+                    }
+                    MenuRow(
+                        if (isHidden) Icons.Rounded.Visibility else Icons.Rounded.VisibilityOff,
+                        if (isHidden) stringResource(R.string.action_unhide) else stringResource(R.string.action_hide),
+                        onHideToggle,
+                    )
+                    MenuRow(Icons.Rounded.SwapVert, stringResource(R.string.action_arrange), onArrange)
+                    MenuRow(Icons.Rounded.Image, stringResource(R.string.action_change_icon), onChangeIcon)
+                    if (hasCustomIcon) {
+                        MenuRow(Icons.Rounded.SettingsBackupRestore, stringResource(R.string.action_reset_icon), onResetIcon)
+                    }
+                    if (!app.internal) {
+                        MenuRow(Icons.Rounded.Folder, stringResource(R.string.action_new_group)) { newGroupInputOpen = true }
+                        for ((folderId, label) in folderChoices) {
+                            MenuRow(Icons.Rounded.BookmarkAdd, stringResource(R.string.action_add_to, label)) { onAddToFolder(folderId) }
+                        }
+                    }
+                    Spacer(Modifier.height(12.dp))
+                }
+            }
+        }
+    }
 }
 
 @Composable

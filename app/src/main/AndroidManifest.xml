@@ -160,6 +160,16 @@
             android:noHistory="true"
             android:taskAffinity="" />
 
+        <!-- Same trick as VoiceSearchProxyActivity, for Quick Switch's "⋮" menu's "Change icon"
+             action — hosts the image picker's result callback (see IconPickerProxyActivity). -->
+        <activity
+            android:name=".search.IconPickerProxyActivity"
+            android:exported="false"
+            android:theme="@android:style/Theme.Translucent.NoTitleBar"
+            android:launchMode="singleInstance"
+            android:noHistory="true"
+            android:taskAffinity="" />
+
 <!-- exported=true: system must bind this service. Access is still restricted by
              BIND_NOTIFICATION_LISTENER_SERVICE (system/signature only). exported=false can
              block binding on API 31+. -->

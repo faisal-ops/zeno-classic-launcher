@@ -7,6 +7,7 @@ import android.view.WindowManager
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.platform.ComposeView
 import androidx.lifecycle.Lifecycle
@@ -22,8 +23,14 @@ import androidx.savedstate.SavedStateRegistryOwner
 import androidx.savedstate.setViewTreeSavedStateRegistryOwner
 import com.zeno.classiclauncher.nlauncher.apps.AppEntry
 import com.zeno.classiclauncher.nlauncher.apps.AppsRepository
+import com.zeno.classiclauncher.nlauncher.apps.CustomIconStore
 import com.zeno.classiclauncher.nlauncher.prefs.LauncherPrefsRepository
+import com.zeno.classiclauncher.nlauncher.ui.DrawerSortMode
+import com.zeno.classiclauncher.nlauncher.ui.applyAddAppToFolder
+import com.zeno.classiclauncher.nlauncher.ui.applyCreateFolderFromApp
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.launch
 
 /**
  * Owns the floating search overlay window — a single [ComposeView] added directly to the
@@ -80,11 +87,35 @@ internal object SearchOverlayController {
                 var query by remember { mutableStateOf(initialQuery) }
                 var allApps by remember { mutableStateOf<List<AppEntry>>(emptyList()) }
                 var hiddenPackages by remember { mutableStateOf<Set<String>>(emptySet()) }
+                var customIconPackages by remember { mutableStateOf<Set<String>>(emptySet()) }
+                var folderContents by remember { mutableStateOf<Map<String, List<String>>>(emptyMap()) }
+                var folderNames by remember { mutableStateOf<Map<String, String>>(emptyMap()) }
+                var menuApp by remember { mutableStateOf<AppEntry?>(null) }
+                val scope = rememberCoroutineScope()
+                val prefsRepo = remember { LauncherPrefsRepository(appContext) }
+                val appsRepo = remember { AppsRepository(appContext, prefsRepo) }
 
                 androidx.compose.runtime.LaunchedEffect(Unit) {
-                    val prefsRepo = LauncherPrefsRepository(appContext)
-                    hiddenPackages = prefsRepo.prefsFlow.first().hiddenPackages
-                    allApps = AppsRepository(appContext, prefsRepo).appsFlow().first()
+                    val prefs = prefsRepo.prefsFlow.first()
+                    hiddenPackages = prefs.hiddenPackages
+                    customIconPackages = prefs.customIconPackages
+                    folderContents = prefs.folderContents
+                    folderNames = prefs.folderNames
+                    allApps = appsRepo.appsFlow().first()
+                }
+
+                // Same data shape as LauncherViewModel.foldersForAddMenu() — folder id to display
+                // label, skipping empty folders.
+                val folderChoices = androidx.compose.runtime.remember(folderContents, folderNames, allApps) {
+                    val byPkg = allApps.associateBy { it.packageName }
+                    folderContents.mapNotNull { (id, members) ->
+                        if (members.isEmpty()) null
+                        else {
+                            val custom = folderNames[id]?.trim()?.takeIf { it.isNotEmpty() }
+                            val label = custom ?: (members.firstNotNullOfOrNull { byPkg[it]?.label } ?: "Folder")
+                            id to label
+                        }
+                    }
                 }
 
                 UniversalSearchOverlay(
@@ -94,7 +125,9 @@ internal object SearchOverlayController {
                     allApps = allApps,
                     hiddenPackages = hiddenPackages,
                     onLaunchApp = { pkg -> SearchOverlayActions.launchAndHide(appContext, pkg) },
-                    onLongPressApp = { app -> SearchOverlayActions.openAppMenuAndHide(appContext, app.packageName) },
+                    // Opens QuickSwitchAppMenu in-place below, instead of leaving the app Quick
+                    // Switch was triggered from — see that composable's own doc for why.
+                    onLongPressApp = { app -> menuApp = app },
                     onLaunchSettings = { action, fallbackAction ->
                         SearchOverlayActions.openSettingsAndHide(appContext, action, fallbackAction)
                     },
@@ -107,7 +140,97 @@ internal object SearchOverlayController {
                     onVoiceSearch = { startVoiceSearch(query) },
                     onOpenPlayStore = { q -> SearchOverlayActions.openPlayStoreSearchAndHide(appContext, q) },
                     onOpenWebSearch = { q -> SearchOverlayActions.openWebSearchAndHide(appContext, q) },
+                    // Re-requests focus every time QuickSwitchAppMenu closes (menuApp -> null) —
+                    // see UniversalSearchOverlay's own doc on regainFocusKey for why this is needed.
+                    regainFocusKey = menuApp == null,
                 )
+
+                val currentMenuApp = menuApp
+                if (currentMenuApp != null) {
+                    QuickSwitchAppMenu(
+                        app = currentMenuApp,
+                        isHidden = currentMenuApp.packageName in hiddenPackages,
+                        hasCustomIcon = currentMenuApp.packageName in customIconPackages,
+                        folderChoices = folderChoices,
+                        onDismiss = { menuApp = null },
+                        onOpen = {
+                            menuApp = null
+                            SearchOverlayActions.launchAndHide(appContext, currentMenuApp.packageName)
+                        },
+                        onInfo = {
+                            menuApp = null
+                            SearchOverlayActions.openAppInfoAndHide(appContext, currentMenuApp.packageName)
+                        },
+                        onHideToggle = {
+                            val nowHidden = currentMenuApp.packageName !in hiddenPackages
+                            scope.launch {
+                                prefsRepo.setHidden(currentMenuApp.packageName, nowHidden)
+                                hiddenPackages = prefsRepo.prefsFlow.first().hiddenPackages
+                            }
+                            menuApp = null
+                        },
+                        onArrange = {
+                            menuApp = null
+                            SearchOverlayActions.openArrangeModeAndHide(appContext)
+                        },
+                        onChangeIcon = {
+                            menuApp = null
+                            hide()
+                            IconPickerProxyActivity.launch(appContext) { uri ->
+                                if (uri != null) {
+                                    SearchOverlayActions.applyCustomIconFromPicker(appContext, currentMenuApp.packageName, uri)
+                                }
+                            }
+                        },
+                        onResetIcon = {
+                            scope.launch(Dispatchers.IO) {
+                                CustomIconStore.delete(appContext, currentMenuApp.packageName)
+                                prefsRepo.removeCustomIconPackage(currentMenuApp.packageName)
+                                appsRepo.invalidateAndRefresh(currentMenuApp.packageName)
+                                customIconPackages = prefsRepo.prefsFlow.first().customIconPackages
+                            }
+                            menuApp = null
+                        },
+                        // "New Group"/"Add to folder" are just prefs read-modify-write (see
+                        // applyCreateFolderFromApp/applyAddAppToFolder's own doc) — no Activity
+                        // needed, unlike Arrange, so these stay on top of the current app too.
+                        onCreateFolder = { title ->
+                            scope.launch(Dispatchers.IO) {
+                                val strict = strictAlphabeticalMode(prefsRepo)
+                                applyCreateFolderFromApp(
+                                    prefsRepo = prefsRepo,
+                                    installed = allApps,
+                                    packageName = currentMenuApp.packageName,
+                                    title = title,
+                                    searchQueryRaw = "",
+                                    sortByUsage = false,
+                                    usage = emptyMap(),
+                                    strictAlphabetical = strict,
+                                )
+                                val prefs = prefsRepo.prefsFlow.first()
+                                folderContents = prefs.folderContents
+                                folderNames = prefs.folderNames
+                            }
+                            menuApp = null
+                        },
+                        onAddToFolder = { folderId ->
+                            scope.launch(Dispatchers.IO) {
+                                val strict = strictAlphabeticalMode(prefsRepo)
+                                applyAddAppToFolder(
+                                    prefsRepo = prefsRepo,
+                                    installed = allApps,
+                                    packageName = currentMenuApp.packageName,
+                                    folderId = folderId,
+                                    strictAlphabetical = strict,
+                                )
+                                val prefs = prefsRepo.prefsFlow.first()
+                                folderContents = prefs.folderContents
+                                folderNames = prefs.folderNames
+                            }
+                            menuApp = null
+                        },
+                    )
+                }
             }
         }
 
@@ -160,6 +283,14 @@ internal object SearchOverlayController {
         VoiceSearchProxyActivity.launch(appContext) { heard ->
             show(serviceContext, heard?.takeIf { it.isNotBlank() } ?: currentQuery)
         }
+    }
+
+    /** Same rule as LauncherViewModel.isStrictDrawerAlphabeticalMode(), minus the reorder-mode
+     *  check — Quick Switch never has an active reorder session of its own to defer to. */
+    private suspend fun strictAlphabeticalMode(prefsRepo: LauncherPrefsRepository): Boolean {
+        val saved = prefsRepo.prefsFlow.first().drawerSortMode
+        val mode = runCatching { DrawerSortMode.valueOf(saved) }.getOrDefault(DrawerSortMode.ALPHABETICAL)
+        return mode == DrawerSortMode.ALPHABETICAL
     }
 }
 

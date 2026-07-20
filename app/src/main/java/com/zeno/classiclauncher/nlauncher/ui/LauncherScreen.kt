@@ -1276,18 +1276,6 @@ fun LauncherScreen(
         }
     }
 
-    // Quick Switch's "⋮" app-row action lands here once MainActivity is brought to the
-    // foreground — opens the exact same AppContextMenu as home/drawer search, for the package
-    // Quick Switch requested.
-    val pendingAppMenuPackage by vm.pendingAppMenuPackage.collectAsStateWithLifecycle()
-    androidx.compose.runtime.LaunchedEffect(pendingAppMenuPackage, allApps) {
-        val pkg = pendingAppMenuPackage ?: return@LaunchedEffect
-        allApps.find { it.packageName == pkg }?.let { app ->
-            showAppMenu = app
-            vm.consumePendingAppMenuPackage()
-        }
-    }
-
     // End-call / red button: navigated via Activity dispatchKeyEvent → ViewModel → here.
     val navigateHomeEvent by vm.navigateHomeEvent.collectAsStateWithLifecycle()
     androidx.compose.runtime.LaunchedEffect(navigateHomeEvent) {
@@ -1997,8 +1985,10 @@ fun LauncherScreen(
         val selectedApp = showAppMenu
         if (selectedApp != null) {
             LaunchedEffect(selectedApp.packageName) { drawerFolderMenu = null }
+            // Classic Mode's home page has no home strip at all — nothing to pin to.
             val canAddHomeShortcut =
-                !appMenuFromHomeShortcut &&
+                !classicMode &&
+                    !appMenuFromHomeShortcut &&
                     selectedApp.packageName != AppsRepository.INTERNAL_SETTINGS_PACKAGE &&
                     prefs.canAddHomeStripItem() &&
                     prefs.homeShortcutPackages.none {

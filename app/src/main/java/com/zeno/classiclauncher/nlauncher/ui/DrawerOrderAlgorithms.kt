@@ -1,8 +1,12 @@
 package com.zeno.classiclauncher.nlauncher.ui
 
 import com.zeno.classiclauncher.nlauncher.apps.AppEntry
+import com.zeno.classiclauncher.nlauncher.apps.AppsRepository
 import com.zeno.classiclauncher.nlauncher.folders.DrawerGridCell
+import com.zeno.classiclauncher.nlauncher.folders.FolderIds
 import com.zeno.classiclauncher.nlauncher.folders.buildDrawerGridCells
+import com.zeno.classiclauncher.nlauncher.prefs.LauncherPrefsRepository
+import kotlinx.coroutines.flow.first
 import java.text.Collator
 import java.util.Locale
 
@@ -139,4 +143,175 @@ internal fun alphabeticalDrawerInsertIndex(
 
 private fun List<DrawerGridCell>.appEntries(): List<AppEntry> = mapNotNull { cell ->
     (cell as? DrawerGridCell.App)?.entry
+}
+
+/**
+ * Shared "New Group" implementation — single source of truth for both [LauncherViewModel]'s own
+ * long-press menu (home/drawer) and Quick Switch's self-contained "⋮" menu (see
+ * `SearchOverlayActions` in the `search` package), so this non-trivial grid-ordering logic can't
+ * drift between the two call sites. Callers own their own locking (e.g. LauncherViewModel's
+ * gridHomeMutex) — this is plain read-modify-write against [prefsRepo], nothing more.
+ */
+internal suspend fun applyCreateFolderFromApp(
+    prefsRepo: LauncherPrefsRepository,
+    installed: List<AppEntry>,
+    packageName: String,
+    title: String,
+    searchQueryRaw: String,
+    sortByUsage: Boolean,
+    usage: Map<String, Long>,
+    strictAlphabetical: Boolean,
+    visualCellIndex: Int = -1,
+) {
+    if (packageName == AppsRepository.INTERNAL_SETTINGS_PACKAGE) return
+    val snap = prefsRepo.prefsFlow.first()
+
+    val cellsBefore = filteredDrawerCellsSnapshot(
+        installed = installed,
+        orderedPackages = snap.orderedPackages.filter { tok ->
+            !FolderIds.isFolderId(tok) || snap.folderContents.containsKey(tok)
+        },
+        folderContents = snap.folderContents,
+        folderNames = snap.folderNames.filterKeys { snap.folderContents.containsKey(it) },
+        hiddenPackages = snap.hiddenPackages,
+        searchQueryRaw = searchQueryRaw,
+        sortByUsage = sortByUsage,
+        usageStats = usage,
+    )
+    val resolvedIdx = cellsBefore.indexOfFirst { cell ->
+        cell is DrawerGridCell.App && cell.entry.packageName == packageName
+    }
+    val targetSlotIndex = when {
+        resolvedIdx >= 0 -> resolvedIdx
+        visualCellIndex >= 0 -> visualCellIndex
+        else -> -1
+    }
+
+    val id = FolderIds.newId()
+    val folders = snap.folderContents
+        .mapValues { (_, m) -> m.filter { it != packageName } }
+        .filterValues { it.isNotEmpty() }
+        .toMutableMap()
+    folders[id] = listOf(packageName)
+    val label = title.trim().ifBlank { "Group" }
+    val names = snap.folderNames
+        .filterKeys { folders.containsKey(it) }
+        .toMutableMap()
+    names[id] = label
+
+    if (strictAlphabetical) {
+        val finalOrder = strictAlphabeticalDrawerOrder(
+            installed = installed,
+            folderContents = folders,
+            folderNames = names,
+        )
+        prefsRepo.writeGridState(finalOrder, folders, names)
+        return
+    }
+
+    val folderMembers = folders.values.flatten().toSet()
+
+    val order = snap.orderedPackages
+        .filter { tok -> !FolderIds.isFolderId(tok) || folders.containsKey(tok) }
+        .toMutableList()
+    val posBeforeRemove = order.indexOf(packageName)
+    order.removeAll { it == packageName }
+
+    fun cellsForTrial(trialOrder: List<String>): List<DrawerGridCell> =
+        filteredDrawerCellsSnapshot(
+            installed = installed,
+            orderedPackages = trialOrder,
+            folderContents = folders,
+            folderNames = names,
+            hiddenPackages = snap.hiddenPackages,
+            searchQueryRaw = searchQueryRaw,
+            sortByUsage = sortByUsage,
+            usageStats = usage,
+        )
+
+    /**
+     * Folder tokens only exist in [orderedPackages]; apps in the "tail" are not, so inserting a
+     * single folder id can never land in the middle of the tail — only before/within the ordered
+     * prefix. Rebuild [orderedPackages] from the current visible top-level slot order instead.
+     */
+    fun orderFromMaterializedGrid(): MutableList<String>? {
+        val cellAt = cellsBefore.getOrNull(targetSlotIndex) ?: return null
+        if (cellAt !is DrawerGridCell.App || cellAt.entry.packageName != packageName) return null
+        val slotIds = cellsBefore.map { it.slotId }.toMutableList()
+        slotIds[targetSlotIndex] = id
+        val cleaned = slotIds.filter { tok ->
+            when {
+                FolderIds.isFolderId(tok) -> folders.containsKey(tok)
+                else -> !folderMembers.contains(tok)
+            }
+        }.toMutableList()
+        val verifyCells = cellsForTrial(cleaned)
+        val folderIdx = verifyCells.indexOfFirst { cell ->
+            cell is DrawerGridCell.Folder && cell.id == id
+        }
+        return if (folderIdx == targetSlotIndex) cleaned else null
+    }
+
+    fun orderByInsertScan(): MutableList<String> {
+        var best: MutableList<String>? = null
+        var bestDist = Int.MAX_VALUE
+        for (insertAt in 0..order.size) {
+            val trial = order.toMutableList().apply { add(insertAt, id) }
+            val cells = cellsForTrial(trial)
+            val folderIdx = cells.indexOfFirst { cell ->
+                cell is DrawerGridCell.Folder && cell.id == id
+            }
+            if (folderIdx == targetSlotIndex) return trial
+            if (folderIdx >= 0) {
+                val d = kotlin.math.abs(folderIdx - targetSlotIndex)
+                if (d < bestDist) {
+                    bestDist = d
+                    best = trial
+                }
+            }
+        }
+        return best ?: order.toMutableList().apply { add(id) }
+    }
+
+    val finalOrder: MutableList<String> = when {
+        targetSlotIndex >= 0 -> orderFromMaterializedGrid() ?: orderByInsertScan()
+        posBeforeRemove >= 0 -> order.toMutableList().apply { add(posBeforeRemove, id) }
+        else -> order.toMutableList().apply { add(id) }
+    }
+
+    prefsRepo.writeGridState(finalOrder, folders, names)
+}
+
+/** Shared "Add to [existing folder]" implementation — see [createFolderFromApp]'s doc. */
+internal suspend fun applyAddAppToFolder(
+    prefsRepo: LauncherPrefsRepository,
+    installed: List<AppEntry>,
+    packageName: String,
+    folderId: String,
+    strictAlphabetical: Boolean,
+) {
+    if (!FolderIds.isFolderId(folderId) || packageName == AppsRepository.INTERNAL_SETTINGS_PACKAGE) return
+    val snap = prefsRepo.prefsFlow.first()
+    val folders = snap.folderContents
+        .mapValues { (_, m) -> m.filter { it != packageName } }
+        .filterValues { it.isNotEmpty() }
+        .toMutableMap()
+    val order = snap.orderedPackages
+        .filter { tok -> !FolderIds.isFolderId(tok) || folders.containsKey(tok) }
+        .toMutableList()
+    order.removeAll { it == packageName }
+    val list = folders.getOrElse(folderId) { emptyList() }.toMutableList()
+    if (packageName !in list) list.add(packageName)
+    folders[folderId] = list
+    val names = snap.folderNames.filterKeys { folders.containsKey(it) }
+    val finalOrder = if (strictAlphabetical) {
+        strictAlphabeticalDrawerOrder(
+            installed = installed,
+            folderContents = folders,
+            folderNames = names,
+        )
+    } else {
+        order
+    }
+    prefsRepo.writeGridState(finalOrder, folders, names)
 }
