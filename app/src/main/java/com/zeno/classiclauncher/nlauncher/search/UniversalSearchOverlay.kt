@@ -77,6 +77,7 @@ import androidx.compose.ui.input.key.KeyEventType
 import androidx.compose.ui.input.key.key
 import androidx.compose.ui.input.key.onPreviewKeyEvent
 import androidx.compose.ui.input.key.type
+import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
@@ -330,11 +331,24 @@ internal fun UniversalSearchOverlay(
                     appResults.forEachIndexed { idx, app ->
                         SearchResultRow(
                             leading = {
-                                AsyncImage(
-                                    model = app.icon,
-                                    contentDescription = null,
-                                    modifier = Modifier.size(36.dp).clip(RoundedCornerShape(8.dp)),
-                                )
+                                // Opaque placeholder behind the icon: a row that's newly appeared
+                                // in the filtered list (typing narrows/widens results every
+                                // keystroke) needs a fresh Coil decode, and without this the gap
+                                // was fully transparent for that frame — letting the dimmed
+                                // background app grid show through where the icon should be,
+                                // which read as the grid itself "jumping" through the overlay.
+                                Box(
+                                    modifier = Modifier
+                                        .size(36.dp)
+                                        .clip(RoundedCornerShape(8.dp))
+                                        .background(Color(0xFF2C3547)),
+                                ) {
+                                    AsyncImage(
+                                        model = app.icon,
+                                        contentDescription = null,
+                                        modifier = Modifier.size(36.dp).clip(RoundedCornerShape(8.dp)),
+                                    )
+                                }
                             },
                             label = app.label,
                             onClick = { onLaunchApp(app.packageName) },
@@ -454,23 +468,27 @@ internal fun UniversalSearchOverlay(
             // the reference BB10 layout, which has no separate bar behind this row at all: each
             // button is its own opaque chip (see CircleIconButton's own solid fill) floating
             // directly on the screen, with plain gaps between them — not a continuous toolbar.
+            // All three share one size so back/info visually match mic instead of a smaller
+            // default — proportional to screen width (0.0812 * refWidth ≈ 45dp on this project's
+            // reference device) rather than a fixed dp, so it scales on other screen sizes.
+            val bottomChromeButtonSize = LocalConfiguration.current.screenWidthDp.dp * 0.0812f
             Row(
                 modifier = Modifier
                     .fillMaxWidth()
                     .padding(horizontal = 16.dp, vertical = 10.dp),
                 verticalAlignment = Alignment.CenterVertically,
             ) {
-                CircleIconButton(onClick = onDismiss) {
+                CircleIconButton(onClick = onDismiss, size = bottomChromeButtonSize) {
                     Icon(
                         Icons.AutoMirrored.Rounded.ArrowBack,
                         contentDescription = stringResource(R.string.action_back),
                         tint = Color.White,
-                        modifier = Modifier.size(20.dp),
+                        modifier = Modifier.size(24.dp),
                     )
                 }
                 Spacer(Modifier.weight(1f))
                 if (showMic) {
-                    CircleIconButton(onClick = onVoiceSearch, size = 52.dp) {
+                    CircleIconButton(onClick = onVoiceSearch, size = bottomChromeButtonSize) {
                         Icon(
                             Icons.Rounded.Mic,
                             contentDescription = stringResource(R.string.cd_search_voice),
@@ -480,12 +498,12 @@ internal fun UniversalSearchOverlay(
                     }
                 }
                 Spacer(Modifier.weight(1f))
-                CircleIconButton(onClick = { showHelp = true }) {
+                CircleIconButton(onClick = { showHelp = true }, size = bottomChromeButtonSize) {
                     Icon(
                         Icons.Rounded.Info,
                         contentDescription = stringResource(R.string.cd_search_help),
                         tint = Color.White,
-                        modifier = Modifier.size(20.dp),
+                        modifier = Modifier.size(24.dp),
                     )
                 }
             }

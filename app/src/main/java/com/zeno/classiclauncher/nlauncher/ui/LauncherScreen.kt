@@ -1897,10 +1897,13 @@ fun LauncherScreen(
                         color = Color(0x553D4B60),
                     )
                 }
-                // Hidden while Universal Search is up — it sits at the exact same spot as the
-                // search overlay's own bottom back/mic/info row, and any transparency there let
-                // its bright icons and page dots show through underneath, clashing with it.
-                if (searchQuery.isEmpty()) Dock(
+                // Was conditionally hidden while Universal Search is up (searchQuery.isEmpty()) —
+                // reverted: that made the whole Dock composable unmount/remount right at the same
+                // moment search opens/closes, which is what caused the visible re-layout jump when
+                // dismissing search (confirmed against the reference video). Now always composed;
+                // the search overlay itself renders on top and covers this same bottom area while
+                // active, so the original clash this guard was added for shouldn't resurface.
+                Dock(
                     pageIndex = dockPageIndexForDisplay,
                     homeActive = pagerState.currentPage == 0,
                     onMail = { vm.launchFromDock(DockSlot.Mail) },
@@ -7017,9 +7020,9 @@ private fun AppDrawer(
             onDockFocusChanged(true, 0)
         }
     }
-    LaunchedEffect(searchQuery) {
-        if (pages > 0) drawerPager.animateScrollToPage(0)
-    }
+    // Previously auto-scrolled the drawer back to page 1 when search opened/closed — removed
+    // entirely per explicit request: the drawer should stay on whatever page it was already on,
+    // both while search is active and after it closes, not jump anywhere on its own.
     LaunchedEffect(pages) {
         val last = (pages - 1).coerceAtLeast(0)
         if (drawerPager.currentPage > last) {
