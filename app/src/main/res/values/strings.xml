@@ -343,6 +343,8 @@
     <string name="cd_call_active">Call in progress</string>
     <string name="cd_call_speaker">Call on speaker</string>
     <string name="cd_call_missed">Missed call</string>
+    <string name="action_close">Close</string>
+    <string name="active_frames_empty">No recent apps</string>
     <string name="weather_clear">Clear</string>
     <string name="weather_mainly_clear">Mainly clear</string>
     <string name="weather_partly_cloudy">Partly cloudy</string>

@@ -493,6 +493,38 @@ object RootManager {
         }.getOrNull()
     }
 
+    /** Like [readLine] but captures every line — for commands like `dumpsys` whose output
+     *  spans many lines and needs to be parsed as a whole. */
+    suspend fun readFull(command: String): String? = withContext(Dispatchers.IO) {
+        runCatching {
+            val process = Runtime.getRuntime().exec("su")
+            DataOutputStream(process.outputStream).use { os ->
+                os.writeBytes("$command\n")
+                os.writeBytes("exit\n")
+                os.flush()
+            }
+            val output = process.inputStream.bufferedReader().readText()
+            process.waitFor()
+            output.takeIf { it.isNotEmpty() }
+        }.getOrNull()
+    }
+
+    /** Raw binary output of [command] (e.g. `cat` on a root-only file) — for anything that
+     *  isn't safe to decode as text, like a JPEG task-snapshot thumbnail. */
+    suspend fun readBytes(command: String): ByteArray? = withContext(Dispatchers.IO) {
+        runCatching {
+            val process = Runtime.getRuntime().exec("su")
+            DataOutputStream(process.outputStream).use { os ->
+                os.writeBytes("$command\n")
+                os.writeBytes("exit\n")
+                os.flush()
+            }
+            val output = process.inputStream.readBytes()
+            process.waitFor()
+            output.takeIf { it.isNotEmpty() }
+        }.getOrNull()
+    }
+
     // Returns "ssid|securityType|passphrase" from saved WifiConfigStoreSoftAp.xml, or null.
     suspend fun readHotspotConfig(): Triple<String, String, String>? = withContext(Dispatchers.IO) {
         val raw = readLine(

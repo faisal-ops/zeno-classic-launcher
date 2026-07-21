@@ -902,6 +902,9 @@ fun LauncherScreen(
     var showLanguageSettings by remember { mutableStateOf(false) }
     var showAppDrawerBadges by remember { mutableStateOf(false) }
     var showIconAppearanceSettings by remember { mutableStateOf(false) }
+    // BB10-style Active Frames — Classic Mode only, opened by swiping down on the dock's Home
+    // icon. See com.zeno.classiclauncher.nlauncher.recents for the rooted/non-root split.
+    var showActiveFrames by remember { mutableStateOf(false) }
     var showMinimalModeSettings by remember { mutableStateOf(false) }
     var showRootSettings by remember { mutableStateOf(false) }
     var showModesFromQs by remember { mutableStateOf(false) }
@@ -1906,14 +1909,24 @@ fun LauncherScreen(
                 Dock(
                     pageIndex = dockPageIndexForDisplay,
                     homeActive = pagerState.currentPage == 0,
-                    onMail = { vm.launchFromDock(DockSlot.Mail) },
-                    onShortcut = { vm.launchFromDock(DockSlot.Shortcut) },
-                    onCamera = { vm.launchFromDock(DockSlot.Camera) },
-                    onLongPressMail = { dockQuickActionSlot = DockSlot.Mail },
-                    onLongPressShortcut = { dockQuickActionSlot = DockSlot.Shortcut },
-                    onLongPressCamera = { dockQuickActionSlot = DockSlot.Camera },
-                    onHome = { scope.launch { pagerState.animateScrollToPage(0) } },
+                    // Dock stays visible and live underneath Active Frames (see ActiveFramesOverlay's
+                    // own doc), but tapping any of its actions is a real navigation — it should close
+                    // the overlay, not leave it stuck on top of whatever was just navigated to
+                    // (confirmed as a bug: page-dot taps changed the underlying page but Active
+                    // Frames kept covering the screen).
+                    onMail = { showActiveFrames = false; vm.launchFromDock(DockSlot.Mail) },
+                    onShortcut = { showActiveFrames = false; vm.launchFromDock(DockSlot.Shortcut) },
+                    onCamera = { showActiveFrames = false; vm.launchFromDock(DockSlot.Camera) },
+                    onLongPressMail = { showActiveFrames = false; dockQuickActionSlot = DockSlot.Mail },
+                    onLongPressShortcut = { showActiveFrames = false; dockQuickActionSlot = DockSlot.Shortcut },
+                    onLongPressCamera = { showActiveFrames = false; dockQuickActionSlot = DockSlot.Camera },
+                    onHome = { showActiveFrames = false; scope.launch { pagerState.animateScrollToPage(0) } },
+                    onHomeSwipeDown = if (classicMode) ({ showActiveFrames = true }) else null,
+                    // Arrow cue only while Active Frames is actually open right now — not a
+                    // permanent discovery hint.
+                    showRecentAppsCue = showActiveFrames,
                     onScrubPage = { targetPage ->
+                        showActiveFrames = false
                         requestedDrawerPage = targetPage
                         scope.launch { pagerState.animateScrollToPage(1) }
                     },
@@ -2697,6 +2710,29 @@ fun LauncherScreen(
                 onDismiss = { showQuickSwitchSettings = false },
                 onSearchOverlayEnabled = vm::setSearchOverlayEnabled,
                 onSearchOverlayCustomKeys = vm::setSearchOverlayCustomKeys,
+            )
+        }
+
+        if (showActiveFrames) {
+            // Same metrics Dock itself computes for Classic Mode (onHomeSwipeDown/long-press is
+            // only ever wired up when classicMode is true, so this is always the right dock —
+            // see rememberClassicDockMetrics' own call inside Dock).
+            val activeFramesDockHeight = rememberClassicDockMetrics(
+                baseNavBarHeight = themePalette.navBarHeight(),
+                basePageActiveDp = themePalette.pageIndicatorActiveDp.dp,
+                basePageInactiveDp = themePalette.pageIndicatorInactiveDp.dp,
+                basePageFontSp = themePalette.pageIndicatorFontSp,
+            ).dockHeight
+            com.zeno.classiclauncher.nlauncher.recents.ActiveFramesOverlay(
+                rootGranted = prefs.rootGranted,
+                dockHeightDp = activeFramesDockHeight,
+                onDismiss = { showActiveFrames = false },
+                onLaunchApp = { pkg -> vm.launchApp(pkg) },
+                onSwipeLeftToDrawer = {
+                    showActiveFrames = false
+                    requestedDrawerPage = 0
+                    scope.launch { pagerState.animateScrollToPage(1) }
+                },
             )
         }
 
@@ -4458,7 +4494,7 @@ private fun ClassicCleanHomePage(
             color = Color(0xFFB8D4E8),
             // Reference BB10 home screen has this noticeably larger than the clock — was 40.sp.
             fontSize = 45.sp,
-            fontWeight = FontWeight.W300,
+            fontWeight = FontWeight.Normal,
             // Was -0.62f, then -0.82f (too tight against the status bar) — settled between them.
             modifier = Modifier.align(BiasAlignment(0f, -0.74f)),
         )
@@ -10501,6 +10537,12 @@ private fun Dock(
     onShortcut: () -> Unit,
     onHome: () -> Unit,
     onCamera: () -> Unit,
+    /** Classic Mode only — swipe down on the Home icon to open Active Frames (BB10-style
+     *  recent apps). Null elsewhere, so the gesture detector below is never attached. */
+    onHomeSwipeDown: (() -> Unit)? = null,
+    /** Whether to show the swipe-down arrow cue under Home — true only while Active Frames is
+     *  currently open, not a permanent discovery hint. */
+    showRecentAppsCue: Boolean = false,
     onLongPressMail: (() -> Unit)? = null,
     onLongPressShortcut: (() -> Unit)? = null,
     onLongPressCamera: (() -> Unit)? = null,
@@ -10666,7 +10708,7 @@ private fun Dock(
     // BB10's Home glyph swells slightly while you're on the Home page itself. This is a pure
     // draw-time scale (graphicsLayer), never a change to homeButtonSize/homeIconSize — those stay
     // fixed so the slot, spacing, and neighboring dots never move.
-    val homeEmphasisTarget = if (classicDockOrder && homeActive) 1.40f else 1.0f
+    val homeEmphasisTarget = if (classicDockOrder && homeActive) 1.54f else 1.0f
     val homeEmphasisScale by animateFloatAsState(
         targetValue = homeEmphasisTarget,
         animationSpec = tween(
@@ -10742,26 +10784,77 @@ private fun Dock(
                     // (confirmed via on-device bounding-box measurement). DockEndSlot's plain
                     // Box + combinedClickable has no such clamp, matching Envelope's own
                     // unconstrained rendering exactly.
-                    DockEndSlot(
-                        iconModel = null,
-                        fallbackIcon = Icons.Rounded.Home,
-                        appIconShape = appIconShape,
-                        onClick = onHome,
-                        buttonSize = homeButtonSize,
-                        iconSize = homeIconSize,
-                        // Classic Mode only, independent of Envelope's own fallbackScale: this is
-                        // the number that produces the deliberate ~30%-bigger-than-Envelope glyph
-                        // weight, tuned directly for Home rather than derived from
-                        // envelopeIconSize * 1.30f. Zeno Mode keeps its original 0.84f default.
-                        fallbackScale = if (classicDockOrder) 1.092f else 0.84f,
-                        modifier = Modifier.graphicsLayer(
-                            scaleX = homeEmphasisScale,
-                            scaleY = homeEmphasisScale,
-                        ),
-                        selected = focused && focusedIndex == homeFocusIdx,
-                        selectedTint = selectedTint,
-                        iconTint = dockIconTint,
-                    )
+                    Box {
+                        DockEndSlot(
+                            iconModel = null,
+                            fallbackIcon = Icons.Rounded.Home,
+                            appIconShape = appIconShape,
+                            onClick = onHome,
+                            // TEMPORARY test hook while the swipe-down gesture is being debugged —
+                            // DockEndSlot's own combinedClickable already handles long-press
+                            // reliably, so this is a known-good way to confirm the Active Frames
+                            // overlay itself works before chasing the gesture further.
+                            onLongPress = onHomeSwipeDown,
+                            buttonSize = homeButtonSize,
+                            iconSize = homeIconSize,
+                            // Classic Mode only, independent of Envelope's own fallbackScale: this is
+                            // the number that produces the deliberate ~30%-bigger-than-Envelope glyph
+                            // weight, tuned directly for Home rather than derived from
+                            // envelopeIconSize * 1.30f. Zeno Mode keeps its original 0.84f default.
+                            fallbackScale = if (classicDockOrder) 1.092f else 0.84f,
+                            modifier = Modifier
+                                .graphicsLayer(
+                                    scaleX = homeEmphasisScale,
+                                    scaleY = homeEmphasisScale,
+                                )
+                                // Swipe-down-to-open-Active-Frames has to intercept in the Initial
+                                // pass (root-to-leaf) — DockEndSlot's own combinedClickable is a
+                                // child node that consumes drag deltas on the (leaf-to-root) Main
+                                // pass, so a plain Modifier.pointerInput/detectVerticalDragGestures
+                                // here (which defaults to Main) never sees the movement at all.
+                                // Mirrors the QS-swipe interceptor above this Dock composable.
+                                .pointerInput(onHomeSwipeDown) {
+                                    if (onHomeSwipeDown == null) return@pointerInput
+                                    val swipeThresholdPx = 24.dp.toPx()
+                                    awaitEachGesture {
+                                        val down = awaitFirstDown(requireUnconsumed = false, pass = PointerEventPass.Initial)
+                                        val pointerId = down.id
+                                        val startY = down.position.y
+                                        var triggered = false
+                                        while (true) {
+                                            val event = awaitPointerEvent(PointerEventPass.Initial)
+                                            val change = event.changes.find { it.id == pointerId } ?: break
+                                            if (change.changedToUp() || !change.pressed) break
+                                            val dy = change.position.y - startY
+                                            if (!triggered && dy > swipeThresholdPx) {
+                                                triggered = true
+                                                onHomeSwipeDown()
+                                                change.consume()
+                                            } else if (triggered) {
+                                                change.consume()
+                                            }
+                                        }
+                                    }
+                                },
+                            selected = focused && focusedIndex == homeFocusIdx,
+                            selectedTint = selectedTint,
+                            iconTint = dockIconTint,
+                        )
+                        // Swipe-down-for-Active-Frames affordance — a small hint, not
+                        // interactive itself (the gesture lives on the Home icon above). Only
+                        // once there's a recent app behind it, not as a permanent idle hint.
+                        if (onHomeSwipeDown != null && showRecentAppsCue) {
+                            Icon(
+                                Icons.Rounded.ArrowDropDown,
+                                contentDescription = null,
+                                tint = dockIconTint.copy(alpha = 0.9f),
+                                modifier = Modifier
+                                    .align(Alignment.BottomCenter)
+                                    .offset(y = 14.dp)
+                                    .size(26.dp),
+                            )
+                        }
+                    }
                     Spacer(Modifier.width(innerClusterSpacing))
                 }
             }
