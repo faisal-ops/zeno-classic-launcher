@@ -117,6 +117,15 @@ object NotificationRepository {
     private val _recentUnreadPackages = MutableStateFlow<List<RecentNotifyIcon>>(emptyList())
     val recentUnreadPackages: StateFlow<List<RecentNotifyIcon>> = _recentUnreadPackages.asStateFlow()
 
+    /** Keys of currently-active notifications with category CATEGORY_MISSED_CALL — independent
+     *  of the mail/SMS/WhatsApp buckets above (those are keyed by package, this by category). */
+    private val missedCallKeys = HashSet<String>()
+
+    /** True exactly while the phone/dialer app's own missed-call notification is still active —
+     *  stays true until the user dismisses/clears it (matches it disappearing), not on a timer. */
+    private val _hasMissedCall = MutableStateFlow(false)
+    val hasMissedCall: StateFlow<Boolean> = _hasMissedCall.asStateFlow()
+
     fun snapshotActiveMap(): Map<String, StatusBarNotification> =
         synchronized(lock) { HashMap(activeByKey) }
 
@@ -129,12 +138,14 @@ object NotificationRepository {
                 mailKeys.clear()
                 smsKeys.clear()
                 waKeys.clear()
+                missedCallKeys.clear()
                 val list = active ?: emptyArray()
                 for (sbn in list) {
                     if (shouldTrackIconBadge(sbn)) {
                         iconBadgeEntryByKey[sbn.key] =
                             IconBadgeEntry(sbn.packageName, sbn.postTime, sbn.notification.smallIcon)
                     }
+                    if (isMissedCall(sbn)) missedCallKeys.add(sbn.key)
                     if (!shouldTrack(sbn)) continue
                     val key = sbn.key
                     activeByKey[key] = sbn
@@ -149,6 +160,7 @@ object NotificationRepository {
         if (sbn == null || !badgesEnabled) return
         scope.launch {
             synchronized(lock) {
+                if (isMissedCall(sbn)) missedCallKeys.add(sbn.key) else missedCallKeys.remove(sbn.key)
                 if (!shouldTrack(sbn)) {
                     // Drop stale entry if a previously tracked notification no longer qualifies
                     val key = sbn.key
@@ -207,6 +219,7 @@ object NotificationRepository {
                 val key = sbn.key
                 activeByKey.remove(key)
                 iconBadgeEntryByKey.remove(key)
+                missedCallKeys.remove(key)
                 removeKeyFromAllBuckets(key)
                 publishAll()
             }
@@ -273,6 +286,8 @@ object NotificationRepository {
         if (_hasUnreadMail.value != mail) _hasUnreadMail.value = mail
         if (_hasUnreadSms.value != sms) _hasUnreadSms.value = sms
         if (_hasUnreadWhatsApp.value != wa) _hasUnreadWhatsApp.value = wa
+        val missedCall = missedCallKeys.isNotEmpty()
+        if (_hasMissedCall.value != missedCall) _hasMissedCall.value = missedCall
         val pkgs = iconBadgeEntryByKey.values.map { it.packageName }.toSet()
         if (_packagesWithUnread.value != pkgs) _packagesWithUnread.value = pkgs
         val recentIcons = iconBadgeEntryByKey.values
@@ -290,6 +305,12 @@ object NotificationRepository {
         @Suppress("DEPRECATION")
         return (n.flags and Notification.FLAG_ONGOING_EVENT) == 0
     }
+
+    /** The dialer/phone app's own missed-call notification — independent of [shouldTrack]'s
+     *  mail/SMS/WhatsApp package filtering, since the missed-call indicator isn't scoped to a
+     *  specific app the way those badges are. */
+    private fun isMissedCall(sbn: StatusBarNotification): Boolean =
+        sbn.notification.category == Notification.CATEGORY_MISSED_CALL
 
     fun shouldTrack(sbn: StatusBarNotification): Boolean {
         val n = sbn.notification

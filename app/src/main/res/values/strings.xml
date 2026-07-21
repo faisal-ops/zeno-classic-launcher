@@ -339,6 +339,10 @@
     <string name="folder_default_name">Folder</string>
     <string name="cd_headset_connected">Headset connected</string>
     <string name="cd_notification_icon">New notification</string>
+    <string name="cd_mic_muted">Microphone muted</string>
+    <string name="cd_call_active">Call in progress</string>
+    <string name="cd_call_speaker">Call on speaker</string>
+    <string name="cd_call_missed">Missed call</string>
     <string name="weather_clear">Clear</string>
     <string name="weather_mainly_clear">Mainly clear</string>
     <string name="weather_partly_cloudy">Partly cloudy</string>

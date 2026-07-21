@@ -62,12 +62,16 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.AcUnit
 import androidx.compose.material.icons.rounded.Bolt
+import androidx.compose.material.icons.rounded.Call
+import androidx.compose.material.icons.rounded.CallMissed
 import androidx.compose.material.icons.rounded.Cloud
 import androidx.compose.material.icons.rounded.DoNotDisturb
 import androidx.compose.material.icons.rounded.Headset
+import androidx.compose.material.icons.rounded.MicOff
 import androidx.compose.material.icons.rounded.NotificationsOff
 import androidx.compose.material.icons.rounded.Pause
 import androidx.compose.material.icons.rounded.Vibration
+import androidx.compose.material.icons.rounded.VolumeUp
 import androidx.compose.material.icons.rounded.WaterDrop
 import androidx.compose.material.icons.rounded.WbSunny
 import androidx.compose.ui.graphics.vector.ImageVector
@@ -148,7 +152,12 @@ import java.util.Locale
 private val FOCUS_BG = Color(0xFF0F0F0F)
 private val FOCUS_TEXT = Color.White
 private val FOCUS_ACCENT = Color(0xFF4DA3FF)
+// NORMAL_TEXT is used both by Minimal Mode's own body content AND by the shared ZenoStatusBar
+// composable (clock/carrier text), which also renders on top of Zeno/Classic Mode's dark
+// wallpaper via LauncherScreen.kt. MINIMAL_BODY_TEXT is kept as a distinct constant (currently
+// equal to NORMAL_TEXT) so Minimal Mode's own body content isn't re-coupled to NORMAL_TEXT.
 private val NORMAL_TEXT = Color.White
+private val MINIMAL_BODY_TEXT = Color.White
 private val MUTED_TEXT = Color(0xFF8B8B8B)
 private val DIVIDER_COLOR = Color(0xFF1A1A1A)
 private val SCREEN_BG = Color.Black
@@ -432,16 +441,29 @@ internal fun MinimalModeScreen(vm: LauncherViewModel) {
         Column(
             modifier = Modifier
                 .fillMaxSize()
-                .statusBarsPadding()
+                // Not .statusBarsPadding() — that reserves the frozen inset height as blank space
+                // above this Column's content, pushing MinimalModeHeader/ZenoStatusBar below the
+                // reserved strip instead of into it (invisible on the old black background, but a
+                // visible gap now that SCREEN_BG is light). Zeno/Classic Mode's own ZenoStatusBar
+                // avoids this by rendering directly inside the reserved height instead of padding
+                // past it (see LauncherScreen.kt's own ZenoStatusBar call site) — here, simply not
+                // reserving extra space at all lets the header start flush at the true top, since
+                // ZenoStatusBar is already this Column's first child with nothing above it.
                 .padding(horizontal = 14.dp)
-                .padding(bottom = 10.dp),
+                // Small top gap protects the bold 26sp date/temp header from rendering right at
+                // the physical edge (cap-height/ascenders can look clipped at literal 0dp) — the
+                // bottom row's own internal padding covers it fine at 0dp, so no matching gap
+                // needed there.
+                .padding(top = 3.dp, bottom = 0.dp),
         ) {
             // ── Header ────────────────────────────────────────────────────────
             MinimalModeHeader(
                 time = statusBar.time,
                 amPm = statusBar.amPm,
                 date = clockDate,
-                unreadApps = if (prefs.minimalModeShowNotifSummary) unreadApps else emptyList(),
+                // Always shown now — the "Show Notification Summary" toggle was removed from
+                // the Modes settings screen.
+                unreadApps = unreadApps,
                 conditionCode = forecast.firstOrNull()?.conditionCode,
                 currentTemp = forecast.firstOrNull()?.let {
                     formatTemp(it.tempMaxC, prefs.glanceWeatherUnit == GlanceWeatherUnit.CELSIUS)
@@ -462,6 +484,8 @@ internal fun MinimalModeScreen(vm: LauncherViewModel) {
                 powerSaveActive = statusBar.powerSaveActive,
                 airplaneModeEnabled = statusBar.airplaneModeEnabled,
                 hotspotEnabled = statusBar.hotspotEnabled,
+                callIndicator = statusBar.callIndicator,
+                micMuted = statusBar.micMuted,
                 onClockTap = {
                     resolveClockPackage(context)?.let { vm.launchApp(it) }
                 },
@@ -708,7 +732,17 @@ internal fun ZenoStatusBar(
     hotspotEnabled: Boolean = false,
     /** Classic Mode only — a moderately larger clock, since it's the only home-screen clock there. */
     bigClock: Boolean = false,
+    /** Minimal Mode's own status bar sits directly on its light SCREEN_BG, unlike Zeno/Classic
+     *  Mode's dark wallpaper — set true there so text/icons switch to dark variants instead of
+     *  the default light ones (which would be nearly invisible on a light background). */
+    lightBackground: Boolean = false,
+    /** Ongoing/just-missed call — replaces [carrierName] with a call/speaker/missed-call icon. */
+    callIndicator: ZenoCallIndicator = ZenoCallIndicator.NONE,
+    /** Mic muted during an active/speaker call — a separate icon shown on the left cluster. */
+    micMuted: Boolean = false,
 ) {
+    val textColor = if (lightBackground) MINIMAL_BODY_TEXT else NORMAL_TEXT
+    val iconTint = if (lightBackground) SB_ICON_TINT_DARK else SB_ICON_TINT
     // 3-column Row: weight(1f) on both sides guarantees clock is truly centered on the display
     // rather than centered between the icon clusters — BB10 centres on the display.
     Row(
@@ -742,7 +776,7 @@ internal fun ZenoStatusBar(
             verticalAlignment = Alignment.CenterVertically,
         ) {
             if (batteryPct != null) {
-                ZenoStatusBarBattery(pct = batteryPct, charging = batteryCharging, powerSaveActive = powerSaveActive)
+                ZenoStatusBarBattery(pct = batteryPct, charging = batteryCharging, powerSaveActive = powerSaveActive, tint = iconTint)
             }
             if (SbSystemIcon.MUTE in shownSystemIcons) {
                 when (soundProfile) {
@@ -750,11 +784,13 @@ internal fun ZenoStatusBar(
                         icon = Icons.Rounded.NotificationsOff,
                         contentDescription = stringResource(R.string.quick_settings_dnd),
                         size = SB_MUTE,
+                        tint = iconTint,
                     )
                     SoundProfileMode.VIBRATE -> ZenoStatusBarGlyph(
                         icon = Icons.Rounded.Vibration,
                         contentDescription = stringResource(R.string.sound_profile_vibrate),
                         size = SB_MUTE,
+                        tint = iconTint,
                     )
                     else -> Unit
                 }
@@ -763,7 +799,7 @@ internal fun ZenoStatusBar(
                 Icon(
                     painter = painterResource(R.drawable.ic_sb_bluetooth),
                     contentDescription = stringResource(R.string.quick_settings_bluetooth),
-                    tint = SB_ICON_TINT,
+                    tint = iconTint,
                     modifier = Modifier.size(width = SB_BLUETOOTH_W, height = SB_GLYPH),
                 )
             }
@@ -771,7 +807,7 @@ internal fun ZenoStatusBar(
                 Icon(
                     painter = painterResource(R.drawable.ic_sb_gps),
                     contentDescription = stringResource(R.string.quick_settings_location),
-                    tint = SB_ICON_TINT,
+                    tint = iconTint,
                     modifier = Modifier.size(width = SB_GPS_W, height = SB_GLYPH),
                 )
             }
@@ -779,7 +815,7 @@ internal fun ZenoStatusBar(
                 Icon(
                     painter = painterResource(R.drawable.ic_sb_nfc),
                     contentDescription = stringResource(R.string.quick_settings_nfc),
-                    tint = SB_ICON_TINT,
+                    tint = iconTint,
                     modifier = Modifier.size(width = SB_NFC_W, height = SB_GLYPH),
                 )
             }
@@ -811,7 +847,7 @@ internal fun ZenoStatusBar(
                 text = time,
                 fontSize = if (bigClock) SB_CLOCK_SIZE_BIG else SB_CLOCK_SIZE,
                 fontWeight = FontWeight.W400, // TEST: was W300 (reference spec) — trying W400
-                color = NORMAL_TEXT,
+                color = textColor,
                 letterSpacing = (-0.5).sp,
             )
             if (amPm.isNotEmpty()) {
@@ -821,7 +857,7 @@ internal fun ZenoStatusBar(
                     text = amPm.uppercase(),
                     fontSize = if (bigClock) SB_AMPM_SIZE_BIG else SB_AMPM_SIZE,
                     fontWeight = FontWeight.W400,
-                    color = NORMAL_TEXT,
+                    color = textColor,
                     modifier = Modifier.padding(top = SB_AMPM_BASELINE_OFFSET, start = 1.dp),
                 )
             }
@@ -832,21 +868,56 @@ internal fun ZenoStatusBar(
             horizontalArrangement = Arrangement.spacedBy(SB_GAP_RIGHT, Alignment.End),
             verticalAlignment = Alignment.CenterVertically,
         ) {
-            if (carrierName.isNotEmpty()) {
-                Text(
-                    // BB10 title-cases the carrier name (e.g. "airtel" -> "Airtel") regardless
-                    // of how the SIM reports it.
-                    text = carrierName.replaceFirstChar { it.titlecase() },
-                    fontSize = SB_CARRIER_SIZE,
-                    fontWeight = FontWeight.W500,
-                    color = NORMAL_TEXT,
+            // Call state takes over this slot entirely — carrier name is hidden while a call is
+            // active/just-missed, matching the reference BB10 status bar.
+            when (callIndicator) {
+                // Material's Call/VolumeUp/CallMissed glyphs have less internal padding than the
+                // other status-bar icons at the same nominal SB_GLYPH box, so they rendered
+                // visibly chunkier/larger than their neighbors — sized down to match.
+                ZenoCallIndicator.ACTIVE -> ZenoStatusBarGlyph(
+                    icon = Icons.Rounded.Call,
+                    contentDescription = stringResource(R.string.cd_call_active),
+                    size = SB_CALL_ICON_SIZE,
+                    tint = iconTint,
+                )
+                ZenoCallIndicator.SPEAKER -> ZenoStatusBarGlyph(
+                    icon = Icons.Rounded.VolumeUp,
+                    contentDescription = stringResource(R.string.cd_call_speaker),
+                    size = SB_CALL_ICON_SIZE,
+                    tint = iconTint,
+                )
+                ZenoCallIndicator.MISSED -> ZenoStatusBarGlyph(
+                    icon = Icons.Rounded.CallMissed,
+                    contentDescription = stringResource(R.string.cd_call_missed),
+                    size = SB_CALL_ICON_SIZE,
+                    tint = iconTint,
+                )
+                ZenoCallIndicator.NONE -> if (carrierName.isNotEmpty()) {
+                    Text(
+                        // BB10 title-cases the carrier name (e.g. "airtel" -> "Airtel") regardless
+                        // of how the SIM reports it.
+                        text = carrierName.replaceFirstChar { it.titlecase() },
+                        fontSize = SB_CARRIER_SIZE,
+                        fontWeight = FontWeight.W500,
+                        color = textColor,
+                    )
+                }
+            }
+            // Mic muted during an active/speaker call — kept on the same (right) side as the
+            // call/speaker icon above, not the left cluster.
+            if (micMuted) {
+                ZenoStatusBarGlyph(
+                    icon = Icons.Rounded.MicOff,
+                    contentDescription = stringResource(R.string.cd_mic_muted),
+                    size = SB_MUTE,
+                    tint = iconTint,
                 )
             }
             if (airplaneModeEnabled) {
                 Icon(
                     painter = painterResource(R.drawable.ic_sb_airplane),
                     contentDescription = stringResource(R.string.quick_settings_aeroplane_mode),
-                    tint = SB_ICON_TINT,
+                    tint = iconTint,
                     modifier = Modifier
                         .size(SB_AIRPLANE_SIZE)
                         .offset(y = SB_RIGHT_ICON_VISUAL_OFFSET),
@@ -856,7 +927,7 @@ internal fun ZenoStatusBar(
                 Icon(
                     painter = painterResource(R.drawable.ic_sb_hotspot),
                     contentDescription = stringResource(R.string.quick_settings_hotspot),
-                    tint = SB_ICON_TINT,
+                    tint = iconTint,
                     modifier = Modifier
                         .size(SB_GLYPH)
                         .offset(y = SB_RIGHT_ICON_VISUAL_OFFSET),
@@ -868,6 +939,7 @@ internal fun ZenoStatusBar(
                         icon = Icons.Rounded.Headset,
                         contentDescription = stringResource(R.string.cd_headset_connected),
                         size = SB_GLYPH,
+                        tint = iconTint,
                     )
                 }
             }
@@ -879,7 +951,7 @@ internal fun ZenoStatusBar(
                     fontSize = SB_4GLTE_SIZE,
                     fontWeight = FontWeight.W400,
                     letterSpacing = (-0.3).sp,
-                    color = SB_ICON_TINT,
+                    color = iconTint,
                 )
             }
             // Wi-Fi: hidden entirely when the radio is off. While on, full-tint means it's the
@@ -889,7 +961,7 @@ internal fun ZenoStatusBar(
                 Icon(
                     painter = painterResource(R.drawable.ic_sb_wifi),
                     contentDescription = "WiFi on",
-                    tint = if (wifiConnected) SB_ICON_TINT else SB_ICON_TINT.copy(alpha = SB_WIFI_DIM_ALPHA),
+                    tint = if (wifiConnected) iconTint else iconTint.copy(alpha = SB_WIFI_DIM_ALPHA),
                     modifier = Modifier
                         .size(SB_WIFI_SIZE)
                         .offset(y = SB_RIGHT_ICON_VISUAL_OFFSET)
@@ -899,14 +971,14 @@ internal fun ZenoStatusBar(
             Icon(
                 painter = painterResource(R.drawable.ic_sb_blackberry),
                 contentDescription = null,
-                tint = SB_ICON_TINT,
+                tint = iconTint,
                 modifier = Modifier
                     .size(width = SB_BB_MARK_W, height = SB_BB_MARK_H)
                     .offset(y = SB_RIGHT_ICON_VISUAL_OFFSET),
             )
             if (signalLevel != null) {
                 Box(modifier = Modifier.offset(y = SB_RIGHT_ICON_VISUAL_OFFSET)) {
-                    ZenoStatusBarSignalBars(level = signalLevel)
+                    ZenoStatusBarSignalBars(level = signalLevel, tint = iconTint)
                 }
             }
         }
@@ -919,11 +991,12 @@ private fun ZenoStatusBarGlyph(
     icon: androidx.compose.ui.graphics.vector.ImageVector,
     contentDescription: String?,
     size: androidx.compose.ui.unit.Dp,
+    tint: Color = SB_ICON_TINT,
 ) {
     Icon(
         imageVector = icon,
         contentDescription = contentDescription,
-        tint = SB_ICON_TINT,
+        tint = tint,
         modifier = Modifier.size(size),
     )
 }
@@ -934,7 +1007,7 @@ private fun ZenoStatusBarGlyph(
  * but dimmed, which is how BB10 shows headroom.
  */
 @Composable
-private fun ZenoStatusBarSignalBars(level: Int) {
+private fun ZenoStatusBarSignalBars(level: Int, tint: Color = SB_ICON_TINT) {
     Canvas(modifier = Modifier.size(width = SB_BARS_W, height = SB_BARS_H)) {
         val gap = size.width * SB_BARS_GAP_FRAC
         val barW = (size.width - gap * (SB_BARS_COUNT - 1)) / SB_BARS_COUNT
@@ -943,7 +1016,7 @@ private fun ZenoStatusBarSignalBars(level: Int) {
         for (i in 0 until SB_BARS_COUNT) {
             val barH = size.height * (SB_BARS_MIN_FRAC + SB_BARS_STEP_FRAC * i)
             drawRoundRect(
-                color = SB_ICON_TINT.copy(alpha = if (i < lit) 1f else SB_BARS_DIM_ALPHA),
+                color = tint.copy(alpha = if (i < lit) 1f else SB_BARS_DIM_ALPHA),
                 topLeft = Offset(i * (barW + gap), size.height - barH),
                 size = Size(barW, barH),
                 cornerRadius = radius,
@@ -983,6 +1056,9 @@ private const val SB_SYSTEM_ICON_SLOTS = 2
 private const val SB_NOTIFY_ICON_SLOTS = 3
 private enum class SbSystemIcon { MUTE, BLUETOOTH, GPS, NFC }
 private val SB_GLYPH        = 19.dp   // Wi-Fi / headset / notification icons (square-ish source art)
+// Material's Call/VolumeUp/CallMissed glyphs read visually larger than SB_GLYPH's other icons at
+// the same nominal size (less internal padding baked into the source art) — sized down to match.
+private val SB_CALL_ICON_SIZE = 15.dp
 private val SB_MUTE         = 20.dp
 // ic_sb_airplane.png is tightly cropped (near-zero internal padding), unlike Material's Headset
 // vector or Wi-Fi's own crop, both of which carry more built-in margin — at the same nominal
@@ -1018,6 +1094,9 @@ private val SB_WIFI_SIZE    = 22.dp
 /** Nudges AM/PM down so its cap-height sits on the clock's baseline, as BB10 sets it. */
 private val SB_AMPM_BASELINE_OFFSET = 1.dp
 private val SB_ICON_TINT = Color(0xFFEAF0F6)
+/** ZenoStatusBar's icon tint when rendered with lightBackground=true (Minimal Mode's own light
+ *  SCREEN_BG) — SB_ICON_TINT is unreadable there, same reasoning as MINIMAL_BODY_TEXT. */
+private val SB_ICON_TINT_DARK = Color(0xFF2E2E2E)
 /** "4GLTE" network-type glyph — bold/condensed to read as a compact mark, not prose. */
 private val SB_4GLTE_SIZE = 11.sp
 /** Wi-Fi tint when the radio is on but not the active transport (enabled-but-idle). */
@@ -1054,15 +1133,15 @@ private val SB_BOLT_POINTS = listOf(
 )
 
 @Composable
-private fun ZenoStatusBarBattery(pct: Int, charging: Boolean, powerSaveActive: Boolean = false) {
-    // Border/nub color: charging and battery saver both keep the neutral white outline (the
+private fun ZenoStatusBarBattery(pct: Int, charging: Boolean, powerSaveActive: Boolean = false, tint: Color = SB_ICON_TINT) {
+    // Border/nub color: charging and battery saver both keep the neutral outline color (the
     // yellow bolt / light-yellow fill already signal their states); a low, non-charging,
     // non-saver battery reads as red.
     val color = when {
-        charging -> SB_ICON_TINT
-        powerSaveActive -> SB_ICON_TINT
+        charging -> tint
+        powerSaveActive -> tint
         pct <= SB_BATTERY_LOW_PCT -> SB_BATTERY_LOW_COLOR
-        else -> SB_ICON_TINT
+        else -> tint
     }
     Canvas(
         modifier = Modifier.size(width = SB_BATTERY_W, height = SB_BATTERY_H),
@@ -1106,13 +1185,13 @@ private fun ZenoStatusBarBattery(pct: Int, charging: Boolean, powerSaveActive: B
             val pcy = inset + (bodyH - inset * 2) / 2f
             val plusRadius = CornerRadius(plusThickness / 4f)
             drawRoundRect(
-                color = SB_ICON_TINT,
+                color = tint,
                 topLeft = Offset(pcx - plusThickness / 2f, pcy - plusLen / 2f),
                 size = Size(plusThickness, plusLen),
                 cornerRadius = plusRadius,
             )
             drawRoundRect(
-                color = SB_ICON_TINT,
+                color = tint,
                 topLeft = Offset(pcx - plusLen / 2f, pcy - plusThickness / 2f),
                 size = Size(plusLen, plusThickness),
                 cornerRadius = plusRadius,
@@ -1187,6 +1266,8 @@ private fun MinimalModeHeader(
     onNotifyIconTap: (String) -> Unit = {},
     airplaneModeEnabled: Boolean = false,
     hotspotEnabled: Boolean = false,
+    callIndicator: ZenoCallIndicator = ZenoCallIndicator.NONE,
+    micMuted: Boolean = false,
 ) {
     Column(modifier = Modifier.fillMaxWidth()) {
 
@@ -1215,13 +1296,18 @@ private fun MinimalModeHeader(
             onNotifyIconTap = onNotifyIconTap,
             airplaneModeEnabled = airplaneModeEnabled,
             hotspotEnabled = hotspotEnabled,
+            callIndicator = callIndicator,
+            micMuted = micMuted,
+            // Minimal Mode's own SCREEN_BG is dark again — lightBackground defaults to false.
+            // Matches Classic Mode's clock size/style — same ZenoStatusBar look across all modes.
+            bigClock = true,
         )
         } // end measurement Box
 
-        // ── Date/weather · notifications — centered ───────────────────────────
+        // ── Date/weather · notifications — left-aligned, matching the app list below ──
         Column(
             modifier = Modifier.fillMaxWidth(),
-            horizontalAlignment = Alignment.CenterHorizontally,
+            horizontalAlignment = Alignment.Start,
         ) {
             Row(
                 verticalAlignment = Alignment.CenterVertically,
@@ -1229,42 +1315,44 @@ private fun MinimalModeHeader(
                     detectTapGestures(onTap = { onWeatherTap() }, onDoubleTap = {})
                 },
             ) {
-                Text(text = date, fontSize = 13.sp, color = MUTED_TEXT)
+                // Bigger than the clock itself (SB_CLOCK_SIZE_BIG = 22.sp) and full-bright with
+                // bold weight, so this row reads as more prominent than the clock rather than a
+                // secondary caption under it.
+                val dateTempColor = Color.White
+                Text(text = date, fontSize = 26.sp, fontWeight = FontWeight.SemiBold, color = dateTempColor)
                 if (currentTemp != null) {
-                    Text(text = "  ·  ", fontSize = 13.sp, color = MUTED_TEXT)
-                    Text(text = currentTemp, fontSize = 13.sp, color = MUTED_TEXT)
+                    Text(text = "  ·  ", fontSize = 26.sp, fontWeight = FontWeight.SemiBold, color = dateTempColor)
+                    Text(text = currentTemp, fontSize = 26.sp, fontWeight = FontWeight.SemiBold, color = dateTempColor)
                 }
             }
 
-            // Reserves space only while there's actually something to show — previously this was
-            // a fixed 30dp Box regardless of unreadApps, so once notifications were read the row
-            // left behind a dead blank gap between the date and the app list below it.
-            if (unreadApps.isNotEmpty()) {
-                Spacer(Modifier.height(6.dp))
-                Box(modifier = Modifier.height(30.dp), contentAlignment = Alignment.Center) {
-                    Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                        unreadApps.forEach { app ->
-                            val bmp = remember(app.packageName) {
-                                val src = app.icon?.toBitmap(48, 48) ?: return@remember null
-                                val grey = android.graphics.Bitmap.createBitmap(src.width, src.height, src.config ?: android.graphics.Bitmap.Config.ARGB_8888)
-                                val paint = AndroidPaint().apply {
-                                    colorFilter = ColorMatrixColorFilter(ColorMatrix().also { it.setSaturation(0f) })
-                                }
-                                Canvas(grey).drawBitmap(src, 0f, 0f, paint)
-                                grey
+            // Always reserved, regardless of unreadApps — collapsing/re-appearing this row made
+            // the app list below jump up and down every time a notification arrived or got read.
+            // A stable empty strip here reads better than that layout shift.
+            Spacer(Modifier.height(6.dp))
+            Box(modifier = Modifier.height(30.dp), contentAlignment = Alignment.CenterStart) {
+                Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                    unreadApps.forEach { app ->
+                        val bmp = remember(app.packageName) {
+                            val src = app.icon?.toBitmap(48, 48) ?: return@remember null
+                            val grey = android.graphics.Bitmap.createBitmap(src.width, src.height, src.config ?: android.graphics.Bitmap.Config.ARGB_8888)
+                            val paint = AndroidPaint().apply {
+                                colorFilter = ColorMatrixColorFilter(ColorMatrix().also { it.setSaturation(0f) })
                             }
-                            if (bmp != null) {
-                                androidx.compose.foundation.Image(
-                                    painter = BitmapPainter(bmp.asImageBitmap()),
-                                    contentDescription = app.label,
-                                    modifier = Modifier
-                                        .size(18.dp)
-                                        .clip(RoundedCornerShape(4.dp))
-                                        .pointerInput(app.packageName) {
-                                            detectTapGestures(onTap = { onAppIconTap(app.packageName) })
-                                        },
-                                )
-                            }
+                            Canvas(grey).drawBitmap(src, 0f, 0f, paint)
+                            grey
+                        }
+                        if (bmp != null) {
+                            androidx.compose.foundation.Image(
+                                painter = BitmapPainter(bmp.asImageBitmap()),
+                                contentDescription = app.label,
+                                modifier = Modifier
+                                    .size(18.dp)
+                                    .clip(RoundedCornerShape(4.dp))
+                                    .pointerInput(app.packageName) {
+                                        detectTapGestures(onTap = { onAppIconTap(app.packageName) })
+                                    },
+                            )
                         }
                     }
                 }
@@ -1327,7 +1415,7 @@ private fun MinimalModeGridView(
                         text = app.label,
                         fontSize = 11.sp,
                         fontWeight = FontWeight.W400,
-                        color = if (overLimit) Color(0xFFFFB340) else NORMAL_TEXT,
+                        color = if (overLimit) Color(0xFFFFB340) else MINIMAL_BODY_TEXT,
                         maxLines = 1,
                         overflow = TextOverflow.Ellipsis,
                     )
@@ -1477,7 +1565,7 @@ private fun MinimalModeListRow(
         ) {
             val nameColor = when {
                 overLimit -> Color(0xFFFFB340)
-                else -> NORMAL_TEXT
+                else -> MINIMAL_BODY_TEXT
             }
             Text(
                 text = app.label,
@@ -1587,7 +1675,7 @@ private fun MinimalModeNowPlayingBar(
                     text = state.title,
                     fontSize = 16.sp,
                     fontWeight = FontWeight.Bold,
-                    color = NORMAL_TEXT,
+                    color = MINIMAL_BODY_TEXT,
                     maxLines = 1,
                     overflow = TextOverflow.Ellipsis,
                 )
@@ -1604,21 +1692,21 @@ private fun MinimalModeNowPlayingBar(
             Icon(
                 imageVector = Icons.Rounded.SkipPrevious,
                 contentDescription = stringResource(R.string.action_previous),
-                tint = NORMAL_TEXT,
+                tint = MINIMAL_BODY_TEXT,
                 modifier = Modifier.size(40.dp).clickable { onPrevious() },
             )
             Spacer(Modifier.width(8.dp))
             Icon(
                 imageVector = if (state.isPlaying) Icons.Rounded.Pause else Icons.Rounded.PlayArrow,
                 contentDescription = stringResource(if (state.isPlaying) R.string.action_pause else R.string.action_play),
-                tint = NORMAL_TEXT,
+                tint = MINIMAL_BODY_TEXT,
                 modifier = Modifier.size(46.dp).clickable { onPlayPause() },
             )
             Spacer(Modifier.width(8.dp))
             Icon(
                 imageVector = Icons.Rounded.SkipNext,
                 contentDescription = stringResource(R.string.action_next),
-                tint = NORMAL_TEXT,
+                tint = MINIMAL_BODY_TEXT,
                 modifier = Modifier.size(40.dp).clickable { onNext() },
             )
         }
@@ -1739,7 +1827,7 @@ private fun AppRowContextMenu(
             Box(modifier = Modifier.fillMaxWidth().height(1.dp).background(Color(0xFF1A1A1A)))
 
             // Daily limit picker
-            val limitHeaderColor = if (menuFocusIdx == 2) NORMAL_TEXT else Color(0xFF9AA0A8)
+            val limitHeaderColor = if (menuFocusIdx == 2) MINIMAL_BODY_TEXT else Color(0xFF9AA0A8)
             Text(
                 text = stringResource(R.string.minimal_mode_daily_limit),
                 fontSize = 15.sp,
@@ -1808,7 +1896,7 @@ private fun ContextMenuRow(
         Text(
             text = label,
             fontSize = 15.sp,
-            color = if (keyboardFocused) Color(0xFF4DA3FF) else NORMAL_TEXT,
+            color = if (keyboardFocused) Color(0xFF4DA3FF) else MINIMAL_BODY_TEXT,
             modifier = Modifier.weight(1f),
         )
         if (value != null) {
@@ -1899,7 +1987,7 @@ private fun MinimalModeSearchOverlay(
                     value = query,
                     onValueChange = { query = it },
                     singleLine = true,
-                    textStyle = TextStyle(color = NORMAL_TEXT, fontSize = 16.sp),
+                    textStyle = TextStyle(color = MINIMAL_BODY_TEXT, fontSize = 16.sp),
                     modifier = Modifier
                         .weight(1f)
                         .focusRequester(fieldFocus),
@@ -1937,7 +2025,7 @@ private fun MinimalModeSearchOverlay(
                         Text(
                             text = app.label,
                             fontSize = 18.sp,
-                            color = NORMAL_TEXT,
+                            color = MINIMAL_BODY_TEXT,
                             maxLines = 1,
                             overflow = TextOverflow.Ellipsis,
                         )
@@ -2223,7 +2311,7 @@ private fun QuickReplyOverlay(
                     text = app.label,
                     fontSize = 17.sp,
                     fontWeight = FontWeight.SemiBold,
-                    color = NORMAL_TEXT,
+                    color = MINIMAL_BODY_TEXT,
                     modifier = Modifier.weight(1f),
                 )
             }
@@ -2242,7 +2330,7 @@ private fun QuickReplyOverlay(
                             text = item.title,
                             fontSize = 13.sp,
                             fontWeight = FontWeight.Medium,
-                            color = NORMAL_TEXT,
+                            color = MINIMAL_BODY_TEXT,
                         )
                     }
                     if (item.text.isNotEmpty()) {
@@ -2288,7 +2376,7 @@ private fun QuickReplyOverlay(
                             value = replyText,
                             onValueChange = { replyText = it },
                             singleLine = true,
-                            textStyle = TextStyle(color = NORMAL_TEXT, fontSize = 15.sp),
+                            textStyle = TextStyle(color = MINIMAL_BODY_TEXT, fontSize = 15.sp),
                             modifier = Modifier
                                 .weight(1f)
                                 .focusRequester(fieldFocus),

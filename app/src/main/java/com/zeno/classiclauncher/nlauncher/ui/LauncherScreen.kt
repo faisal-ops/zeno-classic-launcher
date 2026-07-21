@@ -3075,7 +3075,12 @@ fun LauncherScreen(
                     powerSaveActive = zenoStatusBarState.powerSaveActive,
                     airplaneModeEnabled = zenoStatusBarState.airplaneModeEnabled,
                     hotspotEnabled = zenoStatusBarState.hotspotEnabled,
-                    bigClock = classicMode,
+                    callIndicator = zenoStatusBarState.callIndicator,
+                    micMuted = zenoStatusBarState.micMuted,
+                    // Same clock size/style in every mode that shows ZenoStatusBar (Classic's own
+                    // was always bigClock=true; Zeno's optional custom bar and Minimal Mode's own
+                    // now match it, instead of the smaller default).
+                    bigClock = true,
                     onClockTap = {},
                     onWifiTap = { statusBarActions.openInternetPanel() },
                     onNotifyIconTap = { pkg -> vm.launchApp(pkg) },
@@ -4340,10 +4345,14 @@ private fun ClassicCleanHomePage(
         val pattern = android.text.format.DateFormat.getBestDateTimePattern(Locale.getDefault(), "EEEdMMM")
         SimpleDateFormat(pattern, Locale.getDefault())
     }
-    var dateText by remember { mutableStateOf(dateFormatter.format(Date())) }
+    // Reference BB10 reads "Mon 20 Jul" — no comma — but getBestDateTimePattern's EEE-d-MMM
+    // skeleton inserts one under en-locale ICU conventions. Stripping it is locale-safe: locales
+    // whose own pattern has no comma are unaffected.
+    fun formatClassicHomeDate() = dateFormatter.format(Date()).replace(",", "")
+    var dateText by remember { mutableStateOf(formatClassicHomeDate()) }
     LaunchedEffect(Unit) {
         while (true) {
-            dateText = dateFormatter.format(Date())
+            dateText = formatClassicHomeDate()
             delay(30_000L)
         }
     }
@@ -4447,7 +4456,8 @@ private fun ClassicCleanHomePage(
             // Reference BB10 home screen has this noticeably larger than the clock — was 40.sp.
             fontSize = 45.sp,
             fontWeight = FontWeight.W300,
-            modifier = Modifier.align(BiasAlignment(0f, -0.62f)),
+            // Was -0.62f, then -0.82f (too tight against the status bar) — settled between them.
+            modifier = Modifier.align(BiasAlignment(0f, -0.74f)),
         )
         // Universal Search's own state/key-handling/rendering all live at the root now (one
         // shared implementation for the whole launcher) — this page no longer renders it.
@@ -8114,7 +8124,9 @@ private fun FolderTile(
         val folderTrackpadActive = LocalTrackpadActive.current
         val folderHighlightAlpha by animateFloatAsState(
             targetValue = if (selected && folderTrackpadActive) 1f else 0f,
-            animationSpec = tween(durationMillis = if (selected && folderTrackpadActive) 120 else 500),
+            // Fade-in and fade-out are now equal (was 120/500) — see the matching AppTile fix's
+            // own comment for why the old asymmetry let two tiles appear highlighted at once.
+            animationSpec = tween(durationMillis = 120),
             label = "folderFocusHighlightAlpha",
         )
         if (folderHighlightAlpha > 0f) {
@@ -8353,7 +8365,11 @@ private fun AppTile(
         val highlightAlpha by animateFloatAsState(
             targetValue = if (selected && trackpadActive) 1f else 0f,
             animationSpec = tween(
-                durationMillis = if (selected && trackpadActive) 120 else 500,
+                // Fade-in and fade-out are now equal (was 120/500): the old asymmetry meant a
+                // newly-selected tile snapped its highlight in almost instantly while the
+                // previously-selected one lingered for up to 500ms, so two tiles could show as
+                // highlighted at once during quick trackpad navigation between them.
+                durationMillis = 120,
                 easing = FastOutSlowInEasing,
             ),
             label = "focusHighlightAlpha",
@@ -10401,13 +10417,19 @@ private data class DockMetrics(
     val mailIconSize: Dp,
     val mailIconSizeCustom: Dp,
     val cameraButtonSize: Dp,
+    /** Camera's own independent nominal icon size — not derived from Mail's. Visual parity with
+     *  Mail's glyph weight is achieved via Camera's own `fallbackScale` override at its call
+     *  site, not by inflating this value, so this number never has to move if Mail's does. */
     val cameraIconSizeCustom: Dp,
-    /** Single source of truth for both Envelope and Home — Home has no separate button/icon
-     *  size of its own. Both render through the same composable (DockEndSlot) with the same
-     *  fallbackScale applied, so requesting the same nominal size here means they actually
-     *  render at the same size too, not just the same numbers on paper. */
+    /** Single source of truth for Envelope's button/icon footprint — Home's buttonSize still
+     *  reads envelopeButtonSize (matching footprint is intentional), but Home's iconSize below
+     *  is its own independent value, not derived from this one. */
     val envelopeButtonSize: Dp,
     val envelopeIconSize: Dp,
+    /** Home's own independent nominal icon size — visually ~30% bigger than Envelope's glyph
+     *  when on Classic Home, achieved via Home's own `fallbackScale` override at its call site
+     *  rather than multiplying envelopeIconSize, so it never has to move if Envelope's does. */
+    val homeIconSize: Dp,
     val centerSpacing: Dp,
     val dotSpacing: Dp,
     val activeDotSize: Dp,
@@ -10430,6 +10452,7 @@ private fun rememberClassicDockMetrics(
 ): DockMetrics {
     val refWidth = LocalConfiguration.current.screenWidthDp.dp
     return remember(refWidth, baseNavBarHeight, basePageActiveDp, basePageInactiveDp, basePageFontSp) {
+        val mailIconSize = refWidth * 0.0776f
         DockMetrics(
             dockHeight = baseNavBarHeight * 0.82f,
             // Shifts some of the top/bottom budget from top to bottom (was 0.02708/0.0018, then
@@ -10439,14 +10462,20 @@ private fun rememberClassicDockMetrics(
             topPadding = refWidth * 0.0130f,
             bottomPadding = refWidth * 0.0160f,
             mailButtonSize = refWidth * 0.1101f,
-            mailIconSize = refWidth * 0.0776f,
+            mailIconSize = mailIconSize,
             mailIconSizeCustom = refWidth * 0.0848f,
-            cameraButtonSize = refWidth * 0.1065f,
+            // Camera's button box now reads Mail's exact size — both dock end-slots (and their
+            // focus highlights) render at an identical footprint instead of two independently
+            // tuned fractions that drifted ~3% apart.
+            cameraButtonSize = refWidth * 0.1101f,
+            // Own independent constant, not derived from mailIconSize — see fallbackScale
+            // override at the Camera call site for how visual parity with Mail is achieved.
             cameraIconSizeCustom = refWidth * 0.0812f,
-            // Envelope stays the untouched master reference; Home reads these same two values
-            // (see call site) rather than tuning its own — no separate homeIconSize exists.
             envelopeButtonSize = refWidth * 0.0668f,
             envelopeIconSize = refWidth * 0.0307f,
+            // Own independent constant, not derived from envelopeIconSize — see fallbackScale
+            // override at the Home call site for how the deliberate ~30%-bigger look is achieved.
+            homeIconSize = refWidth * 0.0307f,
             centerSpacing = refWidth * 0.01444f,
             dotSpacing = refWidth * 0.0230f,
             activeDotSize = refWidth * 0.0380f,
@@ -10518,6 +10547,20 @@ private fun Dock(
     val navBarSpacing = themePalette.navBarSpacing()
     val navMidSpacing = navBarSpacing * 0.6f
     val navIconSize = themePalette.navIconSize()
+    // Screen-width-proportional reference used by every Zeno Mode dock number below (mirroring
+    // Classic's DockMetrics) — declared this early so it's available before those vals. Fractions
+    // are calibrated so refWidth * fraction ≈ Zeno's previous flat-dp values on this project's
+    // reference device (~554dp screenWidthDp), so today's look is unchanged here, but every
+    // number now scales instead of staying fixed on other screen widths.
+    val refWidth = LocalConfiguration.current.screenWidthDp.dp
+    // Zeno's own middle-cluster treatment, mirroring Classic's tight Envelope/Home/dots grouping:
+    // Home and the Shortcut icon share one size (single source of truth, so "uniform" holds by
+    // construction) at a bit smaller than Zeno's previous flat 56.dp/navIconSize, and the gap
+    // between them and the dots is tighter than navMidSpacing — leaving the outer
+    // Spacer(weight(1f)) on each side to do proportionally more of the separation from Mail/Camera.
+    val zenoMidButtonSize = refWidth * 0.0866f // was flat 48.dp
+    val zenoMidIconSize = navIconSize * 0.85f
+    val zenoMidClusterSpacing = navMidSpacing * 0.55f
     // Every Classic Mode dock measurement, derived proportionally from screen width instead of
     // fixed dp constants — see DockMetrics' own doc.
     val m = rememberClassicDockMetrics(
@@ -10548,46 +10591,75 @@ private fun Dock(
         return raw.coerceIn(0, drawerPageCount - 1)
     }
 
-    val mailButtonSize = if (classicDockOrder) m.mailButtonSize else 68.dp
-    val mailIconSize = if (classicDockOrder) m.mailIconSize else 48.dp
-    val mailIconSizeCustom = if (classicDockOrder) m.mailIconSizeCustom else 52.dp
-    val cameraButtonSize = if (classicDockOrder) m.cameraButtonSize else 68.dp
-    val cameraIconSizeCustom = if (classicDockOrder) m.cameraIconSizeCustom else 52.dp
+    // Zeno's own fractions, calibrated to match its previous flat-dp values (68/48/52.dp) on the
+    // reference device — same proportional pattern as Classic's DockMetrics, so Mail/Camera scale
+    // with screen width instead of staying visually fixed-size on other devices.
+    val mailButtonSize = if (classicDockOrder) m.mailButtonSize else refWidth * 0.1227f
+    val mailIconSize = if (classicDockOrder) m.mailIconSize else refWidth * 0.0866f
+    val mailIconSizeCustom = if (classicDockOrder) m.mailIconSizeCustom else refWidth * 0.0939f
+    val cameraButtonSize = if (classicDockOrder) m.cameraButtonSize else refWidth * 0.1227f
+    val cameraIconSizeCustom = if (classicDockOrder) m.cameraIconSizeCustom else refWidth * 0.0939f
+    // Shared with the Camera DockEndSlot call below, so the inset math and the actual render
+    // always agree on how big Camera's glyph really is. Non-pulse branches are tuned per mode
+    // (Classic vs Zeno use different mailIconSize/cameraIconSizeCustom values) so each mode's
+    // Camera glyph reads as equal weight to that mode's own Mail glyph, independent of the
+    // other mode's numbers.
+    val cameraFallbackScale = when {
+        thirdDockFallbackResId == R.drawable.ic_dock_pulse -> 1.06f
+        // 0.0776/0.0812 (Classic's own mailIconSize/cameraIconSizeCustom fractions) = ~0.9557.
+        classicDockOrder -> 0.9557f
+        // 48.dp/52.dp (Zeno's own mailIconSize/cameraIconSizeCustom) = ~0.9231.
+        else -> 0.9231f
+    }
     // The dock edge shortcuts intentionally use the same horizontal anchors as the first and
     // last app-grid columns. This relationship has been verified with pixel measurements and
     // should not be replaced with independent side margins or hardcoded offsets.
     //
     // Mail/Camera's horizontal position is no longer an independent proportional inset — it's
     // derived from the SAME grid geometry the drawer's own app grid uses (see GridLayoutMetrics'
-    // own doc), so Mail's center lands exactly on the first app column's center and Camera's on
-    // the last, on every screen size, by construction rather than by two formulas that happen to
-    // agree at one specific width.
-    val refWidth = LocalConfiguration.current.screenWidthDp.dp
+    // own doc).
+    //
+    // The anchor itself is glyph-edge alignment, not container-center alignment: Mail's button
+    // box and the grid's cell are very different widths, and each centers its icon inside its
+    // own box/cell independently, so centering the *containers* does not put the *icon glyphs'*
+    // edges on the same vertical line (confirmed against the reference BB10 dock photo — its
+    // Mail icon and the app column above it share a left edge, not just a center). So instead
+    // this computes leftInsetDp/rightInsetDp such that Mail/Camera's own rendered glyph edge
+    // lands exactly on the app grid icon's glyph edge — accounting for each icon's own centering
+    // gap inside its container — rather than aligning the containers and hoping the glyphs
+    // happen to match. (refWidth declared earlier in this function, before zenoMidButtonSize.)
     val gridLayoutMetrics = rememberGridLayoutMetrics(
         screenWidth = refWidth,
         outerPadding = APP_GRID_OUTER_PAD_H,
         columnSpacing = themePalette.appGridColumnSpacingDp.dp,
         columnCount = gridPreset.cols,
     )
-    val leftInsetDp = if (classicDockOrder) {
-        gridLayoutMetrics.firstColumnCenterX - mailButtonSize / 2
+    // Nominal grid icon width — the same value AppTile/FolderTile request before their own
+    // short-cell shrink logic (iconSizeUsed) can kick in; that per-tile shrink is a short-cell
+    // edge case, not the common state this anchor is tuned against.
+    val gridIconWidth = themePalette.appGridIconSizeDp.dp
+    // Mail's actual rendered glyph width — mailIconSize/mailIconSizeCustom are already the true
+    // rendered size (neither DockPng nor DockEndSlot's iconModel/AsyncImage branch applies
+    // fallbackScale), so no extra scale factor is needed here, unlike Camera below.
+    val mailRenderedIconWidth = if (dockStartIconModel == null) mailIconSize else mailIconSizeCustom
+    val cameraRenderedIconWidth = if (dockEndIconModel != null) {
+        cameraIconSizeCustom
     } else {
-        0.dp
+        cameraIconSizeCustom * cameraFallbackScale
     }
-    val rightInsetDp = if (classicDockOrder) {
-        refWidth - gridLayoutMetrics.lastColumnCenterX - cameraButtonSize / 2
-    } else {
-        0.dp
-    }
-    // ic_dock_envelope.png reads visually denser/larger than Icons.Rounded.Home at the same
-    // nominal size — the Material vector has more built-in padding within its bounds than this
-    // PNG asset does, so matching the *glyph* (buttonSize is already equal) needs a smaller size.
-    // Home still has no size formula of its own — it's Envelope's, deliberately scaled by a
-    // documented factor (not an independently-tuned constant) now that both render through the
-    // same DockEndSlot pipeline with the same fallbackScale, so this multiplier is the only
-    // thing making them differ.
-    val homeButtonSize = if (classicDockOrder) m.envelopeButtonSize else 56.dp
-    val homeIconSize = if (classicDockOrder) m.envelopeIconSize * 1.30f else navIconSize
+    // Applies to both modes — every input (mailButtonSize, mailRenderedIconWidth, etc.) is
+    // already mode-aware, so this naturally reads Zeno's own numbers in Zeno Mode and Classic's
+    // own numbers in Classic Mode, with no separate branch needed here.
+    val leftInsetDp = (gridLayoutMetrics.firstColumnCenterX - gridIconWidth / 2) -
+        (mailButtonSize - mailRenderedIconWidth) / 2
+    val rightInsetDp = (refWidth - (gridLayoutMetrics.lastColumnCenterX + gridIconWidth / 2)) -
+        (cameraButtonSize - cameraRenderedIconWidth) / 2
+    // Button footprint still intentionally matches Envelope's. homeIconSize is Home's own
+    // independent nominal size (see DockMetrics) — the deliberate ~30%-bigger-than-Envelope look
+    // is applied via Home's own fallbackScale override at its DockEndSlot call below, not by
+    // multiplying envelopeIconSize, so Home has no runtime dependency on Envelope's value.
+    val homeButtonSize = if (classicDockOrder) m.envelopeButtonSize else zenoMidButtonSize
+    val homeIconSize = if (classicDockOrder) m.homeIconSize else zenoMidIconSize
     // BB10's Home glyph swells slightly while you're on the Home page itself. This is a pure
     // draw-time scale (graphicsLayer), never a change to homeButtonSize/homeIconSize — those stay
     // fixed so the slot, spacing, and neighboring dots never move.
@@ -10603,19 +10675,22 @@ private fun Dock(
     // Reference BB10: Envelope, Home, and every page dot are spaced by the same small, consistent
     // gap — not the wider Zeno-tuned navMidSpacing, and not the dots' own separate box padding
     // stacking on top of it (that combo made the home->dots gap visibly bigger than envelope->home).
-    val innerClusterSpacing = if (classicDockOrder) m.centerSpacing else navMidSpacing
+    val innerClusterSpacing = if (classicDockOrder) m.centerSpacing else zenoMidClusterSpacing
     // Reference BB10's dock nearly hugs the bottom bezel — shift the row down within the same
     // total vertical padding budget by moving weight from bottom to top, rather than just
     // shrinking both, which would also shrink the touch targets' margin.
-    val dockTopPad = if (classicDockOrder) m.topPadding else 8.dp
-    val dockBottomPad = if (classicDockOrder) m.bottomPadding else 8.dp
+    val dockTopPad = if (classicDockOrder) m.topPadding else refWidth * 0.01444f
+    val dockBottomPad = if (classicDockOrder) m.bottomPadding else refWidth * 0.01444f
 
     Box(
         modifier = Modifier
             .height(navBarHeight)
             .fillMaxWidth()
+            // Reference BB10 dock sits directly on the vivid wallpaper gradient with no dark
+            // scrim behind it — was 0x99 (~60% black), reduced to keep a little contrast safety
+            // net for arbitrary wallpapers without the heavy dimming band the old value produced.
             .background(
-                Brush.verticalGradient(listOf(Color.Transparent, Color(0x99000000)))
+                Brush.verticalGradient(listOf(Color.Transparent, Color(0x40000000)))
             )
             .padding(top = dockTopPad, bottom = dockBottomPad)
     ) {
@@ -10671,6 +10746,11 @@ private fun Dock(
                         onClick = onHome,
                         buttonSize = homeButtonSize,
                         iconSize = homeIconSize,
+                        // Classic Mode only, independent of Envelope's own fallbackScale: this is
+                        // the number that produces the deliberate ~30%-bigger-than-Envelope glyph
+                        // weight, tuned directly for Home rather than derived from
+                        // envelopeIconSize * 1.30f. Zeno Mode keeps its original 0.84f default.
+                        fallbackScale = if (classicDockOrder) 1.092f else 0.84f,
                         modifier = Modifier.graphicsLayer(
                             scaleX = homeEmphasisScale,
                             scaleY = homeEmphasisScale,
@@ -10688,30 +10768,39 @@ private fun Dock(
                         .onSizeChanged { dotsWidthPx = it.width.toFloat() }
                         .onGloballyPositioned { coords -> dotsXpx = coords.positionInParent().x }
                         .pointerInput(drawerPageCount) {
+                            // Activation is drag-DISTANCE-based, not time-based: a plain
+                            // click/tap on this device's physical trackpad can easily hold past
+                            // any fixed duration (e.g. the old 250ms) with zero actual movement,
+                            // which used to activate full scrub mode — briefly flashing the
+                            // full-width scrub overlay and its floating page-number bubble even
+                            // for a simple tap. Requiring real lateral movement before activating
+                            // means a tap/click (any duration, no drag) only ever jumps to the
+                            // tapped page via onScrubPage, with no scrub overlay shown at all.
+                            val dragThresholdPx = 8.dp.toPx()
                             awaitEachGesture {
                                 val down = awaitFirstDown(pass = PointerEventPass.Main)
                                 fingerXpx = down.position.x
-                                val startMs = SystemClock.uptimeMillis()
+                                val startXpx = down.position.x
                                 var activated = false
                                 while (true) {
-                                    val remaining = (250L - (SystemClock.uptimeMillis() - startMs)).coerceAtLeast(0L)
-                                    val event = if (!activated && remaining > 0L) {
-                                        withTimeoutOrNull(remaining) { awaitPointerEvent(pass = PointerEventPass.Main) }
-                                    } else {
-                                        awaitPointerEvent(pass = PointerEventPass.Main)
-                                    }
-                                    if (event == null) {
-                                        activated = true
-                                        scrubbing = true
-                                        val page = xToPage(fingerXpx)
-                                        hoveredPage = page
-                                        onScrubPage(page)
-                                        continue
-                                    }
+                                    val event = awaitPointerEvent(pass = PointerEventPass.Main)
                                     val change = event.changes.firstOrNull() ?: break
-                                    if (change.changedToUp()) { scrubbing = false; break }
+                                    if (change.changedToUp()) {
+                                        if (!activated) {
+                                            // Released without ever dragging past the threshold —
+                                            // jump straight to the tapped page, matching BB10's
+                                            // tap-a-dot-to-jump behavior.
+                                            onScrubPage(xToPage(fingerXpx))
+                                        }
+                                        scrubbing = false
+                                        break
+                                    }
                                     if (change.positionChanged()) {
                                         fingerXpx = change.position.x
+                                        if (!activated && kotlin.math.abs(fingerXpx - startXpx) > dragThresholdPx) {
+                                            activated = true
+                                            scrubbing = true
+                                        }
                                         if (activated) {
                                             val page = xToPage(fingerXpx)
                                             if (page != hoveredPage) { hoveredPage = page; onScrubPage(page) }
@@ -10768,11 +10857,16 @@ private fun Dock(
                     appIconShape = appIconShape,
                     onClick = onShortcut,
                     onLongPress = onLongPressShortcut,
-                    hasUnread = shortcutHasUnread,
-                    // Reference BB10: Envelope is its own (slightly smaller than Home) size —
-                    // both noticeably smaller than Zeno Mode's matching Shortcut/Home pair.
-                    buttonSize = if (classicDockOrder) m.envelopeButtonSize else 56.dp,
-                    iconSize = if (classicDockOrder) m.envelopeIconSize else navIconSize,
+                    // Envelope-only exception: BB10's reference dock never shows an unread badge
+                    // on this glyph. shortcutHasUnread itself is untouched, so anything else that
+                    // reads it (Zeno Mode's own badge, etc.) keeps working exactly as before.
+                    hasUnread = if (classicDockOrder) false else shortcutHasUnread,
+                    // Reference BB10: Envelope is its own (slightly smaller than Home) size.
+                    // Zeno Mode: shares zenoMidButtonSize/zenoMidIconSize with Home (see their
+                    // own doc) so the two stay uniform by construction, not by two literals that
+                    // happen to match.
+                    buttonSize = if (classicDockOrder) m.envelopeButtonSize else zenoMidButtonSize,
+                    iconSize = if (classicDockOrder) m.envelopeIconSize else zenoMidIconSize,
                     selected = focused && focusedIndex == shortcutFocusIdx,
                     selectedTint = selectedTint,
                     iconTint = dockIconTint,
@@ -10794,7 +10888,7 @@ private fun Dock(
                 homeBlock()
                 dotsBlock()
                 if (showMessagesShortcut) {
-                    Spacer(Modifier.width(navMidSpacing))
+                    Spacer(Modifier.width(zenoMidClusterSpacing))
                     shortcutIcon()
                 }
             }
@@ -10805,7 +10899,7 @@ private fun Dock(
                 iconModel = dockEndIconModel,
                 fallbackIcon = Icons.Rounded.PhotoCamera,
                 fallbackResId = thirdDockFallbackResId,
-                fallbackScale = if (thirdDockFallbackResId == R.drawable.ic_dock_pulse) 1.06f else 0.84f,
+                fallbackScale = cameraFallbackScale,
                 appIconShape = appIconShape,
                 onClick = onCamera,
                 onLongPress = onLongPressCamera,
@@ -10838,10 +10932,16 @@ private fun Dock(
                 Box(
                     modifier = Modifier
                         .align(Alignment.CenterStart)
-                        // dotsXpx is measured on the outer dotsBlock Box; the inline Dots sit
-                        // inside a further 6.dp horizontal padding — match it so the emphasized
-                        // dots line up exactly with where the small dots were.
-                        .offset(x = with(density) { dotsXpx.toDp() } + 6.dp),
+                        // This overlay Box is a sibling of the Row (both direct children of the
+                        // dock's root Box), while dotsXpx is measured relative to the Row itself
+                        // (coords.positionInParent() on the dotsBlock Box, whose parent is the
+                        // Row) — so it does NOT include the Row's own `leftInsetDp` start-padding
+                        // offset from the root Box. Missing that shifted every emphasized dot left
+                        // by leftInsetDp, which is what made the first one look too close to Home.
+                        // The inline Dots also sit inside a further horizontal padding — 6.dp in
+                        // Zeno Mode, 0.dp in Classic Mode (see the static row's own padding just
+                        // below) — matched here too.
+                        .offset(x = leftInsetDp + with(density) { dotsXpx.toDp() } + (if (classicDockOrder) 0.dp else 6.dp)),
                 ) {
                     Dots(
                         current = hoveredPage,
@@ -10849,11 +10949,26 @@ private fun Dock(
                         themePalette = themePalette,
                         emphasize = true,
                         hideFirstPageLabel = homeActive,
+                        // Missing these made this overlay fall back to the theme's default
+                        // (bigger, differently-spaced) dot sizing while the static row above uses
+                        // Classic Mode's tight uniform slots — the two didn't line up, so the
+                        // dots visibly jumped position the moment the scrub overlay faded in.
+                        activeDpOverride = if (classicDockOrder) m.activeDotSize else null,
+                        inactiveDpOverride = if (classicDockOrder) m.inactiveDotSize else null,
+                        fontSpOverride = if (classicDockOrder) m.dotFontSp else null,
+                        colorOverride = if (classicDockOrder) m.iconTint else null,
+                        slotWidthOverride = if (classicDockOrder) m.centerSlotWidth else null,
                     )
                 }
             }
 
-            val xDp = with(density) { fingerXpx.toDp() }
+            // fingerXpx is captured inside the dotsBlock Box's own pointerInput, so it's local to
+            // that Box's origin (0 at the Box's own left edge) — same missing-base-offset bug as
+            // the emphasized Dots overlay above: this Box is a sibling of the Row (both children
+            // of the dock's root Box), so it needs leftInsetDp + dotsXpx added to land at the
+            // right absolute position instead of floating off to the left over unrelated grid
+            // content, which is what made this bubble appear detached from the actual dots.
+            val xDp = leftInsetDp + with(density) { dotsXpx.toDp() } + with(density) { fingerXpx.toDp() }
             val swipeDotSize = 48.dp
             val swipeDotBottomLift = navBarHeight + 28.dp
             Box(
@@ -10903,7 +11018,8 @@ private fun DockPng(
     val trackpadActive = LocalTrackpadActive.current
     val highlightAlpha by animateFloatAsState(
         targetValue = if (selected && trackpadActive) 1f else 0f,
-        animationSpec = tween(durationMillis = if (selected && trackpadActive) 120 else 500),
+        // Fade-in and fade-out are now equal (was 120/500) — see AppTile's own comment for why.
+        animationSpec = tween(durationMillis = 120),
         label = "dockPngHighlight",
     )
     // The badge overhangs the icon's corner, which can land inside the rounded-rect clip's
@@ -10927,6 +11043,20 @@ private fun DockPng(
                 )
             }
         }
+        // Drawn last (on top of the icon), so the highlight always reads as a clear ring
+        // regardless of how much of the button box the icon's own content fills — a background
+        // fill alone gets mostly hidden behind a large, near-opaque icon (e.g. a full-bleed
+        // custom app icon), which is why that icon's highlight could look "thinner"/uneven next
+        // to a sibling whose icon leaves more of the box's negative space visible.
+        Box(
+            modifier = Modifier
+                .fillMaxSize()
+                .border(
+                    width = 1.5.dp,
+                    color = Color(0xFF4FC3F7).copy(alpha = highlightAlpha),
+                    shape = androidx.compose.foundation.shape.RoundedCornerShape(8.dp),
+                ),
+        )
     }
 }
 
@@ -10980,8 +11110,7 @@ private fun Dots(
                             .size(activeDp)
                             .shadow(5.dp, activeShape, ambientColor = spotShadow, spotColor = spotShadow)
                             .clip(activeShape)
-                            .background(pageColor)
-                            .border(width = 1.dp, color = Color.Black, shape = activeShape),
+                            .background(pageColor),
                         contentAlignment = Alignment.Center,
                     ) {
                         Text(
@@ -11009,7 +11138,6 @@ private fun Dots(
                             .shadow(5.dp, inactiveShape, ambientColor = spotShadow, spotColor = spotShadow)
                             .clip(inactiveShape)
                             .background(color = pageColor.copy(alpha = inactiveAlpha))
-                            .border(1.dp, Color.Black, inactiveShape)
                     )
                 }
             }
@@ -11043,7 +11171,8 @@ private fun DockEndSlot(
     val trackpadActive = LocalTrackpadActive.current
     val highlightAlpha by animateFloatAsState(
         targetValue = if (selected && trackpadActive) 1f else 0f,
-        animationSpec = tween(durationMillis = if (selected && trackpadActive) 120 else 500),
+        // Fade-in and fade-out are now equal (was 120/500) — see AppTile's own comment for why.
+        animationSpec = tween(durationMillis = 120),
         label = "dockSlotHighlight",
     )
     // The badge overhangs the icon's corner, which can land inside the rounded-rect clip's
@@ -11091,6 +11220,21 @@ private fun DockEndSlot(
                 }
             }
         }
+        // Drawn last (on top of the icon), so the highlight always reads as a clear ring
+        // regardless of how much of the button box the icon's own content fills — a background
+        // fill alone gets mostly hidden behind a large, near-opaque icon (e.g. a full-bleed
+        // custom app icon assigned via iconModel), which is why that icon's highlight could look
+        // "thinner"/uneven next to a sibling whose icon leaves more of the box's negative space
+        // visible. See DockPng's matching border for the same reasoning.
+        Box(
+            modifier = Modifier
+                .fillMaxSize()
+                .border(
+                    width = 1.5.dp,
+                    color = Color(0xFF4FC3F7).copy(alpha = highlightAlpha),
+                    shape = androidx.compose.foundation.shape.RoundedCornerShape(8.dp),
+                ),
+        )
     }
 }
 

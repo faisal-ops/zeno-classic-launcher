@@ -80,8 +80,8 @@ internal fun MinimalModeSettingsOverlay(
     val fr = remember { FocusRequester() }
     var focusedIndex by remember { mutableIntStateOf(0) }
 
-    val itemCount = if (prefs.minimalModeEnabled) 6 else 3
-    val bringers = remember { List(6) { BringIntoViewRequester() } }
+    val itemCount = if (prefs.minimalModeEnabled) 5 else 3
+    val bringers = remember { List(5) { BringIntoViewRequester() } }
     LaunchedEffect(focusedIndex) { bringers[focusedIndex].bringIntoView() }
 
     val authAndSwitch = remember(context) { { onAuthenticated: () -> Unit ->
@@ -142,13 +142,17 @@ internal fun MinimalModeSettingsOverlay(
                 }
             }
             2 -> {
-                val on = !prefs.minimalModeEnabled
-                vm.setMinimalModeEnabled(on)
-                if (on) vm.setClassicMode(false)
+                // Turning Minimal Mode OFF from this row would exit with no auth check at all —
+                // only the (auth-gated) Zeno/Classic rows above are allowed to leave Minimal
+                // Mode. Tapping this row while already in Minimal Mode is a no-op.
+                if (!prefs.minimalModeEnabled) {
+                    vm.setMinimalModeEnabled(true)
+                    vm.setClassicMode(false)
+                }
             }
             3 -> vm.setMinimalModeShowWeather(!prefs.minimalModeShowWeather)
-            4 -> vm.setMinimalModeShowNotifSummary(!prefs.minimalModeShowNotifSummary)
-            5 -> vm.setMinimalModeGreyscale(!prefs.minimalModeGreyscale)
+            // Notification summary is always on now — no user-facing toggle, so no case 4 here.
+            4 -> vm.setMinimalModeGreyscale(!prefs.minimalModeGreyscale)
         }
     }
 
@@ -248,8 +252,14 @@ internal fun MinimalModeSettingsOverlay(
                     title = stringResource(R.string.minimal_mode_enable),
                     checked = prefs.minimalModeEnabled,
                     onCheckedChange = { on ->
-                        vm.setMinimalModeEnabled(on)
-                        if (on) vm.setClassicMode(false)
+                        // Turning Minimal Mode OFF from this row would exit with no auth check
+                        // at all — only the (auth-gated) Zeno/Classic rows above are allowed to
+                        // leave Minimal Mode. Tapping this row while already in Minimal Mode
+                        // (on == false) is a no-op.
+                        if (on) {
+                            vm.setMinimalModeEnabled(true)
+                            vm.setClassicMode(false)
+                        }
                     },
                 )
             }
@@ -258,7 +268,7 @@ internal fun MinimalModeSettingsOverlay(
                 Spacer(Modifier.height(12.dp))
 
                 SettingsCard(
-                    focused = focusedIndex in 3..5,
+                    focused = focusedIndex == 3,
                     bringer = bringers[3],
                 ) {
                     SettingsToggleRow(
@@ -267,18 +277,20 @@ internal fun MinimalModeSettingsOverlay(
                         focused = focusedIndex == 3,
                         onCheckedChange = { vm.setMinimalModeShowWeather(it) },
                     )
-                    SettingsDivider()
-                    SettingsToggleRow(
-                        title = stringResource(R.string.minimal_mode_show_summary_title),
-                        checked = prefs.minimalModeShowNotifSummary,
-                        focused = focusedIndex == 4,
-                        onCheckedChange = { vm.setMinimalModeShowNotifSummary(it) },
-                    )
-                    SettingsDivider()
+                }
+
+                Spacer(Modifier.height(12.dp))
+
+                // Notification summary has no toggle — it's always on (see MinimalModeScreen.kt,
+                // where the unreadApps gate on this pref was removed entirely).
+                SettingsCard(
+                    focused = focusedIndex == 4,
+                    bringer = bringers[4],
+                ) {
                     SettingsToggleRow(
                         title = stringResource(R.string.minimal_mode_greyscale_title),
                         checked = prefs.minimalModeGreyscale,
-                        focused = focusedIndex == 5,
+                        focused = focusedIndex == 4,
                         onCheckedChange = { vm.setMinimalModeGreyscale(it) },
                     )
                 }

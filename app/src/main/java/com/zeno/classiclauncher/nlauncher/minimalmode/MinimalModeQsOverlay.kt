@@ -96,6 +96,23 @@ internal fun MinimalModeQsOverlay(
     val scope = rememberCoroutineScope()
     val actions = remember(context) { LauncherActions(context) }
     val lifecycleOwner = LocalLifecycleOwner.current
+    // MainActivity hides the real status bar via BEHAVIOR_SHOW_TRANSIENT_BARS_BY_SWIPE, which
+    // deliberately lets a downward edge-swipe transiently reveal it (so the real notification
+    // shade stays reachable). That's the same gesture used to open this overlay, so opening it
+    // can race with — and lose to — that transient reveal, leaving the real system bar visibly
+    // peeking above this overlay's own dark background instead of the reserved strip staying
+    // covered by ZenoStatusBar like it is on the home screen. Re-hiding as soon as this overlay
+    // composes wins that race for the common case (home screen is unaffected — this only runs
+    // while the overlay itself is on screen).
+    val view = androidx.compose.ui.platform.LocalView.current
+    androidx.compose.runtime.DisposableEffect(view) {
+        val window = (context as? android.app.Activity)?.window
+        if (window != null) {
+            androidx.core.view.WindowCompat.getInsetsController(window, view)
+                .hide(androidx.core.view.WindowInsetsCompat.Type.statusBars())
+        }
+        onDispose { }
+    }
     val dateFormatter = remember {
         // Locale-correct field order (e.g. ko "M월 d일 EEEE") — never hardcode "MMMM d".
         val pattern = android.text.format.DateFormat.getBestDateTimePattern(Locale.getDefault(), "EEEEMMMMd")
@@ -244,14 +261,14 @@ internal fun MinimalModeQsOverlay(
         contentAlignment = Alignment.TopCenter,
     ) {
         // Content column — transparent spacer on top, dark scrim for everything below it.
+        // No no-op .clickable{} here (there used to be one): applied to this whole fillMaxSize
+        // column, it swallowed every tap anywhere inside the overlay — including the transparent
+        // top spacer and the empty scrim space below the tile grid — before the outer Box's own
+        // .clickable(onClick = onDismiss) ever saw them, so tapping "outside" never dismissed it.
+        // Actual interactive children (the Settings icon, each tile) already consume their own
+        // taps via their own clickable/pointerInput, so they don't need this extra blocker.
         Column(
-            modifier = Modifier
-                .fillMaxSize()
-                .clickable(
-                    interactionSource = remember { MutableInteractionSource() },
-                    indication = null,
-                    onClick = {},
-                ),
+            modifier = Modifier.fillMaxSize(),
         ) {
             // Transparent spacer — real top bar from main screen shows through unobstructed
             Spacer(modifier = Modifier.height(with(density) { topBarBottomPx.toDp() }))

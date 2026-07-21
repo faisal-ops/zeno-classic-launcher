@@ -82,7 +82,15 @@ internal data class ZenoStatusBarState(
     val powerSaveActive: Boolean,
     val hotspotEnabled: Boolean,
     val airplaneModeEnabled: Boolean,
+    /** Ongoing/just-missed call state — replaces [carrierName] with a call icon while non-NONE,
+     *  matching the reference BB10 status bar. */
+    val callIndicator: ZenoCallIndicator,
+    /** Mic muted during an active/speaker call — shown as a second, separate icon on the left
+     *  cluster alongside whichever [callIndicator] icon is showing on the right. */
+    val micMuted: Boolean,
 )
+
+internal enum class ZenoCallIndicator { NONE, ACTIVE, SPEAKER, MISSED }
 
 internal data class ZenoStatusBarNotifyIcon(val packageName: String, val bitmap: android.graphics.Bitmap)
 
@@ -430,6 +438,86 @@ internal fun rememberZenoStatusBarState(): ZenoStatusBarState {
         }
     }
 
+    // In-call indicator: replaces carrierName with a call/speaker icon while a call is ongoing,
+    // plus a separate mic-mute icon while muted — mirrors the reference BB10 status bar. Reuses
+    // the same READ_PHONE_STATE permission the carrier-name/signal listeners above already
+    // request; no new permission needed. Speaker/mute state has no broadcast to listen for, so
+    // it's polled, but only while a call is actually active — never indefinitely.
+    var inCall by remember { mutableStateOf(false) }
+    var speakerOn by remember { mutableStateOf(false) }
+    var micMuted by remember { mutableStateOf(false) }
+    // Missed-call icon persists until the user actually clears the phone app's own missed-call
+    // notification — not on a timer — by tracking that notification's presence directly rather
+    // than inferring "call rang then ended" from telephony state.
+    val hasMissedCall by com.zeno.classiclauncher.nlauncher.badges.NotificationRepository.hasMissedCall
+        .collectAsStateWithLifecycle()
+    val callIndicator = when {
+        inCall && speakerOn -> ZenoCallIndicator.SPEAKER
+        inCall -> ZenoCallIndicator.ACTIVE
+        hasMissedCall -> ZenoCallIndicator.MISSED
+        else -> ZenoCallIndicator.NONE
+    }
+    DisposableEffect(phoneStateGranted) {
+        val tm = context.getSystemService(TelephonyManager::class.java)
+        if (tm == null || !phoneStateGranted) {
+            return@DisposableEffect onDispose { }
+        }
+        var pollJob: Job? = null
+        fun stopPolling() {
+            pollJob?.cancel()
+            pollJob = null
+            inCall = false
+            speakerOn = false
+            micMuted = false
+        }
+        fun startPolling() {
+            stopPolling()
+            inCall = true
+            pollJob = scope.launch {
+                while (true) {
+                    speakerOn = audioManager?.isSpeakerphoneOn == true
+                    micMuted = audioManager?.isMicrophoneMute ?: false
+                    delay(500L)
+                }
+            }
+        }
+        fun onCallState(state: Int) {
+            when (state) {
+                TelephonyManager.CALL_STATE_OFFHOOK -> startPolling()
+                TelephonyManager.CALL_STATE_RINGING, TelephonyManager.CALL_STATE_IDLE -> stopPolling()
+            }
+        }
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
+            val callback = object : TelephonyCallback(), TelephonyCallback.CallStateListener {
+                override fun onCallStateChanged(state: Int) = onCallState(state)
+            }
+            val registered = runCatching {
+                tm.registerTelephonyCallback(context.mainExecutor, callback)
+            }.isSuccess
+            onDispose {
+                stopPolling()
+                if (registered) runCatching { tm.unregisterTelephonyCallback(callback) }
+            }
+        } else {
+            @Suppress("DEPRECATION")
+            val listener = object : PhoneStateListener() {
+                @Suppress("DEPRECATION")
+                override fun onCallStateChanged(state: Int, phoneNumber: String?) = onCallState(state)
+            }
+            @Suppress("DEPRECATION")
+            val registered = runCatching {
+                tm.listen(listener, PhoneStateListener.LISTEN_CALL_STATE)
+            }.isSuccess
+            onDispose {
+                stopPolling()
+                if (registered) {
+                    @Suppress("DEPRECATION")
+                    runCatching { tm.listen(listener, PhoneStateListener.LISTEN_NONE) }
+                }
+            }
+        }
+    }
+
     // Active/default transport (not just the Wi-Fi adapter being switched on): a
     // NetworkCallback fires the instant the default network changes, which the
     // WIFI_STATE_CHANGED broadcast never reports — that only covers the radio toggling.
@@ -530,6 +618,8 @@ internal fun rememberZenoStatusBarState(): ZenoStatusBarState {
         powerSaveActive = powerSaveActive,
         hotspotEnabled = hotspotEnabled,
         airplaneModeEnabled = airplaneModeEnabled,
+        callIndicator = callIndicator,
+        micMuted = micMuted,
     )
 }
 

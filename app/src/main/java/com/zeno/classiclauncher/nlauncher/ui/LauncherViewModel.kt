@@ -43,6 +43,7 @@ import com.zeno.classiclauncher.nlauncher.prefs.MinimalModeMaxApps
 import com.zeno.classiclauncher.nlauncher.R
 import android.content.ComponentName
 import android.media.MediaMetadata
+import android.media.session.MediaController
 import android.media.session.MediaSessionManager
 import android.media.session.PlaybackState
 import com.zeno.classiclauncher.nlauncher.badges.BadgeNotificationListener
@@ -205,7 +206,53 @@ class LauncherViewModel(app: Application) : AndroidViewModel(app) {
     private val mediaSessionCn = ComponentName(
         getApplication<Application>(), BadgeNotificationListener::class.java
     )
+    // OnActiveSessionsChangedListener only fires when the *set* of active sessions changes (a
+    // session is added/removed) — it does NOT fire when an already-active session's own playback
+    // state changes (play <-> pause) or its metadata changes (track change within the same
+    // session). Relying on it alone meant the UI only ever refreshed on unrelated session-list
+    // events, so pausing/resuming (from our own UI, the notification shade, or the player app
+    // itself) never updated the icon until something else happened to trigger a refresh. A
+    // MediaController.Callback registered directly on the active session's controller catches
+    // those in-session changes in real time.
+    private var nowPlayingController: MediaController? = null
+    private var nowPlayingControllerCallback: MediaController.Callback? = null
     private val mediaSessionListener = MediaSessionManager.OnActiveSessionsChangedListener { _ ->
+        refreshNowPlaying()
+    }
+
+    private fun refreshNowPlaying() {
+        val activeStates = setOf(
+            PlaybackState.STATE_PLAYING,
+            PlaybackState.STATE_PAUSED,
+            PlaybackState.STATE_BUFFERING,
+        )
+        val session = runCatching { msm?.getActiveSessions(mediaSessionCn) }.getOrNull()
+            ?.firstOrNull { it.playbackState?.state in activeStates }
+        if (session?.sessionToken != nowPlayingController?.sessionToken) {
+            val oldController = nowPlayingController
+            val oldCallback = nowPlayingControllerCallback
+            if (oldController != null && oldCallback != null) {
+                runCatching { oldController.unregisterCallback(oldCallback) }
+            }
+            nowPlayingController = session
+            if (session != null) {
+                val callback = object : MediaController.Callback() {
+                    override fun onPlaybackStateChanged(state: PlaybackState?) {
+                        _nowPlaying.value = buildNowPlayingState()
+                    }
+                    override fun onMetadataChanged(metadata: MediaMetadata?) {
+                        _nowPlaying.value = buildNowPlayingState()
+                    }
+                    override fun onSessionDestroyed() {
+                        _nowPlaying.value = buildNowPlayingState()
+                    }
+                }
+                nowPlayingControllerCallback = callback
+                runCatching { session.registerCallback(callback, Handler(Looper.getMainLooper())) }
+            } else {
+                nowPlayingControllerCallback = null
+            }
+        }
         _nowPlaying.value = buildNowPlayingState()
     }
 
@@ -257,9 +304,10 @@ class LauncherViewModel(app: Application) : AndroidViewModel(app) {
                 .collect { _minimalModeForecast.value = it }
         }
 
-        // Now-playing: fire on session changes instead of polling every 10 s.
-        // Eliminates ~6 IPC calls/minute; listener callback runs on the main looper.
-        _nowPlaying.value = buildNowPlayingState()
+        // Now-playing: fire on session-list changes instead of polling every 10 s, plus a
+        // MediaController.Callback on the active session itself for in-session state changes
+        // (play/pause, track change) — see refreshNowPlaying()'s own doc for why both are needed.
+        refreshNowPlaying()
         runCatching {
             msm?.addOnActiveSessionsChangedListener(
                 mediaSessionListener, mediaSessionCn, Handler(Looper.getMainLooper())
@@ -270,6 +318,11 @@ class LauncherViewModel(app: Application) : AndroidViewModel(app) {
     override fun onCleared() {
         super.onCleared()
         runCatching { msm?.removeOnActiveSessionsChangedListener(mediaSessionListener) }
+        val controller = nowPlayingController
+        val callback = nowPlayingControllerCallback
+        if (controller != null && callback != null) {
+            runCatching { controller.unregisterCallback(callback) }
+        }
     }
 
     private fun buildNowPlayingState(): NowPlayingState? = runCatching {
@@ -323,6 +376,10 @@ class LauncherViewModel(app: Application) : AndroidViewModel(app) {
                 ctrl.transportControls.play()
             }
         }
+        // The MediaController.Callback (registered in refreshNowPlaying()) picks this up once the
+        // player app actually reports its new state, but that can lag a beat — nudge a refresh now
+        // too so the icon doesn't sit stale in the meantime.
+        refreshNowPlaying()
     }
 
     fun mediaSkipNext() {
