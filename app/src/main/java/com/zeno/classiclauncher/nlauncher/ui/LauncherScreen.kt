@@ -1921,7 +1921,9 @@ fun LauncherScreen(
                     onLongPressShortcut = { showActiveFrames = false; dockQuickActionSlot = DockSlot.Shortcut },
                     onLongPressCamera = { showActiveFrames = false; dockQuickActionSlot = DockSlot.Camera },
                     onHome = { showActiveFrames = false; scope.launch { pagerState.animateScrollToPage(0) } },
-                    onHomeSwipeDown = if (classicMode) ({ showActiveFrames = true }) else null,
+                    // Root-only — ActiveFramesRepository has no non-root fallback (dropped; see
+                    // its own doc for why an approximation was worse than not having the feature).
+                    onHomeSwipeDown = if (classicMode && prefs.rootGranted) ({ showActiveFrames = true }) else null,
                     // Arrow cue only while Active Frames is actually open right now — not a
                     // permanent discovery hint.
                     showRecentAppsCue = showActiveFrames,
@@ -2724,7 +2726,6 @@ fun LauncherScreen(
                 basePageFontSp = themePalette.pageIndicatorFontSp,
             ).dockHeight
             com.zeno.classiclauncher.nlauncher.recents.ActiveFramesOverlay(
-                rootGranted = prefs.rootGranted,
                 dockHeightDp = activeFramesDockHeight,
                 onDismiss = { showActiveFrames = false },
                 onLaunchApp = { pkg -> vm.launchApp(pkg) },

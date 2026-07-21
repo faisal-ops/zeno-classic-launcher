@@ -71,14 +71,13 @@ private val TILE_HEADER_HEIGHT = TILE_HEADER_CONTENT_HEIGHT + TILE_HEADER_VERTIC
 
 /**
  * BB10-style "Active Frames": a grid of recently-used apps, each tile showing that app's actual
- * last-seen screenshot when rooted (see [ActiveFramesRepository]'s own doc for how), or just its
- * icon when not rooted. Opened by swiping down (or long-pressing, as a fallback) on the dock's
+ * last-seen screenshot (see [ActiveFramesRepository]'s own doc for how — root-only, see there for
+ * why). Opened by swiping down (or long-pressing, as a fallback) on the dock's
  * Home icon in Classic Mode. On a tile: swipe right (or tap its X) closes that app; swipe left
  * exits Active Frames straight to the drawer's first page, leaving the app itself in recents.
  */
 @Composable
 internal fun ActiveFramesOverlay(
-    rootGranted: Boolean,
     /** The dock's own on-screen height — reference BB10 leaves the dock visible and live
      *  underneath Active Frames, so this overlay's own bounds stop short of it instead of
      *  covering it (the real Dock composable, drawn earlier in the same parent Box, shows
@@ -96,7 +95,7 @@ internal fun ActiveFramesOverlay(
     var loaded by remember { mutableStateOf(false) }
 
     LaunchedEffect(Unit) {
-        tasks = ActiveFramesRepository.getRecentTasks(context, rootGranted)
+        tasks = ActiveFramesRepository.getRecentTasks(context)
         loaded = true
     }
 
@@ -199,13 +198,7 @@ internal fun ActiveFramesOverlay(
                     onOpen = { onLaunchApp(task.packageName) },
                     onClose = {
                         tasks = tasks.filterNot { it.packageName == task.packageName }
-                        scope.launch {
-                            ActiveFramesRepository.closeTask(
-                                task.packageName,
-                                task.taskId.takeIf { rootGranted },
-                                rootGranted,
-                            )
-                        }
+                        scope.launch { ActiveFramesRepository.closeTask(task.packageName, task.taskId) }
                     },
                     onSwipeLeftToDrawer = onSwipeLeftToDrawer,
                 )

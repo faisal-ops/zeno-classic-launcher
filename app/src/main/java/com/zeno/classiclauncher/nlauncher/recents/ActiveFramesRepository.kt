@@ -8,16 +8,14 @@ import android.graphics.BitmapFactory
 import android.graphics.drawable.Drawable
 import androidx.core.content.getSystemService
 import com.zeno.classiclauncher.nlauncher.root.RootManager
-import com.zeno.classiclauncher.nlauncher.usage.UsageStatsRepository
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.async
 import kotlinx.coroutines.awaitAll
 import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.withContext
 
-/** One tile in the BB10-style "Active Frames" recent-apps screen. [thumbnail] is only ever
- *  non-null on the rooted path — the non-root path has no access to another app's rendered
- *  content, so tiles there fall back to just the app's own icon (see [ActiveFramesOverlay]). */
+/** One tile in the BB10-style "Active Frames" recent-apps screen. [thumbnail] is null only if
+ *  reading the task's snapshot cache fails for that specific task. */
 internal data class ActiveFrameTask(
     val taskId: Int,
     val packageName: String,
@@ -28,46 +26,37 @@ internal data class ActiveFrameTask(
 )
 
 /**
- * Two independent sources for the same feature, chosen by [rootGranted]:
- *
- * ROOTED: reads `dumpsys activity recents` for the live task list (id, package, last-active
+ * Root-only: reads `dumpsys activity recents` for the live task list (id, package, last-active
  * time), and each task's last-known-state screenshot straight from the system's own task-
- * snapshot cache at /data/system_ce/<user>/snapshots/<taskId>_reduced.jpg — the same cache
- * that powers Android's real Recents/Overview screen, normally locked to the system launcher
- * only. Verified on-device (see conversation) before writing any of this.
+ * snapshot cache at /data/system_ce/<user>/snapshots/<taskId>_reduced.jpg — the same cache that
+ * powers Android's real Recents/Overview screen, normally locked to the system launcher only.
+ * Verified on-device before writing any of this.
  *
- * NON-ROOT: no access to that snapshot cache or to live task state for a third-party app, so
- * this falls back to UsageStatsManager's MOVE_TO_FOREGROUND event log (the same permission
- * this app's own usage-stats screen already asks for) to build a "recently used" ordering,
- * with no thumbnail — just each app's own icon.
+ * There's no non-root fallback: without root there's no access to that snapshot cache or to live
+ * task state for a third-party app, so a UsageStatsManager-based approximation was tried and
+ * dropped — it can't tell "task evicted from real recents" from "just not opened recently", and
+ * showed stale entries the real Recents screen no longer had. Root-only avoids presenting
+ * approximate data as if it were the real list.
  */
 internal object ActiveFramesRepository {
 
-    // Belt-and-suspenders against the same task reappearing: closeTask (below) now also runs
-    // `am stack remove <taskId>` for the rooted path, which — confirmed on-device — deletes the
-    // task from Android's own recents list outright (every task here has rootTaskId == taskId,
-    // i.e. its own single-task stack, so this is safe/precise; `am help` only documents this at
-    // stack granularity, but that's exactly this ROM's task/stack relationship in practice). Kept
-    // as a fallback for the non-root path (or if that command ever silently no-ops on some
-    // device/ROM): this object remembers the close ourselves and filters it out until the app is
-    // genuinely reopened (a fresh MOVE_TO_FOREGROUND event after the close time).
+    // Force-stopping a process, or even removing its task via `am stack remove`, doesn't always
+    // stop it from being re-listed in a mid-air race with the very next getRecentTasks() call —
+    // this object remembers the close ourselves and filters it out until the app is genuinely
+    // reopened (a fresh MOVE_TO_FOREGROUND event after the close time), as a belt-and-suspenders
+    // on top of the `am stack remove` call in closeTask.
     private val closedAt = mutableMapOf<String, Long>()
 
-    suspend fun getRecentTasks(context: Context, rootGranted: Boolean): List<ActiveFrameTask> {
-        val raw = if (rootGranted) getRecentTasksRooted(context) else withContext(Dispatchers.IO) {
-            getRecentTasksNonRoot(context)
-        }
+    suspend fun getRecentTasks(context: Context): List<ActiveFrameTask> {
+        val raw = getRecentTasksRooted(context)
         return withContext(Dispatchers.IO) { filterClosed(context, raw) }
     }
 
-    /** Root-only: removes the task from Android's own recents list (`am stack remove`, so it's
-     *  gone from the system Overview too, not just this screen) and force-stops the process.
-     *  No-op (caller just removes the tile) when not rooted. [taskId] is null on the non-root
-     *  path, where there's no real task list access anyway. */
-    suspend fun closeTask(packageName: String, taskId: Int?, rootGranted: Boolean) {
+    /** Removes the task from Android's own recents list (`am stack remove`, so it's gone from
+     *  the system Overview too, not just this screen) and force-stops the process. */
+    suspend fun closeTask(packageName: String, taskId: Int) {
         closedAt[packageName] = System.currentTimeMillis()
-        if (!rootGranted) return
-        if (taskId != null) RootManager.execute("am stack remove $taskId")
+        RootManager.execute("am stack remove $taskId")
         RootManager.execute("am force-stop $packageName")
     }
 
@@ -93,8 +82,6 @@ internal object ActiveFramesRepository {
         }
         return false
     }
-
-    // ── Rooted path ──────────────────────────────────────────────────────────
 
     // The [AI]= capture excludes '}' — on-device output has no space before the closing brace
     // (e.g. "type=standard A=10241:com.instagram.lite}"), so a plain \S+ swallows it into the
@@ -157,47 +144,5 @@ internal object ActiveFramesRepository {
             }
         }
         deferred.awaitAll().filterNotNull()
-    }
-
-    // ── Non-root path ────────────────────────────────────────────────────────
-
-    private fun getRecentTasksNonRoot(context: Context): List<ActiveFrameTask> {
-        if (!UsageStatsRepository.hasPermission(context)) return emptyList()
-        val usm = context.getSystemService<UsageStatsManager>() ?: return emptyList()
-        val ownPackage = context.packageName
-        val pm = context.packageManager
-        val now = System.currentTimeMillis()
-        val windowStart = now - 24L * 60 * 60 * 1000
-        val events = usm.queryEvents(windowStart, now) ?: return emptyList()
-
-        val lastForeground = LinkedHashMap<String, Long>() // insertion order = discovery order
-        val event = UsageEvents.Event()
-        while (events.hasNextEvent()) {
-            events.getNextEvent(event)
-            if (event.eventType != UsageEvents.Event.MOVE_TO_FOREGROUND) continue
-            val pkg = event.packageName ?: continue
-            if (pkg == ownPackage) continue
-            lastForeground[pkg] = event.timeStamp
-        }
-
-        return lastForeground.entries
-            .sortedByDescending { it.value }
-            .mapNotNull { (pkg, lastActive) ->
-                val appInfo = runCatching { pm.getApplicationInfo(pkg, 0) }.getOrNull() ?: return@mapNotNull null
-                // Skip packages with no launcher entry — background/service-only components that
-                // still emit foreground events (IME, System UI, etc.) aren't "apps" the user
-                // would recognize in this list.
-                if (pm.getLaunchIntentForPackage(pkg) == null) return@mapNotNull null
-                val label = runCatching { pm.getApplicationLabel(appInfo).toString() }.getOrDefault(pkg)
-                val icon = runCatching { pm.getApplicationIcon(appInfo) }.getOrNull()
-                ActiveFrameTask(
-                    taskId = -1,
-                    packageName = pkg,
-                    label = label,
-                    icon = icon,
-                    lastActiveTime = lastActive,
-                    thumbnail = null,
-                )
-            }
     }
 }
