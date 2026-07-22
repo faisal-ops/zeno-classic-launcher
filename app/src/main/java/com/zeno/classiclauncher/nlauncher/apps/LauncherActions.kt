@@ -74,7 +74,7 @@ fun resolveDefaultMailPackage(context: Context): String {
 /**
  * Classic Mode's mail resolution, deliberately different from [resolveDefaultMailPackage]:
  * always prefers BlackBerry Hub, then Zeno Waypoint, over whatever the user's actual Android
- * default mail app is set to — matching the BB10-authentic idea that Hub is the mail experience,
+ * default mail app is set to — matching the reference design's idea that Hub is the mail experience,
  * not a plain mailto: handoff. Falls through to [resolveDefaultMailPackage]'s own OS-default/
  * Gmail/Outlook/Yahoo resolution as the final "any other installed mail app" catch-all. Used by
  * both the Mail and Envelope dock slots in Classic Mode — Zeno Mode is untouched and keeps using
@@ -803,7 +803,7 @@ class LauncherActions(private val context: Context) {
     /**
      * Raw network operator name, or "" when there is no SIM / no service. Unlike
      * [currentCarrierName] this never substitutes a generic label — the status bar shows
-     * nothing at all rather than a placeholder where BB10 would print the carrier.
+     * nothing at all rather than a placeholder where the reference design would print the carrier.
      */
     fun networkOperatorNameOrEmpty(): String =
         context.getSystemService(TelephonyManager::class.java)?.networkOperatorName?.trim().orEmpty()

@@ -14,7 +14,7 @@ import kotlinx.coroutines.awaitAll
 import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.withContext
 
-/** One tile in the BB10-style "Active Frames" recent-apps screen. [thumbnail] is null only if
+/** One tile in the classic-style "Active Frames" recent-apps screen. [thumbnail] is null only if
  *  reading the task's snapshot cache fails for that specific task. */
 internal data class ActiveFrameTask(
     val taskId: Int,

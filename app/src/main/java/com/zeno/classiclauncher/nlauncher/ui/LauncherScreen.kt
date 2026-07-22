@@ -902,8 +902,8 @@ fun LauncherScreen(
     var showLanguageSettings by remember { mutableStateOf(false) }
     var showAppDrawerBadges by remember { mutableStateOf(false) }
     var showIconAppearanceSettings by remember { mutableStateOf(false) }
-    // BB10-style Active Frames — Classic Mode only, opened by swiping down on the dock's Home
-    // icon. See com.zeno.classiclauncher.nlauncher.recents for the rooted/non-root split.
+    // Classic-style Active Frames — Classic Mode only, opened by swiping down on the dock's Home
+    // icon. See com.zeno.classiclauncher.nlauncher.recents (root-only).
     var showActiveFrames by remember { mutableStateOf(false) }
     var showMinimalModeSettings by remember { mutableStateOf(false) }
     var showRootSettings by remember { mutableStateOf(false) }
@@ -1503,7 +1503,7 @@ fun LauncherScreen(
                 state = pagerState,
                 modifier = Modifier.weight(1f),
                 // Keep the drawer composed when on home so inner pager state & nested scroll behave better
-                // with trackpad (BlackBerry) — default 0 can drop the drawer subtree entirely.
+                // with physical trackpad hardware — default 0 can drop the drawer subtree entirely.
                 beyondViewportPageCount = 1,
             ) { page ->
                 when {
@@ -2654,7 +2654,7 @@ fun LauncherScreen(
                 themePalette = themePalette,
                 onApply = { mode ->
                     when (mode) {
-                        0 -> { // Classic BlackBerry
+                        0 -> { // Classic Mode
                             vm.setClassicMode(true)
                             vm.setGlanceEnabled(false)
                             vm.setHomeStripEnabled(false)
@@ -3060,7 +3060,7 @@ fun LauncherScreen(
                 .navigationBarsPadding(),
         )
 
-        // Zeno/Classic Mode's opt-in BB10-style status bar — Minimal Mode always shows its own
+        // Zeno/Classic Mode's opt-in classic-style status bar — Minimal Mode always shows its own
         // via MinimalModeScreen, so this only applies here. Shares ZenoStatusBar and its state
         // source with Minimal Mode rather than duplicating either.
         //
@@ -4385,7 +4385,7 @@ private fun ClassicCleanHomePage(
         val pattern = android.text.format.DateFormat.getBestDateTimePattern(Locale.getDefault(), "EEEdMMM")
         SimpleDateFormat(pattern, Locale.getDefault())
     }
-    // Reference BB10 reads "Mon 20 Jul" — no comma — but getBestDateTimePattern's EEE-d-MMM
+    // The reference design reads "Mon 20 Jul" — no comma — but getBestDateTimePattern's EEE-d-MMM
     // skeleton inserts one under en-locale ICU conventions. Stripping it is locale-safe: locales
     // whose own pattern has no comma are unaffected.
     fun formatClassicHomeDate() = dateFormatter.format(Date()).replace(",", "")
@@ -4493,7 +4493,7 @@ private fun ClassicCleanHomePage(
         Text(
             text = dateText,
             color = Color(0xFFB8D4E8),
-            // Reference BB10 home screen has this noticeably larger than the clock — was 40.sp.
+            // The reference design home screen has this noticeably larger than the clock — was 40.sp.
             fontSize = 45.sp,
             // Reverted to the original weight after trying Bold/Normal.
             fontWeight = FontWeight.W300,
@@ -6331,7 +6331,7 @@ private fun ZenoSetupOverlay(
             Column(Modifier.bringIntoViewRequester(rowBringers[0])) {
                 SetupModeCard(
                     icon = Icons.Rounded.GridView,
-                    title = "Classic BlackBerry",
+                    title = "Classic",
                     subtitle = "Drawer-first, compact pages, dock-focused navigation.",
                     accentColor = accentColor,
                     selected = selectedMode == 0,
@@ -10442,8 +10442,8 @@ private fun rememberGridLayoutMetrics(
 
 /**
  * Every Classic Mode dock measurement in one place, derived proportionally from the screen's own
- * width (`screenWidthDp`) rather than fixed dp constants — so the dock keeps the same reference
- * BB10 proportions on a 554dp-wide device (this launcher's primary Zinwa Q25 target) all the way
+ * width (`screenWidthDp`) rather than fixed dp constants — so the dock keeps the same
+ * reference-design proportions on a 554dp-wide device (this launcher's primary Zinwa Q25 target) all the way
  * up to tablets/foldables, instead of the icons/gaps staying a fixed absolute size regardless of
  * screen size. Fractions below were reverse-engineered from the dp values already tuned by eye
  * against the reference screenshot at 554dp — e.g. mailButtonSize 61dp / 554dp ≈ 0.1101.
@@ -10540,7 +10540,7 @@ private fun Dock(
     onShortcut: () -> Unit,
     onHome: () -> Unit,
     onCamera: () -> Unit,
-    /** Classic Mode only — swipe down on the Home icon to open Active Frames (BB10-style
+    /** Classic Mode only — swipe down on the Home icon to open Active Frames (classic-style
      *  recent apps). Null elsewhere, so the gesture detector below is never attached. */
     onHomeSwipeDown: (() -> Unit)? = null,
     /** Whether to show the swipe-down arrow cue under Home — true only while Active Frames is
@@ -10670,7 +10670,7 @@ private fun Dock(
     // The anchor itself is glyph-edge alignment, not container-center alignment: Mail's button
     // box and the grid's cell are very different widths, and each centers its icon inside its
     // own box/cell independently, so centering the *containers* does not put the *icon glyphs'*
-    // edges on the same vertical line (confirmed against the reference BB10 dock photo — its
+    // edges on the same vertical line (confirmed against the reference design's dock photo — its
     // Mail icon and the app column above it share a left edge, not just a center). So instead
     // this computes leftInsetDp/rightInsetDp such that Mail/Camera's own rendered glyph edge
     // lands exactly on the app grid icon's glyph edge — accounting for each icon's own centering
@@ -10708,7 +10708,7 @@ private fun Dock(
     // multiplying envelopeIconSize, so Home has no runtime dependency on Envelope's value.
     val homeButtonSize = if (classicDockOrder) m.envelopeButtonSize else zenoMidButtonSize
     val homeIconSize = if (classicDockOrder) m.homeIconSize else zenoMidIconSize
-    // BB10's Home glyph swells slightly while you're on the Home page itself. This is a pure
+    // The reference design's Home glyph swells slightly while you're on the Home page itself. This is a pure
     // draw-time scale (graphicsLayer), never a change to homeButtonSize/homeIconSize — those stay
     // fixed so the slot, spacing, and neighboring dots never move.
     val homeEmphasisTarget = if (classicDockOrder && homeActive) 1.54f else 1.0f
@@ -10720,11 +10720,11 @@ private fun Dock(
         ),
         label = "homeEmphasisScale",
     )
-    // Reference BB10: Envelope, Home, and every page dot are spaced by the same small, consistent
+    // Reference design: Envelope, Home, and every page dot are spaced by the same small, consistent
     // gap — not the wider Zeno-tuned navMidSpacing, and not the dots' own separate box padding
     // stacking on top of it (that combo made the home->dots gap visibly bigger than envelope->home).
     val innerClusterSpacing = if (classicDockOrder) m.centerSpacing else zenoMidClusterSpacing
-    // Reference BB10's dock nearly hugs the bottom bezel — shift the row down within the same
+    // The reference design's dock nearly hugs the bottom bezel — shift the row down within the same
     // total vertical padding budget by moving weight from bottom to top, rather than just
     // shrinking both, which would also shrink the touch targets' margin.
     val dockTopPad = if (classicDockOrder) m.topPadding else refWidth * 0.01444f
@@ -10734,7 +10734,7 @@ private fun Dock(
         modifier = Modifier
             .height(navBarHeight)
             .fillMaxWidth()
-            // Reference BB10 dock sits directly on the vivid wallpaper gradient with no dark
+            // The reference design dock sits directly on the vivid wallpaper gradient with no dark
             // scrim behind it — was 0x99 (~60% black), reduced to keep a little contrast safety
             // net for arbitrary wallpapers without the heavy dimming band the old value produced.
             .background(
@@ -10887,7 +10887,7 @@ private fun Dock(
                                     if (change.changedToUp()) {
                                         if (!activated) {
                                             // Released without ever dragging past the threshold —
-                                            // jump straight to the tapped page, matching BB10's
+                                            // jump straight to the tapped page, matching the reference design's
                                             // tap-a-dot-to-jump behavior.
                                             onScrubPage(xToPage(fingerXpx))
                                         }
@@ -10927,7 +10927,7 @@ private fun Dock(
                             current = if (scrubbing) hoveredPage else pageIndex.coerceIn(0, drawerPageCount - 1),
                             count = drawerPageCount,
                             themePalette = themePalette,
-                            // Reference BB10 dots are solid white, not dimmed — emphasize=true's
+                            // The reference design dots are solid white, not dimmed — emphasize=true's
                             // higher alpha (0.92 vs 0.69) reads much closer to that than the
                             // default, which looked visibly greyish against a dark background.
                             emphasize = classicDockOrder,
@@ -10956,11 +10956,11 @@ private fun Dock(
                     appIconShape = appIconShape,
                     onClick = onShortcut,
                     onLongPress = onLongPressShortcut,
-                    // Envelope-only exception: BB10's reference dock never shows an unread badge
+                    // Envelope-only exception: the reference design's dock never shows an unread badge
                     // on this glyph. shortcutHasUnread itself is untouched, so anything else that
                     // reads it (Zeno Mode's own badge, etc.) keeps working exactly as before.
                     hasUnread = if (classicDockOrder) false else shortcutHasUnread,
-                    // Reference BB10: Envelope is its own (slightly smaller than Home) size.
+                    // Reference design: Envelope is its own (slightly smaller than Home) size.
                     // Zeno Mode: shares zenoMidButtonSize/zenoMidIconSize with Home (see their
                     // own doc) so the two stay uniform by construction, not by two literals that
                     // happen to match.
@@ -11068,13 +11068,16 @@ private fun Dock(
             // right absolute position instead of floating off to the left over unrelated grid
             // content, which is what made this bubble appear detached from the actual dots.
             val xDp = leftInsetDp + with(density) { dotsXpx.toDp() } + with(density) { fingerXpx.toDp() }
-            val swipeDotSize = 48.dp
-            val swipeDotBottomLift = navBarHeight + 28.dp
+            // Scaled off refWidth like the rest of the dock — was flat 48.dp/28.dp/20.dp, the one
+            // spot in this composable that hadn't been converted (DockMetrics covers the static
+            // row; this floating bubble is a separate element added after).
+            val swipeDotSize = refWidth * 0.0866f // was 48.dp
+            val swipeDotBottomLift = navBarHeight + refWidth * 0.0505f // was + 28.dp
             Box(
                 modifier = Modifier
                     .align(Alignment.BottomStart)
                     .zIndex(0f)
-                    .absoluteOffset(x = xDp - 20.dp, y = -swipeDotBottomLift)
+                    .absoluteOffset(x = xDp - refWidth * 0.0361f, y = -swipeDotBottomLift) // was - 20.dp
                     .size(swipeDotSize)
                     .shadow(
                         elevation = 10.dp,
@@ -11167,7 +11170,7 @@ private fun Dots(
     emphasize: Boolean = false,
     hideFirstPageLabel: Boolean = false,
     /** Overrides the theme's own dot spacing — Classic Mode's dock wants the dots clustered
-     *  tightly, matching reference BB10 rather than Zeno Mode's wider default gap. */
+     *  tightly, matching the reference design rather than Zeno Mode's wider default gap. */
     spacingOverride: androidx.compose.ui.unit.Dp? = null,
     /** Classic Mode's reference dot indicator is smaller and more subtle than Zeno's themed
      *  default — these let it shrink the active/inactive dot size, numeral, and color without

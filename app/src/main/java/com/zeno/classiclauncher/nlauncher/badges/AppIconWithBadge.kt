@@ -26,7 +26,7 @@ private const val RAY_LENGTH_FRACTION = 0.64f
 private const val RAY_STROKE_FRACTION = 0.26f
 
 /**
- * BlackBerry-style presence badge: small red circle with a 5-ray asterisk on the icon's
+ * Classic-style presence badge: small red circle with a 5-ray asterisk on the icon's
  * top-end when [hasUnread] is true. No counts, no animation.
  *
  * The asterisk is drawn as geometry (5 lines radiating from center, 72° apart, rounded caps),

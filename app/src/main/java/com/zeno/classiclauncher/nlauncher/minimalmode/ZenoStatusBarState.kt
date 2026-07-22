@@ -83,7 +83,7 @@ internal data class ZenoStatusBarState(
     val hotspotEnabled: Boolean,
     val airplaneModeEnabled: Boolean,
     /** Ongoing/just-missed call state — replaces [carrierName] with a call icon while non-NONE,
-     *  matching the reference BB10 status bar. */
+     *  matching the reference design's status bar. */
     val callIndicator: ZenoCallIndicator,
     /** Mic muted during an active/speaker call — shown as a second, separate icon on the left
      *  cluster alongside whichever [callIndicator] icon is showing on the right. */
@@ -302,7 +302,7 @@ internal fun rememberZenoStatusBarState(): ZenoStatusBarState {
     }
 
     // Location: "in use by some app right now", not "services switched on" — same distinction
-    // BB10's arrow-icon makes and the real Android status bar's location dot uses. AppOpsManager's
+    // the reference design's arrow-icon makes and the real Android status bar's location dot uses. AppOpsManager's
     // active-op watcher (API 29+) is the only public API for this; it fires per (op, package)
     // start/stop, so a running set of active packages is tracked rather than a single boolean —
     // two concurrent consumers means the icon must survive the first one finishing.
@@ -439,7 +439,7 @@ internal fun rememberZenoStatusBarState(): ZenoStatusBarState {
     }
 
     // In-call indicator: replaces carrierName with a call/speaker icon while a call is ongoing,
-    // plus a separate mic-mute icon while muted — mirrors the reference BB10 status bar. Reuses
+    // plus a separate mic-mute icon while muted — mirrors the reference design's status bar. Reuses
     // the same READ_PHONE_STATE permission the carrier-name/signal listeners above already
     // request; no new permission needed. Speaker/mute state has no broadcast to listen for, so
     // it's polled, but only while a call is actually active — never indefinitely.

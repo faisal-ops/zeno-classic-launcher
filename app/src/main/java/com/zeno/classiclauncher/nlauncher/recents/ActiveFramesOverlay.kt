@@ -102,7 +102,7 @@ private fun rememberActiveFramesMetrics(): ActiveFramesMetrics {
 }
 
 /**
- * BB10-style "Active Frames": a grid of recently-used apps, each tile showing that app's actual
+ * Classic-style "Active Frames": a grid of recently-used apps, each tile showing that app's actual
  * last-seen screenshot (see [ActiveFramesRepository]'s own doc for how — root-only, see there for
  * why). Opened by swiping down (or long-pressing, as a fallback) on the dock's
  * Home icon in Classic Mode. On a tile: swipe right (or tap its X) closes that app; swipe left
@@ -110,7 +110,7 @@ private fun rememberActiveFramesMetrics(): ActiveFramesMetrics {
  */
 @Composable
 internal fun ActiveFramesOverlay(
-    /** The dock's own on-screen height — reference BB10 leaves the dock visible and live
+    /** The dock's own on-screen height — the reference design leaves the dock visible and live
      *  underneath Active Frames, so this overlay's own bounds stop short of it instead of
      *  covering it (the real Dock composable, drawn earlier in the same parent Box, shows
      *  through untouched in that strip). */
@@ -290,7 +290,7 @@ private fun ActiveFrameTile(
                     },
                 )
             }
-            // Sharp corners, matching the original BB10 tile — was rounded before.
+            // Sharp corners, matching the reference design's tile — was rounded before.
             .background(TILE_BG)
             .clickable(onClick = onOpen),
     ) {
@@ -318,7 +318,7 @@ private fun ActiveFrameTile(
             }
         }
         // Solid header bar (icon + label + close) sits at the BOTTOM of the tile, over the
-        // preview content — matching the original BB10 Active Frames layout, not a top strip.
+        // preview content — matching the reference design's Active Frames layout, not a top strip.
         Row(
             verticalAlignment = Alignment.CenterVertically,
             horizontalArrangement = Arrangement.spacedBy(8.dp),

@@ -131,7 +131,7 @@ fun GestureShortcutsOverlay(
                     nk?.keyCode == AndroidKeyEvent.KEYCODE_ENTER
                 // NOTE: Key.Back intentionally NOT handled here — the BackHandler handles it.
                 // Handling Back in onPreviewKeyEvent AND BackHandler causes a double-fire on
-                // physical BlackBerry back key (LineageOS), closing both the overlay AND settings.
+                // physical hardware back key (LineageOS), closing both the overlay AND settings.
                 when {
                     up    -> { focusedMain = (focusedMain - 1).coerceAtLeast(0); true }
                     down  -> { focusedMain = (focusedMain + 1).coerceAtMost(3); true }

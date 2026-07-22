@@ -465,7 +465,7 @@ internal fun UniversalSearchOverlay(
             }
 
             // Bottom chrome: back (left) / mic (center, when available) / info (right) — matches
-            // the reference BB10 layout, which has no separate bar behind this row at all: each
+            // the reference design's layout, which has no separate bar behind this row at all: each
             // button is its own opaque chip (see CircleIconButton's own solid fill) floating
             // directly on the screen, with plain gaps between them — not a continuous toolbar.
             // All three share one size so back/info visually match mic instead of a smaller

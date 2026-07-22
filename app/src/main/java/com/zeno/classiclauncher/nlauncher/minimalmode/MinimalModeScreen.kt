@@ -744,7 +744,7 @@ internal fun ZenoStatusBar(
     val textColor = if (lightBackground) MINIMAL_BODY_TEXT else NORMAL_TEXT
     val iconTint = if (lightBackground) SB_ICON_TINT_DARK else SB_ICON_TINT
     // 3-column Row: weight(1f) on both sides guarantees clock is truly centered on the display
-    // rather than centered between the icon clusters — BB10 centres on the display.
+    // rather than centered between the icon clusters — the reference design centres on the display.
     Row(
         modifier = Modifier.fillMaxWidth(),
         verticalAlignment = Alignment.CenterVertically,
@@ -752,7 +752,7 @@ internal fun ZenoStatusBar(
         // Left — battery, then up to 2 notification icons (always shown — see below), then only
         // system-state indicators, then the notification icons — grouping "device state" (battery
         // + mute/Bluetooth/GPS/NFC) together right after battery, with the more time-sensitive
-        // "alerts" (notifications) as a visually separate cluster after it. BB10 omits inactive
+        // "alerts" (notifications) as a visually separate cluster after it. The reference design omits inactive
         // indicators entirely rather than greying them out; system icons are capped independently
         // of notifications (fixed slot budgets below) rather than shrinking icons to fit.
         //
@@ -852,7 +852,7 @@ internal fun ZenoStatusBar(
             )
             if (amPm.isNotEmpty()) {
                 Text(
-                    // BB10 always renders AM/PM uppercase; the shared formatter is
+                    // The reference design always renders AM/PM uppercase; the shared formatter is
                     // locale-cased (lowercase under e.g. en_IN), so uppercase only here.
                     text = amPm.uppercase(),
                     fontSize = if (bigClock) SB_AMPM_SIZE_BIG else SB_AMPM_SIZE,
@@ -862,14 +862,14 @@ internal fun ZenoStatusBar(
                 )
             }
         }
-        // Right — carrier, headset, Wi-Fi, BlackBerry mark, signal bars.
+        // Right — carrier, headset, Wi-Fi, brand mark, signal bars.
         Row(
             modifier = Modifier.weight(1f),
             horizontalArrangement = Arrangement.spacedBy(SB_GAP_RIGHT, Alignment.End),
             verticalAlignment = Alignment.CenterVertically,
         ) {
             // Call state takes over this slot entirely — carrier name is hidden while a call is
-            // active/just-missed, matching the reference BB10 status bar.
+            // active/just-missed, matching the reference design's status bar.
             when (callIndicator) {
                 // Material's Call/VolumeUp/CallMissed glyphs have less internal padding than the
                 // other status-bar icons at the same nominal SB_GLYPH box, so they rendered
@@ -894,7 +894,7 @@ internal fun ZenoStatusBar(
                 )
                 ZenoCallIndicator.NONE -> if (carrierName.isNotEmpty()) {
                     Text(
-                        // BB10 title-cases the carrier name (e.g. "airtel" -> "Airtel") regardless
+                        // The reference design title-cases the carrier name (e.g. "airtel" -> "Airtel") regardless
                         // of how the SIM reports it.
                         text = carrierName.replaceFirstChar { it.titlecase() },
                         fontSize = SB_CARRIER_SIZE,
@@ -969,11 +969,11 @@ internal fun ZenoStatusBar(
                 )
             }
             Icon(
-                painter = painterResource(R.drawable.ic_sb_blackberry),
+                painter = painterResource(R.drawable.ic_sb_brand_mark),
                 contentDescription = null,
                 tint = iconTint,
                 modifier = Modifier
-                    .size(width = SB_BB_MARK_W, height = SB_BB_MARK_H)
+                    .size(width = SB_BRAND_MARK_W, height = SB_BRAND_MARK_H)
                     .offset(y = SB_RIGHT_ICON_VISUAL_OFFSET),
             )
             if (signalLevel != null) {
@@ -1002,9 +1002,9 @@ private fun ZenoStatusBarGlyph(
 }
 
 /**
- * Cellular bars, drawn rather than blitted: the BB10 pack ships no signal asset because the
- * bars are OS-rendered on real hardware. Ascending 5-bar ramp; bars above [level] stay visible
- * but dimmed, which is how BB10 shows headroom.
+ * Cellular bars, drawn rather than blitted: the reference asset pack ships no signal asset
+ * because the bars are OS-rendered on real hardware. Ascending 5-bar ramp; bars above [level]
+ * stay visible but dimmed, which is how the reference design shows headroom.
  */
 @Composable
 private fun ZenoStatusBarSignalBars(level: Int, tint: Color = SB_ICON_TINT) {
@@ -1026,7 +1026,7 @@ private fun ZenoStatusBarSignalBars(level: Int, tint: Color = SB_ICON_TINT) {
 }
 
 // ─── ZenoStatusBar geometry ───────────────────────────────────────────────────
-// Derived from the approved BB10 reference rendered at the Q25's native panel: 720x720 at
+// Derived from the approved reference design rendered at the Q25's native panel: 720x720 at
 // 208dpi, i.e. a density scale of 1.3, so every reference pixel divides by 1.3 into dp. The
 // source px is kept alongside each value so re-measuring the reference only ever touches this
 // block — nothing below hardcodes a magic number.
@@ -1075,14 +1075,14 @@ private val SB_GPS_W        = 13.2.dp
 private val SB_NFC_W        = 10.7.dp
 // Berry mark kept deliberately smaller than the other glyphs — at equal height its wide 1.404
 // aspect made it visually dominate the right cluster. Aspect preserved (20/14.2 ≈ 1.404).
-private val SB_BB_MARK_W    = 20.dp
-private val SB_BB_MARK_H    = 14.dp
+private val SB_BRAND_MARK_W    = 20.dp
+private val SB_BRAND_MARK_H    = 14.dp
 // Clock text was clipped against the 23.8dp reserved row at the previous, larger size (21sp
 // clock + 7dp AM/PM offset overflowed it) — pulled back down to fit with margin.
 private val SB_CLOCK_SIZE   = 18.sp
 private val SB_CLOCK_SIZE_BIG = 22.sp
 private val SB_AMPM_SIZE_BIG = 13.sp
-// Reference (real BB10 device photo, "11:35AM") reads AM/PM at nearly the same weight/brightness
+// Reference (real device photo, "11:35AM") reads AM/PM at nearly the same weight/brightness
 // as the time digits, not as a small dimmed subscript — bumped up from 9sp/MUTED_TEXT to match.
 private val SB_AMPM_SIZE    = 12.sp
 // Reference (AT&T screenshot) reads the carrier name notably larger than the other right-cluster
@@ -1091,7 +1091,7 @@ private val SB_CARRIER_SIZE = 15.sp
 private val SB_WIFI_SIZE    = 22.dp
 // Tuned for the previous 9sp size — at the current 12sp, that much downward push sinks PM
 // below the clock's own baseline instead of sitting on it. Reduced to compensate.
-/** Nudges AM/PM down so its cap-height sits on the clock's baseline, as BB10 sets it. */
+/** Nudges AM/PM down so its cap-height sits on the clock's baseline, as the reference design sets it. */
 private val SB_AMPM_BASELINE_OFFSET = 1.dp
 private val SB_ICON_TINT = Color(0xFFEAF0F6)
 /** ZenoStatusBar's icon tint when rendered with lightBackground=true (Minimal Mode's own light
@@ -1102,7 +1102,7 @@ private val SB_4GLTE_SIZE = 11.sp
 /** Wi-Fi tint when the radio is on but not the active transport (enabled-but-idle). */
 private const val SB_WIFI_DIM_ALPHA = 0.45f
 
-// Signal bars — no asset exists for these (OS-rendered on real BB10), so they are drawn.
+// Signal bars — no asset exists for these (OS-rendered on real hardware), so they are drawn.
 private val SB_BARS_W = 22.dp
 private val SB_BARS_H = 19.dp
 private const val SB_BARS_COUNT = 5
@@ -1126,7 +1126,7 @@ private val SB_BATTERY_LOW_COLOR = Color(0xFFEE3123)
 private val SB_BATTERY_SAVER_COLOR = Color(0xFFFFE9A6)
 private const val SB_BATTERY_LOW_PCT = 15
 
-/** Lightning bolt in unit space, drawn inside the body while charging (BB10 does the same). */
+/** Lightning bolt in unit space, drawn inside the body while charging (matching the reference design). */
 private val SB_BOLT_POINTS = listOf(
     0.58f to 0.00f, 0.28f to 0.56f, 0.48f to 0.56f,
     0.42f to 1.00f, 0.74f to 0.42f, 0.54f to 0.42f,
@@ -1229,7 +1229,7 @@ private fun ZenoStatusBarBattery(pct: Int, charging: Boolean, powerSaveActive: B
                 }
                 close()
             }
-            // Solid yellow fill (BB10's charging color) reads clearly at any charge level or
+            // Solid yellow fill (the reference design's charging color) reads clearly at any charge level or
             // background — the previous clear-cutout + thin white outline nearly disappeared.
             drawPath(path, color = SB_CHARGE_COLOR)
         }
