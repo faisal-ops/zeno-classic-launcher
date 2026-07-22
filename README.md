@@ -10,10 +10,6 @@ Native **Android home app** (launcher) built with **Jetpack Compose**, tuned for
 
 ## Screenshots
 
-| Home | App drawer | App drawer (classic) |
-|------|------------|----------------------|
-| ![Home with glance strip, folders, dock](docs/screenshots/home-glance-dock.png) | ![App drawer](docs/screenshots/app-drawer-1.png) | ![App drawer classic](docs/screenshots/app-drawer-2.png) |
-
 | Zeno Mode | Classic Mode | Minimal Mode |
 |-----------|--------------|---------------|
 | ![Zeno Mode home](docs/screenshots/zeno-mode.png) | ![Classic Mode home](docs/screenshots/classic-mode.png) | ![Minimal Mode](docs/screenshots/minimal-mode.png) |
