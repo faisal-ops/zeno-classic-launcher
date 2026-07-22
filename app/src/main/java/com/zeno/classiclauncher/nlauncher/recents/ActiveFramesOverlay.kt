@@ -57,17 +57,49 @@ import kotlinx.coroutines.launch
 private val TILE_BG = Color(0xFF14181F)
 private val TILE_HEADER_BG = Color(0xFFECEEF1)
 private val TILE_HEADER_LABEL = Color(0xFF15181D)
-private val TILE_HEADER_ICON_SIZE = 20.dp
-private val TILE_HEADER_VERTICAL_PADDING = 8.dp
-/** Close (X) button's touch target — bigger than its 18dp glyph so it's not an easy-to-miss tap
- *  target sitting this close to neighboring tiles. Taller than the label icon, so it (not the
- *  icon) sets the header row's real content height. */
-private val TILE_HEADER_CLOSE_TOUCH_SIZE = 36.dp
-private val TILE_HEADER_CONTENT_HEIGHT = maxOf(TILE_HEADER_ICON_SIZE, TILE_HEADER_CLOSE_TOUCH_SIZE)
-/** Header row's own total height — reused by [ActiveFramesOverlay] to size tiles so the next
- *  row peeks in by exactly this much, instead of guessing an arbitrary "peek" constant separate
- *  from the header's real layout. */
-private val TILE_HEADER_HEIGHT = TILE_HEADER_CONTENT_HEIGHT + TILE_HEADER_VERTICAL_PADDING * 2
+
+/** Every size/gap in this screen, scaled off actual screen width instead of flat dp constants —
+ *  same `refWidth * fraction` convention Dock itself uses (see rememberClassicDockMetrics), so
+ *  this grid reads consistently across phone widths instead of a set of numbers tuned for one
+ *  reference device. Fractions are each old-flat-dp-value / this project's ~554dp reference
+ *  screenWidthDp, so today's on-device look is unchanged; only other screen widths scale now. */
+private data class ActiveFramesMetrics(
+    val headerIconSize: androidx.compose.ui.unit.Dp,
+    val headerVerticalPadding: androidx.compose.ui.unit.Dp,
+    val headerCloseTouchSize: androidx.compose.ui.unit.Dp,
+    val headerHeight: androidx.compose.ui.unit.Dp,
+    val gridTopPadding: androidx.compose.ui.unit.Dp,
+    val gridBottomPadding: androidx.compose.ui.unit.Dp,
+    val gridSidePadding: androidx.compose.ui.unit.Dp,
+    val gap: androidx.compose.ui.unit.Dp,
+)
+
+@Composable
+private fun rememberActiveFramesMetrics(): ActiveFramesMetrics {
+    val refWidth = androidx.compose.ui.platform.LocalConfiguration.current.screenWidthDp.dp
+    return remember(refWidth) {
+        val headerIconSize = refWidth * 0.0361f // was 20.dp
+        // Close (X) button's touch target — bigger than its 18dp-equivalent glyph so it's not an
+        // easy-to-miss tap target sitting this close to neighboring tiles. Taller than the label
+        // icon, so it (not the icon) sets the header row's real content height.
+        val headerCloseTouchSize = refWidth * 0.06498f // was 36.dp
+        val headerVerticalPadding = refWidth * 0.01444f // was 8.dp
+        val headerContentHeight = maxOf(headerIconSize, headerCloseTouchSize)
+        ActiveFramesMetrics(
+            headerIconSize = headerIconSize,
+            headerVerticalPadding = headerVerticalPadding,
+            headerCloseTouchSize = headerCloseTouchSize,
+            // Header row's own total height — reused by ActiveFramesOverlay to size tiles so the
+            // next row peeks in by exactly this much, instead of guessing an arbitrary "peek"
+            // constant separate from the header's real layout.
+            headerHeight = headerContentHeight + headerVerticalPadding * 2,
+            gridTopPadding = refWidth * 0.01588f, // was 8.8.dp
+            gridBottomPadding = refWidth * 0.01444f, // was 8.dp
+            gridSidePadding = refWidth * 0.01444f, // was 8.dp
+            gap = refWidth * 0.01444f, // was 8.dp
+        )
+    }
+}
 
 /**
  * BB10-style "Active Frames": a grid of recently-used apps, each tile showing that app's actual
@@ -116,19 +148,13 @@ internal fun ActiveFramesOverlay(
     // exactly 2 full rows (4 tiles) show plus the next row's header strip peeking at the bottom —
     // matching the reference — on whatever screen this runs on, rather than a number tuned for
     // one device. Every input here is a real measurement (screen height, the status bar's own
-    // reserved height, the dock's own computed height) or this file's own header layout constants
-    // (gridTopPadding/gridBottomPadding/rowGap are this screen's small chrome margins, see the
-    // contentPadding/arrangement below — not app-tile sizing, so they stay fixed dp).
+    // reserved height, the dock's own computed height) or this screen's own metrics (see
+    // rememberActiveFramesMetrics — scaled off screen width, not flat dp).
     val screenHeightDp = androidx.compose.ui.platform.LocalConfiguration.current.screenHeightDp.dp
-    // Was 8dp, bumped 10% more per feedback ("gap is good but add at least 10% more").
-    val gridTopPadding = 8.8.dp
-    val gridBottomPadding = 8.dp
-    val gridSidePadding = 8.dp
-    // One shared gap value for both directions — was 3dp, which read as tiles touching once they
-    // grew tall enough to fill 2 whole rows; this is the actual "breathing room" the tiles need.
-    val gap = 8.dp
-    val availableGridHeightDp = screenHeightDp - reservedHeightDp - dockHeightDp - gridTopPadding - gridBottomPadding
-    val tileHeightDp = (availableGridHeightDp - gap * 2 - TILE_HEADER_HEIGHT) / 2f
+    val metrics = rememberActiveFramesMetrics()
+    val availableGridHeightDp = screenHeightDp - reservedHeightDp - dockHeightDp -
+        metrics.gridTopPadding - metrics.gridBottomPadding
+    val tileHeightDp = (availableGridHeightDp - metrics.gap * 2 - metrics.headerHeight) / 2f
     // How much of the bottom row fades to transparent right where this composable's own bounds
     // meet the dock strip — the reference has no hard edge there (its dock floats translucently
     // over the last row instead), so a flat cut where our opaque tiles meet the real Dock read as
@@ -175,22 +201,23 @@ internal fun ActiveFramesOverlay(
             // the inconsistency being reported).
             modifier = Modifier
                 .fillMaxSize()
-                .padding(top = reservedHeightDp + gridTopPadding)
+                .padding(top = reservedHeightDp + metrics.gridTopPadding)
                 .clickable(enabled = false) {},
             // Shrinks tiles in from every edge with real breathing room — was 3dp all round,
             // which read as tiles touching once they grew tall enough to fill 2 whole rows.
             contentPadding = androidx.compose.foundation.layout.PaddingValues(
-                start = gridSidePadding,
-                end = gridSidePadding,
-                bottom = gridBottomPadding,
+                start = metrics.gridSidePadding,
+                end = metrics.gridSidePadding,
+                bottom = metrics.gridBottomPadding,
             ),
-            horizontalArrangement = Arrangement.spacedBy(gap),
-            verticalArrangement = Arrangement.spacedBy(gap),
+            horizontalArrangement = Arrangement.spacedBy(metrics.gap),
+            verticalArrangement = Arrangement.spacedBy(metrics.gap),
         ) {
             items(tasks, key = { it.packageName }) { task ->
                 ActiveFrameTile(
                     task = task,
                     heightDp = tileHeightDp,
+                    metrics = metrics,
                     // Deliberately does NOT call onDismiss(): showActiveFrames stays true behind
                     // the launched app, so pressing back there returns to this exact list (same
                     // remembered `tasks`, not reloaded) instead of the normal home screen — lets
@@ -211,6 +238,7 @@ internal fun ActiveFramesOverlay(
 private fun ActiveFrameTile(
     task: ActiveFrameTask,
     heightDp: androidx.compose.ui.unit.Dp,
+    metrics: ActiveFramesMetrics,
     onOpen: () -> Unit,
     onClose: () -> Unit,
     // Swipe-left is a distinct exit gesture, not another way to close this one tile: it leaves
@@ -298,12 +326,12 @@ private fun ActiveFrameTile(
                 .fillMaxWidth()
                 .align(Alignment.BottomStart)
                 .background(TILE_HEADER_BG)
-                .padding(horizontal = 10.dp, vertical = TILE_HEADER_VERTICAL_PADDING),
+                .padding(horizontal = 10.dp, vertical = metrics.headerVerticalPadding),
         ) {
             AsyncImage(
                 model = task.icon,
                 contentDescription = null,
-                modifier = Modifier.size(TILE_HEADER_ICON_SIZE).clip(RoundedCornerShape(5.dp)),
+                modifier = Modifier.size(metrics.headerIconSize).clip(RoundedCornerShape(5.dp)),
             )
             Text(
                 text = task.label,
@@ -318,7 +346,7 @@ private fun ActiveFrameTile(
             // an easy-to-miss target for a close button that sits this close to other tiles.
             Box(
                 modifier = Modifier
-                    .size(TILE_HEADER_CLOSE_TOUCH_SIZE)
+                    .size(metrics.headerCloseTouchSize)
                     .clickable(onClick = onClose),
                 contentAlignment = Alignment.Center,
             ) {

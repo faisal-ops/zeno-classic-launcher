@@ -1309,20 +1309,30 @@ private fun MinimalModeHeader(
             modifier = Modifier.fillMaxWidth(),
             horizontalAlignment = Alignment.Start,
         ) {
+            // Breathing room from the status bar above — was flush against it, reading as one
+            // oversized block instead of a natural clock → date → app-list hierarchy.
+            Spacer(Modifier.height(10.dp))
             Row(
+                horizontalArrangement = Arrangement.SpaceBetween,
                 verticalAlignment = Alignment.CenterVertically,
-                modifier = Modifier.pointerInput(Unit) {
-                    detectTapGestures(onTap = { onWeatherTap() }, onDoubleTap = {})
-                },
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .pointerInput(Unit) {
+                        detectTapGestures(onTap = { onWeatherTap() }, onDoubleTap = {})
+                    },
             ) {
-                // Bigger than the clock itself (SB_CLOCK_SIZE_BIG = 22.sp) and full-bright with
-                // bold weight, so this row reads as more prominent than the clock rather than a
-                // secondary caption under it.
-                val dateTempColor = Color.White
-                Text(text = date, fontSize = 26.sp, fontWeight = FontWeight.SemiBold, color = dateTempColor)
+                // Date on the left, temperature on the right — was both crammed together on the
+                // left ("Wed, 22 Jul · 32°C"), reading as one dense, oversized block against the
+                // compact status bar above. Splitting across the row's full width, smaller and
+                // with the temperature dimmed relative to the date, reads calmer.
+                Text(text = date, fontSize = 21.sp, fontWeight = FontWeight.Normal, color = Color.White)
                 if (currentTemp != null) {
-                    Text(text = "  ·  ", fontSize = 26.sp, fontWeight = FontWeight.SemiBold, color = dateTempColor)
-                    Text(text = currentTemp, fontSize = 26.sp, fontWeight = FontWeight.SemiBold, color = dateTempColor)
+                    Text(
+                        text = currentTemp,
+                        fontSize = 16.sp,
+                        fontWeight = FontWeight.Normal,
+                        color = Color.White.copy(alpha = 0.6f),
+                    )
                 }
             }
 

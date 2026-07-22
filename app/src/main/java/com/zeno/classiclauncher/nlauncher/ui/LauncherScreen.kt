@@ -4495,9 +4495,10 @@ private fun ClassicCleanHomePage(
             color = Color(0xFFB8D4E8),
             // Reference BB10 home screen has this noticeably larger than the clock — was 40.sp.
             fontSize = 45.sp,
-            fontWeight = FontWeight.Normal,
-            // Was -0.62f, then -0.82f (too tight against the status bar) — settled between them.
-            modifier = Modifier.align(BiasAlignment(0f, -0.74f)),
+            // Reverted to the original weight after trying Bold/Normal.
+            fontWeight = FontWeight.W300,
+            // Was -0.62f, then -0.82f, then -0.74f — moved 10% further down per feedback.
+            modifier = Modifier.align(BiasAlignment(0f, -0.666f)),
         )
         // Universal Search's own state/key-handling/rendering all live at the root now (one
         // shared implementation for the whole launcher) — this page no longer renders it.
@@ -7784,6 +7785,7 @@ private fun AppDrawer(
                 if (searchQuery.isNotEmpty()) onSearchQueryChange("")
                 allApps.find { it.packageName == pkg }?.let { onCellTap(DrawerGridCell.App(it)) }
             },
+            onLongPressApp = onLongPressSearchApp,
         )
     }
     // Universal Search's own state/key-handling/rendering all live at the root now (one shared

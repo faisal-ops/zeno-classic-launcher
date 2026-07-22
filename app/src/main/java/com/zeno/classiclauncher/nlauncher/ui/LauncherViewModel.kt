@@ -370,16 +370,20 @@ class LauncherViewModel(app: Application) : AndroidViewModel(app) {
             val sessions = msm.getActiveSessions(cn)
             val activeStates = setOf(PlaybackState.STATE_PLAYING, PlaybackState.STATE_PAUSED, PlaybackState.STATE_BUFFERING)
             val ctrl = sessions.firstOrNull { it.playbackState?.state in activeStates } ?: return
-            if (ctrl.playbackState?.state == PlaybackState.STATE_PLAYING) {
+            val wasPlaying = ctrl.playbackState?.state == PlaybackState.STATE_PLAYING
+            if (wasPlaying) {
                 ctrl.transportControls.pause()
             } else {
                 ctrl.transportControls.play()
             }
+            // Flip the icon immediately instead of waiting on the round-trip to the player app —
+            // transportControls.pause()/play() is fire-and-forget IPC, and re-reading the session's
+            // playbackState right away (the old approach here) just re-read the SAME stale value,
+            // since the player app hadn't processed the command yet. The MediaController.Callback
+            // registered in refreshNowPlaying() still overwrites this with the authoritative state
+            // once the player app actually reports it (or corrects it, if the command was ignored).
+            _nowPlaying.value = _nowPlaying.value?.copy(isPlaying = !wasPlaying)
         }
-        // The MediaController.Callback (registered in refreshNowPlaying()) picks this up once the
-        // player app actually reports its new state, but that can lag a beat — nudge a refresh now
-        // too so the icon doesn't sit stale in the meantime.
-        refreshNowPlaying()
     }
 
     fun mediaSkipNext() {

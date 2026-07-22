@@ -1,7 +1,6 @@
 package com.zeno.classiclauncher.nlauncher.glance
 
 import android.Manifest
-import android.util.Log
 import android.animation.Animator
 import android.animation.AnimatorListenerAdapter
 import android.app.Activity
@@ -871,7 +870,6 @@ class GlanceDateWeatherEventsView @JvmOverloads constructor(
             .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
 
     private fun openCalendarEvent(event: GlanceCalendarEvent) {
-        Log.d("ZenoCalendar", "tap: title=${event.title} accountType='${event.accountType}'")
         val eventIntent = buildCalendarEventIntent(event)
         // Always open in Google Calendar — works for all event types (Google, Outlook, etc.)
         val gCal = "com.google.android.calendar"
@@ -895,9 +893,6 @@ class GlanceDateWeatherEventsView @JvmOverloads constructor(
         val allResolvers = context.packageManager
             .queryIntentActivities(Intent(eventIntent).setPackage(pkg), 0)
         val resolver = allResolvers.firstOrNull { it.activityInfo.packageName == pkg }
-
-        Log.d("ZenoCalendar", "tryOpenViaComponent pkg=$pkg " +
-            "resolverCount=${allResolvers.size} resolverActivity=${resolver?.activityInfo?.name}")
 
         if (resolver != null) {
             val hostActivity = generateSequence(context) { (it as? android.content.ContextWrapper)?.baseContext }

@@ -849,6 +849,7 @@ internal fun HiddenAppsOverlay(
     hiddenPackages: Set<String>,
     onDismiss: () -> Unit,
     onLaunchApp: (String) -> Unit,
+    onLongPressApp: (AppEntry) -> Unit,
 ) {
     val hidden = remember(allApps, hiddenPackages) {
         allApps.filter { it.packageName in hiddenPackages }.sortedBy { it.label.lowercase() }
@@ -902,7 +903,10 @@ internal fun HiddenAppsOverlay(
                         Column(
                             modifier = Modifier
                                 .padding(6.dp)
-                                .clickable { onLaunchApp(app.packageName) },
+                                .combinedClickable(
+                                    onClick = { onLaunchApp(app.packageName) },
+                                    onLongClick = { onLongPressApp(app) },
+                                ),
                             horizontalAlignment = Alignment.CenterHorizontally,
                         ) {
                             AsyncImage(
