@@ -14,9 +14,9 @@ Native **Android home app** (launcher) built with **Jetpack Compose**, tuned for
 |-----------|--------------|---------------|
 | ![Zeno Mode home](docs/screenshots/zeno-mode.png) | ![Classic Mode home](docs/screenshots/classic-mode.png) | ![Minimal Mode](docs/screenshots/minimal-mode.png) |
 
-| Universal Search | Zeno Recent Apps (Classic Mode) | Flip-clock screensaver |
-|-------------------|----------------------------------|--------------------------|
-| ![Universal Search](docs/screenshots/universal-search.png) | ![Zeno Recent Apps in Classic Mode](docs/screenshots/active-frames-classic.png) | ![Flip-clock screensaver](docs/screenshots/flip-clock-screensaver.png) |
+| Universal Search | Recent Apps (Classic Mode) | Flip-clock screensaver |
+|-------------------|-------------------------------|--------------------------|
+| ![Universal Search](docs/screenshots/universal-search.png) | ![Recent Apps in Classic Mode](docs/screenshots/active-frames-classic.png) | ![Flip-clock screensaver](docs/screenshots/flip-clock-screensaver.png) |
 
 *Sample UI; apps and wallpaper are illustrative.*
 
