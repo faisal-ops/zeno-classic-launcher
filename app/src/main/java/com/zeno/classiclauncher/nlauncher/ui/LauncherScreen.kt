@@ -8040,8 +8040,9 @@ private fun doVibrate(view: android.view.View, intensity: Int = 3) {
         @Suppress("DEPRECATION")
         view.context.getSystemService(android.os.Vibrator::class.java)
     }
+    val clamped = intensity.coerceIn(1, 5)
     if (vibrator != null && vibrator.hasAmplitudeControl()) {
-        val amplitude = when (intensity.coerceIn(1, 5)) {
+        val amplitude = when (clamped) {
             1 -> 30
             2 -> 70
             3 -> 120
@@ -8049,6 +8050,21 @@ private fun doVibrate(view: android.view.View, intensity: Int = 3) {
             else -> 255
         }
         vibrator.vibrate(android.os.VibrationEffect.createOneShot(15, amplitude))
+    } else if (vibrator != null) {
+        // No amplitude control on this hardware (confirmed on the Q25's own vibrator motor) —
+        // every intensity level used to fall through to the exact same fixed system haptic here,
+        // completely ignoring the setting (every level felt identical). Duration IS respected
+        // regardless of amplitude-control support, so vary pulse length instead — still not true
+        // amplitude control, but it's an actually-perceptible difference across levels on this
+        // hardware, where the old fallback had none at all.
+        val durationMs = when (clamped) {
+            1 -> 8L
+            2 -> 14L
+            3 -> 22L
+            4 -> 32L
+            else -> 45L
+        }
+        vibrator.vibrate(android.os.VibrationEffect.createOneShot(durationMs, android.os.VibrationEffect.DEFAULT_AMPLITUDE))
     } else {
         view.performHapticFeedback(HapticFeedbackConstants.VIRTUAL_KEY)
     }
