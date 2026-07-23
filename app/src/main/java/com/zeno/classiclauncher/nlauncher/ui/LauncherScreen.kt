@@ -1369,6 +1369,13 @@ fun LauncherScreen(
                 nk?.keyCode == android.view.KeyEvent.KEYCODE_DPAD_LEFT ||
                 nk?.keyCode == android.view.KeyEvent.KEYCODE_DPAD_RIGHT
             if (ev.type != KeyEventType.KeyDown) return@onPreviewKeyEvent false
+            // A full-screen app picker (dock "Change shortcut", or the gesture settings' app
+            // selector) is on top and owns typing/dpad via its own onPreviewKeyEvent further down
+            // the tree — as the outermost ancestor this preview pass runs BEFORE that child ever
+            // sees the event, so without this early bail every keystroke was consumed here first,
+            // silently driving the root Universal Search state in the background instead of the
+            // picker's own search field.
+            if (showDockSlotPicker != null || showGestureSettings) return@onPreviewKeyEvent false
             if (isDpad) {
                 // Set trackpadActive synchronously so the focus highlight appears on the SAME frame
                 // as the first D-pad keypress (LaunchedEffect fires asynchronously, so first-press
@@ -7362,7 +7369,12 @@ private fun AppDrawer(
             HorizontalPager(
                 state = drawerPager,
                 modifier = Modifier.fillMaxSize(),
-                beyondViewportPageCount = 1,
+                // Was 1 — pre-composing the neighbor page let its BoxWithConstraints measure
+                // before that page's transition/insets had settled, so LazyVerticalGrid's items
+                // could lock in a too-short cardH that never got recomputed afterward (grid
+                // rendered into only the top portion of the page, leaving dead space above the
+                // dock until something else forced the page to recompose from scratch).
+                beyondViewportPageCount = 0,
             ) { page ->
             val start = page * appsPerPage
                 val end = (start + appsPerPage).coerceAtMost(gridCells.size)
@@ -7411,6 +7423,12 @@ private fun AppDrawer(
                 val cardH =
                     (viewportHeight - rowSpacing * gridPreset.rows) / gridPreset.rows
 
+                // Safety net alongside removing the pager's neighbor-page pre-composition above:
+                // if this page's measured size is ever seen to change after its first composition
+                // (e.g. a future insets/animation timing change reintroduces a stale first frame),
+                // key() forces Compose to throw away the old composition and rebuild the grid
+                // against the current size instead of silently keeping the stale cardH/cardW.
+                key(viewportHeight, viewportWidth) {
                 LazyVerticalGrid(
                     columns = GridCells.Fixed(gridPreset.cols),
                     modifier = Modifier.fillMaxSize(),
@@ -7699,6 +7717,7 @@ private fun AppDrawer(
                             }
                         }
                     }
+                }
                 }
             }
 
